@@ -1,16 +1,47 @@
 # gf180-ldo
 
-**PRIVATE — 2AM Logic proprietary IP. Canary block (wave 1).**
+A low-dropout linear regulator (LDO) targeting the **gf180mcu** open PDK,
+built entirely on the open-source analog flow: [xschem](https://xschem.sourceforge.io/)
+for schematic capture, [ngspice](https://ngspice.sourceforge.io/) for
+simulation, and [klayout-tools](https://github.com/2AMLogic/klayout-tools)
+for layout, DRC, and LVS.
 
-Low-dropout regulator on gf180mcu (open PDK), designed by agents driving
-[klayout-tools](https://github.com/2AMLogic/klayout-tools) and the
-open-source analog flow. Dual purpose, per the canary model: catalog
-inventory (eventually silicon-measured) and tool forcing-function
-(friction issues go to the public klayout-tools tracker).
+**Status: early. Nothing here has been fabricated.** As of today the repo
+holds a draft specification, an architecture survey, device characterization
+data extracted from the PDK models, decision records, and a reproducible PVT
+corner-running simulation harness. There is no schematic, no layout, and no
+silicon. Read every number here as a simulation result against an open PDK's
+models, with the corner and testbench that produced it recorded alongside it.
 
-Selection rationale: PMU-kit companion to the bandgap; Vidatronic-validated 180nm category, uncontested node, cheapest silicon path (matrix row 3).
+## Built by agents
 
-## Target specification (DRAFT — engineering to ratify, see issue #1)
+This block is designed by AI agents, on purpose and out in the open. The
+agents write the testbenches, run the corners, argue the trade-offs in
+decision records, and open the pull requests; the repository's conventions
+exist to keep that process honest rather than to dress it up:
+
+- **Verification is the product.** No claim lands without a testbench behind
+  it, and every recorded result carries its PVT corners.
+- **Evidence is append-only.** Files under `sim/` are never edited or deleted
+  after they are written — a later run mints a new record rather than
+  overwriting an inconvenient one.
+- **The spec is a gate, not a suggestion.** Agents may not relax a ratified
+  spec line to make a result pass; changing it requires a decision record in
+  `spec/`.
+
+The second reason this block exists is as a forcing function for the tooling.
+Every time the open-source flow is awkward, missing a capability, or simply
+wrong for the job, that friction is filed as an issue against
+[klayout-tools](https://github.com/2AMLogic/klayout-tools) — so the gaps this
+design hits get fixed in public.
+
+Design rationale for the target: 180 nm is a mature, well-characterized node
+with a fully open PDK, an LDO is a natural companion to a voltage reference in
+a power-management block, and the topology is simple enough to verify
+exhaustively while still exercising the parts of the flow that matter
+(matching, stability across load and capacitor range, PSRR, layout parasitics).
+
+## Target specification (DRAFT — pending ratification, see issue #1)
 
 | Parameter | Target | Stretch |
 |---|---|---|
@@ -27,7 +58,7 @@ Selection rationale: PMU-kit companion to the bandgap; Vidatronic-validated 180n
 Maturity ladder: simulation-complete → layout DRC/LVS-clean → shuttle
 seat → measured silicon over temperature.
 
-## Layout
+## Repository layout
 
 ```
 spec/          ratified spec + decision records
@@ -62,3 +93,10 @@ a PDK path. See [`sim/README.md`](sim/README.md) for the ratified evidence
 record format (directory layout, record ids, the append-only rule), and
 [`sim/harness/README.md`](sim/harness/README.md) for PDK resolution, the
 corner definitions and how to write a testbench.
+
+## License
+
+Licensed under the Apache License, Version 2.0 — see [`LICENSE`](LICENSE).
+
+The gf180mcu PDK itself is not distributed here; it is fetched separately and
+carries its own license from GlobalFoundries and Efabless.

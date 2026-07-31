@@ -1,21 +1,24 @@
 # gf180-ldo — agent instructions
 
-Private repo; proprietary 2AM Logic IP. Canary block.
+Public, open-source repository: a low-dropout regulator on the gf180mcu
+open PDK, designed by agents. Licensed Apache-2.0 (see `LICENSE`).
 
 - **PDK**: gf180mcu (open PDK). Open-source flow: xschem + ngspice for
   design/sim, klayout-tools (`klt`) for layout work.
-- **Friction protocol (the canary's job)**: every time klayout-tools is
-  awkward, missing a capability, or wrong for what you need, file an issue
-  at `2AMLogic/klayout-tools` describing the need generically (never
-  include proprietary design details, spec values, or this repo's content
-  in the public issue — describe the tool gap, not the design).
+- **Friction protocol (the tool forcing-function)**: every time
+  klayout-tools is awkward, missing a capability, or wrong for what you
+  need, file an issue at `2AMLogic/klayout-tools` describing the need
+  generically — describe the tool gap, not this design. Tool issues should
+  be useful to anyone hitting the same gap, so keep them free of
+  block-specific detail that only makes sense here.
 - **Verification is the product**: no claim without a testbench. PVT
   corners on every recorded result. `sim/` results are append-only
   evidence.
-- **Confidentiality**: this repo, its specs, and its results are Tier 2
-  (see marketing repo POSITIONING.md). The block's *name/existence* is
-  public; everything else here is not. Never copy content from here into
-  public repos, issues, or posts.
+- **Everything here is published**: this repo, its specs, its simulation
+  evidence, and its issue tracker are public. Write commits, issues, and
+  documents accordingly — no credentials, no third-party confidential
+  material, and nothing you would not want read by someone outside the
+  project.
 - Spec changes go through `spec/` with a decision record; agents do not
   relax the ratified spec to make results pass.
 - Harness bootstrap: copy the sim-harness pattern from
