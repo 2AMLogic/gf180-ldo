@@ -1,0 +1,175 @@
+* gf180mcu threshold-voltage extraction (constant-current criterion)
+* Issue #4 - template; fets/run.sh substitutes @TOKENS@ and runs the deck.
+*
+* Vth is taken at the standard constant-current criterion
+*     |Id| = 100 nA * (W/L)
+* with 50 mV across the channel (linear region). The gate is swept and the
+* crossing located with `meas dc ... when`, so the reported number is a
+* measured Vgs, not a model parameter read out of a card.
+*
+* Every device's gate is driven by a behavioural source referenced to its own
+* source terminal, so the sweep variable vgg IS |Vgs| for every row - no
+* per-row offset has to be unwound afterwards, including on the Vsb rows.
+* Rows at Vsb = 1 V give the body-effect-shifted threshold: that is what an
+* NMOS source follower actually sees with its source above the substrate, and
+* what a PMOS sees with its source below its own well tie.
+* W = 10 um throughout - Vth is a per-unit-width property, and the wide pass
+* devices are covered by the Rds(on) sweep rather than by this deck.
+*
+.include @MODELS@/design.ngspice
+.lib @MODELS@/sm141064.ngspice @CORNER@
+.options temp=@TEMP@
+.param vwell=3.3
+
+vwell vwell 0 dc 'vwell'
+vgg gg 0 dc 0
+
+vs1 s1 0 dc 0
+vd1 d1 0 dc 0.05
+bg1 g1 0 v = '0 + v(gg)'
+x1 d1 g1 s1 0 nfet_03v3 w=10u l=0.28u
+vs2 s2 0 dc 1
+vd2 d2 0 dc 1.05
+bg2 g2 0 v = '1 + v(gg)'
+x2 d2 g2 s2 0 nfet_03v3 w=10u l=0.28u
+vs3 s3 0 dc 0
+vd3 d3 0 dc 0.05
+bg3 g3 0 v = '0 + v(gg)'
+x3 d3 g3 s3 0 nfet_03v3 w=10u l=0.50u
+vs4 s4 0 dc 1
+vd4 d4 0 dc 1.05
+bg4 g4 0 v = '1 + v(gg)'
+x4 d4 g4 s4 0 nfet_03v3 w=10u l=0.50u
+vs5 s5 0 dc 0
+vd5 d5 0 dc 0.05
+bg5 g5 0 v = '0 + v(gg)'
+x5 d5 g5 s5 0 nfet_03v3 w=10u l=1.00u
+vs6 s6 0 dc 1
+vd6 d6 0 dc 1.05
+bg6 g6 0 v = '1 + v(gg)'
+x6 d6 g6 s6 0 nfet_03v3 w=10u l=1.00u
+
+vs7 s7 0 dc 3.3
+vd7 d7 0 dc 3.25
+bg7 g7 0 v = '3.3 - v(gg)'
+x7 d7 g7 s7 vwell pfet_03v3 w=10u l=0.28u
+vs8 s8 0 dc 2.3
+vd8 d8 0 dc 2.25
+bg8 g8 0 v = '2.3 - v(gg)'
+x8 d8 g8 s8 vwell pfet_03v3 w=10u l=0.28u
+vs9 s9 0 dc 3.3
+vd9 d9 0 dc 3.25
+bg9 g9 0 v = '3.3 - v(gg)'
+x9 d9 g9 s9 vwell pfet_03v3 w=10u l=0.50u
+vs10 s10 0 dc 2.3
+vd10 d10 0 dc 2.25
+bg10 g10 0 v = '2.3 - v(gg)'
+x10 d10 g10 s10 vwell pfet_03v3 w=10u l=0.50u
+vs11 s11 0 dc 3.3
+vd11 d11 0 dc 3.25
+bg11 g11 0 v = '3.3 - v(gg)'
+x11 d11 g11 s11 vwell pfet_03v3 w=10u l=1.00u
+vs12 s12 0 dc 2.3
+vd12 d12 0 dc 2.25
+bg12 g12 0 v = '2.3 - v(gg)'
+x12 d12 g12 s12 vwell pfet_03v3 w=10u l=1.00u
+
+vs13 s13 0 dc 0
+vd13 d13 0 dc 0.05
+bg13 g13 0 v = '0 + v(gg)'
+x13 d13 g13 s13 0 nfet_06v0 w=10u l=0.60u
+vs14 s14 0 dc 1
+vd14 d14 0 dc 1.05
+bg14 g14 0 v = '1 + v(gg)'
+x14 d14 g14 s14 0 nfet_06v0 w=10u l=0.60u
+vs15 s15 0 dc 0
+vd15 d15 0 dc 0.05
+bg15 g15 0 v = '0 + v(gg)'
+x15 d15 g15 s15 0 nfet_06v0 w=10u l=1.20u
+vs16 s16 0 dc 1
+vd16 d16 0 dc 1.05
+bg16 g16 0 v = '1 + v(gg)'
+x16 d16 g16 s16 0 nfet_06v0 w=10u l=1.20u
+
+vs17 s17 0 dc 3.3
+vd17 d17 0 dc 3.25
+bg17 g17 0 v = '3.3 - v(gg)'
+x17 d17 g17 s17 vwell pfet_06v0 w=10u l=0.55u
+vs18 s18 0 dc 2.3
+vd18 d18 0 dc 2.25
+bg18 g18 0 v = '2.3 - v(gg)'
+x18 d18 g18 s18 vwell pfet_06v0 w=10u l=0.55u
+vs19 s19 0 dc 3.3
+vd19 d19 0 dc 3.25
+bg19 g19 0 v = '3.3 - v(gg)'
+x19 d19 g19 s19 vwell pfet_06v0 w=10u l=1.20u
+vs20 s20 0 dc 2.3
+vd20 d20 0 dc 2.25
+bg20 g20 0 v = '2.3 - v(gg)'
+x20 d20 g20 s20 vwell pfet_06v0 w=10u l=1.20u
+
+.control
+dc vgg 0 3.5 0.002
+let idm1 = -i(vd1)
+meas dc vth1 when idm1=3.57143e-06
+echo "nfet_03v3,@CORNER@,@TEMP@,10,0.28u,0,3.57143e-06,$&vth1" >> @OUT@
+let idm2 = -i(vd2)
+meas dc vth2 when idm2=3.57143e-06
+echo "nfet_03v3,@CORNER@,@TEMP@,10,0.28u,1,3.57143e-06,$&vth2" >> @OUT@
+let idm3 = -i(vd3)
+meas dc vth3 when idm3=2e-06
+echo "nfet_03v3,@CORNER@,@TEMP@,10,0.50u,0,2e-06,$&vth3" >> @OUT@
+let idm4 = -i(vd4)
+meas dc vth4 when idm4=2e-06
+echo "nfet_03v3,@CORNER@,@TEMP@,10,0.50u,1,2e-06,$&vth4" >> @OUT@
+let idm5 = -i(vd5)
+meas dc vth5 when idm5=1e-06
+echo "nfet_03v3,@CORNER@,@TEMP@,10,1.00u,0,1e-06,$&vth5" >> @OUT@
+let idm6 = -i(vd6)
+meas dc vth6 when idm6=1e-06
+echo "nfet_03v3,@CORNER@,@TEMP@,10,1.00u,1,1e-06,$&vth6" >> @OUT@
+let idm7 = i(vd7)
+meas dc vth7 when idm7=3.57143e-06
+echo "pfet_03v3,@CORNER@,@TEMP@,10,0.28u,0,3.57143e-06,$&vth7" >> @OUT@
+let idm8 = i(vd8)
+meas dc vth8 when idm8=3.57143e-06
+echo "pfet_03v3,@CORNER@,@TEMP@,10,0.28u,1,3.57143e-06,$&vth8" >> @OUT@
+let idm9 = i(vd9)
+meas dc vth9 when idm9=2e-06
+echo "pfet_03v3,@CORNER@,@TEMP@,10,0.50u,0,2e-06,$&vth9" >> @OUT@
+let idm10 = i(vd10)
+meas dc vth10 when idm10=2e-06
+echo "pfet_03v3,@CORNER@,@TEMP@,10,0.50u,1,2e-06,$&vth10" >> @OUT@
+let idm11 = i(vd11)
+meas dc vth11 when idm11=1e-06
+echo "pfet_03v3,@CORNER@,@TEMP@,10,1.00u,0,1e-06,$&vth11" >> @OUT@
+let idm12 = i(vd12)
+meas dc vth12 when idm12=1e-06
+echo "pfet_03v3,@CORNER@,@TEMP@,10,1.00u,1,1e-06,$&vth12" >> @OUT@
+let idm13 = -i(vd13)
+meas dc vth13 when idm13=1.66667e-06
+echo "nfet_06v0,@CORNER@,@TEMP@,10,0.60u,0,1.66667e-06,$&vth13" >> @OUT@
+let idm14 = -i(vd14)
+meas dc vth14 when idm14=1.66667e-06
+echo "nfet_06v0,@CORNER@,@TEMP@,10,0.60u,1,1.66667e-06,$&vth14" >> @OUT@
+let idm15 = -i(vd15)
+meas dc vth15 when idm15=8.33333e-07
+echo "nfet_06v0,@CORNER@,@TEMP@,10,1.20u,0,8.33333e-07,$&vth15" >> @OUT@
+let idm16 = -i(vd16)
+meas dc vth16 when idm16=8.33333e-07
+echo "nfet_06v0,@CORNER@,@TEMP@,10,1.20u,1,8.33333e-07,$&vth16" >> @OUT@
+let idm17 = i(vd17)
+meas dc vth17 when idm17=1.81818e-06
+echo "pfet_06v0,@CORNER@,@TEMP@,10,0.55u,0,1.81818e-06,$&vth17" >> @OUT@
+let idm18 = i(vd18)
+meas dc vth18 when idm18=1.81818e-06
+echo "pfet_06v0,@CORNER@,@TEMP@,10,0.55u,1,1.81818e-06,$&vth18" >> @OUT@
+let idm19 = i(vd19)
+meas dc vth19 when idm19=8.33333e-07
+echo "pfet_06v0,@CORNER@,@TEMP@,10,1.20u,0,8.33333e-07,$&vth19" >> @OUT@
+let idm20 = i(vd20)
+meas dc vth20 when idm20=8.33333e-07
+echo "pfet_06v0,@CORNER@,@TEMP@,10,1.20u,1,8.33333e-07,$&vth20" >> @OUT@
+quit
+.endc
+.end

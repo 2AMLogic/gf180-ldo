@@ -1,0 +1,388 @@
+* gf180mcu PMOS pass-device Rds(on) / dropout characterization
+* Issue #4 - template; fets/run.sh substitutes @TOKENS@ and runs the deck.
+*
+* Topology: source and bulk at Vin, gate at 0 V (the best drive a
+* ground-referenced error amp can deliver, so Vsg = Vin - no idealized
+* overdrive), drain is the regulator output node. Two measurements per (W,L):
+*   1. forced-load-current dropout : ideal Iload sink on the drain, Vsd measured
+*   2. linear-region on-resistance : drain held 50 mV below source, Id measured
+* Unit cell is w=100u / nf=10 (10 um per finger); total W = 100u * m.
+* vd_v is the raw drain node voltage: vd_v <= 0 means the device cannot
+* source the load current at all at this corner (infeasible, not a dropout).
+*
+.include @MODELS@/design.ngspice
+.lib @MODELS@/sm141064.ngspice @CORNER@
+.options temp=@TEMP@
+.param vin=@VIN@
+
+vin vin 0 dc 'vin'
+vg  g   0 dc 0
+
+x1 d1 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=10
+i1 d1 0 dc 50m
+x2 d2 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=10
+i2 d2 0 dc 100m
+x3 d3 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=10
+v3 d3 0 dc 'vin-0.05'
+x4 d4 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=20
+i4 d4 0 dc 50m
+x5 d5 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=20
+i5 d5 0 dc 100m
+x6 d6 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=20
+v6 d6 0 dc 'vin-0.05'
+x7 d7 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=40
+i7 d7 0 dc 50m
+x8 d8 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=40
+i8 d8 0 dc 100m
+x9 d9 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=40
+v9 d9 0 dc 'vin-0.05'
+x10 d10 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=80
+i10 d10 0 dc 50m
+x11 d11 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=80
+i11 d11 0 dc 100m
+x12 d12 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=80
+v12 d12 0 dc 'vin-0.05'
+x13 d13 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=160
+i13 d13 0 dc 50m
+x14 d14 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=160
+i14 d14 0 dc 100m
+x15 d15 g vin vin @DEV@ w=100u l=@L1@ nf=10 m=160
+v15 d15 0 dc 'vin-0.05'
+
+x16 d16 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=10
+i16 d16 0 dc 50m
+x17 d17 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=10
+i17 d17 0 dc 100m
+x18 d18 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=10
+v18 d18 0 dc 'vin-0.05'
+x19 d19 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=20
+i19 d19 0 dc 50m
+x20 d20 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=20
+i20 d20 0 dc 100m
+x21 d21 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=20
+v21 d21 0 dc 'vin-0.05'
+x22 d22 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=40
+i22 d22 0 dc 50m
+x23 d23 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=40
+i23 d23 0 dc 100m
+x24 d24 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=40
+v24 d24 0 dc 'vin-0.05'
+x25 d25 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=80
+i25 d25 0 dc 50m
+x26 d26 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=80
+i26 d26 0 dc 100m
+x27 d27 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=80
+v27 d27 0 dc 'vin-0.05'
+x28 d28 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=160
+i28 d28 0 dc 50m
+x29 d29 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=160
+i29 d29 0 dc 100m
+x30 d30 g vin vin @DEV@ w=100u l=@L2@ nf=10 m=160
+v30 d30 0 dc 'vin-0.05'
+
+x31 d31 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=10
+i31 d31 0 dc 50m
+x32 d32 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=10
+i32 d32 0 dc 100m
+x33 d33 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=10
+v33 d33 0 dc 'vin-0.05'
+x34 d34 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=20
+i34 d34 0 dc 50m
+x35 d35 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=20
+i35 d35 0 dc 100m
+x36 d36 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=20
+v36 d36 0 dc 'vin-0.05'
+x37 d37 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=40
+i37 d37 0 dc 50m
+x38 d38 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=40
+i38 d38 0 dc 100m
+x39 d39 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=40
+v39 d39 0 dc 'vin-0.05'
+x40 d40 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=80
+i40 d40 0 dc 50m
+x41 d41 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=80
+i41 d41 0 dc 100m
+x42 d42 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=80
+v42 d42 0 dc 'vin-0.05'
+x43 d43 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=160
+i43 d43 0 dc 50m
+x44 d44 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=160
+i44 d44 0 dc 100m
+x45 d45 g vin vin @DEV@ w=100u l=@L3@ nf=10 m=160
+v45 d45 0 dc 'vin-0.05'
+
+.control
+op
+let vd1 = v(d1)
+let vsd1 = v(vin) - vd1
+let id1 = 0.05
+let rds1 = vsd1 / id1
+let rw1 = rds1 * 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,1,drop_at_50mA,$&vsd1,$&id1,$&rds1,$&rw1,$&vd1" >> @OUT@
+let vd2 = v(d2)
+let vsd2 = v(vin) - vd2
+let id2 = 0.1
+let rds2 = vsd2 / id2
+let rw2 = rds2 * 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,1,drop_at_100mA,$&vsd2,$&id2,$&rds2,$&rw2,$&vd2" >> @OUT@
+let vd3 = v(d3)
+let vsd3 = 0.05
+let id3 = i(v3)
+let rds3 = vsd3 / id3
+let rw3 = rds3 * 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,1,rlin_at_50mV,$&vsd3,$&id3,$&rds3,$&rw3,$&vd3" >> @OUT@
+let vd4 = v(d4)
+let vsd4 = v(vin) - vd4
+let id4 = 0.05
+let rds4 = vsd4 / id4
+let rw4 = rds4 * 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,2,drop_at_50mA,$&vsd4,$&id4,$&rds4,$&rw4,$&vd4" >> @OUT@
+let vd5 = v(d5)
+let vsd5 = v(vin) - vd5
+let id5 = 0.1
+let rds5 = vsd5 / id5
+let rw5 = rds5 * 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,2,drop_at_100mA,$&vsd5,$&id5,$&rds5,$&rw5,$&vd5" >> @OUT@
+let vd6 = v(d6)
+let vsd6 = 0.05
+let id6 = i(v6)
+let rds6 = vsd6 / id6
+let rw6 = rds6 * 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,2,rlin_at_50mV,$&vsd6,$&id6,$&rds6,$&rw6,$&vd6" >> @OUT@
+let vd7 = v(d7)
+let vsd7 = v(vin) - vd7
+let id7 = 0.05
+let rds7 = vsd7 / id7
+let rw7 = rds7 * 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,4,drop_at_50mA,$&vsd7,$&id7,$&rds7,$&rw7,$&vd7" >> @OUT@
+let vd8 = v(d8)
+let vsd8 = v(vin) - vd8
+let id8 = 0.1
+let rds8 = vsd8 / id8
+let rw8 = rds8 * 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,4,drop_at_100mA,$&vsd8,$&id8,$&rds8,$&rw8,$&vd8" >> @OUT@
+let vd9 = v(d9)
+let vsd9 = 0.05
+let id9 = i(v9)
+let rds9 = vsd9 / id9
+let rw9 = rds9 * 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,4,rlin_at_50mV,$&vsd9,$&id9,$&rds9,$&rw9,$&vd9" >> @OUT@
+let vd10 = v(d10)
+let vsd10 = v(vin) - vd10
+let id10 = 0.05
+let rds10 = vsd10 / id10
+let rw10 = rds10 * 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,8,drop_at_50mA,$&vsd10,$&id10,$&rds10,$&rw10,$&vd10" >> @OUT@
+let vd11 = v(d11)
+let vsd11 = v(vin) - vd11
+let id11 = 0.1
+let rds11 = vsd11 / id11
+let rw11 = rds11 * 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,8,drop_at_100mA,$&vsd11,$&id11,$&rds11,$&rw11,$&vd11" >> @OUT@
+let vd12 = v(d12)
+let vsd12 = 0.05
+let id12 = i(v12)
+let rds12 = vsd12 / id12
+let rw12 = rds12 * 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,8,rlin_at_50mV,$&vsd12,$&id12,$&rds12,$&rw12,$&vd12" >> @OUT@
+let vd13 = v(d13)
+let vsd13 = v(vin) - vd13
+let id13 = 0.05
+let rds13 = vsd13 / id13
+let rw13 = rds13 * 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,16,drop_at_50mA,$&vsd13,$&id13,$&rds13,$&rw13,$&vd13" >> @OUT@
+let vd14 = v(d14)
+let vsd14 = v(vin) - vd14
+let id14 = 0.1
+let rds14 = vsd14 / id14
+let rw14 = rds14 * 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,16,drop_at_100mA,$&vsd14,$&id14,$&rds14,$&rw14,$&vd14" >> @OUT@
+let vd15 = v(d15)
+let vsd15 = 0.05
+let id15 = i(v15)
+let rds15 = vsd15 / id15
+let rw15 = rds15 * 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,16,rlin_at_50mV,$&vsd15,$&id15,$&rds15,$&rw15,$&vd15" >> @OUT@
+let vd16 = v(d16)
+let vsd16 = v(vin) - vd16
+let id16 = 0.05
+let rds16 = vsd16 / id16
+let rw16 = rds16 * 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,1,drop_at_50mA,$&vsd16,$&id16,$&rds16,$&rw16,$&vd16" >> @OUT@
+let vd17 = v(d17)
+let vsd17 = v(vin) - vd17
+let id17 = 0.1
+let rds17 = vsd17 / id17
+let rw17 = rds17 * 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,1,drop_at_100mA,$&vsd17,$&id17,$&rds17,$&rw17,$&vd17" >> @OUT@
+let vd18 = v(d18)
+let vsd18 = 0.05
+let id18 = i(v18)
+let rds18 = vsd18 / id18
+let rw18 = rds18 * 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,1,rlin_at_50mV,$&vsd18,$&id18,$&rds18,$&rw18,$&vd18" >> @OUT@
+let vd19 = v(d19)
+let vsd19 = v(vin) - vd19
+let id19 = 0.05
+let rds19 = vsd19 / id19
+let rw19 = rds19 * 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,2,drop_at_50mA,$&vsd19,$&id19,$&rds19,$&rw19,$&vd19" >> @OUT@
+let vd20 = v(d20)
+let vsd20 = v(vin) - vd20
+let id20 = 0.1
+let rds20 = vsd20 / id20
+let rw20 = rds20 * 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,2,drop_at_100mA,$&vsd20,$&id20,$&rds20,$&rw20,$&vd20" >> @OUT@
+let vd21 = v(d21)
+let vsd21 = 0.05
+let id21 = i(v21)
+let rds21 = vsd21 / id21
+let rw21 = rds21 * 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,2,rlin_at_50mV,$&vsd21,$&id21,$&rds21,$&rw21,$&vd21" >> @OUT@
+let vd22 = v(d22)
+let vsd22 = v(vin) - vd22
+let id22 = 0.05
+let rds22 = vsd22 / id22
+let rw22 = rds22 * 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,4,drop_at_50mA,$&vsd22,$&id22,$&rds22,$&rw22,$&vd22" >> @OUT@
+let vd23 = v(d23)
+let vsd23 = v(vin) - vd23
+let id23 = 0.1
+let rds23 = vsd23 / id23
+let rw23 = rds23 * 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,4,drop_at_100mA,$&vsd23,$&id23,$&rds23,$&rw23,$&vd23" >> @OUT@
+let vd24 = v(d24)
+let vsd24 = 0.05
+let id24 = i(v24)
+let rds24 = vsd24 / id24
+let rw24 = rds24 * 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,4,rlin_at_50mV,$&vsd24,$&id24,$&rds24,$&rw24,$&vd24" >> @OUT@
+let vd25 = v(d25)
+let vsd25 = v(vin) - vd25
+let id25 = 0.05
+let rds25 = vsd25 / id25
+let rw25 = rds25 * 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,8,drop_at_50mA,$&vsd25,$&id25,$&rds25,$&rw25,$&vd25" >> @OUT@
+let vd26 = v(d26)
+let vsd26 = v(vin) - vd26
+let id26 = 0.1
+let rds26 = vsd26 / id26
+let rw26 = rds26 * 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,8,drop_at_100mA,$&vsd26,$&id26,$&rds26,$&rw26,$&vd26" >> @OUT@
+let vd27 = v(d27)
+let vsd27 = 0.05
+let id27 = i(v27)
+let rds27 = vsd27 / id27
+let rw27 = rds27 * 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,8,rlin_at_50mV,$&vsd27,$&id27,$&rds27,$&rw27,$&vd27" >> @OUT@
+let vd28 = v(d28)
+let vsd28 = v(vin) - vd28
+let id28 = 0.05
+let rds28 = vsd28 / id28
+let rw28 = rds28 * 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,16,drop_at_50mA,$&vsd28,$&id28,$&rds28,$&rw28,$&vd28" >> @OUT@
+let vd29 = v(d29)
+let vsd29 = v(vin) - vd29
+let id29 = 0.1
+let rds29 = vsd29 / id29
+let rw29 = rds29 * 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,16,drop_at_100mA,$&vsd29,$&id29,$&rds29,$&rw29,$&vd29" >> @OUT@
+let vd30 = v(d30)
+let vsd30 = 0.05
+let id30 = i(v30)
+let rds30 = vsd30 / id30
+let rw30 = rds30 * 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,16,rlin_at_50mV,$&vsd30,$&id30,$&rds30,$&rw30,$&vd30" >> @OUT@
+let vd31 = v(d31)
+let vsd31 = v(vin) - vd31
+let id31 = 0.05
+let rds31 = vsd31 / id31
+let rw31 = rds31 * 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,1,drop_at_50mA,$&vsd31,$&id31,$&rds31,$&rw31,$&vd31" >> @OUT@
+let vd32 = v(d32)
+let vsd32 = v(vin) - vd32
+let id32 = 0.1
+let rds32 = vsd32 / id32
+let rw32 = rds32 * 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,1,drop_at_100mA,$&vsd32,$&id32,$&rds32,$&rw32,$&vd32" >> @OUT@
+let vd33 = v(d33)
+let vsd33 = 0.05
+let id33 = i(v33)
+let rds33 = vsd33 / id33
+let rw33 = rds33 * 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,1,rlin_at_50mV,$&vsd33,$&id33,$&rds33,$&rw33,$&vd33" >> @OUT@
+let vd34 = v(d34)
+let vsd34 = v(vin) - vd34
+let id34 = 0.05
+let rds34 = vsd34 / id34
+let rw34 = rds34 * 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,2,drop_at_50mA,$&vsd34,$&id34,$&rds34,$&rw34,$&vd34" >> @OUT@
+let vd35 = v(d35)
+let vsd35 = v(vin) - vd35
+let id35 = 0.1
+let rds35 = vsd35 / id35
+let rw35 = rds35 * 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,2,drop_at_100mA,$&vsd35,$&id35,$&rds35,$&rw35,$&vd35" >> @OUT@
+let vd36 = v(d36)
+let vsd36 = 0.05
+let id36 = i(v36)
+let rds36 = vsd36 / id36
+let rw36 = rds36 * 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,2,rlin_at_50mV,$&vsd36,$&id36,$&rds36,$&rw36,$&vd36" >> @OUT@
+let vd37 = v(d37)
+let vsd37 = v(vin) - vd37
+let id37 = 0.05
+let rds37 = vsd37 / id37
+let rw37 = rds37 * 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,4,drop_at_50mA,$&vsd37,$&id37,$&rds37,$&rw37,$&vd37" >> @OUT@
+let vd38 = v(d38)
+let vsd38 = v(vin) - vd38
+let id38 = 0.1
+let rds38 = vsd38 / id38
+let rw38 = rds38 * 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,4,drop_at_100mA,$&vsd38,$&id38,$&rds38,$&rw38,$&vd38" >> @OUT@
+let vd39 = v(d39)
+let vsd39 = 0.05
+let id39 = i(v39)
+let rds39 = vsd39 / id39
+let rw39 = rds39 * 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,4,rlin_at_50mV,$&vsd39,$&id39,$&rds39,$&rw39,$&vd39" >> @OUT@
+let vd40 = v(d40)
+let vsd40 = v(vin) - vd40
+let id40 = 0.05
+let rds40 = vsd40 / id40
+let rw40 = rds40 * 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,8,drop_at_50mA,$&vsd40,$&id40,$&rds40,$&rw40,$&vd40" >> @OUT@
+let vd41 = v(d41)
+let vsd41 = v(vin) - vd41
+let id41 = 0.1
+let rds41 = vsd41 / id41
+let rw41 = rds41 * 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,8,drop_at_100mA,$&vsd41,$&id41,$&rds41,$&rw41,$&vd41" >> @OUT@
+let vd42 = v(d42)
+let vsd42 = 0.05
+let id42 = i(v42)
+let rds42 = vsd42 / id42
+let rw42 = rds42 * 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,8,rlin_at_50mV,$&vsd42,$&id42,$&rds42,$&rw42,$&vd42" >> @OUT@
+let vd43 = v(d43)
+let vsd43 = v(vin) - vd43
+let id43 = 0.05
+let rds43 = vsd43 / id43
+let rw43 = rds43 * 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,16,drop_at_50mA,$&vsd43,$&id43,$&rds43,$&rw43,$&vd43" >> @OUT@
+let vd44 = v(d44)
+let vsd44 = v(vin) - vd44
+let id44 = 0.1
+let rds44 = vsd44 / id44
+let rw44 = rds44 * 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,16,drop_at_100mA,$&vsd44,$&id44,$&rds44,$&rw44,$&vd44" >> @OUT@
+let vd45 = v(d45)
+let vsd45 = 0.05
+let id45 = i(v45)
+let rds45 = vsd45 / id45
+let rw45 = rds45 * 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,16,rlin_at_50mV,$&vsd45,$&id45,$&rds45,$&rw45,$&vd45" >> @OUT@
+quit
+.endc
+.end

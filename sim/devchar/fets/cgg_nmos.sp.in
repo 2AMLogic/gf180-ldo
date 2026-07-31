@@ -1,0 +1,143 @@
+* gf180mcu NMOS pass-device gate capacitance (Cgg, Cgd)
+* Issue #4 - template; fets/run.sh substitutes @TOKENS@ and runs the deck.
+*
+* Bias: drain at Vin, bulk at 0 V, source held 300 mV below Vin (the output node
+* at the dropout operating point), gate at Vin. A 1 V AC excitation is applied to
+* the gate with every other terminal at AC ground, so Cgg = |Im{Ig}| / (2*pi*f).
+* Cgd is taken from the imaginary part of that instance's drain-source current;
+* the real part is the gm*vgs term and is not a displacement current.
+* Unit cell is w=100u / nf=10; total W = 100u * m.
+*
+.include @MODELS@/design.ngspice
+.lib @MODELS@/sm141064.ngspice @CORNER@
+.options temp=@TEMP@
+.param vin=@VIN@
+
+vg1 g1 0 dc 'vin' ac 1
+vd1 d1 0 dc 'vin' ac 0
+vs1 s1 0 dc 'vin-0.3' ac 0
+x1 d1 g1 s1 0 @DEV@ w=100u l=@L1@ nf=10 m=10
+vg2 g2 0 dc 'vin' ac 1
+vd2 d2 0 dc 'vin' ac 0
+vs2 s2 0 dc 'vin-0.3' ac 0
+x2 d2 g2 s2 0 @DEV@ w=100u l=@L1@ nf=10 m=20
+vg3 g3 0 dc 'vin' ac 1
+vd3 d3 0 dc 'vin' ac 0
+vs3 s3 0 dc 'vin-0.3' ac 0
+x3 d3 g3 s3 0 @DEV@ w=100u l=@L1@ nf=10 m=40
+vg4 g4 0 dc 'vin' ac 1
+vd4 d4 0 dc 'vin' ac 0
+vs4 s4 0 dc 'vin-0.3' ac 0
+x4 d4 g4 s4 0 @DEV@ w=100u l=@L1@ nf=10 m=80
+vg5 g5 0 dc 'vin' ac 1
+vd5 d5 0 dc 'vin' ac 0
+vs5 s5 0 dc 'vin-0.3' ac 0
+x5 d5 g5 s5 0 @DEV@ w=100u l=@L1@ nf=10 m=160
+
+vg6 g6 0 dc 'vin' ac 1
+vd6 d6 0 dc 'vin' ac 0
+vs6 s6 0 dc 'vin-0.3' ac 0
+x6 d6 g6 s6 0 @DEV@ w=100u l=@L2@ nf=10 m=10
+vg7 g7 0 dc 'vin' ac 1
+vd7 d7 0 dc 'vin' ac 0
+vs7 s7 0 dc 'vin-0.3' ac 0
+x7 d7 g7 s7 0 @DEV@ w=100u l=@L2@ nf=10 m=20
+vg8 g8 0 dc 'vin' ac 1
+vd8 d8 0 dc 'vin' ac 0
+vs8 s8 0 dc 'vin-0.3' ac 0
+x8 d8 g8 s8 0 @DEV@ w=100u l=@L2@ nf=10 m=40
+vg9 g9 0 dc 'vin' ac 1
+vd9 d9 0 dc 'vin' ac 0
+vs9 s9 0 dc 'vin-0.3' ac 0
+x9 d9 g9 s9 0 @DEV@ w=100u l=@L2@ nf=10 m=80
+vg10 g10 0 dc 'vin' ac 1
+vd10 d10 0 dc 'vin' ac 0
+vs10 s10 0 dc 'vin-0.3' ac 0
+x10 d10 g10 s10 0 @DEV@ w=100u l=@L2@ nf=10 m=160
+
+vg11 g11 0 dc 'vin' ac 1
+vd11 d11 0 dc 'vin' ac 0
+vs11 s11 0 dc 'vin-0.3' ac 0
+x11 d11 g11 s11 0 @DEV@ w=100u l=@L3@ nf=10 m=10
+vg12 g12 0 dc 'vin' ac 1
+vd12 d12 0 dc 'vin' ac 0
+vs12 s12 0 dc 'vin-0.3' ac 0
+x12 d12 g12 s12 0 @DEV@ w=100u l=@L3@ nf=10 m=20
+vg13 g13 0 dc 'vin' ac 1
+vd13 d13 0 dc 'vin' ac 0
+vs13 s13 0 dc 'vin-0.3' ac 0
+x13 d13 g13 s13 0 @DEV@ w=100u l=@L3@ nf=10 m=40
+vg14 g14 0 dc 'vin' ac 1
+vd14 d14 0 dc 'vin' ac 0
+vs14 s14 0 dc 'vin-0.3' ac 0
+x14 d14 g14 s14 0 @DEV@ w=100u l=@L3@ nf=10 m=80
+vg15 g15 0 dc 'vin' ac 1
+vd15 d15 0 dc 'vin' ac 0
+vs15 s15 0 dc 'vin-0.3' ac 0
+x15 d15 g15 s15 0 @DEV@ w=100u l=@L3@ nf=10 m=160
+
+.control
+ac lin 1 1k 1k
+let cgg1 = abs(imag(i(vg1))) / (2*pi*1k)
+let cgd1 = abs(imag(i(vd1))) / (2*pi*1k)
+let cggw1 = cgg1 / 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,1,cgg_at_vds300mV,$&cgg1,$&cgd1,$&cggw1" >> @OUT@
+let cgg2 = abs(imag(i(vg2))) / (2*pi*1k)
+let cgd2 = abs(imag(i(vd2))) / (2*pi*1k)
+let cggw2 = cgg2 / 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,2,cgg_at_vds300mV,$&cgg2,$&cgd2,$&cggw2" >> @OUT@
+let cgg3 = abs(imag(i(vg3))) / (2*pi*1k)
+let cgd3 = abs(imag(i(vd3))) / (2*pi*1k)
+let cggw3 = cgg3 / 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,4,cgg_at_vds300mV,$&cgg3,$&cgd3,$&cggw3" >> @OUT@
+let cgg4 = abs(imag(i(vg4))) / (2*pi*1k)
+let cgd4 = abs(imag(i(vd4))) / (2*pi*1k)
+let cggw4 = cgg4 / 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,8,cgg_at_vds300mV,$&cgg4,$&cgd4,$&cggw4" >> @OUT@
+let cgg5 = abs(imag(i(vg5))) / (2*pi*1k)
+let cgd5 = abs(imag(i(vd5))) / (2*pi*1k)
+let cggw5 = cgg5 / 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,16,cgg_at_vds300mV,$&cgg5,$&cgd5,$&cggw5" >> @OUT@
+let cgg6 = abs(imag(i(vg6))) / (2*pi*1k)
+let cgd6 = abs(imag(i(vd6))) / (2*pi*1k)
+let cggw6 = cgg6 / 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,1,cgg_at_vds300mV,$&cgg6,$&cgd6,$&cggw6" >> @OUT@
+let cgg7 = abs(imag(i(vg7))) / (2*pi*1k)
+let cgd7 = abs(imag(i(vd7))) / (2*pi*1k)
+let cggw7 = cgg7 / 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,2,cgg_at_vds300mV,$&cgg7,$&cgd7,$&cggw7" >> @OUT@
+let cgg8 = abs(imag(i(vg8))) / (2*pi*1k)
+let cgd8 = abs(imag(i(vd8))) / (2*pi*1k)
+let cggw8 = cgg8 / 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,4,cgg_at_vds300mV,$&cgg8,$&cgd8,$&cggw8" >> @OUT@
+let cgg9 = abs(imag(i(vg9))) / (2*pi*1k)
+let cgd9 = abs(imag(i(vd9))) / (2*pi*1k)
+let cggw9 = cgg9 / 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,8,cgg_at_vds300mV,$&cgg9,$&cgd9,$&cggw9" >> @OUT@
+let cgg10 = abs(imag(i(vg10))) / (2*pi*1k)
+let cgd10 = abs(imag(i(vd10))) / (2*pi*1k)
+let cggw10 = cgg10 / 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,16,cgg_at_vds300mV,$&cgg10,$&cgd10,$&cggw10" >> @OUT@
+let cgg11 = abs(imag(i(vg11))) / (2*pi*1k)
+let cgd11 = abs(imag(i(vd11))) / (2*pi*1k)
+let cggw11 = cgg11 / 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,1,cgg_at_vds300mV,$&cgg11,$&cgd11,$&cggw11" >> @OUT@
+let cgg12 = abs(imag(i(vg12))) / (2*pi*1k)
+let cgd12 = abs(imag(i(vd12))) / (2*pi*1k)
+let cggw12 = cgg12 / 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,2,cgg_at_vds300mV,$&cgg12,$&cgd12,$&cggw12" >> @OUT@
+let cgg13 = abs(imag(i(vg13))) / (2*pi*1k)
+let cgd13 = abs(imag(i(vd13))) / (2*pi*1k)
+let cggw13 = cgg13 / 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,4,cgg_at_vds300mV,$&cgg13,$&cgd13,$&cggw13" >> @OUT@
+let cgg14 = abs(imag(i(vg14))) / (2*pi*1k)
+let cgd14 = abs(imag(i(vd14))) / (2*pi*1k)
+let cggw14 = cgg14 / 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,8,cgg_at_vds300mV,$&cgg14,$&cgd14,$&cggw14" >> @OUT@
+let cgg15 = abs(imag(i(vg15))) / (2*pi*1k)
+let cgd15 = abs(imag(i(vd15))) / (2*pi*1k)
+let cggw15 = cgg15 / 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,16,cgg_at_vds300mV,$&cgg15,$&cgd15,$&cggw15" >> @OUT@
+quit
+.endc
+.end

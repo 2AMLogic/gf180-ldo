@@ -1,0 +1,214 @@
+* gf180mcu resistor flavour menu: R, sheet resistance, TC, bias dependence
+* Issue #4 - template; resistors/run.sh substitutes @TOKENS@ and runs the deck.
+*
+* Each instance is driven by an ideal current source so R = V(node)/I directly.
+* Two geometries per flavour share w=1u (l=10u and l=50u) so an effective sheet
+* resistance can be extracted by the two-length method
+*     Rsh = (R(l2) - R(l1)) / ((l2 - l1)/w)
+* which cancels the head/terminal resistance the subcircuits add at each end.
+* The extra rows at 50 uA (vs the 1 uA reference) probe bias dependence: the
+* gf180mcu resistor cards all carry r_vc1 = r_vc2 = 0, so this is a check that
+* the deck sees no voltage coefficient, not a measurement of one.
+* Bulk terminal: p-substrate (0 V) for poly, n+ diffusion and nwell; the nwell
+* rail for the p+ diffusion resistor, so its body junction stays reverse biased.
+*
+.include @MODELS@/design.ngspice
+.lib @MODELS@/sm141064.ngspice @RESLIB@
+.options temp=@TEMP@
+
+vnw vnw 0 dc 3.3
+
+x1 n1 0 0 ppolyf_u_1k r_width=1u r_length=10u
+i1 0 n1 dc 1u
+x2 n2 0 0 ppolyf_u_1k r_width=1u r_length=50u
+i2 0 n2 dc 1u
+x3 n3 0 0 ppolyf_u_1k r_width=2u r_length=20u
+i3 0 n3 dc 1u
+x4 n4 0 0 ppolyf_u_1k r_width=5u r_length=50u
+i4 0 n4 dc 1u
+x5 n5 0 0 ppolyf_u_1k r_width=1u r_length=50u
+i5 0 n5 dc 50u
+
+x6 n6 0 0 ppolyf_u_2k r_width=1u r_length=10u
+i6 0 n6 dc 1u
+x7 n7 0 0 ppolyf_u_2k r_width=1u r_length=50u
+i7 0 n7 dc 1u
+x8 n8 0 0 ppolyf_u_2k r_width=2u r_length=20u
+i8 0 n8 dc 1u
+x9 n9 0 0 ppolyf_u_2k r_width=5u r_length=50u
+i9 0 n9 dc 1u
+x10 n10 0 0 ppolyf_u_2k r_width=1u r_length=50u
+i10 0 n10 dc 50u
+
+x11 n11 0 0 ppolyf_u_3k r_width=1u r_length=10u
+i11 0 n11 dc 1u
+x12 n12 0 0 ppolyf_u_3k r_width=1u r_length=50u
+i12 0 n12 dc 1u
+x13 n13 0 0 ppolyf_u_3k r_width=2u r_length=20u
+i13 0 n13 dc 1u
+x14 n14 0 0 ppolyf_u_3k r_width=5u r_length=50u
+i14 0 n14 dc 1u
+x15 n15 0 0 ppolyf_u_3k r_width=1u r_length=50u
+i15 0 n15 dc 50u
+
+x16 n16 0 0 ppolyf_u r_width=1u r_length=10u
+i16 0 n16 dc 1u
+x17 n17 0 0 ppolyf_u r_width=1u r_length=50u
+i17 0 n17 dc 1u
+x18 n18 0 0 ppolyf_u r_width=2u r_length=20u
+i18 0 n18 dc 1u
+x19 n19 0 0 ppolyf_u r_width=5u r_length=50u
+i19 0 n19 dc 1u
+x20 n20 0 0 ppolyf_u r_width=1u r_length=50u
+i20 0 n20 dc 50u
+
+x21 n21 0 0 npolyf_u r_width=1u r_length=10u
+i21 0 n21 dc 1u
+x22 n22 0 0 npolyf_u r_width=1u r_length=50u
+i22 0 n22 dc 1u
+x23 n23 0 0 npolyf_u r_width=2u r_length=20u
+i23 0 n23 dc 1u
+x24 n24 0 0 npolyf_u r_width=5u r_length=50u
+i24 0 n24 dc 1u
+x25 n25 0 0 npolyf_u r_width=1u r_length=50u
+i25 0 n25 dc 50u
+
+x26 n26 0 0 ppolyf_s r_width=1u r_length=10u
+i26 0 n26 dc 1u
+x27 n27 0 0 ppolyf_s r_width=1u r_length=50u
+i27 0 n27 dc 1u
+x28 n28 0 0 ppolyf_s r_width=2u r_length=20u
+i28 0 n28 dc 1u
+x29 n29 0 0 ppolyf_s r_width=5u r_length=50u
+i29 0 n29 dc 1u
+x30 n30 0 0 ppolyf_s r_width=1u r_length=50u
+i30 0 n30 dc 50u
+
+x31 n31 0 0 nplus_u r_width=1u r_length=10u
+i31 0 n31 dc 1u
+x32 n32 0 0 nplus_u r_width=1u r_length=50u
+i32 0 n32 dc 1u
+x33 n33 0 0 nplus_u r_width=2u r_length=20u
+i33 0 n33 dc 1u
+x34 n34 0 0 nplus_u r_width=5u r_length=50u
+i34 0 n34 dc 1u
+x35 n35 0 0 nplus_u r_width=1u r_length=50u
+i35 0 n35 dc 50u
+
+x36 n36 0 vnw pplus_u r_width=1u r_length=10u
+i36 0 n36 dc 1u
+x37 n37 0 vnw pplus_u r_width=1u r_length=50u
+i37 0 n37 dc 1u
+x38 n38 0 vnw pplus_u r_width=2u r_length=20u
+i38 0 n38 dc 1u
+x39 n39 0 vnw pplus_u r_width=5u r_length=50u
+i39 0 n39 dc 1u
+x40 n40 0 vnw pplus_u r_width=1u r_length=50u
+i40 0 n40 dc 50u
+
+x41 n41 0 0 nwell r_width=1u r_length=10u
+i41 0 n41 dc 1u
+x42 n42 0 0 nwell r_width=1u r_length=50u
+i42 0 n42 dc 1u
+x43 n43 0 0 nwell r_width=2u r_length=20u
+i43 0 n43 dc 1u
+x44 n44 0 0 nwell r_width=5u r_length=50u
+i44 0 n44 dc 1u
+x45 n45 0 0 nwell r_width=1u r_length=50u
+i45 0 n45 dc 50u
+
+.control
+op
+let r1 = v(n1) / 1e-6
+echo "ppolyf_u_1k,@RESLIB@,@TEMP@,1,10,1u,$&r1,1000" >> @OUT@
+let r2 = v(n2) / 1e-6
+echo "ppolyf_u_1k,@RESLIB@,@TEMP@,1,50,1u,$&r2,1000" >> @OUT@
+let r3 = v(n3) / 1e-6
+echo "ppolyf_u_1k,@RESLIB@,@TEMP@,2,20,1u,$&r3,1000" >> @OUT@
+let r4 = v(n4) / 1e-6
+echo "ppolyf_u_1k,@RESLIB@,@TEMP@,5,50,1u,$&r4,1000" >> @OUT@
+let r5 = v(n5) / 50e-6
+echo "ppolyf_u_1k,@RESLIB@,@TEMP@,1,50,50u,$&r5,1000" >> @OUT@
+let r6 = v(n6) / 1e-6
+echo "ppolyf_u_2k,@RESLIB@,@TEMP@,1,10,1u,$&r6,2000" >> @OUT@
+let r7 = v(n7) / 1e-6
+echo "ppolyf_u_2k,@RESLIB@,@TEMP@,1,50,1u,$&r7,2000" >> @OUT@
+let r8 = v(n8) / 1e-6
+echo "ppolyf_u_2k,@RESLIB@,@TEMP@,2,20,1u,$&r8,2000" >> @OUT@
+let r9 = v(n9) / 1e-6
+echo "ppolyf_u_2k,@RESLIB@,@TEMP@,5,50,1u,$&r9,2000" >> @OUT@
+let r10 = v(n10) / 50e-6
+echo "ppolyf_u_2k,@RESLIB@,@TEMP@,1,50,50u,$&r10,2000" >> @OUT@
+let r11 = v(n11) / 1e-6
+echo "ppolyf_u_3k,@RESLIB@,@TEMP@,1,10,1u,$&r11,3000" >> @OUT@
+let r12 = v(n12) / 1e-6
+echo "ppolyf_u_3k,@RESLIB@,@TEMP@,1,50,1u,$&r12,3000" >> @OUT@
+let r13 = v(n13) / 1e-6
+echo "ppolyf_u_3k,@RESLIB@,@TEMP@,2,20,1u,$&r13,3000" >> @OUT@
+let r14 = v(n14) / 1e-6
+echo "ppolyf_u_3k,@RESLIB@,@TEMP@,5,50,1u,$&r14,3000" >> @OUT@
+let r15 = v(n15) / 50e-6
+echo "ppolyf_u_3k,@RESLIB@,@TEMP@,1,50,50u,$&r15,3000" >> @OUT@
+let r16 = v(n16) / 1e-6
+echo "ppolyf_u,@RESLIB@,@TEMP@,1,10,1u,$&r16,350" >> @OUT@
+let r17 = v(n17) / 1e-6
+echo "ppolyf_u,@RESLIB@,@TEMP@,1,50,1u,$&r17,350" >> @OUT@
+let r18 = v(n18) / 1e-6
+echo "ppolyf_u,@RESLIB@,@TEMP@,2,20,1u,$&r18,350" >> @OUT@
+let r19 = v(n19) / 1e-6
+echo "ppolyf_u,@RESLIB@,@TEMP@,5,50,1u,$&r19,350" >> @OUT@
+let r20 = v(n20) / 50e-6
+echo "ppolyf_u,@RESLIB@,@TEMP@,1,50,50u,$&r20,350" >> @OUT@
+let r21 = v(n21) / 1e-6
+echo "npolyf_u,@RESLIB@,@TEMP@,1,10,1u,$&r21,310" >> @OUT@
+let r22 = v(n22) / 1e-6
+echo "npolyf_u,@RESLIB@,@TEMP@,1,50,1u,$&r22,310" >> @OUT@
+let r23 = v(n23) / 1e-6
+echo "npolyf_u,@RESLIB@,@TEMP@,2,20,1u,$&r23,310" >> @OUT@
+let r24 = v(n24) / 1e-6
+echo "npolyf_u,@RESLIB@,@TEMP@,5,50,1u,$&r24,310" >> @OUT@
+let r25 = v(n25) / 50e-6
+echo "npolyf_u,@RESLIB@,@TEMP@,1,50,50u,$&r25,310" >> @OUT@
+let r26 = v(n26) / 1e-6
+echo "ppolyf_s,@RESLIB@,@TEMP@,1,10,1u,$&r26,7.3" >> @OUT@
+let r27 = v(n27) / 1e-6
+echo "ppolyf_s,@RESLIB@,@TEMP@,1,50,1u,$&r27,7.3" >> @OUT@
+let r28 = v(n28) / 1e-6
+echo "ppolyf_s,@RESLIB@,@TEMP@,2,20,1u,$&r28,7.3" >> @OUT@
+let r29 = v(n29) / 1e-6
+echo "ppolyf_s,@RESLIB@,@TEMP@,5,50,1u,$&r29,7.3" >> @OUT@
+let r30 = v(n30) / 50e-6
+echo "ppolyf_s,@RESLIB@,@TEMP@,1,50,50u,$&r30,7.3" >> @OUT@
+let r31 = v(n31) / 1e-6
+echo "nplus_u,@RESLIB@,@TEMP@,1,10,1u,$&r31,60" >> @OUT@
+let r32 = v(n32) / 1e-6
+echo "nplus_u,@RESLIB@,@TEMP@,1,50,1u,$&r32,60" >> @OUT@
+let r33 = v(n33) / 1e-6
+echo "nplus_u,@RESLIB@,@TEMP@,2,20,1u,$&r33,60" >> @OUT@
+let r34 = v(n34) / 1e-6
+echo "nplus_u,@RESLIB@,@TEMP@,5,50,1u,$&r34,60" >> @OUT@
+let r35 = v(n35) / 50e-6
+echo "nplus_u,@RESLIB@,@TEMP@,1,50,50u,$&r35,60" >> @OUT@
+let r36 = v(n36) / 1e-6
+echo "pplus_u,@RESLIB@,@TEMP@,1,10,1u,$&r36,185" >> @OUT@
+let r37 = v(n37) / 1e-6
+echo "pplus_u,@RESLIB@,@TEMP@,1,50,1u,$&r37,185" >> @OUT@
+let r38 = v(n38) / 1e-6
+echo "pplus_u,@RESLIB@,@TEMP@,2,20,1u,$&r38,185" >> @OUT@
+let r39 = v(n39) / 1e-6
+echo "pplus_u,@RESLIB@,@TEMP@,5,50,1u,$&r39,185" >> @OUT@
+let r40 = v(n40) / 50e-6
+echo "pplus_u,@RESLIB@,@TEMP@,1,50,50u,$&r40,185" >> @OUT@
+let r41 = v(n41) / 1e-6
+echo "nwell,@RESLIB@,@TEMP@,1,10,1u,$&r41,1000" >> @OUT@
+let r42 = v(n42) / 1e-6
+echo "nwell,@RESLIB@,@TEMP@,1,50,1u,$&r42,1000" >> @OUT@
+let r43 = v(n43) / 1e-6
+echo "nwell,@RESLIB@,@TEMP@,2,20,1u,$&r43,1000" >> @OUT@
+let r44 = v(n44) / 1e-6
+echo "nwell,@RESLIB@,@TEMP@,5,50,1u,$&r44,1000" >> @OUT@
+let r45 = v(n45) / 50e-6
+echo "nwell,@RESLIB@,@TEMP@,1,50,50u,$&r45,1000" >> @OUT@
+quit
+.endc
+.end

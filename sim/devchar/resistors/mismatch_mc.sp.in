@@ -1,0 +1,172 @@
+* gf180mcu component-level matching Monte Carlo (resistors + FET control)
+* Issue #4 - template; resistors/run.sh substitutes @TOKENS@ and runs the deck.
+*
+* Two modes, selected by the driver:
+*   mismatch : sw_stat_global=0, sw_stat_mismatch=1, res_typical + typical
+*              -> intra-die matching only (what a divider ratio actually sees)
+*   global   : sw_stat_global=1, sw_stat_mismatch=0, res_statistical + statistical
+*              -> die-to-die process spread only
+*
+* Each resistor flavour is instantiated as a MATCHED PAIR at three areas, so
+* sigma(dR/R) vs area falls straight out of the raw pairs. Diode-connected
+* nfet_03v3 / pfet_03v3 pairs at three areas are carried in the same deck as a
+* control: they use the same sw_stat_mismatch switch, so if the FET pairs move
+* and the resistor pairs do not, that is a property of the models, not of the
+* deck. Their Vgs pair also gives the error amp (#9) a Pelgrom Avt fit for free.
+*
+* Statistical simulation is driven by ngspice's mc_source, which re-evaluates
+* every agauss() .param between runs.
+*
+.param sw_stat_global=@SWG@
+.param sw_stat_mismatch=@SWM@
+.param mc_skew=3
+.param res_mc_skew=3
+.param cap_mc_skew=3
+.param fnoicor=0
+.lib @MODELS@/sm141064.ngspice @RESLIB@
+.lib @MODELS@/sm141064.ngspice @FETLIB@
+.options temp=@TEMP@
+
+vdd vdd 0 dc 3.3
+
+xa1 ra1 0 0 ppolyf_u_1k r_width=1u r_length=10u
+xb1 rb1 0 0 ppolyf_u_1k r_width=1u r_length=10u
+ia1 0 ra1 dc 1u
+ib1 0 rb1 dc 1u
+xa2 ra2 0 0 ppolyf_u_1k r_width=2u r_length=40u
+xb2 rb2 0 0 ppolyf_u_1k r_width=2u r_length=40u
+ia2 0 ra2 dc 1u
+ib2 0 rb2 dc 1u
+xa3 ra3 0 0 ppolyf_u_1k r_width=5u r_length=100u
+xb3 rb3 0 0 ppolyf_u_1k r_width=5u r_length=100u
+ia3 0 ra3 dc 1u
+ib3 0 rb3 dc 1u
+
+xa4 ra4 0 0 ppolyf_u_2k r_width=1u r_length=10u
+xb4 rb4 0 0 ppolyf_u_2k r_width=1u r_length=10u
+ia4 0 ra4 dc 1u
+ib4 0 rb4 dc 1u
+xa5 ra5 0 0 ppolyf_u_2k r_width=2u r_length=40u
+xb5 rb5 0 0 ppolyf_u_2k r_width=2u r_length=40u
+ia5 0 ra5 dc 1u
+ib5 0 rb5 dc 1u
+xa6 ra6 0 0 ppolyf_u_2k r_width=5u r_length=100u
+xb6 rb6 0 0 ppolyf_u_2k r_width=5u r_length=100u
+ia6 0 ra6 dc 1u
+ib6 0 rb6 dc 1u
+
+xa7 ra7 0 0 ppolyf_u_3k r_width=1u r_length=10u
+xb7 rb7 0 0 ppolyf_u_3k r_width=1u r_length=10u
+ia7 0 ra7 dc 1u
+ib7 0 rb7 dc 1u
+xa8 ra8 0 0 ppolyf_u_3k r_width=2u r_length=40u
+xb8 rb8 0 0 ppolyf_u_3k r_width=2u r_length=40u
+ia8 0 ra8 dc 1u
+ib8 0 rb8 dc 1u
+xa9 ra9 0 0 ppolyf_u_3k r_width=5u r_length=100u
+xb9 rb9 0 0 ppolyf_u_3k r_width=5u r_length=100u
+ia9 0 ra9 dc 1u
+ib9 0 rb9 dc 1u
+
+xa10 ra10 0 0 ppolyf_u r_width=1u r_length=10u
+xb10 rb10 0 0 ppolyf_u r_width=1u r_length=10u
+ia10 0 ra10 dc 1u
+ib10 0 rb10 dc 1u
+xa11 ra11 0 0 ppolyf_u r_width=2u r_length=40u
+xb11 rb11 0 0 ppolyf_u r_width=2u r_length=40u
+ia11 0 ra11 dc 1u
+ib11 0 rb11 dc 1u
+xa12 ra12 0 0 ppolyf_u r_width=5u r_length=100u
+xb12 rb12 0 0 ppolyf_u r_width=5u r_length=100u
+ia12 0 ra12 dc 1u
+ib12 0 rb12 dc 1u
+
+xa13 ga13 ga13 0 0 nfet_03v3 w=5u l=0.5u
+xb13 gb13 gb13 0 0 nfet_03v3 w=5u l=0.5u
+ia13 0 ga13 dc 10u
+ib13 0 gb13 dc 10u
+xa14 ga14 ga14 0 0 nfet_03v3 w=10u l=1.0u
+xb14 gb14 gb14 0 0 nfet_03v3 w=10u l=1.0u
+ia14 0 ga14 dc 10u
+ib14 0 gb14 dc 10u
+xa15 ga15 ga15 0 0 nfet_03v3 w=20u l=2.0u
+xb15 gb15 gb15 0 0 nfet_03v3 w=20u l=2.0u
+ia15 0 ga15 dc 10u
+ib15 0 gb15 dc 10u
+xa16 ga16 ga16 vdd vdd pfet_03v3 w=5u l=0.5u
+xb16 gb16 gb16 vdd vdd pfet_03v3 w=5u l=0.5u
+ia16 ga16 0 dc 10u
+ib16 gb16 0 dc 10u
+xa17 ga17 ga17 vdd vdd pfet_03v3 w=10u l=1.0u
+xb17 gb17 gb17 vdd vdd pfet_03v3 w=10u l=1.0u
+ia17 ga17 0 dc 10u
+ib17 gb17 0 dc 10u
+xa18 ga18 ga18 vdd vdd pfet_03v3 w=20u l=2.0u
+xb18 gb18 gb18 vdd vdd pfet_03v3 w=20u l=2.0u
+ia18 ga18 0 dc 10u
+ib18 gb18 0 dc 10u
+
+.control
+let n = 0
+dowhile n < @NRUNS@
+  op
+  let a1 = v(ra1)/1e-6
+  let b1 = v(rb1)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u_1k,1,10,10,r_ohm,$&a1,$&b1" >> @OUT@
+  let a2 = v(ra2)/1e-6
+  let b2 = v(rb2)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u_1k,2,40,80,r_ohm,$&a2,$&b2" >> @OUT@
+  let a3 = v(ra3)/1e-6
+  let b3 = v(rb3)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u_1k,5,100,500,r_ohm,$&a3,$&b3" >> @OUT@
+  let a4 = v(ra4)/1e-6
+  let b4 = v(rb4)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u_2k,1,10,10,r_ohm,$&a4,$&b4" >> @OUT@
+  let a5 = v(ra5)/1e-6
+  let b5 = v(rb5)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u_2k,2,40,80,r_ohm,$&a5,$&b5" >> @OUT@
+  let a6 = v(ra6)/1e-6
+  let b6 = v(rb6)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u_2k,5,100,500,r_ohm,$&a6,$&b6" >> @OUT@
+  let a7 = v(ra7)/1e-6
+  let b7 = v(rb7)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u_3k,1,10,10,r_ohm,$&a7,$&b7" >> @OUT@
+  let a8 = v(ra8)/1e-6
+  let b8 = v(rb8)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u_3k,2,40,80,r_ohm,$&a8,$&b8" >> @OUT@
+  let a9 = v(ra9)/1e-6
+  let b9 = v(rb9)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u_3k,5,100,500,r_ohm,$&a9,$&b9" >> @OUT@
+  let a10 = v(ra10)/1e-6
+  let b10 = v(rb10)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u,1,10,10,r_ohm,$&a10,$&b10" >> @OUT@
+  let a11 = v(ra11)/1e-6
+  let b11 = v(rb11)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u,2,40,80,r_ohm,$&a11,$&b11" >> @OUT@
+  let a12 = v(ra12)/1e-6
+  let b12 = v(rb12)/1e-6
+  echo "@MODE@,@TEMP@,$&n,ppolyf_u,5,100,500,r_ohm,$&a12,$&b12" >> @OUT@
+  let a13 = v(ga13)
+  let b13 = v(gb13)
+  echo "@MODE@,@TEMP@,$&n,nfet_03v3,5,0.5,2.5,vgs_v,$&a13,$&b13" >> @OUT@
+  let a14 = v(ga14)
+  let b14 = v(gb14)
+  echo "@MODE@,@TEMP@,$&n,nfet_03v3,10,1.0,10,vgs_v,$&a14,$&b14" >> @OUT@
+  let a15 = v(ga15)
+  let b15 = v(gb15)
+  echo "@MODE@,@TEMP@,$&n,nfet_03v3,20,2.0,40,vgs_v,$&a15,$&b15" >> @OUT@
+  let a16 = 3.3 - v(ga16)
+  let b16 = 3.3 - v(gb16)
+  echo "@MODE@,@TEMP@,$&n,pfet_03v3,5,0.5,2.5,vgs_v,$&a16,$&b16" >> @OUT@
+  let a17 = 3.3 - v(ga17)
+  let b17 = 3.3 - v(gb17)
+  echo "@MODE@,@TEMP@,$&n,pfet_03v3,10,1.0,10,vgs_v,$&a17,$&b17" >> @OUT@
+  let a18 = 3.3 - v(ga18)
+  let b18 = 3.3 - v(gb18)
+  echo "@MODE@,@TEMP@,$&n,pfet_03v3,20,2.0,40,vgs_v,$&a18,$&b18" >> @OUT@
+  let n = n + 1
+  mc_source
+end
+quit
+.endc
+.end

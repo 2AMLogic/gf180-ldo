@@ -1,0 +1,70 @@
+* gf180mcu MIM capacitor menu: density, voltage coefficient, temperature coefficient
+* Density columns are emitted directly in fF/um^2 (C/area).
+* Issue #4 - template; caps/run.sh substitutes @TOKENS@ and runs the deck.
+*
+* Each capacitor is driven by its own source carrying both the DC bias and a 1 V
+* AC excitation, so C = |Im{I}| / (2*pi*f). The imaginary part is required, not
+* the magnitude: the 2 fF/um2 card carries an explicit leakage resistor in
+* parallel with the capacitor, whose real current would otherwise be counted as
+* capacitance.
+* Two sizes per density (10x10 um and 30x30 um) separate the area term from the
+* perimeter/fringe term, since the model is C = c_cox*area + c_capsw*perimeter.
+* The 1f5 rows in the m3m4 / m4m5 / m5m6 stacks check that the metal-stack
+* option does not change the density.
+*
+.include @MODELS@/design.ngspice
+.lib @MODELS@/sm141064.ngspice @MIMLIB@
+.options temp=@TEMP@
+.param vb=@VBIAS@
+
+v1 p1 0 dc 'vb' ac 1
+x1 p1 0 cap_mim_1f0_m2m3_noshield c_width=10u c_length=10u
+v2 p2 0 dc 'vb' ac 1
+x2 p2 0 cap_mim_1f0_m2m3_noshield c_width=30u c_length=30u
+v3 p3 0 dc 'vb' ac 1
+x3 p3 0 cap_mim_1f5_m2m3_noshield c_width=10u c_length=10u
+v4 p4 0 dc 'vb' ac 1
+x4 p4 0 cap_mim_1f5_m2m3_noshield c_width=30u c_length=30u
+v5 p5 0 dc 'vb' ac 1
+x5 p5 0 cap_mim_2f0_m2m3_noshield c_width=10u c_length=10u
+v6 p6 0 dc 'vb' ac 1
+x6 p6 0 cap_mim_2f0_m2m3_noshield c_width=30u c_length=30u
+v7 p7 0 dc 'vb' ac 1
+x7 p7 0 cap_mim_1f5_m3m4_noshield c_width=10u c_length=10u
+v8 p8 0 dc 'vb' ac 1
+x8 p8 0 cap_mim_1f5_m4m5_noshield c_width=10u c_length=10u
+v9 p9 0 dc 'vb' ac 1
+x9 p9 0 cap_mim_1f5_m5m6_noshield c_width=10u c_length=10u
+
+.control
+ac lin 1 1k 1k
+let c1 = abs(imag(i(v1))) / (2*pi*1k)
+let d1 = c1 / 100e-15
+echo "cap_mim_1f0_m2m3_noshield,@MIMLIB@,@TEMP@,@VBIAS@,10,10,100,$&c1,$&d1" >> @OUT@
+let c2 = abs(imag(i(v2))) / (2*pi*1k)
+let d2 = c2 / 900e-15
+echo "cap_mim_1f0_m2m3_noshield,@MIMLIB@,@TEMP@,@VBIAS@,30,30,900,$&c2,$&d2" >> @OUT@
+let c3 = abs(imag(i(v3))) / (2*pi*1k)
+let d3 = c3 / 100e-15
+echo "cap_mim_1f5_m2m3_noshield,@MIMLIB@,@TEMP@,@VBIAS@,10,10,100,$&c3,$&d3" >> @OUT@
+let c4 = abs(imag(i(v4))) / (2*pi*1k)
+let d4 = c4 / 900e-15
+echo "cap_mim_1f5_m2m3_noshield,@MIMLIB@,@TEMP@,@VBIAS@,30,30,900,$&c4,$&d4" >> @OUT@
+let c5 = abs(imag(i(v5))) / (2*pi*1k)
+let d5 = c5 / 100e-15
+echo "cap_mim_2f0_m2m3_noshield,@MIMLIB@,@TEMP@,@VBIAS@,10,10,100,$&c5,$&d5" >> @OUT@
+let c6 = abs(imag(i(v6))) / (2*pi*1k)
+let d6 = c6 / 900e-15
+echo "cap_mim_2f0_m2m3_noshield,@MIMLIB@,@TEMP@,@VBIAS@,30,30,900,$&c6,$&d6" >> @OUT@
+let c7 = abs(imag(i(v7))) / (2*pi*1k)
+let d7 = c7 / 100e-15
+echo "cap_mim_1f5_m3m4_noshield,@MIMLIB@,@TEMP@,@VBIAS@,10,10,100,$&c7,$&d7" >> @OUT@
+let c8 = abs(imag(i(v8))) / (2*pi*1k)
+let d8 = c8 / 100e-15
+echo "cap_mim_1f5_m4m5_noshield,@MIMLIB@,@TEMP@,@VBIAS@,10,10,100,$&c8,$&d8" >> @OUT@
+let c9 = abs(imag(i(v9))) / (2*pi*1k)
+let d9 = c9 / 100e-15
+echo "cap_mim_1f5_m5m6_noshield,@MIMLIB@,@TEMP@,@VBIAS@,10,10,100,$&c9,$&d9" >> @OUT@
+quit
+.endc
+.end

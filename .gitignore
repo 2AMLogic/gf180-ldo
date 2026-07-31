@@ -8,6 +8,11 @@ __pycache__/
 # sim/README.md record format (issue #5), not scratch logs. Mirrors
 # gf180-bandgap's sim/smoke_test/smoke_test.log precedent.
 !sim/*/corners/**/*.log
+
+# Scratch directory for sim/devchar: the drivers write each substituted deck and
+# its ngspice log here before deleting them (DC_KEEP=1 retains them). Generated
+# artefacts, never evidence -- the evidence is the CSV rows the decks emit.
+sim/devchar/.build/
 # >>> loom-managed (do not edit) >>>
 # Loom runtime state (don't commit these)
 .loom-in-use
