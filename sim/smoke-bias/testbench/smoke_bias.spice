@@ -1,0 +1,29 @@
+* smoke_bias -- harness acceptance testbench (NOT the LDO)
+*
+* Netlist FRAGMENT. The harness supplies the title, .include of the gf180mcu
+* models, the corner .lib sections, .temp, the .control block and .end.
+* Parameters provided by the harness: vdd_val, vdd_nom, temp_c.
+*
+* Three deliberately independent branches, each proving a different piece of
+* the harness is wired up:
+*
+*   1. ideal resistive divider  -> parameter plumbing; must be PVT-invariant
+*   2. PDK poly resistor + diode-connected nfet_03v3 -> MOS and res corners
+*   3. diode-connected vertical NPN at 10 uA -> BJT corner and temperature
+*
+* Branch 3 is the temperature probe: Vbe is strongly CTAT (~ -1.7 mV/degC),
+* so a flat vbe across the grid means .temp never took effect.
+
+vsup vdd 0 dc {vdd_val}
+
+* --- 1. ideal divider: exactly vdd/2 at every corner, temperature and supply
+Rtop vdd ndiv 100k
+Rbot ndiv 0   100k
+
+* --- 2. PDK unsalicided p+ poly resistor into a diode-connected 3.3 V nfet
+XR1 vdd nbias 0    ppolyf_u r_width=1u r_length=100u
+XM1 nbias nbias 0 0 nfet_03v3 w=10u l=1u
+
+* --- 3. diode-connected vertical NPN, forced 10 uA (c b e s)
+Iq 0 nbe dc 10u
+XQ1 nbe nbe 0 0 npn_10p00x10p00

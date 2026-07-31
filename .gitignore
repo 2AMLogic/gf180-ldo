@@ -13,6 +13,13 @@ __pycache__/
 # its ngspice log here before deleting them (DC_KEEP=1 retains them). Generated
 # artefacts, never evidence -- the evidence is the CSV rows the decks emit.
 sim/devchar/.build/
+
+# Simulation harness scratch: generated ngspice decks. Disposable; the
+# evidence that is meant to survive lives in sim/<experiment-slug>/.
+sim/.work/
+
+# Machine-local PDK override (sim/pdk.json is the committed default).
+sim/pdk.local.json
 # >>> loom-managed (do not edit) >>>
 # Loom runtime state (don't commit these)
 .loom-in-use
