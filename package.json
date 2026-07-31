@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "worktree:return": "./.loom/scripts/worktree-return.sh",
-    "check:ci": "echo 'No CI checks configured. Customize this script for your project.' && exit 0",
-    "check:all": "echo 'No checks configured. Customize this script for your project.' && exit 0",
-    "test": "echo 'No tests configured. Customize this script for your project.' && exit 0",
-    "lint": "echo 'No linter configured. Customize this script for your project.' && exit 0"
+    "check:ci": "bash sim/selftest.sh",
+    "check:all": "bash sim/selftest.sh --require-pdk",
+    "test": "python3 -m unittest discover -s sim/tests -t sim/tests",
+    "lint": "echo 'No linter configured for this Python/ngspice project.' && exit 0"
   }
 }
