@@ -1,0 +1,97 @@
+* gf180mcu NMOS pass-device off-state leakage
+* Issue #4 - template; fets/run.sh substitutes @TOKENS@ and runs the deck.
+*
+* Bias: Vgs = 0 (gate and source and bulk at 0 V), drain at Vin so the full
+* supply stands across the device. i_off is the drain current.
+* Unit cell is w=100u / nf=10; total W = 100u * m.
+*
+.include @MODELS@/design.ngspice
+.lib @MODELS@/sm141064.ngspice @CORNER@
+.options temp=@TEMP@
+.param vin=@VIN@
+
+vs1 s1 0 dc 0
+x1 vin 0 s1 0 @DEV@ w=100u l=@L1@ nf=10 m=10
+vs2 s2 0 dc 0
+x2 vin 0 s2 0 @DEV@ w=100u l=@L1@ nf=10 m=20
+vs3 s3 0 dc 0
+x3 vin 0 s3 0 @DEV@ w=100u l=@L1@ nf=10 m=40
+vs4 s4 0 dc 0
+x4 vin 0 s4 0 @DEV@ w=100u l=@L1@ nf=10 m=80
+vs5 s5 0 dc 0
+x5 vin 0 s5 0 @DEV@ w=100u l=@L1@ nf=10 m=160
+
+vs6 s6 0 dc 0
+x6 vin 0 s6 0 @DEV@ w=100u l=@L2@ nf=10 m=10
+vs7 s7 0 dc 0
+x7 vin 0 s7 0 @DEV@ w=100u l=@L2@ nf=10 m=20
+vs8 s8 0 dc 0
+x8 vin 0 s8 0 @DEV@ w=100u l=@L2@ nf=10 m=40
+vs9 s9 0 dc 0
+x9 vin 0 s9 0 @DEV@ w=100u l=@L2@ nf=10 m=80
+vs10 s10 0 dc 0
+x10 vin 0 s10 0 @DEV@ w=100u l=@L2@ nf=10 m=160
+
+vs11 s11 0 dc 0
+x11 vin 0 s11 0 @DEV@ w=100u l=@L3@ nf=10 m=10
+vs12 s12 0 dc 0
+x12 vin 0 s12 0 @DEV@ w=100u l=@L3@ nf=10 m=20
+vs13 s13 0 dc 0
+x13 vin 0 s13 0 @DEV@ w=100u l=@L3@ nf=10 m=40
+vs14 s14 0 dc 0
+x14 vin 0 s14 0 @DEV@ w=100u l=@L3@ nf=10 m=80
+vs15 s15 0 dc 0
+x15 vin 0 s15 0 @DEV@ w=100u l=@L3@ nf=10 m=160
+
+vin vin 0 dc 'vin'
+
+.control
+op
+let ioff1 = abs(i(vs1))
+let ioffw1 = ioff1 / 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,1,ioff_vgs0,$&ioff1,$&ioffw1" >> @OUT@
+let ioff2 = abs(i(vs2))
+let ioffw2 = ioff2 / 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,2,ioff_vgs0,$&ioff2,$&ioffw2" >> @OUT@
+let ioff3 = abs(i(vs3))
+let ioffw3 = ioff3 / 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,4,ioff_vgs0,$&ioff3,$&ioffw3" >> @OUT@
+let ioff4 = abs(i(vs4))
+let ioffw4 = ioff4 / 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,8,ioff_vgs0,$&ioff4,$&ioffw4" >> @OUT@
+let ioff5 = abs(i(vs5))
+let ioffw5 = ioff5 / 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L1@,16,ioff_vgs0,$&ioff5,$&ioffw5" >> @OUT@
+let ioff6 = abs(i(vs6))
+let ioffw6 = ioff6 / 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,1,ioff_vgs0,$&ioff6,$&ioffw6" >> @OUT@
+let ioff7 = abs(i(vs7))
+let ioffw7 = ioff7 / 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,2,ioff_vgs0,$&ioff7,$&ioffw7" >> @OUT@
+let ioff8 = abs(i(vs8))
+let ioffw8 = ioff8 / 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,4,ioff_vgs0,$&ioff8,$&ioffw8" >> @OUT@
+let ioff9 = abs(i(vs9))
+let ioffw9 = ioff9 / 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,8,ioff_vgs0,$&ioff9,$&ioffw9" >> @OUT@
+let ioff10 = abs(i(vs10))
+let ioffw10 = ioff10 / 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L2@,16,ioff_vgs0,$&ioff10,$&ioffw10" >> @OUT@
+let ioff11 = abs(i(vs11))
+let ioffw11 = ioff11 / 1
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,1,ioff_vgs0,$&ioff11,$&ioffw11" >> @OUT@
+let ioff12 = abs(i(vs12))
+let ioffw12 = ioff12 / 2
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,2,ioff_vgs0,$&ioff12,$&ioffw12" >> @OUT@
+let ioff13 = abs(i(vs13))
+let ioffw13 = ioff13 / 4
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,4,ioff_vgs0,$&ioff13,$&ioffw13" >> @OUT@
+let ioff14 = abs(i(vs14))
+let ioffw14 = ioff14 / 8
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,8,ioff_vgs0,$&ioff14,$&ioffw14" >> @OUT@
+let ioff15 = abs(i(vs15))
+let ioffw15 = ioff15 / 16
+echo "@DEV@,@CORNER@,@TEMP@,@VIN@,@L3@,16,ioff_vgs0,$&ioff15,$&ioffw15" >> @OUT@
+quit
+.endc
+.end
