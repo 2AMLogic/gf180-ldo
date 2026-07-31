@@ -59,7 +59,7 @@ to run one case by hand with `ngspice -b`.
 ## PVT matrix
 
 Every recorded result carries the full matrix. `coverage.csv` asserts this
-mechanically (36/36 device-table pairs complete) rather than leaving it to
+mechanically (40/40 device-table pairs complete) rather than leaving it to
 review by eye — a silently missing corner is the failure mode that produces a
 plausible but optimistic table.
 
