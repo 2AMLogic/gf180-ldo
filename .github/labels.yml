@@ -151,3 +151,15 @@
   description: "Non-collaborator submission; needs maintainer approval before curation. Applied by: humans only."
   color: "E5E7EB"  # gray-200 - external/hold marker
 # END LOOM LABELS
+
+# ============================================================================
+# Repo-specific labels (outside the Loom-managed block — see the header note
+# above; these survive Loom install/upgrade untouched).
+# ============================================================================
+
+# CI opt-in: apply to a PR to run the PDK-backed pvt-smoke job in
+# .github/workflows/ci.yml on that PR (in addition to its normal schedule/
+# workflow_dispatch triggers). Not part of the loom: workflow.
+- name: ci:pdk-smoke
+  description: "Opt this PR into the PDK-backed ngspice smoke job (see .github/workflows/ci.yml)"
+  color: "1D76DB"  # blue - CI/tooling signal, distinct from loom: blue-500

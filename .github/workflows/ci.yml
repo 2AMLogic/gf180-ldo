@@ -1,0 +1,88 @@
+name: CI
+
+# Runs the self-checks that already exist in this repo:
+#   - sim/tests/test_harness.py       (stdlib unittest, no PDK/ngspice needed)
+#   - sim/selftest.sh                 (wraps the unit tests + an ngspice/PDK
+#                                       PVT smoke run; gracefully SKIPs the
+#                                       smoke stage, exit 0, when ngspice/PDK
+#                                       are unavailable)
+#
+# CLAUDE.md's "headless only" flow keeps the default PR path free of any PDK
+# or GUI dependency: `harness-selftest` below runs on every push/PR and never
+# installs ngspice or the gf180mcu PDK, so it always exercises the unit tests
+# and relies on sim/selftest.sh's own env-check to skip (not fail) the PVT
+# stage. The PDK-backed run of the *same* self-test lives in the separate
+# `pvt-smoke` job, gated to a nightly schedule / manual dispatch / opt-in PR
+# label so it never blocks a normal PR.
+#
+# Explicitly excluded from CI (not "checks", so nothing to wire up):
+#   - sim/devchar/**/run.sh, sim/devchar/run_all.sh, sim/devchar/lib/summarize.py
+#     regenerate the device-characterization CSVs under sim/devchar/*/results/.
+#     They require ngspice + the gf180mcu PDK, take ~15 minutes end to end, and
+#     are a data-regeneration workflow (re-run manually when device models
+#     change) rather than a pass/fail check — nothing here asserts a result
+#     against a threshold, so there is nothing for CI to gate on.
+#   - No linter/formatter is configured for this repo yet (package.json's
+#     `lint` script is an honest "not configured" placeholder); add a CI job
+#     for it if/when one is adopted.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    # Nightly PDK-backed smoke run — see the pvt-smoke job below.
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  harness-selftest:
+    name: harness self-test (unit tests, no PDK required)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run sim/selftest.sh
+        run: bash sim/selftest.sh
+        # No ngspice/PDK is installed on this runner, so the harness's own
+        # `--check-env` gate SKIPs (not fails) the PVT smoke stage; the unit
+        # tests (sim/tests/test_harness.py) always run and must pass.
+
+  pvt-smoke:
+    name: PVT smoke run against gf180mcu (ngspice + PDK)
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'ci:pdk-smoke'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ngspice
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ngspice
+
+      - name: Fetch the pinned gf180mcu PDK via volare
+        run: |
+          python3 -m pip install --upgrade volare
+          # Pinned hash from docs/environment-setup.md section 1 — keep this
+          # in sync with that doc rather than tracking volare's "latest".
+          volare fetch  --pdk gf180mcu c6d73a35f524070e85faff4a6a9eef49553ebc2b
+          volare enable --pdk gf180mcu c6d73a35f524070e85faff4a6a9eef49553ebc2b
+
+      - name: Run sim/selftest.sh against the real PDK
+        run: |
+          export PDK_ROOT="$(volare path)"
+          export PDK="gf180mcuD"
+          bash sim/selftest.sh --require-pdk
