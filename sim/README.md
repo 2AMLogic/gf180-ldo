@@ -70,6 +70,24 @@ sim/
   records, note that in the new record's summary (e.g. under Claim or a
   free-text note).
 
+### Raw corner logs are committed, not ignored
+
+The repo root `.gitignore` ignores `*.log` (scratch output), so it carries an
+explicit negation to re-include evidence logs:
+
+```gitignore
+!sim/*/corners/**/*.log
+```
+
+Raw per-corner ngspice output under `sim/<slug>/corners/<record-id>/` is
+**evidence**, not scratch — a record's Links field points at those files, so
+they must be committed alongside the record they substantiate. The negation
+generalizes to any new experiment slug; no parent directory is excluded, so
+git's "cannot re-include a file under an excluded directory" rule does not
+apply. Anything else matching `*.log` (simulator scratch, tool noise) stays
+ignored. Verify with `git check-ignore -v <path>` if a log unexpectedly fails
+to stage.
+
 ## Summary record format
 
 Each run produces one `records/<record-id>.md` file with the following
@@ -100,7 +118,7 @@ fields:
 - **Result** — per-corner pass/fail, plus an overall pass/fail against the
   ratified spec value. For curve-shaped claims (e.g. PSRR vs frequency,
   transient step response) that are checked against a single spec point
-  within a sweep (e.g. "PSRR ≥ 40 dB @ 1 kHz"), the Result states the value
+  within a sweep (e.g. "PSRR > 50 dB @ 1 kHz"), the Result states the value
   extracted at that spec point plus pass/fail against it; the full curve/
   waveform data lives in the raw log under `corners/`, referenced from
   Links. A record MAY report more than one spec point extracted from the
@@ -142,6 +160,16 @@ corrects or replaces a prior result, it references that prior record via
 the append-only guarantee is what makes `sim/` usable as an evidence trail;
 "fixing" an existing record in place would defeat that.
 
+The rule has **no exceptions and needs none**: everything under a real
+experiment slug is real evidence. That is why the worked example below is
+inline in this document only and is deliberately *not* materialized as files
+under `sim/dropout-vs-load/` (or any other slug). A placeholder record
+committed to a real slug would be an evidence-shaped file that is not
+evidence — it would have to be either deleted later (breaking this rule the
+moment it is written) or left permanently interleaved with genuine records,
+where any rollup that globs `sim/*/records/*.md` would ingest its fabricated
+verdict. Illustrate the format in prose; only real runs write files.
+
 ## Interim evidence note (for #4, device characterization)
 
 #4 (characterizing gf180mcu devices for the LDO — pass FETs, resistors,
@@ -174,6 +202,13 @@ pass/fail record, and it does not need to be force-fit into one
 
 ## Worked example
 
+**Illustrative only** — nothing in this section exists on disk. The paths,
+record IDs, and values below are invented to show the shape of a complete
+record; the first real files under `sim/dropout-vs-load/` will be written by
+an actual dropout run (see #12). This matches the sister repo
+(`2AMLogic/gf180-bandgap`), whose `sim/` likewise carries its worked example
+in the README rather than as a committed placeholder tree.
+
 Directory layout for a dropout-vs-load claim on the LDO output, followed by
 a post-layout extracted re-run of the same claim:
 
@@ -201,8 +236,8 @@ sim/
       20260815-093000-9b3d7f1.md
 ```
 
-`records/20260730-120000-4e9c1a2.md` (placeholder values — no ratified spec
-values exist yet, see #1):
+What `records/20260730-120000-4e9c1a2.md` would contain (invented values — no
+simulation has been run and no ratified spec values exist yet, see #1):
 
 ```markdown
 # Record 20260730-120000-4e9c1a2
