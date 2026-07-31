@@ -1,0 +1,74 @@
+#### Project-local xschemrc for gf180-ldo.
+####
+#### Used by `python3 design/netlist.py` (via `xschem --rcfile`) and suitable
+#### for interactive sessions:
+####
+####     source sim/env.sh                 # exports GF180_PDK_PATH, PDK_ROOT, PDK
+####     xschem --rcfile design/xschemrc design/ldo_core.sch
+####
+#### It deliberately does NOT source the PDK's own xschemrc: that file hardcodes
+#### the gf180mcuD variant and pulls in interactive defaults (start window,
+#### toolbar, tabbed interface) that make batch netlisting less predictable.
+#### Everything netlisting actually needs is set explicitly below, so the export
+#### is reproducible on any machine with the same PDK. Pattern copied from
+#### 2AMLogic/gf180-temp-por's design/xschemrc (see CLAUDE.md's harness-bootstrap
+#### note) with paths/names adjusted for this repo.
+
+#### Where this file lives -- design/ is the project symbol library.
+set design_dir [file normalize [file dirname [info script]]]
+
+#### The gf180mcu variant directory (the one containing libs.tech/).
+#### sim/harness/pdk.py resolves this; netlist.py passes it through the
+#### environment so there is exactly one PDK-discovery implementation in
+#### the repo.
+if { [info exists env(GF180_PDK_PATH)] && $env(GF180_PDK_PATH) ne {} } {
+  set gf180_pdk_path $env(GF180_PDK_PATH)
+} elseif { [info exists env(PDK_ROOT)] && $env(PDK_ROOT) ne {} } {
+  set gf180_variant {gf180mcuD}
+  if { [info exists env(PDK)] && $env(PDK) ne {} } { set gf180_variant $env(PDK) }
+  set gf180_pdk_path $env(PDK_ROOT)/$gf180_variant
+} else {
+  puts stderr {xschemrc: no GF180_PDK_PATH / PDK_ROOT in the environment.}
+  puts stderr {          Run 'source sim/env.sh' (or python3 sim/run_corners.py --check-env).}
+  set gf180_pdk_path {}
+}
+
+#### Library search path. Order matters: xschem resolves a symbol reference
+#### against these roots in turn. Generic xschem devices are referenced as
+#### `devices/<name>.sym` (both the leaf and its parent are on the path, so
+#### a bare `<name>.sym` would also resolve -- but this repo, like
+#### gf180-temp-por, always uses the qualified form for clarity). PDK devices
+#### are referenced as `symbols/<device>.sym` (only the PDK's `libs.tech/xschem`
+#### parent is on the path, not its `symbols/` leaf, so the qualified form is
+#### required -- this is deliberate: it makes "PDK device" vs "xschem generic
+#### device" vs "project cell" visually unambiguous in every .sch file).
+set XSCHEM_LIBRARY_PATH {}
+append XSCHEM_LIBRARY_PATH :${XSCHEM_SHAREDIR}/xschem_library/devices
+append XSCHEM_LIBRARY_PATH :${XSCHEM_SHAREDIR}/xschem_library
+if { $gf180_pdk_path ne {} } {
+  append XSCHEM_LIBRARY_PATH :${gf180_pdk_path}/libs.tech/xschem
+}
+append XSCHEM_LIBRARY_PATH :${design_dir}
+
+#### Allow the sim harness' XSCHEM_USER_LIBRARY_PATH (testbench dirs) to be
+#### picked up too, so a testbench cell can instantiate design/ symbols.
+if { [info exists env(XSCHEM_USER_LIBRARY_PATH)] } {
+  append XSCHEM_LIBRARY_PATH :$env(XSCHEM_USER_LIBRARY_PATH)
+}
+
+#### Netlisting behaviour (the load-bearing part of this file).
+set netlist_type spice
+#### Netlist the cell being netlisted as a .subckt rather than as a flat deck.
+#### Every cell in design/ -- including the top level -- is a reusable block
+#### that testbenches instantiate, never a standalone simulation deck.
+set top_is_subckt 1
+#### Keep hierarchy: sub-circuits stay as .subckt definitions + X instances.
+set flat_netlist 0
+#### Device symbols in the PDK carry spiceprefix=X; honour it.
+set spiceprefix 1
+
+#### Start with no schematic loaded when invoked without a filename.
+set XSCHEM_START_WINDOW {}
+
+#### Do not open the interactive info window during batch runs.
+set show_infowindow 0

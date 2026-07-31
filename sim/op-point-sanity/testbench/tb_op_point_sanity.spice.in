@@ -1,0 +1,66 @@
+* op-point-sanity -- DC operating-point sanity testbench for ldo_core (issue #8)
+*
+* Confirms the core's feedback loop closes sensibly with the placeholder
+* error amp: Vout near the 1.8 V target, no rail-stuck nodes, sane supply
+* current. This is a loop-closure sanity check, NOT a spec-line
+* measurement -- see sim/README.md and sim/op-point-sanity/records/ for the
+* recorded result and the evidence-record format, and design/README.md for
+* the ldo_core interface this testbench instantiates.
+*
+* ERRAMP_OUT and PASS_GATE are ldo_core's deliberately-separate loop-break
+* ports (the node a future stability testbench, #10, breaks for a
+* Middlebrook/Tian injection). For NORMAL operation, this testbench just
+* ties them to the same node (LOOP) at instantiation -- a plain wire, done
+* here at the testbench level rather than inside the core schematic, so
+* the core needs no rewiring either way.
+*
+* Template: run.sh substitutes the @TOKENS@ below (PDK paths, corner
+* sections, temperature, supply, enable state) and runs the result with
+* `ngspice -b`.
+
+.include "@DESIGN_INCLUDE@"
+.lib "@MODEL_LIB@" @MOS_CORNER@
+.lib "@MODEL_LIB@" @RES_CORNER@
+.lib "@MODEL_LIB@" @BJT_CORNER@
+.lib "@MODEL_LIB@" @DIODE_CORNER@
+.lib "@MODEL_LIB@" @MOSCAP_CORNER@
+.lib "@MODEL_LIB@" @MIMCAP_CORNER@
+
+.temp @TEMP_C@
+
+.include "@LDO_NETLIST@"
+
+* --- stimulus ----------------------------------------------------------
+Vin VIN 0 DC @VIN_V@
+Ven EN 0 DC @EN_V@
+
+* --- DUT -----------------------------------------------------------------
+* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE
+Xdut VIN VOUT EN 0 LOOP LOOP ldo_core
+
+* --- output network (testbench-side, per issue #8 guidance) --------------
+* A light, realistic load (1 mA) plus the compensation cap the ratified
+* spec calls external-cap, output-pole-dominant (0.33-4.7 uF effective
+* range; 1 uF + 100 mOhm ESR chosen here, in range).
+Rload VOUT 0 1.8k
+Resr VOUT n_esr 0.1
+Cout n_esr 0 1u
+
+.control
+op
+let m_vout = v(vout)
+let m_vin = v(vin)
+let m_loop = v(loop)
+let m_fb = v(xdut.fb)
+let m_vref = v(xdut.vref)
+let m_ivin_ma = -i(vin)*1e3
+let m_ien_ua = -i(ven)*1e6
+print m_vout
+print m_vin
+print m_loop
+print m_fb
+print m_vref
+print m_ivin_ma
+print m_ien_ua
+.endc
+.end
