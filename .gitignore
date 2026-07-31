@@ -2,6 +2,12 @@
 *.log
 __pycache__/
 .DS_Store
+
+# sim/<slug>/corners/**/*.log are force-added despite the blanket *.log
+# ignore above -- they are append-only evidence per CLAUDE.md and the
+# sim/README.md record format (issue #5), not scratch logs. Mirrors
+# gf180-bandgap's sim/smoke_test/smoke_test.log precedent.
+!sim/*/corners/**/*.log
 # >>> loom-managed (do not edit) >>>
 # Loom runtime state (don't commit these)
 .loom-in-use
