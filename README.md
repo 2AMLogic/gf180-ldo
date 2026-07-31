@@ -7,7 +7,7 @@ simulation, and [klayout-tools](https://github.com/2AMLogic/klayout-tools)
 for layout, DRC, and LVS.
 
 **Status: early. Nothing here has been fabricated.** As of today the repo
-holds a draft specification, an architecture survey, device characterization
+holds a ratified specification, an architecture survey, device characterization
 data extracted from the PDK models, decision records, and a reproducible PVT
 corner-running simulation harness. There is no schematic, no layout, and no
 silicon. Read every number here as a simulation result against an open PDK's
@@ -41,19 +41,75 @@ a power-management block, and the topology is simple enough to verify
 exhaustively while still exercising the parts of the flow that matter
 (matching, stability across load and capacitor range, PSRR, layout parasitics).
 
-## Target specification (DRAFT — pending ratification, see issue #1)
+## Target specification (RATIFIED 2026-07-31)
+
+Ratified by the operator on issue #1 with the amendments recorded in
+[`spec/decision-records/DR-0004-spec-ratification.md`](spec/decision-records/DR-0004-spec-ratification.md),
+which also ratifies DR-0001 (output capacitor and ESR window), DR-0002 (input
+flavor) and DR-0003 (output programmability). Changing a line below requires a
+new decision record; it may not be relaxed to make a result pass.
 
 | Parameter | Target | Stretch |
 |---|---|---|
-| Input | 3.3 V ±10% | 5 V flavor |
-| Output | 1.8 V ±2% (fixed) | programmable 1.2–3.0 V |
-| Load | 50 mA | 100 mA |
-| Dropout @ 50 mA | < 300 mV | < 200 mV |
-| PSRR @ 1 kHz | > 50 dB | > 60 dB |
-| Iq | < 30 µA | < 10 µA |
-| Load reg (1–50 mA) | < 1% | — |
-| Area (ex. pass FET pad ring) | < 0.1 mm² | — |
-| Stability | stable 0–50 mA with 1 µF ±ESR range | capless variant |
+| Input | 3.3 V ±10% (2.97–3.63 V) | 5 V flavor — separate follow-on variant, not this design (see DR-0002) |
+| Output | 1.8 V ±2% (fixed; divider laid out as a unit-resistor string for metal-mask-option derivatives) | programmable 1.2–3.0 V — deferred; needs a sub-1.2 V reference, and > ~2.5 V needs the 5 V variant (see DR-0003) |
+| Load | 0–50 mA, where 0 mA means no external load — the feedback divider's ~2 µA is the only inherent preload and no external preload resistor may be assumed (DR-0001) | 100 mA |
+| Dropout @ 50 mA | < 300 mV — binds ss / 125 °C / Vin = 2.10 V (measured, note 4) | < 200 mV |
+| Line reg | < 5 mV/V over Vin 2.97–3.63 V, at 1 mA and at 50 mA | — |
+| Load reg (0–50 mA) | < 1% (18 mV), counted inside the ±2% accuracy window rather than in addition to it | — |
+| Load transient | 1 ↔ 50 mA step, 1 µs edges, at C_eff = 0.33 µF and ESR 0–500 mΩ: peak excursion ≤ 150 mV, recovery to within ±1% (18 mV) of the settled value in ≤ 20 µs | peak excursion ≤ 100 mV |
+| PSRR | > 50 dB @ 1 kHz and > 20 dB @ 100 kHz, at I_load = 1 mA (binding — light load) and at 50 mA, C_eff = 1 µF nominal, verified across the stability window | > 60 dB @ 1 kHz, > 30 dB @ 100 kHz, 1 MHz point characterized |
+| Iq (excluding load current) | < 30 µA at no load **and** at full load — binds ff / 125 °C / 3.63 V | < 10 µA — subordinate to DR-0001's ESR window; not to be bought back by reintroducing a minimum ESR |
+| Current limit | 65–80 mA over PVT, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5) | — |
+| Startup | monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 1 V/ms, so inrush ≤ 5 mA at C_eff = 4.7 µF and startup at full rated load stays ≥ 10 mA below the current limit; inside ±2% within 3 ms of enable; overshoot ≤ +2% of the final value | — |
+| Enable / shutdown | shutdown Iq < 3 µA at ff / 125 °C / 3.63 V; disabled output state is pass device fully off with no internal active discharge; Vin→Vout leakage ≤ 1 µA at the same corner | — |
+| Thermal | 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 290 mW into a Vout = 0 short at the 80 mA limit ceiling; specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec | — |
+| Output noise | not specified — explicitly waived (note 7) | 10 Hz–100 kHz µVrms row if a consumer asks for one |
+| Area | < 0.1 mm² total core area, pass FET included, excluding pads and sealring | — |
+| Stability | stable 0–50 mA with C_out 0.33–4.7 µF effective (1 µF nominal X5R/X7R), ESR 0–500 mΩ; PM ≥ 45°, GM ≥ 10 dB worst corner | capless variant (separate design fork) |
+
+Notes — these are part of the ratified spec, not commentary:
+
+1. **Verification corners.** Unless a row names a binding corner, every row is
+   verified across the full matrix: process {tt, ff, ss, fs, sf} × T {−40, 27,
+   125} °C × Vin {2.97, 3.3, 3.63} V, and across the DR-0001 output-capacitor
+   window. Named bindings: dropout at ss/125 °C/Vin = 2.10 V (measured), Iq at
+   ff/125 °C/3.63 V, current limit at ff/−40 °C, stability and PSRR at light
+   load at the worst corner of DR-0001's matrix.
+2. **Output-accuracy conditions.** ±2% means ±36 mV, 3σ, over line (2.97–3.63 V),
+   load (0–50 mA) and temperature (−40…125 °C). **The ±2% window is the
+   regulator's own error and excludes the voltage reference's own error** — the
+   reference is a separate block with its own budget, and any total-accuracy
+   claim (datasheet or otherwise) must state the sum of the two, not this row
+   alone. See DR-0004 for why the window is stated this way and what would
+   change it.
+3. **Divider mismatch is an assumption, not a simulated result.** This PDK's
+   resistor models hard-code local mismatch to zero and publish no mismatch
+   coefficient for `ppolyf_u_3k` (`sim/devchar/CONCLUSIONS.md` §2), so the
+   divider-mismatch term of the accuracy budget cannot be obtained from
+   simulation against these models. It is carried as a stated assumption
+   (e.g. `ppolyf_u`'s `par_r = 0.021` card value as a proxy); a Monte Carlo
+   "pass" against this PDK is not evidence for that term.
+4. **Dropout test point.** Dropout is measured at Vin = Vout + dropout ≈ 2.10 V,
+   not at the 2.97 V supply floor; sizing from the 2.97 V rows undersizes the
+   pass device by ~50% (`sim/devchar/CONCLUSIONS.md` §1).
+5. **Current-limit behaviour.** The limit is a constant-current clamp; foldback
+   is deliberately not required, so a folded-back limit can never prevent
+   startup into a loaded output. The cost is that a sustained short dissipates
+   the full ≤ 290 mW of the Thermal row, which is an integration constraint —
+   if an integration cannot absorb it, adding foldback or thermal shutdown is a
+   superseding decision record, not an implementation choice.
+6. **Provisional rows.** The line-regulation, load-transient, PSRR 100 kHz,
+   current-limit, startup and enable/shutdown numbers were set at ratification
+   from measured device data plus the architecture survey's loop budget, before
+   any loop-level simulation exists. Each carries a falsifiable revisit trigger
+   in DR-0004; a row that proves unmeetable is superseded by a new record, never
+   silently relaxed.
+7. **Output-noise waiver.** No consumer of this block has stated a noise
+   requirement, and no reference or amplifier design exists yet against which a
+   µVrms number could be substantiated — so a number here would be a claim
+   without a testbench. The row is waived explicitly rather than left blank; a
+   consumer requirement makes it a superseding record.
 
 Maturity ladder: simulation-complete → layout DRC/LVS-clean → shuttle
 seat → measured silicon over temperature.
