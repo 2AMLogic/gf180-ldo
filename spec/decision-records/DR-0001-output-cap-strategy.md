@@ -1,6 +1,6 @@
 # DR-0001: Output capacitor and ESR window
 
-- **Status**: proposed
+- **Status**: ratified 2026-07-31 (issue #1; adopted verbatim by DR-0004)
 - **Date**: 2026-07-30
 - **Decided by**: Builder agent, issue #7 (recommendation only — ratification is #1)
 
