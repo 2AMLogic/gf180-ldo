@@ -7,6 +7,12 @@ related entries.
 
 Cache is file-backed in /tmp/gh-cache/ for cross-process sharing.
 
+Because that directory is machine-wide and `gh` infers its target repository
+from the working directory, cache keys are **scoped by repository** — see
+`repo_scope()`. Without that scoping, two different repos issuing the same
+`gh` command produce the same key and one repo's response is served to the
+other.
+
 Usage:
     gh-cached issue view 42 --json labels
     gh-cached pr list --label "loom:review-requested" --state open
@@ -20,6 +26,8 @@ Environment:
     GH_CACHE_MAX_SIZE  Max cached entries (default: 256)
     GH_CACHE_DISABLE   Set to "1" to disable caching entirely
     GH_CACHE_DEBUG     Set to "1" for debug logging to stderr
+    GH_CACHE_SCOPE     Override the repo identity folded into cache keys
+                       (default: derived from the git remote / cwd)
 """
 
 from __future__ import annotations
@@ -75,9 +83,113 @@ def ensure_cache_dir() -> None:
     os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
 
 
+# ─── Repository Scoping ─────────────────────────────────────────────────────
+#
+# `gh` resolves its target repository from (in order) an explicit `--repo`
+# flag, the `GH_REPO` environment variable, or the git remote of the current
+# working directory. Only the first of those appears in the argument list, so
+# a key derived from the arguments alone is ambiguous across repositories —
+# and CACHE_DIR is a single machine-wide directory shared by every repo and
+# session on the host. `repo_scope()` supplies the missing component.
+
+_REPO_SCOPE: str | None = None
+
+
+def _git(args: list[str]) -> str:
+    """Run a read-only git command, returning stripped stdout ("" on failure).
+
+    Never raises: a missing git binary, a non-repo cwd, or a hung invocation
+    all yield "" so the wrapper stays a transparent passthrough.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip()
+
+
+def normalize_remote(url: str) -> str:
+    """Normalize a git remote URL to a stable `host/owner/repo` identity.
+
+    `git@github.com:o/r.git`, `ssh://git@github.com/o/r.git`, and
+    `https://github.com/o/r` all name the same repository; normalizing keeps
+    clones that differ only by transport sharing one cache entry (and keeps
+    the identity stable when a remote is re-pointed between the two forms).
+    """
+    raw = url.strip()
+    if not raw:
+        return ""
+
+    if "://" in raw:
+        rest = raw.split("://", 1)[1]
+    elif ":" in raw and "/" not in raw.split(":", 1)[0]:
+        # scp-like syntax: [user@]host:path
+        host, _, path = raw.partition(":")
+        rest = f"{host}/{path.lstrip('/')}"
+    else:
+        # Local path remote — use it verbatim.
+        rest = raw
+
+    rest = rest.rpartition("@")[2]  # strip any user/credential prefix
+    rest = rest.rstrip("/")
+    if rest.endswith(".git"):
+        rest = rest[:-4]
+    return rest.lower()
+
+
+def repo_scope() -> str:
+    """Identify the repository this invocation targets, for cache keying.
+
+    Resolution order (first non-empty wins):
+      1. `GH_CACHE_SCOPE` — explicit override.
+      2. `GH_REPO` — gh's own repo override, same precedence gh gives it.
+      3. The normalized `origin` remote of the current working directory.
+      4. The git toplevel path (a repo with no `origin` remote).
+      5. The raw working directory.
+
+    Every step degrades safely: if git is missing or cwd is not a repo we
+    still return a distinct, cwd-derived string rather than raising, so
+    gh-cached remains a transparent passthrough. Computed at most once per
+    process and memoized.
+    """
+    global _REPO_SCOPE
+    if _REPO_SCOPE is not None:
+        return _REPO_SCOPE
+
+    scope = os.environ.get("GH_CACHE_SCOPE", "").strip()
+    if not scope:
+        scope = os.environ.get("GH_REPO", "").strip().lower()
+    if not scope:
+        scope = normalize_remote(_git(["remote", "get-url", "origin"]))
+    if not scope:
+        scope = _git(["rev-parse", "--show-toplevel"])
+    if not scope:
+        try:
+            scope = os.getcwd()
+        except OSError:
+            scope = ""
+
+    _REPO_SCOPE = scope
+    debug(f"SCOPE {scope!r}")
+    return _REPO_SCOPE
+
+
 def cache_key(args: list[str]) -> str:
-    """Generate a cache key from the gh command arguments."""
-    raw = " ".join(args)
+    """Generate a repo-scoped cache key from the gh command arguments.
+
+    The repo identity is folded in so that identical argument lists issued
+    from two different repositories never share a cache entry. NUL is used as
+    the field separator because it cannot appear inside an argv element, so
+    distinct argument lists cannot alias one another.
+    """
+    raw = "\0".join([repo_scope(), *args])
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -144,6 +256,9 @@ def cache_put(key: str, stdout: str, returncode: int, ttl: int, args: list[str] 
         "stdout": stdout,
         "returncode": returncode,
         "args": args or [],
+        # Recorded for debuggability only — the scope is already folded into
+        # the key, so this is never consulted for lookup.
+        "scope": repo_scope(),
     }
     path = cache_path(key)
     try:
