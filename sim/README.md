@@ -88,6 +88,23 @@ apply. Anything else matching `*.log` (simulator scratch, tool noise) stays
 ignored. Verify with `git check-ignore -v <path>` if a log unexpectedly fails
 to stage.
 
+**Binary `.raw` waveform dumps are scratch, not evidence — deliberately.**
+The root `.gitignore` ignores `*.raw` with no negation, and that is
+intentional, not an oversight: a full ngspice `.raw` rawfile (from `write
+out.raw` or a `wrdata`/binary dump in a `.control` block) is large, opaque,
+and not diffable, and a 9-point PVT matrix of them adds up fast. Anything a
+record's **Result** cites — a measured value, a pass/fail, a spec-point
+extraction from a curve — must be reproducible from the committed `.log`
+alone, via `.meas` statements or `print`/`echo` output to stdout, which
+ngspice captures into the corner log. A testbench deck MAY still write a
+`.raw` file locally for interactive debugging, but must not rely on it as
+the record of a claim: nothing under `sim/` is evidence unless it is
+committed, and `.raw` files are never committed. If a harness needs to
+preserve full waveform data rather than a scalar/point extraction, that is
+a signal the record format needs a new evidence kind (open an issue rather
+than silently committing a `.raw`) — this convention does not currently
+have one.
+
 ## Summary record format
 
 Each run produces one `records/<record-id>.md` file with the following
