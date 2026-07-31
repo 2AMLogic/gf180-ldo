@@ -1,0 +1,45 @@
+{
+  "name": "smoke-bias",
+  "description": "Harness acceptance test: ideal divider + PDK poly-R/nfet bias + diode-connected NPN. Not the LDO.",
+  "claim": "None — harness self-verification, not a spec claim. Proves the PVT plumbing (parameter substitution, .lib corner sections, .temp) actually takes effect, so later records against ratified spec lines (#1) can be trusted.",
+  "netlist": "smoke_bias.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.1,
+  "temperatures_c": [-40, 27, 125],
+  "corners": ["full"],
+  "analyses": ["op"],
+  "operating_conditions": {
+    "note": "N/A — harness self-verification only, no load or output network involved (see sim/README.md's Operating conditions field)"
+  },
+  "measure": {
+    "vdiv_ratio": "v(ndiv)/v(vdd)",
+    "vbias": "v(nbias)",
+    "vbe": "v(nbe)",
+    "isup_ua": "-i(vsup)*1e6"
+  },
+  "checks": {
+    "vdiv_ratio": {
+      "min": 0.4999,
+      "max": 0.5001,
+      "max_spread_pct": 0.001,
+      "description": "ideal divider is exactly vdd/2 -- proves vdd_val plumbing and measurement parsing"
+    },
+    "vbias": {
+      "min": 0.6,
+      "max": 1.4,
+      "min_spread_pct": 5.0,
+      "description": "diode-connected nfet_03v3 Vgs; the spread floor proves the MOS/res .lib sections change between corners"
+    },
+    "vbe": {
+      "min": 0.35,
+      "max": 0.95,
+      "min_spread_pct": 20.0,
+      "description": "NPN Vbe at 10 uA over -40..125 C; the spread floor proves .temp is applied"
+    },
+    "isup_ua": {
+      "min": 20.0,
+      "max": 250.0,
+      "description": "total supply current stays sane at every corner"
+    }
+  }
+}
