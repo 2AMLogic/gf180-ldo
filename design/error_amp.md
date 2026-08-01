@@ -410,7 +410,7 @@ before. Every remaining failure is at one of the two lightest loads —
 | `I_load` | passing | how the failures fail |
 |---|---|---|
 | 1, 10, 25, 50 mA | **2160/2160** | — |
-| 0.1 mA | 525/540 | 15 points, all at −40 °C / 3.63 V on `ss`/`fs`, all on **gain margin** (PM 67…102°, GM −20.7…+7.9 dB): conditional stability, not a phase collapse |
+| 0.1 mA | 525/540 | 15 points, all at −40 °C / 3.63 V on `ss`/`fs`, all on **gain margin** (PM 67…102°, GM −20.7…+7.9 dB): conditional stability, not a phase collapse — root-caused to the bias branch's 2.5× PVT spread and filed as **#53** (constant-gm bias, not yet attempted; DR-0007 has a first feasibility check) |
 | 0 mA | 4/540 | phase margin, worst **3.79°** at `ff_125c_2.97v` / 4.7 µF / 1 mΩ |
 
 That split is structural, not a tuning residue. `Rz` and `Cc` are pinned
