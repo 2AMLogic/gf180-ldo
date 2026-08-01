@@ -119,6 +119,20 @@ class TestbenchTests(unittest.TestCase):
             },
         )
 
+    def test_nodeset_is_loaded_from_the_manifest(self):
+        """#40: bias hints for a closed-loop DUT's initial op-point guess."""
+        tb = testbench.load(
+            self._write(
+                "v1 out 0 dc {vdd_val}\n",
+                {"nodeset": {"vout": "1.8", "loop": "0.7"}},
+            )
+        )
+        self.assertEqual(tb.nodeset, {"vout": "1.8", "loop": "0.7"})
+
+    def test_nodeset_defaults_to_empty(self):
+        tb = testbench.load(self._write("v1 out 0 dc {vdd_val}\n"))
+        self.assertEqual(tb.nodeset, {})
+
     def test_experiment_slug_comes_from_the_directory_layout(self):
         tb_dir = self._write("v1 out 0 dc {vdd_val}\n")
         # Loadable by testbench dir *and* by experiment dir.
@@ -327,6 +341,42 @@ class DeckTests(unittest.TestCase):
         self.assertIn("let m_iq = -i(v1)", self.deck)
         self.assertIn("print m_vout", self.deck)
         self.assertTrue(self.deck.rstrip().endswith(".end"))
+
+    def test_deck_omits_nodeset_when_manifest_has_none(self):
+        self.assertNotIn(".nodeset", self.deck)
+
+
+class DeckNodesetTests(unittest.TestCase):
+    """#40: ``.nodeset`` bias hints for a closed-loop DUT's initial guess."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        (root / "tb").mkdir()
+        (root / "tb" / "x.spice").write_text("v1 out 0 dc {vdd_val}\n")
+        (root / "tb" / "tb.json").write_text(
+            json.dumps(
+                {
+                    "name": "x",
+                    "netlist": "x.spice",
+                    "measure": {"vout": "v(out)"},
+                    "nodeset": {"vout": "1.8", "loop": "0.7"},
+                }
+            )
+        )
+        tb = testbench.load(root / "tb")
+        pdk = fake_pdk(root / "gf180mcuD")
+        point = corners.build_grid(corners.resolve_corners(["tt"]), (27,), [3.3])[0]
+        self.deck = runner.compose_deck(tb, pdk, point)
+
+    def test_deck_renders_one_nodeset_directive_with_every_hint(self):
+        self.assertIn(".nodeset v(vout)=1.8 v(loop)=0.7", self.deck)
+
+    def test_nodeset_precedes_the_design_includes(self):
+        nodeset_at = self.deck.index(".nodeset")
+        fragment_at = self.deck.index("x.spice")
+        self.assertLess(nodeset_at, fragment_at)
 
 
 class DeckIncludeTests(unittest.TestCase):
