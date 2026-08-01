@@ -1,0 +1,132 @@
+{
+  "name": "mc-output-accuracy",
+  "description": "Monte Carlo local-mismatch spread of the closed-loop LDO output voltage against the ratified 1.8 V +/-2% window: per-corner mean (the deterministic terms) and sigma (the statistical term), 1000 samples at each of the 81 mandated PVT points.",
+  "claim": "README output-accuracy row -- 1.8 V +/-2% (+/-36 mV, 3 sigma), regulator-only per README note 2. This record substantiates the STATISTICAL half of design/error_amp.md S3's offset budget (the amp input-pair + mirror mismatch term, target 3 sigma <= 2.33 mV input-referred / 3.49 mV output-referred) together with the deterministic mean it sits on. The feedback-divider mismatch term is NOT simulable against this PDK (mis_r = 0, sim/devchar/CONCLUSIONS.md S2) and enters as S3.2's fixed 3.36 mV assumption; load regulation is a separate 18 mV allowance verified by #12. The full combine against the window is sim/mc-output-accuracy/README.md.",
+  "netlist": "tb_mc_output_accuracy.spice",
+  "includes": [
+    "../../../design/netlist/ldo_core.spice"
+  ],
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.1,
+  "temperatures_c": [
+    -40,
+    27,
+    125
+  ],
+  "corners": [
+    "full"
+  ],
+  "analyses": [
+    "set numdgt=5",
+    "let mcm = 25",
+    "let mcit = 40",
+    "let k = 0",
+    "let s1 = 0",
+    "let s2 = 0",
+    "let amax = 0",
+    "let dmax = 0",
+    "let nbad = 0",
+    "let dvv = vector(25)",
+    "dowhile k < mcit",
+    "  op",
+    "  let dvv[0] = (v(vo1) - 1.8)*1e3",
+    "  let dvv[1] = (v(vo2) - 1.8)*1e3",
+    "  let dvv[2] = (v(vo3) - 1.8)*1e3",
+    "  let dvv[3] = (v(vo4) - 1.8)*1e3",
+    "  let dvv[4] = (v(vo5) - 1.8)*1e3",
+    "  let dvv[5] = (v(vo6) - 1.8)*1e3",
+    "  let dvv[6] = (v(vo7) - 1.8)*1e3",
+    "  let dvv[7] = (v(vo8) - 1.8)*1e3",
+    "  let dvv[8] = (v(vo9) - 1.8)*1e3",
+    "  let dvv[9] = (v(vo10) - 1.8)*1e3",
+    "  let dvv[10] = (v(vo11) - 1.8)*1e3",
+    "  let dvv[11] = (v(vo12) - 1.8)*1e3",
+    "  let dvv[12] = (v(vo13) - 1.8)*1e3",
+    "  let dvv[13] = (v(vo14) - 1.8)*1e3",
+    "  let dvv[14] = (v(vo15) - 1.8)*1e3",
+    "  let dvv[15] = (v(vo16) - 1.8)*1e3",
+    "  let dvv[16] = (v(vo17) - 1.8)*1e3",
+    "  let dvv[17] = (v(vo18) - 1.8)*1e3",
+    "  let dvv[18] = (v(vo19) - 1.8)*1e3",
+    "  let dvv[19] = (v(vo20) - 1.8)*1e3",
+    "  let dvv[20] = (v(vo21) - 1.8)*1e3",
+    "  let dvv[21] = (v(vo22) - 1.8)*1e3",
+    "  let dvv[22] = (v(vo23) - 1.8)*1e3",
+    "  let dvv[23] = (v(vo24) - 1.8)*1e3",
+    "  let dvv[24] = (v(vo25) - 1.8)*1e3",
+    "  let dfb = (v(x1.fb) - 1.2)*1e3",
+    "  let dd = abs(dvv[0] - 1.5*dfb)*1e3",
+    "  if dd > dmax",
+    "    let dmax = dd",
+    "  end",
+    "  echo \"MCSAMPLE $&k $&dvv\"",
+    "  let s1 = s1 + mcm*mean(dvv)",
+    "  let s2 = s2 + mcm*mean(dvv*dvv)",
+    "  let am = maximum(abs(dvv))",
+    "  if am > amax",
+    "    let amax = am",
+    "  end",
+    "  if am > 100",
+    "    let nbad = nbad + 1",
+    "  end",
+    "  let k = k + 1",
+    "  mc_source",
+    "end",
+    "let nmc = mcm*mcit",
+    "set numdgt=10"
+  ],
+  "operating_conditions": {
+    "load_current": "1 mA, set by a 1.8 kOhm load resistor per DUT copy -- the light-load point README note 1 makes binding for the accuracy-class rows. See the testbench header for why a resistor and not an ideal current sink (a sink leaves the DC solve unbounded and a fraction of the Monte Carlo samples do not converge).",
+    "output_cap": "1.0 uF, ESR = 100 mOhm (the DR-0001 nominal), one network per DUT copy. Present so this deck's DUT environment matches the other ldo_core benches; it does not affect a DC operating point.",
+    "enable_state": "enabled (EN = VIN), steady state -- ldo_core's Men clamp off, pass device under loop control",
+    "reference": "ideal 1.2 V source inside ldo_core (design/ldo_core.sch's Vref1). The reference's own error is EXCLUDED from this claim per README note 2 (regulator-only window); the bandgap companion block's tolerance is not this repo's budget line and is not added to this deck's combine.",
+    "statistical_switches": "sw_stat_mismatch = 1, sw_stat_global = 0 -- intra-die local mismatch only, redrawn per sample by mc_source. Global spread is off because sim/devchar/CONCLUSIONS.md S2 measured it to be exactly common-mode across a matched pair, so it moves neither the divider ratio nor the amplifier offset.",
+    "what_is_not_monte_carlod": "The feedback divider. ldo_core draws it as ideal SPICE resistors, and even the PDK subcircuits hard-code mis_r = 0, so a divider Monte Carlo returns sigma = 0 by construction. design/error_amp.md S3.2's fixed 3.36 mV (3 sigma) assumption is RSS'd on afterwards in sim/mc-output-accuracy/README.md. The divider_exact_uv measurement below is the in-situ proof that the divider contributed nothing to this run's sigma."
+  },
+  "measure": {
+    "n_samples": "nmc",
+    "n_bad_solves": "nbad",
+    "mean_mv": "s1/nmc",
+    "sigma_mv": "sqrt((s2 - s1*s1/nmc)/(nmc-1))",
+    "sigma3_mv": "3*sqrt((s2 - s1*s1/nmc)/(nmc-1))",
+    "worst_abs_mv": "amax",
+    "vos_in_mean_uv": "s1/nmc/1.5*1e3",
+    "vos_in_sigma3_mv": "2*sqrt((s2 - s1*s1/nmc)/(nmc-1))",
+    "divider_exact_uv": "dmax"
+  },
+  "checks": {
+    "n_samples": {
+      "min": 1000.0,
+      "description": "sample-count integrity: every corner must have completed the full 25 x 40 Monte Carlo loop, or its sigma is not the sigma this record's Statistical convention field claims"
+    },
+    "n_bad_solves": {
+      "max": 0.0,
+      "description": "count of solves in which any DUT copy landed further than 100 mV from 1.8 V, i.e. a DC solve that did not find a regulating operating point. ngspice reports a failed gmin/source-stepping solve only as a warning and still hands back its last iterate, so an unconverged sample would otherwise enter the distribution as a plausible-looking outlier and inflate sigma. Zero tolerated: a nonzero count invalidates the run's statistics rather than merely widening them."
+    },
+    "sigma_mv": {
+      "min": 0.05,
+      "description": "INTEGRITY FLOOR, not a spec line. The failure mode this whole experiment exists to prevent is a silently-disabled mismatch model returning sigma = 0 -- which is exactly what this PDK's resistor cards do (sim/devchar/CONCLUSIONS.md S2). A DC operating point is deterministic, so with the statistical switches off every sample would be bit-identical and sigma would be exactly zero. The PDK's design.ngspice defaults sw_stat_mismatch = 0 and is included after the harness's .param block, so the testbench re-asserts the switch; if that re-assertion ever stops working this check FAILS loudly instead of reporting a flawless distribution."
+    },
+    "sigma3_mv": {
+      "max": 3.49,
+      "description": "design/error_amp.md S3's output-referred target for the amp input-pair + mirror mismatch term (3 sigma, referred through 1/beta = 1.5). S3.1 asks #13 to VERIFY this number, not merely report it."
+    },
+    "vos_in_sigma3_mv": {
+      "max": 2.33,
+      "description": "the same target read at the amplifier's own inputs: design/error_amp.md S3.1's Pelgrom-derived 3 sigma <= 2.33 mV input-referred. This is sigma3_mv referred back through the divider ratio, which divider_exact_uv verifies is exactly 1.5 sample by sample."
+    },
+    "worst_abs_mv": {
+      "max": 18.0,
+      "description": "no single Monte Carlo sample may exceed the 18 mV one-sided STATIC budget of design/error_amp.md S3 (the +/-36 mV window less the 18 mV load-regulation allowance). This is a per-sample worst case over 1000 samples, so it is a strictly stronger statement than the 3 sigma claim."
+    },
+    "divider_exact_uv": {
+      "max": 1.0,
+      "description": "max over all samples of |dVOUT - 1.5*dFB| in uV. The feedback divider sits between those two nodes, so any mismatch in it breaks the identity. Pinning the residual under 1 uV is the in-situ evidence that this run's sigma is the amplifier's alone -- which is what makes design/error_amp.md S3.2's separately hand-budgeted divider term additive rather than double-counted, and what would catch a future netlist that starts Monte-Carloing the divider and silently reports sigma = 0 for it."
+    },
+    "mean_mv": {
+      "min": -2.56,
+      "max": 2.56,
+      "description": "design/error_amp.md S3's DETERMINISTIC sum (systematic offset 0.91 mV + line regulation 1.65 mV, both output-referred and added linearly). The per-corner Monte Carlo mean is where those two terms land; sigma is where the statistical term lands. Keeping them in separate columns is what stops the two budget classes being conflated."
+    }
+  }
+}
