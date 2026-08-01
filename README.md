@@ -150,6 +150,20 @@ record format (directory layout, record ids, the append-only rule), and
 [`sim/harness/README.md`](sim/harness/README.md) for PDK resolution, the
 corner definitions and how to write a testbench.
 
+## Physical verification (DRC / LVS)
+
+The DRC/LVS flow is up, on a one-transistor test cell — **there is no LDO
+layout yet**. It needs KLayout and `klt` on top of the simulation tools:
+
+```bash
+python3 layout/drclvs.py --check-env   # are klayout / klt / xschem / the PDK visible?
+python3 layout/drclvs.py               # DRC (two decks) + LVS + negative controls
+```
+
+See [`layout/README.md`](layout/README.md) for what each stage establishes, what
+"DRC clean" does and does not mean here, and the tool caveats worth knowing
+before believing a result.
+
 ## License
 
 Licensed under the Apache License, Version 2.0 — see [`LICENSE`](LICENSE).
