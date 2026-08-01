@@ -78,6 +78,15 @@ SUPPLY_TOL = 0.10
 PM_MIN_DEG = 45.0
 GM_MIN_DB = 10.0
 
+# Regulation target, and how far a point's DC output may sit from it before the
+# run is treated as void. VOUT_NOM_V is set by the design's own divider and
+# reference (Vref1 = 1.2 V, Rtop = 300k, Rbot = 600k => 1.2 * 900/600 = 1.8 V).
+# The window is deliberately wide: it is a branch check (regulating vs the
+# current-limit latch state, which sits tens of volts away), not an accuracy
+# check -- accuracy is sim/load-regulation/ and sim/line-regulation/'s claim.
+VOUT_NOM_V = 1.8
+VOUT_TOL_FRAC = 0.10
+
 # AC sweep band. The low end must sit well below the output pole at the
 # largest C_eff / lightest load (a few Hz); the high end well above the
 # highest crossover seen (a few MHz) so a -180 deg crossing, if there is
@@ -182,6 +191,25 @@ def _f(tok: str) -> float | None:
         return None
 
 
+def nonregulating(rows: list[Row]) -> list[Row]:
+    """Rows whose DC output is not on the regulating branch.
+
+    A phase/gain margin is a statement about a *specific* operating point. The
+    core has a second, non-regulating DC solution (the current-limit latch
+    state -- see the deck's "removing the non-physical DC branch" comment),
+    and margins extracted about it are meaningless numbers that look exactly
+    like meaningful ones.
+    Any row this returns voids the run rather than entering a record.
+
+    NaN counts as non-regulating: an unparsable VOUT is not evidence that the
+    bias point was right.
+    """
+    return [
+        r for r in rows
+        if not (abs(r.vout_v - VOUT_NOM_V) <= VOUT_TOL_FRAC * VOUT_NOM_V)
+    ]
+
+
 def render_deck(pvt, pdk, iloads, ceffs, esrs) -> str:
     corner = pvt.corner
     mos, res, bjt, diode, moscap, mimcap = corner.sections
@@ -265,6 +293,24 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, workdir: Path, logdir: Path):
     expected = len(iloads) * len(ceffs) * len(esrs)
     if len(rows) != expected:
         return pvt, rows, f"expected {expected} rows, parsed {len(rows)} (see {log})"
+
+    # A margin is only meaningful about the REGULATING bias point. The core has
+    # a second, non-regulating DC solution (the current-limit latch state -- see
+    # the .nodeset comment in the deck), and a margin extracted about it is
+    # noise dressed up as a number. Any row whose VOUT is not within
+    # VOUT_TOL_FRAC of the regulation target fails the whole run rather than
+    # entering the record: this is the check that keeps the deck's convergence
+    # seed honest if the design later moves.
+    off = nonregulating(rows)
+    if off:
+        w = off[0]
+        return pvt, rows, (
+            f"{len(off)}/{len(rows)} points did not settle on the regulating DC "
+            f"solution (|VOUT - {VOUT_NOM_V:g} V| > {VOUT_TOL_FRAC:.0%}); first is "
+            f"{w.config_id} at VOUT = {w.vout_v:g} V. A loop-gain margin about a "
+            f"non-regulating bias point is meaningless, so this run is void "
+            f"(see {log})"
+        )
     return pvt, rows, None
 
 
@@ -356,9 +402,9 @@ def render_analysis(rows: list[Row], failing: list[Row]) -> str:
     """A data-derived reading of *where* the matrix passes and fails.
 
     Everything here is computed from the sweep, not asserted: the point is to
-    say which axis actually drives the result, so the next design iteration
-    (issue #9, the error amplifier) is aimed at the right thing rather than
-    at the a-priori guess.
+    say which axis actually drives the result, so the next design iteration on
+    the loop's compensation is aimed at the right thing rather than at the
+    a-priori guess.
     """
     by_load: dict[float, list[Row]] = {}
     for r in rows:
@@ -391,6 +437,24 @@ def render_analysis(rows: list[Row], failing: list[Row]) -> str:
         else "non-monotonically with load current"
     )
 
+    # Is the no-ESR-zero column (minimum ESR) the worst ESR column at every
+    # load? Computed, not assumed -- the sentence below cites it either way.
+    def _pm(rs: list[Row]) -> float:
+        pm = worst_of(rs).pm_deg
+        return -1e9 if pm is None else pm
+
+    min_esr_worst_everywhere = all(
+        _pm([r for r in by_load[k] if r.esr_ohm == min_esr])
+        <= _pm([r for r in by_load[k] if r.esr_ohm == e]) + 1e-9
+        for k in loads
+        for e in sorted({r.esr_ohm for r in rows})
+    )
+    esr_clause = (
+        "which is why the 1 mOhm column is the worst ESR column at every load"
+        if min_esr_worst_everywhere
+        else "though the minimum-ESR column is not uniformly the worst one here"
+    )
+
     lines = [
         "## Structure of the result",
         "",
@@ -412,11 +476,11 @@ def render_analysis(rows: list[Row], failing: list[Row]) -> str:
         f"Read together: the worst phase margin degrades {trend},",
         f"while the 0 dB crossover frequency moves over",
         f"{min(f0s):.4g} Hz - {max(f0s):.4g} Hz across",
-        "the matrix. A loop whose phase margin collapses as its crossover rises,",
-        "with the *lightest*-load column the healthiest, is one whose crossover is",
-        "walking into a fixed higher-frequency pole -- not one limited by the",
-        "output pole, and not one the external ESR zero can rescue at the 1 mOhm",
-        "end (where that zero is at ~500 MHz and provides no phase lead in band).",
+        "the matrix. Crossover rising with load current is the pass device's gm",
+        "rising with its drain current; phase margin falling as it rises means",
+        "the loop is meeting poles that do not move with load. The external ESR",
+        "zero cannot rescue the 1 mOhm end -- that zero sits at ~500 MHz there and",
+        f"supplies no phase lead in band -- {esr_clause}.",
         "",
         "Note that the a-priori worst point named in issue #10 and in",
         "`spec/architecture-survey.md` section 4.1 -- light load, minimum C_eff,",
@@ -426,11 +490,19 @@ def render_analysis(rows: list[Row], failing: list[Row]) -> str:
         f"matrix fails (worst-corner PM {pm_str(pm_heavy)} deg at",
         f"{fmt_ma(pm_heavy.iload_a)} / {fmt_uf(pm_heavy.ceff_f)} / {pm_heavy.esr_ohm:g} ohm,",
         f"`{pm_heavy.corner_id}`).",
-        "That reversal is a property of *this* compensation, and is the single",
-        "most useful thing in this record: the classic light-load argument",
-        "assumes a crossover that does not move much with load, and this loop's",
-        "does -- the pass device's gm, and hence the loop's unity-gain frequency,",
-        "rises with load current while the amplifier-output pole stays put.",
+        "The classic light-load argument assumes a crossover that does not move",
+        "much with load; this loop's does, because the pass device's gm -- and",
+        "with it the loop's unity-gain frequency -- rises with load current",
+        "while the poles that eat the phase do not move with it. So the load",
+        "axis runs the *opposite* way to the a-priori expectation"
+        + (
+            ", and the a-priori point is in fact the healthiest corner of the "
+            "matrix rather than its worst."
+            if apriori.passes
+            else ", even though the a-priori point fails on its own account "
+                 "here too: the matrix is short of margin along its whole "
+                 "length, not just at one end of it."
+        ),
     ]
 
     if failing:
@@ -438,31 +510,41 @@ def render_analysis(rows: list[Row], failing: list[Row]) -> str:
             "",
             "## What this record asks of the next design step",
             "",
-            "This is a measurement of `design/ldo_core.sch` **as committed**, whose",
-            "error amplifier is still `design/ldo_erramp_placeholder.sch` -- a",
-            "behavioural VCVS behind a 1 MOhm output resistance driving the pass",
-            "device's gate capacitance. That RC is the fixed high-frequency pole",
-            "the crossover walks into, so the failures tabulated above are a",
-            "statement about the *placeholder*, not a defect discovered in a real",
-            "amplifier.",
+            "This is a measurement of `design/ldo_core.sch` **as committed** --",
+            "the transistor-level `design/error_amp.sch` and the",
+            "`design/ldo_ilimit.sch` limit block, both real. No behavioural",
+            "amplifier stands in for anything, so the failures tabulated above are",
+            "a property of this compensation as designed, not an artifact of a",
+            "placeholder.",
             "",
-            "DR-0001 anticipated exactly this: \"with no minimum ESR, phase margin",
-            "must come from pole placement, not from the external zero: the pass-gate",
-            "pole `p2 = 1/(2*pi*Rgate*Cgate)` must sit well above crossover at the",
-            "0.33 uF corner\". Issue #10's own guidance says a broad failure of this",
-            "shape is #9's (error amplifier) or #8's (compensation component values)",
-            "problem to fix, not something this testbench should work around -- so",
-            "this record does not tune anything to make the matrix pass.",
+            "That is not a contradiction of the amplifier's own record: the",
+            "amplifier was sized against the offset, PSRR and quiescent-current",
+            "budgets (`sim/amp-openloop/records/`, `sim/psrr-vs-freq/records/`,",
+            "`sim/quiescent-current/records/`), and closing the LDO loop around it",
+            "is a separate requirement that nothing has yet been sized against.",
+            "This record is the first measurement of that requirement, and it is",
+            "what the compensation step has to be designed against.",
             "",
-            "The concrete, measured requirement handed to #9 is therefore: the",
-            "amplifier's output pole must sit above the crossover frequencies",
-            f"tabulated above -- which reach {max(f0s):.3g} Hz somewhere in this",
-            f"matrix, and {worst_of(rows).f0_hz:.3g} Hz at the worst-margin point",
-            "itself -- by enough margin to leave PM >= 45 deg. The levers are a",
-            "low-impedance gate driver, Miller compensation, or a lower loop",
-            "unity-gain frequency (`spec/architecture-survey.md` section 5,",
-            "candidates 2 and 3). Re-running this same sweep against the new",
-            "amplifier mints the record that supersedes this one.",
+            "DR-0001 called the mechanism in advance: \"with no minimum ESR, phase",
+            "margin must come from pole placement, not from the external zero: the",
+            "pass-gate pole `p2 = 1/(2*pi*Rgate*Cgate)` must sit well above",
+            "crossover at the 0.33 uF corner\". Issue #10's own guidance says a",
+            "broad failure of this shape is a compensation problem to fix in the",
+            "design, not something this testbench should work around -- so this",
+            "record tunes nothing to make the matrix pass.",
+            "",
+            "The concrete, measured requirement it hands to the compensation step",
+            "is therefore: with the loop's non-dominant poles where they are, the",
+            "crossover frequencies tabulated above must be brought below them (or",
+            f"the poles above the crossovers) -- crossover reaches {max(f0s):.3g} Hz",
+            f"somewhere in this matrix and is {worst_of(rows).f0_hz:.3g} Hz at the",
+            "worst-margin point itself -- by enough margin to leave PM >= 45 deg at",
+            "every point of the matrix, the 1 mOhm ESR column included. The levers",
+            "are the amplifier's Miller network (`XCc`/`XRz` in",
+            "`design/error_amp.sch`), a lower-impedance pass-gate drive, or a lower",
+            "loop unity-gain frequency (`spec/architecture-survey.md` section 5,",
+            "candidates 2 and 3). Re-running this same sweep against the",
+            "recompensated loop mints the record that supersedes this one.",
         ]
     return "\n".join(lines) + "\n"
 
@@ -690,6 +772,39 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
     n_inf_gm = sum(1 for r in rows if math.isinf(r.gm_db))
     analysis = render_analysis(rows, failing)
 
+    # Which of DR-0001's two bars actually bites is a property of the loop
+    # being measured, not a constant -- so read it off the data rather than
+    # asserting it. A loop whose phase only asymptotes to -180 deg has no
+    # finite gain margin to fail; one that crosses -180 deg below its 0 dB
+    # crossing fails both bars at once, and saying so is the whole point.
+    n_gm_fail = sum(1 for r in rows if r.gm_db < GM_MIN_DB)
+    n_pm_fail = sum(1 for r in rows if r.pm_deg is None or r.pm_deg < PM_MIN_DEG)
+    if n_gm_fail == 0:
+        gm_reading = (
+            f"Gain margin is **not** the limiting criterion anywhere in this "
+            f"matrix: at {n_inf_gm}/{len(rows)} points the loop phase never "
+            f"reaches -180 deg in 0.01 Hz - 1 GHz (a loop that approaches "
+            f"-180 deg from above), so no finite gain multiplier drives T to "
+            f"-1; where a -180 deg crossing does exist the gain there is below "
+            f"0 dB. Every failure below is a **phase-margin** failure."
+        )
+    else:
+        gm_reading = (
+            f"**Both** of DR-0001's bars are broken here, and by the same "
+            f"mechanism: {n_pm_fail}/{len(rows)} points miss the "
+            f">= {PM_MIN_DEG:g} deg phase-margin bar and "
+            f"{n_gm_fail}/{len(rows)} miss the >= {GM_MIN_DB:g} dB gain-margin "
+            f"bar. A negative gain margin means the phase reaches -180 deg "
+            f"while |T| is still above 0 dB -- the -180 deg crossing sits "
+            f"*below* the 0 dB crossing rather than above it. Only "
+            f"{n_inf_gm}/{len(rows)} points have no -180 deg crossing in "
+            f"0.01 Hz - 1 GHz at all. This record reports the two Bode margins "
+            f"DR-0001 asks for and nothing beyond them: a closed-loop "
+            f"stability verdict would need a Nyquist reading, which is not "
+            f"attempted here and is not what the ratified criterion is written "
+            f"in terms of."
+        )
+
     subset = args.subset_reason.strip()
     subset_md = (f"\n  - **Subset reason**: {subset}\n" if subset else "")
     multi_md = ""
@@ -711,12 +826,15 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
   suite should reference it rather than duplicate a phase-margin testbench.
 - **Netlist provenance**: schematic (`design/ldo_core.sch`, via
   `design/netlist/ldo_core.spice`){' -- **DIRTY WORKING TREE at run time; not citable as a clean-tree result**' if dirty else ''}.
-  **The error amplifier is still the behavioural placeholder**
-  (`design/ldo_erramp_placeholder.sch`: a 3162x VCVS behind a 1 MOhm output
-  resistance), not a transistor-level amplifier -- issue #9 owns that design.
-  Every number below is therefore a measurement of the *core + placeholder
-  amp* as committed, which is precisely what this record is for: it fixes
-  the compensation requirement #9 has to meet.
+  The DUT is the **real** loop: `design/error_amp.sch` (transistor-level,
+  Miller-compensated) and `design/ldo_ilimit.sch` (the real limit block), with
+  the pass device and the 300k/600k feedback divider from
+  `design/ldo_core.sch`. No behavioural amplifier is used. The only
+  idealizations in the loop are the ones the other records already name:
+  `Vref1`, an ideal 1.2 V source standing in for a bandgap block that does not
+  exist yet, and `Fbias` inside `ldo_ilimit`. The load is an ideal DC current
+  source (see "Operating conditions"), which is the conservative choice for a
+  stability measurement.
 - **Corner matrix run**:
   - Process: {procs}
   - Temperature: {temps_seen} degC
@@ -760,12 +878,7 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
     phase margin {pm_str(best)} deg.
   - Phase margin across the whole matrix spans
     {min(pms):.2f} deg to {max(pms):.2f} deg.
-  - Gain margin is **not** the limiting criterion anywhere in this matrix:
-    at {n_inf_gm}/{len(rows)} points the loop
-    phase never reaches -180 deg in 0.01 Hz - 1 GHz (a two-pole-dominated
-    loop approaches -180 deg from above), so no finite gain multiplier drives
-    T to -1; where a -180 deg crossing does exist the gain there is far below
-    0 dB. Every failure below is a **phase-margin** failure.{multi_md}
+  - {gm_reading}{multi_md}
 
   Per-PVT-corner worst case (worst over that corner's
   {len(iloads) * len(ceffs) * len(esrs)} load/cap/ESR configurations),

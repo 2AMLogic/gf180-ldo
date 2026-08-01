@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import math
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -156,6 +157,52 @@ class TestDeckTemplate(unittest.TestCase):
         netlist = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
         self.assertIn(".subckt ldo_core VIN VOUT EN VSS ERRAMP_OUT PASS_GATE",
                       netlist)
+
+    def test_template_removes_the_non_physical_dc_branch(self):
+        # An ideal current-source load leaves VOUT unbounded below, which opens
+        # a second (current-limit latch) DC solution the solver lands on at
+        # about a third of the PVT points. The clamp denies it its escape.
+        text = (REPO_ROOT / "sim" / "loop-stability" / "testbench"
+                / "tb_loop_stability.spice.in").read_text()
+        self.assertIn("Dclamp 0 VOUT dclamp", text)
+        model = re.search(r"^\.model dclamp d\((.*)\)$", text, re.M).group(1)
+        # It must be AC-inert: any junction capacitance would load the output
+        # node and quietly move the very phase margin this bench reports.
+        self.assertIn("cjo=0", model)
+        self.assertIn("tt=0", model)
+
+    def test_the_regulation_target_matches_the_designs_own_divider(self):
+        # If the divider or the reference moves, the regulation check goes
+        # stale silently -- so derive the target from the netlist.
+        netlist = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
+        rtop = float(re.search(r"^Rtop VOUT FB (\S+)k", netlist, re.M).group(1))
+        rbot = float(re.search(r"^Rbot FB VSS (\S+)k", netlist, re.M).group(1))
+        vref = float(re.search(r"^Vref1 VREF VSS (\S+)", netlist, re.M).group(1))
+        self.assertAlmostEqual(sweep.VOUT_NOM_V, vref * (rtop + rbot) / rbot,
+                               places=6)
+
+
+class TestRegulatingBranchGuard(unittest.TestCase):
+    """A margin is only meaningful about the regulating operating point."""
+
+    def test_the_regulating_point_is_accepted(self):
+        self.assertEqual([], sweep.nonregulating([row(vout_v=1.8),
+                                                  row(vout_v=1.79945)]))
+
+    def test_the_current_limit_latch_branch_is_rejected(self):
+        # The exact shape seen before the deck seeded the regulating branch:
+        # VOUT ~ -29 V with a nonsense "DC loop gain" that still parses fine.
+        bad = row(vout_v=-29.1482, dcgain_db=-131.5)
+        self.assertEqual([bad], sweep.nonregulating([row(vout_v=1.8), bad]))
+
+    def test_an_unparsable_vout_is_rejected_not_trusted(self):
+        self.assertEqual(1, len(sweep.nonregulating([row(vout_v=float("nan"))])))
+
+    def test_the_window_is_a_branch_check_not_an_accuracy_check(self):
+        # Regulation accuracy is sim/load-regulation's claim, not this one:
+        # a few mV of droop must not void a stability run.
+        self.assertEqual([], sweep.nonregulating([row(vout_v=1.78),
+                                                  row(vout_v=1.82)]))
 
 
 if __name__ == "__main__":
