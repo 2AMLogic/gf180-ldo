@@ -88,6 +88,22 @@ Rtop (VOUT side), confirmed both by the transfer-function derivation and by
 a control experiment that measured a further ~50 deg WORSE margin with it
 across Rbot.
 
+ISSUE #51 UPDATE -- Cff is retained, but it is no longer the load-bearing
+compensation. #51 rebuilt the compensation inside design/error_amp.sch (a
+class-AB gate buffer plus a Type-II gain-shelf Miller network) and that is
+what closes the loop: every point of DR-0001's matrix at I_load >= 1 mA now
+meets PM >= 45 deg and GM >= 10 dB, and 525 of the 540 points at 0.1 mA do.
+Cff's LHP zero at 1/(2*pi*Rtop*Cff) still contributes and still costs no
+quiescent current, so it stays; what changed is that the amplifier no longer
+rolls the loop off at -40 dB/dec through crossover, so Cff's ~11.5 deg
+ceiling is no longer being asked to carry the whole result. Raising Cff was
+re-tried against #51's remaining light-load failures (87u -> 150u, i.e.
+15 pF -> 45 pF) and moved 3 of 15 points, so it was not kept: those points
+are on the PSRR-vs-stability frontier that
+spec/decision-records/DR-0007-light-load-stability-envelope.md documents, not
+short of feedforward zero. The paragraph below is #42's reading of the
+pre-#51 design and is kept as written for the record it describes.
+
 Measured, sim/loop-stability/records/ (this record supersedes
 20260801-050406-65416d2): Cff materially improves the matrix (most of the
 moderate-to-heavy-load, higher-ESR corners now clear both bars, some by a
