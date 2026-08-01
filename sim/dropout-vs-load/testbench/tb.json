@@ -15,12 +15,18 @@
     "enable_state": "enabled (EN tied to VIN at instantiation, Vgs=0 at the enable clamp)"
   },
   "measure": {
-    "vdrop_mv": "(v(vin) - v(vout))*1e3"
+    "vdrop_mv": "(v(vin) - v(vout))*1e3",
+    "iload_ma": "i(vlmeas)*1e3"
   },
   "checks": {
     "vdrop_mv": {
       "max": 300.0,
       "description": "README.md Dropout @ 50 mA target (< 300 mV); the < 200 mV stretch bound is not separately gated"
+    },
+    "iload_ma": {
+      "min": 49.99,
+      "max": 50.01,
+      "description": "the compliance-limited sink must be delivering the commanded 50 mA at the reported operating point, not a fraction of it"
     }
   },
   "nodeset": {

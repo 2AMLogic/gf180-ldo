@@ -5,7 +5,7 @@ V {}
 S {}
 E {}
 T {error_amp -- LDO error amplifier (issue #9).
-Two-stage Miller-compensated OTA, self-biased, ~11 uA nominal.} -900 -960 0 0 0.5 0.5 {}
+Two-stage OTA with a Type-II (gain-shelf) Miller network and a class-AB\ngate buffer, self-biased, ~11 uA nominal. Compensation and buffer are #51's.} -900 -960 0 0 0.5 0.5 {}
 T {Ports -- the swap-in contract issue #8 ratified (design/README.md,
 ldo_erramp_placeholder.sym), plus EN appended by issue #11. Do not reorder
 or rename: ldo_core, #10's loop-break bench and #12's testbench suite
@@ -23,17 +23,27 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      the single inversion in stage 2 makes INP non-inverting
                      overall -- the polarity the contract fixes.
   Stage 2  M2P       PMOS common-source driver from VDD into the NMOS
-                     current sink M2N. Both rails are reachable: OUT pulls
-                     to within ~1 mV of VSS (pass device on hard at the
-                     dropout test point) and to within ~2 mV of VDD (pass
-                     device off). A PMOS-input / NMOS-driver arrangement
-                     could only reach VDD - Vdsat, leaving residual Vsg on
-                     the pass device at no load.
-  Comp     Cc, Rz    Miller cap with a nulling resistor. Cc sets
-                     UGBW = gm(MIN)/(2*pi*Cc); Rz ~ (1/gm(M2P))*(1+CL/Cc)
-                     puts the zero near the OUT-node pole instead of
-                     leaving it in the right half plane. CL is the measured
-                     6.14 pF pass-gate Cgg (sim/devchar/CONCLUSIONS.md S1).
+                     current sink M2N, into the INTERNAL node BG. Stage 2
+                     no longer drives the pass gate directly (issue #51) --
+                     it drives the buffer's gate, a ~0.5 pF load instead of
+                     the 6.14 pF pass gate, so its own pole sits decades
+                     above the loop crossover.
+  Buffer   Mbuf,     Class-AB gate driver (issue #51), the "low-impedance
+           Mbufb,    gate drive" DR-0001 and spec/architecture-survey.md S5
+           Mpgn,     candidate 2 call for. Mbuf is a PMOS source follower
+           Rbufb     (gate BG, source OUT, drain VSS, body tied to its own
+                     source so there is no body effect on the level shift);
+                     Mbufb is its pull-up, a scaled replica of M2P; Mpgn is
+                     a small always-on sink. See BUFFER below for why each
+                     one is there and what each rail costs.
+  Comp     Cc, Rz    Miller network from N1 to OUT, but Rz is deliberately
+                     LARGE (6 MOhm, not the ~30 kOhm a nulling resistor
+                     would be). Above f_z = 1/(2*pi*Rz*Cc) the shunt
+                     feedback impedance is Rz rather than 1/(s*Cc), so the
+                     amplifier's gain SHELVES at gm(MIN)*Rz instead of
+                     continuing to fall. That shelf is what makes the loop
+                     roll off at -20 dB/dec (not -40) where it crosses
+                     unity, which is the whole point: see COMPENSATION.
   Bias     MB1,Rbias Supply-referenced self-bias, fed through the EN header
                      Mbias_h (see ENABLE): Iref = (VDD - Vgs)/Rbias
                      through the diode-connected NMOS MB1, whose gate NBIAS
@@ -59,9 +69,100 @@ CURRENT BUDGET (nominal tt/27C/3.3V; measured values across PVT in
 sim/amp-openloop/records/):
   bias branch  Rbias + MB1     ~3 uA
   stage 1      MTAIL           ~3 uA
-  stage 2      M2N             ~5 uA
+  stage 2      M2N             ~2 uA   (was ~5 uA: stage 2 now drives only
+                                        the buffer gate, so its current was
+                                        moved into the buffer -- issue #51)
+  buffer       Mbufb + Mpgn    ~3 uA
   total                       ~11 uA against the 10-15 uA error-amp
                                allocation in spec/architecture-survey.md S5.
+  Measured 5.4-13.7 uA over PVT (sim/amp-openloop/records/), and the
+  ASSEMBLED regulator measures 8.6-21.4 uA (sim/quiescent-current/records/)
+  against the ratified < 30 uA row -- LOWER than the 22.4 uA the pre-#51
+  design measured, because the current moved out of stage 2 buys more
+  pass-gate bandwidth per microamp in the buffer than it did in a
+  9 MOhm-output common-source stage.
+
+COMPENSATION -- why the Miller network is a gain SHELF (issue #51)
+#10's stability record measured the pre-#51 loop as a textbook two-pole
+system: the amplifier's Miller-set dominant pole (~2.6 Hz) and the output
+pole at VOUT are BOTH far below crossover at every point of DR-0001's
+matrix, so the loop rolls off at -40 dB/dec through unity and the phase
+margin sits within a couple of degrees of zero everywhere. That is not a
+tuning problem. With a plain Miller integrator the loop's crossover is
+
+    f_c = sqrt( beta * UGBW_amp * gm_pass / (2*pi*C_out) )
+
+and PM >= 45 deg needs f_c <= the output pole, which at 50 mA / 0.33 uF
+needs UGBW_amp <= 2.3 kHz and at 0 mA / 4.7 uF needs UGBW_amp <= 1 mHz.
+Neither is buildable (#51, and spec/decision-records/DR-0007).
+
+Rz = 6 MOhm turns the same two components into a Type-II compensator:
+
+  f < f_z = 1/(2*pi*Rz*Cc) ~ 5.4 kHz   amp is the usual integrator,
+                                       gain = gm(MIN)/(2*pi*Cc*f).
+                                       This region sets PSRR at 1 kHz.
+  f > f_z                              feedback impedance is Rz, so the
+                                       amp's gain SHELVES at
+                                       A_plat = gm(MIN)*Rz ~ 140.
+                                       The loop then rolls off at
+                                       -20 dB/dec from the output pole
+                                       alone -> PM approaches 90 deg.
+
+The loop therefore crosses unity in the shelf region -- one pole, not two --
+at every load from 0.1 mA up. Two hard bounds fix Rz and Cc, and the design
+sits between them:
+
+  Rz too large  -> A_plat too large -> the heavy-load crossover
+                   beta*A_plat*gm_pass/(2*pi*C_out) climbs past the
+                   buffer/BG poles. MEASURED: Rz = 6 MOhm passes 0.1-50 mA
+                   at every PVT/cap/ESR point; Rz = 7 MOhm already loses
+                   corners at 1-50 mA; Rz = 9 MOhm loses them all.
+  Cc too large   -> gm(MIN)/(2*pi*Cc) falls and with it the amp's 1 kHz
+                   gain, which is what the ratified PSRR > 50 dB @ 1 kHz
+                   row rides on. MEASURED: Cc = 4.80 pF gives 53.5 dB
+                   worst-corner amp gain at 1 kHz against a 53.5 dB floor;
+                   Cc = 7.4 pF puts psrr_ldo_1k_db at 46 dB, a hard FAIL.
+
+Rz*sqrt(Cc) sets how light a load stays in the shelf region at crossover,
+and gm(MIN)/Cc sets the 1 kHz gain, so the two rows pull in opposite
+directions on the same two components. This cell sits ON that frontier, not
+inside it: the 0 mA / no-external-load column of DR-0001's matrix is on the
+far side of it and needs nanofarad-scale on-chip Cc. That is measured, not
+asserted -- spec/decision-records/DR-0007-light-load-stability-envelope.md.
+
+BUFFER -- the class-AB gate driver, and why not a plain follower
+The pass gate is a 6.14 pF load (sim/devchar/CONCLUSIONS.md S1) hanging on a
+~9 MOhm node. In the shelf region the Miller shunt feedback cannot pull that
+node's impedance down fast enough (the local loop's own bandwidth runs out
+below the LDO crossover), so the pass-gate pole lands BELOW crossover at
+heavy load and the loop is unrecoverable there. MEASURED without a buffer,
+with everything else identical: worst PM -92 deg at 50 mA / 0.33 uF.
+
+  Mbuf   PMOS source follower, gate BG, source OUT, drain VSS, body tied to
+         OUT. Sets the pass-gate node impedance at 1/gm(Mbuf) ~ 20 kOhm
+         instead of ~9 MOhm, moving that pole above the loop crossover.
+  Mbufb  Its pull-up. NOT a fixed current source: its gate follows N1 (via
+         Rbufb) so it is a scaled REPLICA of M2P and turns fully off when
+         the loop demands maximum drive. This is what keeps VSS reachable.
+         A plain follower with a fixed bias source cannot pull OUT below
+         Vgs(Mbuf) -- its bias current has nowhere else to go -- which
+         costs a whole |Vtp| of gate drive. MEASURED with a fixed-bias
+         follower: the regulator loses regulation entirely at Vin = 2.10 V
+         / 50 mA at 8 of 15 dropout corners (Vout runs to tens of volts
+         negative). With the replica pull-up, dropout is 300.4-300.9 mV at
+         all 15 corners -- the same band as the pre-#51 design.
+  Mpgn   Small always-on NMOS sink (~0.4 uA, mirrored from NBIAS). With
+         Mbufb off it is the only thing left at OUT, so it defines the DC
+         floor at VSS rather than at a Vgs. It is also what makes the node
+         non-floating for the operating-point solve.
+  Rbufb  5 MOhm in series with Mbufb's gate. Mbufb's gate has to track N1
+         at DC (that is the whole turn-off mechanism) but must NOT be a
+         signal path: N1 -> Mbufb -> OUT is a feedforward that bypasses the
+         compensated stage and re-raises the loop gain above the shelf.
+         MEASURED without Rbufb: worst PM -167 deg at 50 mA / 0.33 uF.
+         Rbufb against Mbufb's own ~1 pF gate capacitance puts that path's
+         pole near 30 kHz, decades below the heavy-load crossover, so the
+         device is a DC-tracking current source and nothing more.
 
 ENABLE (issue #11 -- the interface decision #9 deferred)
 Issue #9 shipped this cell with no EN pin and measured the consequence:
@@ -88,6 +189,13 @@ add EN and gate the bias INSIDE this cell.
                  exactly like ldo_core's Men), so M2P and the mirror load
                  are definitively off and no node in the cell is left
                  floating for the operating-point solve.
+  Mbg_pu         same job for BG, the buffer's gate node, which #51 added
+                 (M2P and M2N are both off when disabled, so BG would
+                 otherwise float and leave Mbuf's state undefined). BG at
+                 VDD with OUT held at VIN by ldo_core's Men puts Vgs = 0
+                 on Mbuf. Mbufb and Mpgn need no pull device of their own:
+                 Mbufb's gate follows N1 (already pulled to VDD) through
+                 Rbufb, and Mpgn's gate is NBIAS (already pulled to VSS).
 
 Why gate here rather than put a supply header on this cell in ldo_core:
 with the cell's VDD switched off, OUT is still held at VIN by ldo_core's
@@ -153,26 +261,55 @@ C {devices/lab_pin.sym} -80 -570 0 0 {name=l_mld2_d sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} -80 -630 0 0 {name=l_mld2_s sig_type=std_logic lab=VDD}
 C {devices/lab_pin.sym} -80 -600 0 0 {name=l_mld2_b sig_type=std_logic lab=VDD}
 
-C {symbols/ppolyf_u.sym} 200 -400 0 0 {name=Rz model=ppolyf_u W=1u L=109u m=1}
+C {symbols/ppolyf_u_1k.sym} 200 -400 0 0 {name=Rz model=ppolyf_u_1k W=1u L=6000u m=1}
 C {devices/lab_pin.sym} 200 -430 0 0 {name=l_rz_p sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 200 -370 0 0 {name=l_rz_m sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 180 -400 0 0 {name=l_rz_b sig_type=std_logic lab=VSS}
 
-C {symbols/cap_mim_2f0fF.sym} 400 -400 0 0 {name=Cc model=cap_mim_2f0_m2m3_noshield W=39u L=39u m=1}
+C {symbols/cap_mim_2f0fF.sym} 400 -400 0 0 {name=Cc model=cap_mim_2f0_m2m3_noshield W=49u L=49u m=1}
 C {devices/lab_pin.sym} 400 -430 0 0 {name=l_cc_g sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 400 -370 0 0 {name=l_cc_b sig_type=std_logic lab=OUT}
 
 C {symbols/pfet_03v3.sym} 700 -600 0 0 {name=M2P model=pfet_03v3 L=2u W=150u nf=15 m=1}
 C {devices/lab_pin.sym} 680 -600 0 0 {name=l_m2p_g sig_type=std_logic lab=N1}
-C {devices/lab_pin.sym} 720 -570 0 0 {name=l_m2p_d sig_type=std_logic lab=OUT}
+C {devices/lab_pin.sym} 720 -570 0 0 {name=l_m2p_d sig_type=std_logic lab=BG}
 C {devices/lab_pin.sym} 720 -630 0 0 {name=l_m2p_s sig_type=std_logic lab=VDD}
 C {devices/lab_pin.sym} 720 -600 0 0 {name=l_m2p_b sig_type=std_logic lab=VDD}
 
-C {symbols/nfet_03v3.sym} 700 -150 0 0 {name=M2N model=nfet_03v3 L=4u W=10u nf=1 m=1}
-C {devices/lab_pin.sym} 720 -180 0 0 {name=l_m2n_d sig_type=std_logic lab=OUT}
+C {symbols/nfet_03v3.sym} 700 -150 0 0 {name=M2N model=nfet_03v3 L=4u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 720 -180 0 0 {name=l_m2n_d sig_type=std_logic lab=BG}
 C {devices/lab_pin.sym} 680 -150 0 0 {name=l_m2n_g sig_type=std_logic lab=NBIAS}
 C {devices/lab_pin.sym} 720 -120 0 0 {name=l_m2n_s sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 720 -150 0 0 {name=l_m2n_b sig_type=std_logic lab=VSS}
+
+C {symbols/ppolyf_u_1k.sym} 850 -600 0 0 {name=Rbufb model=ppolyf_u_1k W=1u L=5000u m=1}
+C {devices/lab_pin.sym} 850 -630 0 0 {name=l_rbufb_p sig_type=std_logic lab=N1}
+C {devices/lab_pin.sym} 850 -570 0 0 {name=l_rbufb_m sig_type=std_logic lab=NBP}
+C {devices/lab_pin.sym} 830 -600 0 0 {name=l_rbufb_b sig_type=std_logic lab=VSS}
+
+C {symbols/pfet_03v3.sym} 1000 -600 0 0 {name=Mbufb model=pfet_03v3 L=2u W=200u nf=20 m=1}
+C {devices/lab_pin.sym} 980 -600 0 0 {name=l_bufb_g sig_type=std_logic lab=NBP}
+C {devices/lab_pin.sym} 1020 -570 0 0 {name=l_bufb_d sig_type=std_logic lab=OUT}
+C {devices/lab_pin.sym} 1020 -630 0 0 {name=l_bufb_s sig_type=std_logic lab=VDD}
+C {devices/lab_pin.sym} 1020 -600 0 0 {name=l_bufb_b sig_type=std_logic lab=VDD}
+
+C {symbols/pfet_03v3.sym} 1000 -300 0 0 {name=Mbuf model=pfet_03v3 L=1u W=150u nf=15 m=1}
+C {devices/lab_pin.sym} 980 -300 0 0 {name=l_buf_g sig_type=std_logic lab=BG}
+C {devices/lab_pin.sym} 1020 -330 0 0 {name=l_buf_d sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} 1020 -270 0 0 {name=l_buf_s sig_type=std_logic lab=OUT}
+C {devices/lab_pin.sym} 1020 -300 0 0 {name=l_buf_b sig_type=std_logic lab=OUT}
+
+C {symbols/nfet_03v3.sym} 1000 -100 0 0 {name=Mpgn model=nfet_03v3 L=8u W=2u nf=1 m=1}
+C {devices/lab_pin.sym} 1020 -130 0 0 {name=l_pgn_d sig_type=std_logic lab=OUT}
+C {devices/lab_pin.sym} 980 -100 0 0 {name=l_pgn_g sig_type=std_logic lab=NBIAS}
+C {devices/lab_pin.sym} 1020 -70 0 0 {name=l_pgn_s sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} 1020 -100 0 0 {name=l_pgn_b sig_type=std_logic lab=VSS}
+
+C {symbols/pfet_03v3.sym} 850 -150 0 0 {name=Mbg_pu model=pfet_03v3 L=0.5u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 830 -150 0 0 {name=l_bgpu_g sig_type=std_logic lab=EN}
+C {devices/lab_pin.sym} 870 -120 0 0 {name=l_bgpu_d sig_type=std_logic lab=BG}
+C {devices/lab_pin.sym} 870 -180 0 0 {name=l_bgpu_s sig_type=std_logic lab=VDD}
+C {devices/lab_pin.sym} 870 -150 0 0 {name=l_bgpu_b sig_type=std_logic lab=VDD}
 
 C {symbols/pfet_03v3.sym} -600 -150 0 0 {name=Minv_p model=pfet_03v3 L=0.5u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} -620 -150 0 0 {name=l_invp_g sig_type=std_logic lab=EN}

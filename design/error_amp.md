@@ -19,10 +19,23 @@ testbench suite is #12, mismatch Monte Carlo is #13.
 
 ---
 
+> **Issue #51 amendment (2026-08-01).** This document was written for the
+> cell as issue #9 shipped it: a two-stage Miller-compensated OTA driving the
+> pass gate directly. #51 changed two things in `design/error_amp.sch` to
+> close DR-0001's loop-stability row — a **class-AB gate buffer**
+> (`Mbuf`/`Mbufb`/`Mpgn`/`Rbufb`) between stage 2 and `OUT`, and a **Type-II
+> gain-shelf Miller network** (`Rz` raised from ~30 kΩ to 6 MΩ, `Cc` set to
+> 4.80 pF). §6 is rewritten below for the result; §4, §5 and §8 carry their
+> re-measured numbers. The rationale for each device is in
+> `design/error_amp.sch`'s own header (sections `COMPENSATION` and `BUFFER`),
+> and the light-load envelope the change does *not* reach is
+> `spec/decision-records/DR-0007-light-load-stability-envelope.md`.
+
 ## 1. Topology
 
 Two-stage Miller-compensated OTA — candidate 3 of
-`spec/architecture-survey.md` §5.
+`spec/architecture-survey.md` §5 — with #51's class-AB gate buffer on the
+output, i.e. candidate 3 *and* candidate 2's low-impedance gate driver.
 
 ```
         VDD ──┬────────────┬──────────────┬──────────── VDD
@@ -236,11 +249,21 @@ bandwidth rather than on the pass-device topology.
 `|1 − G|` forced to 1 (i.e. the pessimistic "gate pinned while VIN moves"
 case). Supply tracking is then pure unbudgeted margin:
 
-| Budget line | Requirement | Measured (81 points) | Verdict |
-|---|---|---|---|
-| Amp gain at 1 kHz, `A(1k)` | ≥ 50 − 20·log₁₀(2/3) = **53.5 dB** | **57.3 … 66.5 dB** | PASS, ≥ 3.8 dB margin |
-| Same, light-load operating point (README note 1 binds PSRR at light load) | ≥ 53.5 dB | **57.2 … 66.5 dB** | PASS |
-| **Budgeted PSRR = A·β** | ≥ **50 dB** | **53.7 … 63.0 dB** (mean 58.4) | **PASS at all 81 points** |
+| Budget line | Requirement | Measured (81 points, #9) | Re-measured (81 points, #51) | Verdict |
+|---|---|---|---|---|
+| Amp gain at 1 kHz, `A(1k)` | ≥ 50 − 20·log₁₀(2/3) = **53.5 dB** | **57.3 … 66.5 dB** | **53.5 … 62.7 dB** | PASS — but the margin is now **0.04 dB** at the worst corner |
+| Same, light-load operating point (README note 1 binds PSRR at light load) | ≥ 53.5 dB | **57.2 … 66.5 dB** | **53.5 … 62.6 dB** | PASS |
+| **Budgeted PSRR = A·β** | ≥ **50 dB** | **53.7 … 63.0 dB** (mean 58.4) | **50.0 … 59.1 dB** (mean 54.6) | **PASS at all 81 points**, 0.02 dB at the worst |
+
+**Why the margin was spent.** `A(1k)` is `gm(MIN)/(2π·Cc·1 kHz)`, so it is set
+by `Cc` — the same component #51's compensation needs *large* to keep light
+loads crossing unity on the Type-II shelf. §6.4 states the frontier and
+DR-0007 argues it. The number to watch in layout is therefore `Cc`: at 4.80 pF
+there is no PSRR margin left to donate to parasitic capacitance on `NZ`/`OUT`.
+
+Superseded rows, for reference — the pre-#51 numbers above are still the
+correct reading of `sim/psrr-dc/records/20260801-002908-712cb87.md`; the #51
+column is the record that supersedes it.
 | Stretch: budgeted PSRR ≥ 60 dB | — | met at 33/81 points, mean 58.4 dB | not claimed |
 | Supply-to-output coupling `G` at 1 kHz | must not degrade `|1 − G|` | **0.97 … 1.21 V/V** | tracks the rail — helps |
 | PSRR *including* the measured tracking | — | **61.8 … 85.5 dB** | margin, not claimed |
@@ -272,7 +295,7 @@ ratified `Iq < 30 µA` row (binding corner ff/125 °C/3.63 V):
 |---|---|---|---|
 | Feedback divider | 1–3 µA | **2.0 µA** | 1.8 V / 900 kΩ, `ldo_core` (DR-0003's number exactly) |
 | Reference (black box, not this issue) | 3–5 µA | 3–5 µA assumed | no bandgap block exists yet |
-| **Error amp** | **10–15 µA** | **9.0 µA nominal, 5.8–14.3 µA over PVT** | measured, `sim/amp-openloop` |
+| **Error amp** | **10–15 µA** | **5.4–13.7 µA over PVT** (#51; was 5.8–14.3 µA) | measured, `sim/amp-openloop` |
 | Pass-gate bias / misc | 2–3 µA | **≈ 3.6 µA over PVT** | `ldo_ilimit`'s threshold bias + comparator tail, issue #11 (measured: total no-load supply current rises from ≈ 9 µA to 8.8–21.2 µA across PVT with the limit block present, `sim/current-limit/records/`) |
 | Pass-device off-state leakage | — | 0.417 µA at ff/125 °C | `sim/devchar/CONCLUSIONS.md` §1 |
 | **Total, worst amp corner** | 16–26 µA | **≈ 21.7 µA** (14.3 + 2.0 + 5.0 + 0.4) — **25.3 µA** with #11's limit block | **27 % / 16 % margin under 30 µA** |
@@ -285,6 +308,16 @@ the block allocations: 14.2 µA at tt/27 °C/3.3 V and **22.4 µA at the binding
 ff/125 °C/3.63 V corner** with a 50 mA load, i.e. the ratified < 30 µA row is
 met with 25 % margin including the current-limit block — and 0.20 µA disabled
 (`sim/enable-shutdown/records/`).
+
+**#51 re-measurement.** The class-AB gate buffer does **not** cost Iq: the
+assembled regulator now measures **8.6–21.4 µA** over the same grid
+(`sim/quiescent-current/records/`), i.e. ~1 µA *lower* at the binding corner.
+The reason is that stage 2 no longer drives the 6.14 pF pass gate, so `M2N`'s
+bias was cut from ~4.1 µA to ~1.6 µA and the difference was spent in the
+buffer, where it buys far more pass-gate bandwidth per microamp than it did
+in a 9 MΩ-output common-source stage. Disabled current is unchanged at 0.20 µA
+(the buffer's three devices are all off with `BG` pulled to VDD by `Mbg_pu`,
+`N1` to VDD by `Mn1_pu`, and `NBIAS` to VSS by `Mnb_pd`).
 
 **Where the 2.5× PVT spread comes from.** The bias is supply-referenced,
 `Iref = (VDD − Vgs(MB1))/Rbias`, so it moves with supply (±13 % over
@@ -306,62 +339,130 @@ row (< 30 µA) is met with margin.
 
 ---
 
-## 6. What this hands to #10 (stability), and the honest warning
+## 6. Stability: what #51 built, and what it does not reach
 
-Measured amplifier properties across 81 PVT points, driving the measured
-6.14 pF pass gate:
+**Superseded content.** §6 previously handed #10 an *unclosed* loop plus a
+warning ("this amplifier is already contributing a full 90° by 1 kHz … the
+loop is not stable without an ESR-independent zero"). That warning was
+correct and #10's record confirmed it: the loop measured a worst-corner phase
+margin of −12.89° with **no** compensation change, and −1.26° after #42 added
+a feedforward zero. #51 closed it. What follows replaces the projection with
+the measurement.
 
-| Property | Measured | Note |
+### 6.1 What was wrong, in one line
+
+The loop was a two-pole system everywhere: the amplifier's Miller-set dominant
+pole and the load-dependent output pole at `VOUT` both sat far below crossover
+at every point of DR-0001's matrix, so the loop rolled off at −40 dB/dec
+through unity. For a plain Miller integrator the loop crossover is
+
+```
+f_c = sqrt( β · UGBW_amp · gm_pass / (2π·C_out) )
+```
+
+and PM ≥ 45° needs `f_c` at or below the output pole — which at 50 mA /
+0.33 µF requires `UGBW_amp ≤ 2.3 kHz`, and at 0 mA / 4.7 µF requires
+`UGBW_amp ≤ 1 mHz`. Neither is a tuning target; they are why no rescaling of
+`Cc` moved the result (#42 measured 3×–100× rescalings and stayed within a
+degree of 0°).
+
+### 6.2 The fix
+
+Two changes, and both are needed — either alone measures worse than the
+starting point at one end of the load axis:
+
+| Change | What it does | Measured if removed |
 |---|---|---|
-| DC gain `A0` | 110.1 … 114.7 dB | at the OUT = 2.0 V operating point |
-| Unity-gain bandwidth | **650 kHz … 2.16 MHz** | mean 1.22 MHz |
-| Amp phase margin | **49.1° … 69.9°** | its own loop, driving 6.14 pF |
-| Amp dominant pole | ≈ 2.6 Hz | `UGBW/A0`, Miller-set |
-| **Amp phase at 1 kHz** | **−89.7° … −90.0°** | already a full 90° |
-| Slew rate, OUT falling | **0.68 V/µs** | `I(M2N)/C_L` = 4.18 µA / 6.14 pF |
-| Slew rate, stage-1 limited | 0.79 V/µs | `I(tail)/Cc` = 2.43 µA / 3.06 pF |
-| Gate drive, low | ≤ 3.8 µV above VSS | at Vin = 2.10 V, pass device on hard |
-| Gate drive, high | within 1.7 mV of VDD | pass device off |
+| `Rz` 30 kΩ → **6 MΩ** (Type-II gain shelf) | above `f_z = 1/(2π·Rz·Cc)` ≈ 5.4 kHz the amplifier's gain shelves at `A_plat = gm(MIN)·Rz` instead of falling, so the loop crosses unity on the output pole **alone** (−20 dB/dec) | the −40 dB/dec loop, i.e. #42's result |
+| **Class-AB gate buffer** on `OUT` | stage 2 drives ~0.5 pF instead of the 6.14 pF pass gate, moving the pass-gate pole above the heavy-load crossover | worst PM **−92°** at 50 mA / 0.33 µF |
 
-**The warning, stated rather than left for #10 to discover.** The issue asked
-for the amplifier's phase contribution at crossover instead of an assumption
-that the ESR zero will cover for it. Here it is: by 1 kHz this amplifier is
-already contributing a **full 90°** of phase — it is deep in its single-pole
-region, two decades above its own dominant pole. Projecting the loop crossover
-with `C_out` = 1 µF,
+The buffer's pull-up `Mbufb` is a *replica of `M2P`* rather than a fixed
+current source, because a fixed-bias follower cannot pull `OUT` below one
+`Vgs` — measured, that costs the whole dropout row (regulation lost at 8 of
+15 corners at `Vin` = 2.10 V / 50 mA). `Rbufb` keeps that replica a DC-tracking
+source rather than a feedforward path around the compensation (measured
+without it: worst PM −167°). Full device-by-device rationale is in
+`design/error_amp.sch`'s `BUFFER` section.
 
-```
-f_c ≈ √( UGBW · gm_pass · β / (2π·C_out) )
-    ≈ 62 kHz   at I_load = 1 mA   (gm_pass ≈ 30 mS)
-    ≈ 175 kHz  at I_load = 50 mA  (gm_pass ≈ 240 mS)
-```
+### 6.3 Measured amplifier properties (81 PVT points, `sim/amp-openloop/`)
 
-both the amplifier's dominant pole (2.6 Hz) and the output pole (0.2 Hz at no
-load, 88 Hz at 1 mA, 4.4 kHz at 50 mA) sit **below** crossover. The loop is
-therefore rolling off at −40 dB/dec where it crosses unity, and **DR-0001
-forbids buying the missing phase back with a minimum-ESR zero**. The loop needs
-a zero that does not depend on ESR. The conventional one is a feedforward
-capacitor across `Rtop` — `Cff` = 10 pF across 300 kΩ puts a zero at 53 kHz and
-its companion pole at 80 kHz, i.e. exactly in the band above — and it costs no
-quiescent current. Choosing it (or trading amplifier UGBW down against the
-PSRR margin in §4, the other lever) is **#10's decision**, not this issue's;
-what #9 owes #10 is the numbers above and the statement that the loop is not
-stable without one.
+| Property | Before (#9) | After (#51) |
+|---|---|---|
+| DC gain `A0` | 110.1 … 114.7 dB | 109.0 … 115.7 dB |
+| Gain at 1 kHz | 57.3 … 66.5 dB | **53.5 … 62.7 dB** (floor: 53.5 dB) |
+| Unity-gain bandwidth | 0.65 … 2.16 MHz | 1.82 … 4.31 MHz |
+| Systematic offset | 282 … 611 µV | 335 … 764 µV |
+| Amplifier Iq | 5.8 … 14.3 µA | **5.4 … 13.7 µA** |
+| Gate drive, low | ≤ 3.8 µV above VSS | ≤ 30 µV above VSS |
 
-Note also that the amp's *falling* slew rate (0.68 V/µs) is the slower
-direction, and falling is the direction a load step demands: a 1 → 50 mA step
-needs roughly 0.4 V of gate swing, so ~0.6 µs of slewing precedes linear
-settling. Against the ratified 20 µs recovery window that is comfortable, but
-it is the number to revisit if #12's transient record comes in tight; the lever
-is `M2N`'s current.
+Whole-regulator numbers moved the same way: Iq **8.6 … 21.4 µA** against the
+ratified < 30 µA row (the pre-#51 design measured 22.4 µA — the buffer is
+*cheaper* than the stage-2 bias it replaced), and dropout 300.4 … 300.9 mV
+against the pre-#51 300.4 … 300.7 mV.
 
----
+### 6.4 The result, and the frontier it sits on
+
+Against DR-0001's full 3240-point matrix
+(`sim/loop-stability/records/20260801-191742-84f67b8.md`, superseding
+`20260801-140530-d6d47f5`): **2689/3240 points pass**, against 150/3240
+before. Every remaining failure is at one of the two lightest loads —
+
+| `I_load` | passing | how the failures fail |
+|---|---|---|
+| 1, 10, 25, 50 mA | **2160/2160** | — |
+| 0.1 mA | 525/540 | 15 points, all at −40 °C / 3.63 V on `ss`/`fs`, all on **gain margin** (PM 67…102°, GM −20.7…+7.9 dB): conditional stability, not a phase collapse |
+| 0 mA | 4/540 | phase margin, worst **3.79°** at `ff_125c_2.97v` / 4.7 µF / 1 mΩ |
+
+That split is structural, not a tuning residue. `Rz` and `Cc` are pinned
+between two ratified rows pulling in opposite directions on the same two
+components:
+
+- `Rz·sqrt(Cc)` sets how light a load still crosses unity on the shelf.
+  **Measured ceiling on `Rz`**: 6 MΩ passes 0.1–50 mA everywhere; 7 MΩ already
+  loses corners at 1–50 mA (the heavy-load crossover climbs past the buffer
+  and BG poles); 9 MΩ loses them all.
+- `gm(MIN)/Cc` **is** the amplifier's 1 kHz gain, i.e. §4's PSRR budget.
+  **Measured ceiling on `Cc`**: 4.80 pF gives worst-corner `psrr_ldo_1k_db`
+  = 50.0 dB against the ratified 50 dB floor; 7.4 pF measures 46.3 dB, a hard
+  FAIL.
+
+This cell sits **on** that frontier — 53.5 dB against a 53.5 dB gain floor and
+45.4° against a 45° PM floor at the same time. Reaching 0 mA from there needs
+`Rz·sqrt(Cc)` ≈ 12× larger, and with `Rz` at its ceiling that has to come from
+`Cc` alone — which therefore grows as the **square** of that, ≥ 150×, because
+the worst 0 mA point crosses unity *below* `f_z` where the loop rolls off at
+−40 dB/dec (`|T| ∝ 1/(f²·Cc)`; the measured crossover scales as
+`1/sqrt(C_out)`, confirming it). That is `Cc` ≥ 0.70 nF, i.e. ≥ 0.35 mm² of
+MIM — 3.5× the whole core-area row for one capacitor — **and** it drops the
+amplifier's 1 kHz gain onto the Type-II shelf plateau, ≈ 15 dB down (53.5 dB
+→ ≈ 38.5 dB), taking the ratified PSRR row from 50.0 dB to ≈ 35 dB. Note the
+`1/Cc` gain law saturates there: past `Cc` ≈ 27 pF the 1 kHz gain sits on the
+plateau `gm(MIN)·Rz` and stops falling, so 15 dB is the *whole* PSRR penalty
+available — and it is already fatal, and area cannot buy it back. The full
+argument, the alternatives (preload, `C_eff` floor, re-topology) and the
+proposed spec change are
+`spec/decision-records/DR-0007-light-load-stability-envelope.md`.
+
+### 6.5 What this hands to layout (#15/#16)
+
+Two parameters are now on a frontier and therefore layout-sensitive, and both
+need to be constraints in the floorplan rather than discoveries in extraction:
+
+- `Rz` is a 6 MΩ `ppolyf_u_1k` serpentine sitting directly in the compensation
+  path; its distributed capacitance to substrate is not a parasitic to absorb
+  later. Its **process** spread is also not covered by present evidence —
+  `sim/loop-stability/`'s corner axis varies the MOS sections only and holds
+  `res_*` typical, while the measured frontier is steep in `Rz` (6 MΩ passes,
+  7 MΩ does not). A resistor-corner axis on that matrix is a required
+  follow-up.
+- `Cc` at 4.80 pF has ≈ 0 dB of PSRR margin, so any parasitic capacitance
+  added to the `NZ`/`OUT` net comes straight off the ratified PSRR row.
 
 ## 7. Handoffs
 
 | Issue | What to take |
 |---|---|
-| **#10 stability** | §6 in full: UGBW, PM, phase at 1 kHz, slew, gate load, and the "needs an ESR-independent zero" statement |
+| **#10 stability — CLOSED by #51** | §6 is now the measurement, not the projection: the compensation is in this cell, `sim/loop-stability/records/` carries the 3240-point result, and the load range it does not reach is DR-0007's |
 | **#11 current limit / enable — RESOLVED** | This row asked #11 to make an interface decision: the 5-port contract had no enable pin, so the cell drew ≈ 9 µA whenever VDD was present (9.24 µA measured disabled, `sim/op-point-sanity/records/20260801-002928-712cb87.md`) against a ratified "shutdown Iq < 3 µA" row. **#11 appended `EN` as a sixth pin and gated the bias inside this cell** (`Mbias_h`/`Mnb_pd`/`Mn1_pu`/`Mnd_pu`, and a local EN→ENB inverter). A supply header was rejected: with VDD switched off while `Men` holds OUT at VIN, `M2P`'s drain-body diode forward-biases and re-powers the cell. Disabled current is now 0.20 µA at ff/125 °C/3.63 V (`sim/enable-shutdown/records/`); the enabled-state numbers in §5/§6 below move by < 0.2 % (re-measured, `sim/amp-openloop/records/`) |
 | **#12 testbench suite** | PSRR at 100 kHz is a closed-loop claim (§4); load/line regulation ride on the 110 dB DC gain; the falling-slew number above bounds the transient |
 | **#13 Monte Carlo mismatch** | §3's split: verify 3σ ≤ 2.33 mV input-referred for the amplifier. Do **not** cite a PDK Monte Carlo for the divider term — §3.2 |
@@ -375,7 +476,19 @@ device):
 | Item | Area |
 |---|---|
 | `Rbias` (1 µm × 1000 µm, `ppolyf_u_1k`) | 1000 µm² |
-| `Cc` (39 µm × 39 µm MIM) | 1521 µm² |
-| Transistor gate area (all 8 devices) | ≈ 1240 µm² |
-| `Rz` | 109 µm² |
-| **Total** | **≈ 3870 µm² ≈ 0.0039 mm²** — 3.9 % of the core budget |
+| `Cc` (49 µm × 49 µm MIM, 4.80 pF) | 2401 µm² |
+| `Rz` (1 µm × 6000 µm, `ppolyf_u_1k`, 6 MΩ) | ≈ 6000 µm² |
+| `Rbufb` (1 µm × 5000 µm, `ppolyf_u_1k`, 5 MΩ) | ≈ 5000 µm² |
+| Transistor gate area (all 13 devices) | ≈ 1990 µm² |
+| **Total** | **≈ 16 400 µm² ≈ 0.0164 mm²** — 16 % of the core budget |
+
+#51 moved `Rz` from `ppolyf_u` to `ppolyf_u_1k`. At 6 MΩ the `ppolyf_u`
+flavour (369 Ω/sq, 2.69 µm² per square) would be ≈ 43 700 µm² — 44 % of the
+whole core-area row for one resistor — against ≈ 6000 µm² for `ppolyf_u_1k`.
+The cost of the swap is `ppolyf_u`'s much better temperature coefficient
+(−27.9 ppm/°C, 1.24 % total spread, `sim/devchar/CONCLUSIONS.md` §2), but
+temperature **is** swept in `sim/loop-stability/`'s matrix, so whatever
+tempco `ppolyf_u_1k` has is measured rather than assumed. Process spread on
+poly sheet resistance is **not** covered — see the note in §6 and in DR-0007's
+Consequences: the loop-stability corner axis holds the `res_*` sections
+typical, and `Rz` is now a first-order compensation parameter.

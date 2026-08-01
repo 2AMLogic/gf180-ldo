@@ -14,9 +14,32 @@
 Vsup VIN 0 DC {vdd_val}
 Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
 
-* 50 mA constant-current sink -- the full-load dropout point (README.md
-* Target specification, "Dropout @ 50 mA" row). Output network per DR-0001's
-* window (1.0 uF nominal + 100 mOhm ESR); inert at this DC operating point.
-Iload VOUT 0 DC 50m
+* --- 50 mA compliance-limited load sink -- the full-load dropout point
+* (README.md Target specification, "Dropout @ 50 mA" row). Output network
+* per DR-0001's window (1.0 uF nominal + 100 mOhm ESR); inert at this DC
+* operating point.
+*
+* This is the same sink #46/#49 put into load-regulation, line-regulation,
+* load-transient, psrr-vs-freq and quiescent-current, and for the same
+* reason: an IDEAL sink demands its current at any terminal voltage,
+* including tens of volts below ground, where forward-biased substrate
+* junctions inside the PDK models supply it. That is a genuine second DC
+* solution of this deck, not a convergence failure. This experiment was the
+* one #46 left on an ideal sink plus a `.nodeset` hint, because the hint
+* happened to steer all 15 of its points into the physical basin against
+* the DUT of the day; it does not survive a change to the pass-gate drive
+* node (issue #51's buffer), which is exactly the fragility #40 flagged.
+* Bounding the sink at 0 V deletes the branch instead of hiding it. See
+* sim/harness/README.md, "Compliance-limited load sinks".
+*
+*     f(VOUT) = 0.5 * (1 + tanh((VOUT - 0.2) / 0.05))
+*
+* At the ~1.8 V this design regulates to, 1 - f is below double precision,
+* so the sink is an ideal 50 mA current sink at every operating point this
+* record reports; i(Vlmeas) is measured and checked against the commanded
+* 50 mA so that stays verified rather than assumed.
+Vilc ILC 0 DC 50m
+Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+Vlmeas NLOAD 0 DC 0
 Resr VOUT n_esr 0.1
 Cout n_esr 0 1u
