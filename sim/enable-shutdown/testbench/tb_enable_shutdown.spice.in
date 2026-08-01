@@ -5,10 +5,23 @@
 * specification: shutdown Iq, the settled disabled output state (pass device
 * off, NO internal active discharge), and Vin->Vout leakage; plus the
 * enable->active and active->disable transitions, including enable toggled
-* at the full rated load, which is the condition under which the current
-* limit necessarily engages during startup (there is no soft-start in this
-* design) and therefore the condition under which a foldback limit could
-* latch the regulator low.
+* at the full rated load, which is the condition under which a foldback limit
+* could latch the regulator low.
+*
+* TRANSIENT WINDOW (widened by issue #38)
+*
+* Issue #11 wrote this bench against a design with no soft start, where the
+* output reached regulation 28-64 us after the enable edge, and sized the
+* enable window at 400 us accordingly. Issue #38 added design/ldo_softstart.sch,
+* whose whole purpose is to turn that edge into a millisecond-scale controlled
+* ramp, so the window here is now 100 us -> 8 ms with a 1 ms disabled tail. The
+* DC operating-point sections below (settled enabled state, settled disabled
+* state, Vin->Vout leakage) are unaffected by that change -- they are `op`
+* analyses -- so the shutdown-Iq and leakage numbers this bench owns stay
+* directly comparable to the pre-#38 record. The per-clause startup
+* measurements (ramp rate, inrush into C_out, overshoot, and the DR-0001
+* capacitor window) live in sim/soft-start/, the experiment that owns the
+* ratified Startup row.
 *
 * THE LOOP-TIE AMMETER
 *
@@ -53,8 +66,8 @@
 
 * --- stimulus ------------------------------------------------------------
 Vin VIN 0 DC @VIN_V@
-* EN: low until 50 us, high until 450 us, low thereafter (1 us edges).
-Ven EN 0 DC 0 PWL(0 0 50u 0 51u @VIN_V@ 450u @VIN_V@ 451u 0)
+* EN: low until 100 us, high until 8 ms, low thereafter (1 us edges).
+Ven EN 0 DC 0 PWL(0 0 100u 0 101u @VIN_V@ 8m @VIN_V@ 8.001m 0)
 
 * --- DUT -----------------------------------------------------------------
 * Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE
@@ -77,6 +90,8 @@ Vlmeas LN 0 DC 0
 * Forcing path for the Vin->Vout leakage measurement (1 Gohm = absent).
 Vforce VF 0 DC 0
 Rforce VOUT VF 1G
+
+.options reltol=1e-3 vntol=1e-5 abstol=1e-11 chgtol=1e-14
 
 * Every `op` starts a new ngspice plot and `let` vectors belong to the plot
 * current when they were created, so each measurement is printed right after
@@ -143,26 +158,27 @@ alter Rforce = 1G
 * ======================================================================
 alter Rload = 36
 alter Ven dc = 0
-tran 100n 700u
+tran 1u 9m
 let ivin_ma = -i(vin)*1e3
 let vclg = v(xdut.xilimit.clg)
 
 * Startup: does it reach regulation at all (a folded-back limit could latch
 * the output low here), how long does it take, and does it overshoot?
 meas tran m_t_startup TRIG v(en) VAL=1.4 RISE=1 TARG v(vout) VAL=1.764 RISE=1
-meas tran m_vout_settled FIND v(vout) AT=440u
-meas tran m_vout_max_en MAX v(vout) FROM=51u TO=450u
-meas tran m_vout_min_reg MIN v(vout) FROM=250u TO=450u
-* Peak supply current during startup: the limit engaging, which it must,
-* since there is no soft-start and the output cap has to be charged.
-meas tran m_isup_peak_ma MAX ivin_ma FROM=50u TO=450u
+meas tran m_vout_settled FIND v(vout) AT=7.9m
+meas tran m_vout_max_en MAX v(vout) FROM=101u TO=8m
+meas tran m_vout_min_reg MIN v(vout) FROM=7m TO=8m
+* Peak supply current during startup. Before #38 this was the current limit
+* engaging on an uncontrolled capacitor-charging edge; with the soft start it
+* is the rated load current plus a bounded inrush.
+meas tran m_isup_peak_ma MAX ivin_ma FROM=100u TO=8m
 * Is the limit clamp idle once the output is in regulation at the full rated
 * load? CLG (the clamp's gate) rests at VIN when the limit is NOT engaged and
 * is pulled down towards VSS when it is, so the MINIMUM of CLG over the
 * settled window is a direct, waveform-level answer to "does the limit ever
 * engage inside the rated load range?" -- independent of the DC V-I sweep in
 * sim/current-limit.
-meas tran m_clg_min_reg MIN vclg FROM=250u TO=450u
+meas tran m_clg_min_reg MIN vclg FROM=7m TO=8m
 * Peak SUPPLY current in the same settled window. The pass device's current
 * is the load current plus whatever the output capacitor is being charged
 * with, so on a loop that rings, the instantaneous pass current can exceed
@@ -171,15 +187,15 @@ meas tran m_clg_min_reg MIN vclg FROM=250u TO=450u
 * 50 mA of LOAD" (a design failure) from "the limit did its job on a
 * capacitor-charging current spike the ringing created" (a stability
 * finding, issue #10's).
-meas tran m_isup_peak_reg_ma MAX ivin_ma FROM=250u TO=450u
+meas tran m_isup_peak_reg_ma MAX ivin_ma FROM=7m TO=8m
 * Residual output ripple in the same settled window. The main loop's phase
 * margin is issue #10's claim, not this bench's, but a large number here is
 * the difference between "the limit engaged" and "the main loop is ringing",
 * so it is measured rather than inferred.
-meas tran m_vout_pp_late PP v(vout) FROM=400u TO=450u
+meas tran m_vout_pp_late PP v(vout) FROM=7.5m TO=7.9m
 * Disabled tail: the output must collapse and stay collapsed.
-meas tran m_vout_off_tran FIND v(vout) AT=690u
-meas tran m_vout_max_off MAX v(vout) FROM=600u TO=700u
-meas tran m_pg_off_tran FIND v(pg) AT=690u
+meas tran m_vout_off_tran FIND v(vout) AT=8.9m
+meas tran m_vout_max_off MAX v(vout) FROM=8.5m TO=9m
+meas tran m_pg_off_tran FIND v(pg) AT=8.9m
 .endc
 .end

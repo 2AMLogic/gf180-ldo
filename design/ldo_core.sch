@@ -79,7 +79,21 @@ calls for, plus the enable gating of its own bias. It attaches to VIN /
 VOUT / PASS_GATE / EN / VREF / VSS only -- no new top-level port, no
 change to any existing net's topology. See design/ldo_ilimit.sch for the
 threshold derivation, the hard-limit-vs-foldback decision, and what is
-idealized in it.} -700 -600 0 0 0.28 0.28 {}
+idealized in it.
+
+Soft start (issue #38): Xsoftstart (design/ldo_softstart.sch) gives the
+ratified Startup row its controlled ramp. Like Xilimit it is a clamp on
+PASS_GATE -- it holds VOUT to 1.5 * (an internally generated linear
+voltage ramp) until that ramp passes VREF, then disengages and hands the
+pass gate to Xerramp. It attaches to VIN / FB / PASS_GATE / EN / VREF /
+VSS only: no new top-level port, no change to any existing net, and in
+particular Men's gate is still EN and Xerramp's INN is still VREF, so
+nothing about the settled loop (#9's offset budget, #10's compensation)
+moves. Its only touch on FB is one MOS gate, so beta is unchanged. See
+design/ldo_softstart.sch for why the ramp is NOT applied to Xerramp's
+reference (that amplifier's NMOS input pair has no gain with VOUT near 0,
+measured), and spec/decision-records/DR-0006 for the settling-window
+amendment the measured ramp-rate spread forces.} -700 -600 0 0 0.28 0.28 {}
 C {devices/iopin.sym} -700 -300 0 0 {name=p_vin lab=VIN}
 C {devices/iopin.sym} 700 -300 0 0 {name=p_vout lab=VOUT}
 C {devices/ipin.sym} -700 -100 0 0 {name=p_en lab=EN}
@@ -119,3 +133,10 @@ C {devices/lab_pin.sym} -100 190 0 0 {name=l_il_pg sig_type=std_logic lab=PASS_G
 C {devices/lab_pin.sym} -100 210 0 0 {name=l_il_en sig_type=std_logic lab=EN}
 C {devices/lab_pin.sym} -100 230 0 0 {name=l_il_vref sig_type=std_logic lab=VREF}
 C {devices/lab_pin.sym} -100 250 0 0 {name=l_il_vss sig_type=std_logic lab=VSS}
+C {ldo_softstart.sym} 0 500 0 0 {name=Xsoftstart}
+C {devices/lab_pin.sym} -100 450 0 0 {name=l_ss_vin sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} -100 470 0 0 {name=l_ss_fb sig_type=std_logic lab=FB}
+C {devices/lab_pin.sym} -100 490 0 0 {name=l_ss_pg sig_type=std_logic lab=PASS_GATE}
+C {devices/lab_pin.sym} -100 510 0 0 {name=l_ss_en sig_type=std_logic lab=EN}
+C {devices/lab_pin.sym} -100 530 0 0 {name=l_ss_vref sig_type=std_logic lab=VREF}
+C {devices/lab_pin.sym} -100 550 0 0 {name=l_ss_vss sig_type=std_logic lab=VSS}
