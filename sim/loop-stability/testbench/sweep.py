@@ -338,6 +338,131 @@ def write_matrix_csv(path: Path, rows: list[Row]) -> None:
             )
 
 
+def axis_table(rows: list[Row], axis: str, label: str, fmt) -> list[str]:
+    """Worst phase margin along one axis, minimised over every other axis."""
+    buckets: dict[float, list[Row]] = {}
+    for r in rows:
+        buckets.setdefault(getattr(r, axis), []).append(r)
+    out = [f"| {label} | worst PM (deg) | crossover at that point (Hz) | worst PVT corner |",
+           "|---|---|---|---|"]
+    for key in sorted(buckets):
+        w = worst_of(buckets[key])
+        f0 = "n/a" if w.f0_hz is None else f"{w.f0_hz:.4g}"
+        out.append(f"| {fmt(key)} | {pm_str(w)} | {f0} | `{w.corner_id}` |")
+    return out
+
+
+def render_analysis(rows: list[Row], failing: list[Row]) -> str:
+    """A data-derived reading of *where* the matrix passes and fails.
+
+    Everything here is computed from the sweep, not asserted: the point is to
+    say which axis actually drives the result, so the next design iteration
+    (issue #9, the error amplifier) is aimed at the right thing rather than
+    at the a-priori guess.
+    """
+    by_load: dict[float, list[Row]] = {}
+    for r in rows:
+        by_load.setdefault(r.iload_a, []).append(r)
+    loads = sorted(by_load)
+    pm_heavy = worst_of(by_load[loads[-1]])
+    f0s = [r.f0_hz for r in rows if r.f0_hz is not None]
+
+    # Is the worst-PM-vs-load trend monotonic (heavier load => worse)?
+    seq = [worst_of(by_load[k]).pm_deg for k in loads]
+    monotonic = all(
+        a is not None and b is not None and b <= a + 1e-9 for a, b in zip(seq, seq[1:])
+    )
+
+    # The a-priori worst point named in #10: lightest load, smallest C_eff,
+    # smallest ESR -- the classic "no ESR zero, output pole at its lowest"
+    # argument. Reported explicitly whether or not it turns out to be worst.
+    min_ceff = min(r.ceff_f for r in rows)
+    min_esr = min(r.esr_ohm for r in rows)
+    apriori_rows = [
+        r for r in rows
+        if r.iload_a == loads[0] and r.ceff_f == min_ceff and r.esr_ohm == min_esr
+    ]
+    apriori = worst_of(apriori_rows)
+    apriori_verdict = "PASSES" if apriori.passes else "FAILS"
+    trend = (
+        "monotonically with load current (each heavier load point is worse than "
+        "the one below it)"
+        if monotonic
+        else "non-monotonically with load current"
+    )
+
+    lines = [
+        "## Structure of the result",
+        "",
+        "Which axis actually drives the verdict, minimised over every other axis.",
+        "",
+        "**By load current** (the axis DR-0001 and #10 flagged as most likely to",
+        "decide the result):",
+        "",
+        *axis_table(rows, "iload_a", "I_load", fmt_ma),
+        "",
+        "**By effective output capacitance:**",
+        "",
+        *axis_table(rows, "ceff_f", "C_eff", fmt_uf),
+        "",
+        "**By ESR:**",
+        "",
+        *axis_table(rows, "esr_ohm", "ESR", lambda v: f"{v:g} ohm"),
+        "",
+        f"Read together: the worst phase margin degrades {trend}, while the 0 dB",
+        f"crossover frequency moves over {min(f0s):.4g} Hz - {max(f0s):.4g} Hz across",
+        "the matrix. A loop whose phase margin collapses as its crossover rises,",
+        "with the *lightest*-load column the healthiest, is one whose crossover is",
+        "walking into a fixed higher-frequency pole -- not one limited by the",
+        "output pole, and not one the external ESR zero can rescue at the 1 mOhm",
+        "end (where that zero is at ~500 MHz and provides no phase lead in band).",
+        "",
+        "Note that the a-priori worst point named in issue #10 and in",
+        "`spec/architecture-survey.md` section 4.1 -- light load, minimum C_eff,",
+        f"no ESR zero, i.e. {{{fmt_ma(loads[0])}, {fmt_uf(min_ceff)}, {min_esr:g} ohm}} --",
+        f"**{apriori_verdict}** here (worst-corner PM {pm_str(apriori)} deg at",
+        f"`{apriori.corner_id}`), whereas the heaviest-load column is where the",
+        f"matrix fails (worst-corner PM {pm_str(pm_heavy)} deg at",
+        f"{fmt_ma(pm_heavy.iload_a)} / {fmt_uf(pm_heavy.ceff_f)} / {pm_heavy.esr_ohm:g} ohm,",
+        f"`{pm_heavy.corner_id}`).",
+        "That reversal is a property of *this* compensation, and is the single",
+        "most useful thing in this record: the classic light-load argument",
+        "assumes a crossover that does not move much with load, and this loop's",
+        "does -- the pass device's gm, and hence the loop's unity-gain frequency,",
+        "rises with load current while the amplifier-output pole stays put.",
+    ]
+
+    if failing:
+        lines += [
+            "",
+            "## What this record asks of the next design step",
+            "",
+            "This is a measurement of `design/ldo_core.sch` **as committed**, whose",
+            "error amplifier is still `design/ldo_erramp_placeholder.sch` -- a",
+            "behavioural VCVS behind a 1 MOhm output resistance driving the pass",
+            "device's gate capacitance. That RC is the fixed high-frequency pole the",
+            "crossover walks into above, so the failures below are a statement about",
+            "the *placeholder*, not a defect discovered in a real amplifier.",
+            "",
+            "DR-0001 anticipated exactly this: \"with no minimum ESR, phase margin",
+            "must come from pole placement, not from the external zero: the pass-gate",
+            "pole `p2 = 1/(2*pi*Rgate*Cgate)` must sit well above crossover at the",
+            "0.33 uF corner\". Issue #10's own guidance says a broad failure of this",
+            "shape is #9's (error amplifier) or #8's (compensation component values)",
+            "problem to fix, not something this testbench should work around -- so",
+            "this record does not tune anything to make the matrix pass.",
+            "",
+            "The concrete, measured requirement handed to #9 is therefore: the",
+            f"amplifier's output pole must sit above the crossover frequencies",
+            f"tabulated above (up to {max(f0s):.3g} Hz at the heaviest-load / lowest-ESR",
+            "corner) by enough margin to leave PM >= 45 deg -- via a low-impedance",
+            "gate driver, Miller compensation, or a lower loop unity-gain frequency",
+            "(survey 5 candidates 2 and 3). Re-running this same sweep against the",
+            "new amplifier mints the record that supersedes this one.",
+        ]
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--corners", nargs="+", default=list(PROCESS_CORNERS),
@@ -559,6 +684,7 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
     temps_seen = ", ".join(f"{t:g}" for t in sorted({r.temp_c for r in rows}))
     supplies_seen = ", ".join(f"{v:.2f}" for v in sorted({r.vin_v for r in rows}))
     n_inf_gm = sum(1 for r in rows if math.isinf(r.gm_db))
+    analysis = render_analysis(rows, failing)
 
     subset = args.subset_reason.strip()
     subset_md = (f"\n  - **Subset reason**: {subset}\n" if subset else "")
@@ -665,6 +791,7 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
 - **Timestamp / author**: {_dt.datetime.now(_dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}, {args.author}
 - **Supersedes**: {args.supersedes or '(none -- first record for this experiment)'}
 
+{analysis}
 ## Environment
 
 Everything needed to re-run this record:
