@@ -1,0 +1,44 @@
+* startup -- stimulus fragment for ldo_core (issue #12)
+*
+* Startup (README.md Target specification, "Startup" row; DR-0004
+* amendment A9): monotonic into any load 0-50mA, controlled ramp <=1V/ms,
+* inside +/-2% within 3ms of enable, overshoot <=+2%.
+*
+* Three independent ldo_core instances share one Vsup and one EN pulse but
+* have separate resistive loads, so full-load, min-load and
+* into-current-limit startup are all captured in a SINGLE tran run:
+*   - _full  : Rload=36 Ohm  (~50 mA at 1.8V -- full-load startup)
+*   - _min   : Rload=1.8 MOhm (~1 uA -- effectively the divider-only
+*              minimum-load startup; the ratified "0 mA external load"
+*              condition, using a large-but-finite R so the op point is
+*              well-posed at t=0 before EN asserts)
+*   - _short : Rload=1 Ohm (near dead short -- "startup into current
+*              limit"). IMPORTANT: no current-limit/foldback circuitry
+*              exists yet (issue #11 is open; design/README.md documents
+*              the current-sense tap as unimplemented). This branch is
+*              therefore evidence of inrush into an UNPROTECTED near-short
+*              with the current design, not a current-limit verification --
+*              see tb.json's Claim for the honest framing. Re-run once #11
+*              lands.
+* Resistive loads (not ideal current sinks) are used throughout because an
+* ideal current sink into Vout=0V at t=0 (EN still low) is non-physical and
+* drives the node to an unbounded negative rail before EN ever asserts --
+* confirmed by hand during implementation.
+Vsup VIN 0 DC {vdd_val}
+Ven EN 0 PULSE(0 {vdd_val} 1u 1n 1n 10m 20m)
+
+Xdut_full VIN VOUT_FULL EN 0 LOOP_FULL LOOP_FULL ldo_core
+Rload_full VOUT_FULL 0 36
+Resr_full VOUT_FULL n_esr_full 0.1
+Cout_full n_esr_full 0 4.7u
+
+Xdut_min VIN VOUT_MIN EN 0 LOOP_MIN LOOP_MIN ldo_core
+Rload_min VOUT_MIN 0 1.8Meg
+Resr_min VOUT_MIN n_esr_min 0.1
+Cout_min n_esr_min 0 4.7u
+
+Vamm_short VIN VIN_SHORT 0
+Xdut_short VIN_SHORT VOUT_SHORT EN 0 LOOP_SHORT LOOP_SHORT ldo_core
+Rload_short VOUT_SHORT 0 1
+Resr_short VOUT_SHORT n_esr_short 0.1
+Cout_short n_esr_short 0 4.7u

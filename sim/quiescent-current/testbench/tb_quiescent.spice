@@ -1,0 +1,29 @@
+* quiescent-current -- stimulus fragment for ldo_core (issue #12)
+*
+* Iq (README.md Target specification, "Iq" row; DR-0004 amendment A6):
+* <30uA at no load, binds ff/125C/3.63V. Also measures the "Enable /
+* shutdown" row's shutdown-Iq clause (A9): <3uA at the same corner.
+*
+* Three independent ldo_core instances share one Vsup but have separate
+* zero-volt "ammeter" probes and separate EN wiring, so all three states
+* are captured in a SINGLE op analysis -- no ngspice "alter" needed (see
+* psrr-vs-freq's header comment for why alter-between-analyses was
+* rejected as unreliable for this harness's let/print ordering):
+*   - _en   : EN tied to VIN (enabled, no load)   -> the primary Iq claim
+*   - _dis  : EN tied to 0  (disabled/shutdown)   -> shutdown Iq clause
+*   - _full : EN tied to VIN, 50 mA load          -> Iq "at full load"
+*             (the ratified row requires <30uA at BOTH no load and full
+*             load; Iq excludes load current, so iq_full_ua below
+*             subtracts the deliberately-injected 50 mA back out)
+* All three instances see 0 mA external load except _full's Iload.
+Vsup VIN 0 DC {vdd_val}
+
+Vamm_en VIN VIN_EN 0
+Xdut_en VIN_EN VOUT_EN VIN_EN 0 LOOP_EN LOOP_EN ldo_core
+
+Vamm_dis VIN VIN_DIS 0
+Xdut_dis VIN_DIS VOUT_DIS 0 0 LOOP_DIS LOOP_DIS ldo_core
+
+Vamm_full VIN VIN_FULL 0
+Xdut_full VIN_FULL VOUT_FULL VIN_FULL 0 LOOP_FULL LOOP_FULL ldo_core
+Iload_full VOUT_FULL 0 DC 50m

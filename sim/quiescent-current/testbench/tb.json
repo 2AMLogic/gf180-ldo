@@ -1,0 +1,36 @@
+{
+  "name": "quiescent-current",
+  "description": "Quiescent current at no load and full load, plus shutdown Iq, all in one op point",
+  "claim": "README.md Target specification, 'Iq (excluding load current)' row (DR-0004 amendment A6): < 30 uA at no load and at full load, binding ff/125C/3.63V; the < 10 uA stretch is not separately gated. Also substantiates the 'Enable / shutdown' row's (A9) shutdown-Iq clause: < 3 uA at the same binding corner (the row's other clauses -- monotonic disable, Vin->Vout leakage -- are #11's shutdown-circuit characterization, not this experiment's scope).",
+  "netlist": "tb_quiescent.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.10,
+  "temperatures_c": [-40, 27, 125],
+  "corners": ["mos"],
+  "analyses": ["op"],
+  "operating_conditions": {
+    "load_current": "0 mA external for the enabled/disabled states; 50 mA for the 'full load' state (subtracted back out of iq_full_ua per the row's 'excluding load current' clause)",
+    "output_cap": "N/A -- DC op-point only, no output network in this deck (Iq is a DC claim; a cap is inert at DC)",
+    "enable_state": "three states captured in one op point: enabled/no-load (iq_en_ua, the primary Iq claim), disabled/shutdown (iq_dis_ua, Enable/shutdown row clause), enabled/50mA (iq_full_ua, the Iq row's 'at full load' clause)"
+  },
+  "measure": {
+    "iq_en_ua": "i(vamm_en)*1e6",
+    "iq_dis_ua": "i(vamm_dis)*1e6",
+    "iq_full_ua": "(i(vamm_full)-0.05)*1e6"
+  },
+  "checks": {
+    "iq_en_ua": {
+      "max": 30.0,
+      "description": "README.md Iq target, no load (< 30 uA; < 10 uA stretch not separately gated)"
+    },
+    "iq_dis_ua": {
+      "max": 3.0,
+      "description": "README.md Enable/shutdown row: shutdown Iq < 3 uA"
+    },
+    "iq_full_ua": {
+      "max": 30.0,
+      "description": "README.md Iq target, full load (50 mA, excluded from the measurement)"
+    }
+  }
+}

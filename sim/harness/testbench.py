@@ -24,6 +24,26 @@ record's netlist snapshot. The harness hands the fragment these parameters:
     temp_c    the temperature for this PVT point (also set via .temp)
 
 plus anything in the manifest's ``params`` map.
+
+``dut_netlist`` (#12) sits on top of ``includes`` rather than beside it: it
+*designates* which design netlist is the thing under test, e.g.
+
+    "dut_netlist": "design/netlist/ldo_core.spice"
+
+Two things make it worth a field of its own. It is written repo-root-relative
+(not testbench-relative), because it is also a CLI knob -- ``--dut-netlist
+PATH`` re-points one manifest at a different netlist source, which is how
+#16's post-layout re-run swaps in an extracted netlist without forking the
+testbench. And the record reports it separately from the supporting design
+cells: the **Netlist provenance** field says *schematic* or *extracted*
+depending on whether the path lives under ``layout/``.
+
+Everything else about it is the ``includes`` path: the DUT is emitted as one
+harness-owned ``.include`` (first, ahead of the other design cells), validated
+against FORBIDDEN_DIRECTIVES like any other included netlist, and frozen into
+the record's snapshot with its own path+sha256 header. See
+``Testbench.design_netlists``, which is the single ordered list the rest of
+the harness iterates.
 """
 
 from __future__ import annotations
@@ -39,6 +59,7 @@ from .corners import (
     DEFAULT_SUPPLY_TOLERANCE,
     DEFAULT_TEMPERATURES_C,
 )
+from .pdk import REPO_ROOT
 
 MANIFEST_NAME = "tb.json"
 
@@ -80,6 +101,20 @@ class Testbench:
     #: are provably load-independent, and say so via
     #: ``operating_conditions={"note": "N/A -- <why>"}``.
     operating_conditions: dict[str, str] = field(default_factory=dict)
+    #: LDO-specific extension (#12): which design netlist is the DUT, e.g.
+    #: ``design/netlist/ldo_core.spice``, repo-root relative (``includes``
+    #: above are testbench-relative). Included exactly like an ``includes``
+    #: entry -- see ``design_netlists`` -- but named separately so it can be
+    #: re-pointed from the CLI (``--dut-netlist``, for #16's extracted
+    #: post-layout netlist) and reported as the record's DUT. ``None`` for
+    #: testbenches with no DUT of their own (e.g. smoke-bias, which
+    #: instantiates PDK devices directly, or amp-openloop, which drives a
+    #: design cell listed under ``includes`` without designating a DUT).
+    dut_netlist: Path | None = None
+    #: The repo-relative string as given in the manifest (or ``--dut-netlist``),
+    #: kept verbatim for the evidence record's Netlist provenance / Links
+    #: fields -- schematic vs. extracted is inferred from this path's prefix.
+    dut_netlist_rel: str = ""
 
     @property
     def experiment(self) -> str:
@@ -102,14 +137,49 @@ class Testbench:
     def manifest_sha256(self) -> str:
         return hashlib.sha256((self.directory / MANIFEST_NAME).read_bytes()).hexdigest()
 
+    @property
+    def dut_netlist_sha256(self) -> str | None:
+        if self.dut_netlist is None:
+            return None
+        return hashlib.sha256(self.dut_netlist.read_bytes()).hexdigest()
+
+    @property
+    def design_netlists(self) -> tuple[Path, ...]:
+        """Every design netlist the harness includes, DUT first.
+
+        ``dut_netlist`` is not a second include mechanism: it is a
+        *designation* on top of ``includes`` -- it names which design netlist
+        is the thing under test (so the record can say so, and so #16 can
+        re-point it at an extracted netlist), and the file it names flows
+        through exactly the same pipeline as the ``includes`` entries: one
+        harness-owned ``.include`` line, the same forbidden-directive
+        validation, the same path+sha256 provenance entry, the same freeze
+        into the record's netlist snapshot. Listing the same file in both
+        places includes it once.
+        """
+        ordered: list[Path] = []
+        if self.dut_netlist is not None:
+            ordered.append(self.dut_netlist)
+        for path in self.includes:
+            if path not in ordered:
+                ordered.append(path)
+        return tuple(ordered)
+
     def include_provenance(self, repo_root: Path | None = None) -> list[dict]:
         """Path + sha256 of every design netlist this testbench includes."""
         entries = []
-        for path in self.includes:
-            try:
-                shown = str(path.relative_to(repo_root)) if repo_root else str(path)
-            except ValueError:
-                shown = str(path)
+        for path in self.design_netlists:
+            if self.dut_netlist is not None and path == self.dut_netlist and self.dut_netlist_rel:
+                # Keep the manifest's verbatim repo-relative spelling: the
+                # record's Netlist-provenance field infers schematic vs.
+                # extracted from this path's prefix, and render_record matches
+                # this entry against the record's `dut_netlist` field.
+                shown = self.dut_netlist_rel
+            else:
+                try:
+                    shown = str(path.relative_to(repo_root)) if repo_root else str(path)
+                except ValueError:
+                    shown = str(path)
             entries.append(
                 {"path": shown, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
             )
@@ -128,6 +198,8 @@ class Testbench:
             "includes": self.include_provenance(repo_root),
             "nominal_supply_v": self.nominal_supply_v,
             "supply_tolerance": self.supply_tolerance,
+            "dut_netlist": self.dut_netlist_rel or None,
+            "dut_netlist_sha256": self.dut_netlist_sha256,
         }
 
 
@@ -157,6 +229,16 @@ def load(directory: str | Path) -> Testbench:
     netlist = directory / _require(manifest, "netlist", manifest_path)
     if not netlist.is_file():
         raise FileNotFoundError(f"{manifest_path}: netlist {netlist} does not exist")
+
+    dut_netlist_rel = str(manifest.get("dut_netlist", "") or "")
+    dut_netlist: Path | None = None
+    if dut_netlist_rel:
+        dut_netlist = (REPO_ROOT / dut_netlist_rel).resolve()
+        if not dut_netlist.is_file():
+            raise FileNotFoundError(
+                f"{manifest_path}: dut_netlist {dut_netlist_rel!r} does not exist "
+                f"(resolved to {dut_netlist})"
+            )
 
     measure = dict(_require(manifest, "measure", manifest_path))
     if not measure:
@@ -198,6 +280,8 @@ def load(directory: str | Path) -> Testbench:
         operating_conditions={
             str(k): str(v) for k, v in manifest.get("operating_conditions", {}).items()
         },
+        dut_netlist=dut_netlist,
+        dut_netlist_rel=dut_netlist_rel,
     )
     validate_netlist(tb)
     return tb
@@ -220,9 +304,10 @@ def validate_netlist(tb: Testbench) -> None:
 
     Catching this here is much friendlier than debugging a duplicated
     ``.end`` or a hardcoded ``.temp 27`` that silently pins every corner to
-    room temperature. Design netlists named in ``includes`` are held to the
-    same rule: an xschem export that still carries a trailing ``.end`` would
-    truncate the deck at the point it is included.
+    room temperature. Design netlists named in ``includes`` (and the one named
+    by ``dut_netlist``) are held to the same rule: an xschem export that still
+    carries a trailing ``.end`` would truncate the deck at the point it is
+    included.
     """
     problems = _forbidden_directives(tb.netlist)
     if problems:
@@ -231,7 +316,7 @@ def validate_netlist(tb: Testbench) -> None:
             f"{', '.join(FORBIDDEN_DIRECTIVES)} -- the harness supplies the models, "
             "corner libs, temperature and control block:\n" + "\n".join(problems)
         )
-    for include in tb.includes:
+    for include in tb.design_netlists:
         problems = _forbidden_directives(include)
         if problems:
             raise ValueError(

@@ -142,6 +142,8 @@ distinct claim under test, kebab-case.
   "description": "one line, shows up in --list and in the record",
   "claim": "spec/ldo.md#dropout-voltage",
   "netlist": "my_tb.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "includes": ["../../../design/netlist/error_amp.spice"],
   "nominal_supply_v": 3.3,
   "supply_tolerance": 0.1,
   "temperatures_c": [-40, 27, 125],
@@ -154,13 +156,46 @@ distinct claim under test, kebab-case.
     "output_cap": "1.0uF, ESR=100mOhm (nominal)",
     "enable_state": "enabled (EN = VIN), steady-state"
   },
-  "measure": {"vdrop_mv": "(vdd_val - v(vout))*1e3", "iq_ua": "-i(vsup)*1e6"},
+  "measure": {"vdrop_mv": "(v(vin) - v(vout))*1e3", "iq_ua": "-i(vsup)*1e6"},
   "checks": {"vdrop_mv": {"max": 300.0, "description": "spec/ldo.md#dropout-voltage target"}}
 }
 ```
 
 `claim` is the default for the record's **Claim** field — the ratified spec
 line this experiment substantiates. `--claim` overrides it per run.
+
+`includes` and `dut_netlist` are the two halves of one mechanism: the design
+netlists the harness includes for you. The netlist *fragment* (`netlist`
+above, see "must not contain" below) may not `.include` anything, so anything
+the fragment instantiates has to be named in the manifest. Both are emitted as
+harness-owned `.include` lines ahead of the fragment, both are validated
+against the same forbidden-directive rule, and both are frozen (path +
+sha256, each behind its own header) into the record's single netlist snapshot.
+
+- `includes` (#35) is the list of design cells — paths relative to the
+  `testbench/` directory, e.g. `["../../../design/netlist/error_amp.spice"]`.
+- `dut_netlist` (#12) *designates* which design netlist is the thing under
+  test, written **repo-root relative** (e.g.
+  `design/netlist/ldo_core.spice`). It is included first, and the record names
+  it separately: the **Netlist provenance** field reads *schematic* normally
+  and **extracted** when the path lives under `layout/` — that is how #16's
+  post-layout re-run is recorded. Being repo-root relative is what makes it a
+  usable CLI knob: `--dut-netlist PATH` re-points one manifest at a different
+  netlist source per run (the same pattern as `--claim`) without forking the
+  testbench. Naming the same file in both places includes it once.
+
+Omit both for a testbench that instantiates only PDK primitives (e.g.
+smoke-bias); omit just `dut_netlist` for a testbench that drives a design cell
+without designating a DUT of its own (e.g. amp-openloop).
+
+**Gotcha: `vdd_val`/`vdd_nom` are `.param`s, not vectors — reference the node
+instead.** They work fine substituted into the *netlist fragment* itself
+(`Vsup VIN 0 DC {vdd_val}`, standard SPICE `.param` substitution), but a bare
+`vdd_val` inside a `measure`/`analyses` expression (evaluated by the control
+block's `let`, not by SPICE's own parser) fails with `RHS "..." invalid` —
+`let` only resolves plot vectors. Use the corresponding circuit node instead
+(`v(vin)` gives the identical numeric value, since the fragment already tied
+`VIN` to `{vdd_val}`).
 
 `operating_conditions` is this repo's one addition to bandgap's convention
 (see `sim/README.md`'s "LDO-specific extensions"): a free-form map rendered

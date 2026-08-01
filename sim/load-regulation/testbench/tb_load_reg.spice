@@ -1,0 +1,13 @@
+* load-regulation -- stimulus fragment for ldo_core (issue #12)
+*
+* Load regulation over the ratified 0-50 mA window (README.md Target
+* specification, "Load reg (0-50 mA)" row): a single in-run .dc sweep of
+* Iload from 1 mA to 50 mA (2-point sweep, endpoints only) captures both
+* ends within one ngspice invocation per PVT point -- see tb.json's
+* "analyses" field. EN is tied to VIN at instantiation (enabled).
+Vsup VIN 0 DC {vdd_val}
+Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
+
+Iload VOUT 0 DC 1m
+Resr VOUT n_esr 0.1
+Cout n_esr 0 1u

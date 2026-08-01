@@ -185,6 +185,90 @@ class TestbenchTests(unittest.TestCase):
         self.assertEqual(entries[0]["path"], "design/cell.spice")
         self.assertEqual(len(entries[0]["sha256"]), 64)
 
+    def test_dut_netlist_is_absent_by_default(self):
+        tb = testbench.load(self._write("v1 out 0 dc {vdd_val}\n"))
+        self.assertIsNone(tb.dut_netlist)
+        self.assertEqual(tb.dut_netlist_rel, "")
+        self.assertIsNone(tb.dut_netlist_sha256)
+        self.assertIsNone(tb.provenance()["dut_netlist"])
+
+    def test_dut_netlist_resolves_repo_relative_paths(self):
+        """#12: parameterizes a testbench over its DUT netlist source."""
+        tb = testbench.load(
+            self._write(
+                "v1 vin 0 dc {vdd_val}\n",
+                {"dut_netlist": "sim/smoke-bias/testbench/smoke_bias.spice"},
+            )
+        )
+        self.assertIsNotNone(tb.dut_netlist)
+        self.assertTrue(tb.dut_netlist.is_file())
+        self.assertEqual(tb.dut_netlist_rel, "sim/smoke-bias/testbench/smoke_bias.spice")
+        self.assertIsNotNone(tb.dut_netlist_sha256)
+        self.assertEqual(tb.provenance()["dut_netlist"], tb.dut_netlist_rel)
+
+    def test_missing_dut_netlist_is_rejected(self):
+        with self.assertRaises(FileNotFoundError):
+            testbench.load(
+                self._write(
+                    "v1 vin 0 dc {vdd_val}\n", {"dut_netlist": "design/does-not-exist.spice"}
+                )
+            )
+
+    def test_dut_netlist_and_includes_coexist_as_one_ordered_list(self):
+        """#12's DUT designation rides on #35's include mechanism, DUT first."""
+        self._write_design(".subckt cell a b\nr1 a b 1k\n.ends\n")
+        tb = testbench.load(
+            self._write(
+                "x1 in out cell\n",
+                {
+                    "includes": ["../../design/cell.spice"],
+                    "dut_netlist": "sim/smoke-bias/testbench/smoke_bias.spice",
+                },
+            )
+        )
+        self.assertEqual(
+            [p.name for p in tb.design_netlists], ["smoke_bias.spice", "cell.spice"]
+        )
+        entries = tb.include_provenance(self.dir.resolve())
+        self.assertEqual(
+            [e["path"] for e in entries],
+            ["sim/smoke-bias/testbench/smoke_bias.spice", "design/cell.spice"],
+        )
+        prov = tb.provenance(self.dir.resolve())
+        # The record can still tell which of the includes is the DUT, and the
+        # DUT's own entry is the first of the include list (not a duplicate).
+        self.assertEqual(prov["dut_netlist"], "sim/smoke-bias/testbench/smoke_bias.spice")
+        self.assertEqual(prov["includes"][0]["path"], prov["dut_netlist"])
+        self.assertEqual(prov["includes"][0]["sha256"], tb.dut_netlist_sha256)
+        self.assertEqual(len(prov["includes"]), 2)
+
+    def test_a_file_named_as_both_dut_and_include_is_included_once(self):
+        tb = testbench.load(
+            self._write(
+                "x1 in out cell\n",
+                {
+                    "includes": [str(SIM_DIR / "smoke-bias" / "testbench" / "smoke_bias.spice")],
+                    "dut_netlist": "sim/smoke-bias/testbench/smoke_bias.spice",
+                },
+            )
+        )
+        self.assertEqual(len(tb.design_netlists), 1)
+        self.assertEqual(tb.design_netlists[0], tb.dut_netlist)
+
+    def test_a_dut_netlist_carrying_end_is_rejected_like_any_include(self):
+        """#35's forbidden-directive check applies to the DUT too."""
+        design = self.dir / "design"
+        design.mkdir(parents=True, exist_ok=True)
+        (design / "bad_dut.spice").write_text(".subckt dut a b\nr1 a b 1k\n.ends\n.end\n")
+        with self.assertRaises(ValueError) as ctx:
+            testbench.load(
+                self._write(
+                    "x1 in out dut\n",
+                    {"dut_netlist": str((design / "bad_dut.spice").resolve())},
+                )
+            )
+        self.assertIn("included design netlist", str(ctx.exception))
+
     def test_the_repo_smoke_testbench_is_valid(self):
         tb = testbench.load(SIM_DIR / "smoke-bias")
         self.assertEqual(tb.nominal_supply_v, 3.3)
@@ -246,7 +330,13 @@ class DeckTests(unittest.TestCase):
 
 
 class DeckIncludeTests(unittest.TestCase):
-    """`includes` puts design cells in the deck ahead of the fragment."""
+    """`dut_netlist` (#12) + `includes` (#35) in one deck.
+
+    The manifest here names both: a DUT (the cell under test) and a
+    supporting design cell it instantiates. Both must reach the deck as
+    harness-owned ``.include`` lines ahead of the stimulus fragment, and both
+    must be frozen into the record's single netlist snapshot.
+    """
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -255,14 +345,19 @@ class DeckIncludeTests(unittest.TestCase):
         (root / "design").mkdir()
         self.cell = (root / "design" / "cell.spice").resolve()
         self.cell.write_text(".subckt cell a b\nr1 a b 1k\n.ends\n")
+        self.dut = (root / "dut.spice").resolve()
+        self.dut.write_text(".subckt dut_sub a b\nXc a b cell\n.ends\n")
         (root / "tb").mkdir()
-        (root / "tb" / "x.spice").write_text("x1 out 0 cell\n")
+        (root / "tb" / "stim.spice").write_text(
+            "Vin vin 0 dc {vdd_val}\nXdut vin out dut_sub\n"
+        )
         (root / "tb" / "tb.json").write_text(
             json.dumps(
                 {
                     "name": "x",
-                    "netlist": "x.spice",
+                    "netlist": "stim.spice",
                     "includes": ["../design/cell.spice"],
+                    "dut_netlist": str(self.dut),
                     "measure": {"vout": "v(out)"},
                 }
             )
@@ -272,21 +367,28 @@ class DeckIncludeTests(unittest.TestCase):
         self.pdk = fake_pdk(root / "gf180mcuD")
         self.point = corners.build_grid(corners.resolve_corners(["tt"]), (27,), [3.3])[0]
 
-    def test_design_cell_is_included_before_the_fragment(self):
+    def test_dut_and_design_cell_are_both_included_before_the_fragment(self):
         deck = runner.compose_deck(self.tb, self.pdk, self.point)
-        cell_at = deck.index(str(self.cell))
-        frag_at = deck.index("x.spice")
-        self.assertLess(cell_at, frag_at)
+        self.assertIn(f'.include "{self.dut}"', deck)
         self.assertIn(f'.include "{self.cell}"', deck)
+        frag_at = deck.index("stim.spice")
+        self.assertLess(deck.index(str(self.dut)), frag_at)
+        self.assertLess(deck.index(str(self.cell)), frag_at)
+        # DUT first, then the supporting design cells, in include order.
+        self.assertLess(deck.index(str(self.dut)), deck.index(str(self.cell)))
 
-    def test_snapshot_freezes_the_design_cell_and_the_fragment(self):
+    def test_snapshot_freezes_the_dut_the_design_cell_and_the_fragment(self):
         experiment_dir = self.root / "tb"  # stands in for sim/<slug>/
         path = report.write_netlist_snapshot(self.tb, experiment_dir, "20260731-000000-abc1234")
         text = path.read_text()
-        self.assertIn("r1 a b 1k", text)          # the design cell
-        self.assertIn("x1 out 0 cell", text)      # the testbench fragment
-        self.assertLess(text.index("r1 a b 1k"), text.index("x1 out 0 cell"))
+        self.assertIn(".subckt dut_sub", text)     # the DUT
+        self.assertIn("r1 a b 1k", text)           # the design cell
+        self.assertIn("Xdut vin out dut_sub", text)  # the testbench fragment
+        self.assertLess(text.index(".subckt dut_sub"), text.index("r1 a b 1k"))
+        self.assertLess(text.index("r1 a b 1k"), text.index("Xdut vin out dut_sub"))
+        self.assertIn("DUT netlist", text)
         self.assertIn("included design cell", text)
+        self.assertIn(self.tb.dut_netlist_sha256, text)
         self.assertIn(self.tb.netlist_sha256, text)
 
 
@@ -569,6 +671,88 @@ class RecordRenderingTests(unittest.TestCase):
         self.assertIn("Load current: 50mA", text)
         self.assertIn("Output cap: 1.0uF, ESR=100mOhm", text)
         self.assertIn("Enable state: enabled (EN = VIN)", text)
+
+
+class DutNetlistProvenanceTests(unittest.TestCase):
+    """#12: Netlist provenance reads schematic/extracted from dut_netlist."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        (self.root / "tb").mkdir()
+        (self.root / "tb" / "stim.spice").write_text("Vin vin 0 dc {vdd_val}\n")
+        self.pdk = fake_pdk(self.root / "gf180mcuD")
+        self.points = corners.build_grid(
+            corners.resolve_corners(["mos"]), (-40, 27, 125), corners.supply_points(3.3, 0.10)
+        )
+        self.results = [
+            runner.PointResult(point=p, status="ok", measurements={"vout": 1.0})
+            for p in self.points
+        ]
+
+    def _build(self, dut_netlist_path: Path, dut_rel: str, includes: list[str] | None = None) -> str:
+        (self.root / "tb" / "tb.json").write_text(
+            json.dumps(
+                {
+                    "name": "x",
+                    "netlist": "stim.spice",
+                    "measure": {"vout": "v(out)"},
+                    "dut_netlist": str(dut_netlist_path.resolve()),
+                    "includes": includes or [],
+                }
+            )
+        )
+        tb = testbench.load(self.root / "tb")
+        # Swap in the human-facing relative label a real repo-relative
+        # manifest value would carry (the test DUT lives outside REPO_ROOT).
+        tb.dut_netlist_rel = dut_rel
+        record = report.build_record(
+            tb=tb,
+            pdk=self.pdk,
+            points=self.points,
+            results=self.results,
+            ngspice="ngspice-46",
+            repo_root=SIM_DIR,
+            record_id="20260801-000000-1234567",
+            started_utc="2026-08-01T00:00:00+00:00",
+            wall_seconds=1.0,
+        )
+        return report.render_record(record, "x-experiment")
+
+    def test_a_design_path_reports_schematic(self):
+        dut = self.root / "design_dut.spice"
+        dut.write_text(".subckt d a b\nRx a b 1k\n.ends\n")
+        text = self._build(dut, "design/netlist/ldo_core.spice")
+        self.assertIn("schematic (`design/netlist/ldo_core.spice`)", text)
+        self.assertIn("DUT netlist: `design/netlist/ldo_core.spice`", text)
+
+    def test_a_layout_path_reports_extracted(self):
+        dut = self.root / "layout_dut.spice"
+        dut.write_text(".subckt d a b\nRx a b 1k\n.ends\n")
+        text = self._build(dut, "layout/extracted/ldo_core.spice")
+        self.assertIn("extracted (`layout/extracted/ldo_core.spice`)", text)
+
+    def test_the_dut_and_the_other_design_cells_are_reported_separately(self):
+        """#12's DUT line and #35's design-cell lines coexist without dupes."""
+        dut = self.root / "design_dut.spice"
+        dut.write_text(".subckt d a b\nRx a b 1k\n.ends\n")
+        cell = self.root / "cell.spice"
+        cell.write_text(".subckt cell a b\nRy a b 2k\n.ends\n")
+        text = self._build(dut, "design/netlist/ldo_core.spice", includes=[str(cell)])
+        # Provenance names every design netlist frozen into the record ...
+        self.assertIn("design/netlist/ldo_core.spice", text)
+        self.assertIn("cell.spice", text)
+        # ... the Links section calls out which one is the DUT ...
+        self.assertIn("DUT netlist: `design/netlist/ldo_core.spice`", text)
+        self.assertIn("Design cells: ", text)
+        # ... and the DUT is not also listed as a supporting design cell.
+        design_cells_line = next(ln for ln in text.splitlines() if "Design cells: " in ln)
+        self.assertNotIn("ldo_core.spice", design_cells_line)
+        self.assertEqual(text.count("DUT netlist sha256"), 1)
+        self.assertEqual(
+            len([ln for ln in text.splitlines() if ln.startswith("- Included design netlist")]), 1
+        )
 
 
 if __name__ == "__main__":

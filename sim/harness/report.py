@@ -364,12 +364,17 @@ def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str) 
     DUT netlist used for this record", so later edits to ``testbench/`` never
     change what an existing record refers to.
 
-    When the manifest names design cells under ``includes`` (e.g. an xschem
-    export from ``design/``), the DUT is spread across several files. They are
-    concatenated into the same single snapshot file -- design cells first, in
-    include order, then the testbench fragment -- each behind a header naming
-    its source path and sha256. That keeps the ratified one-snapshot-per-record
-    shape while still freezing everything the record's numbers depend on.
+    When the manifest names design netlists (``dut_netlist`` and/or
+    ``includes``), the DUT is spread across several files. They are
+    concatenated into the same single snapshot file -- the designated DUT
+    first, then the other design cells in include order, then the testbench
+    fragment -- each behind a header naming its source path and sha256. That
+    keeps the ratified one-snapshot-per-record shape while still freezing
+    everything the record's numbers depend on: the DUT (the netlist most
+    likely to change between records -- a new error amp, an extracted
+    post-layout re-run for #16) *and* the stimulus that produced them.
+    Testbenches with no design netlist at all (e.g. smoke-bias) snapshot just
+    the fragment, as before.
     """
     repo_root = experiment_dir.parent.parent
     out_dir = experiment_dir / SNAPSHOT_DIR
@@ -393,12 +398,13 @@ def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str) 
             ]
         )
     ]
-    for entry, source in zip(tb.include_provenance(repo_root), tb.includes):
+    for entry, source in zip(tb.include_provenance(repo_root), tb.design_netlists):
+        label = "DUT netlist" if source == tb.dut_netlist else "included design cell"
         chunks.append(
             "\n".join(
                 [
                     "* ======================================================================",
-                    f"* included design cell : {entry['path']}",
+                    f"* {label:<21}: {entry['path']}",
                     f"* sha256               : {entry['sha256']}",
                     "* ======================================================================",
                     "",
@@ -539,10 +545,18 @@ def render_record(record: dict, experiment: str) -> str:
     git = env["git"]
     pdk = env["pdk"]
 
+    # `includes` (#35) lists every design netlist frozen into this record;
+    # `dut_netlist` (#12) names which of them is the DUT, and whether it came
+    # from the schematic or from an extracted layout. The DUT is always the
+    # first entry of `includes` when set (Testbench.design_netlists), so
+    # `other_includes` is the supporting design cells around it.
     includes = tb.get("includes") or []
+    dut_netlist_rel = tb.get("dut_netlist")
+    other_includes = [entry for entry in includes if entry["path"] != dut_netlist_rel]
     if includes:
+        kind = "extracted" if (dut_netlist_rel or "").startswith("layout/") else "schematic"
         provenance = (
-            "schematic ("
+            f"{kind} ("
             + ", ".join(f"`{entry['path']}`" for entry in includes)
             + f"), driven by `sim/{experiment}/{TESTBENCH_DIR}/{tb['netlist']}`"
         )
@@ -574,9 +588,11 @@ def render_record(record: dict, experiment: str) -> str:
         f"  - Testbench: `sim/{experiment}/{TESTBENCH_DIR}/{tb['netlist']}`, "
         f"`sim/{experiment}/{TESTBENCH_DIR}/tb.json`",
     ]
-    if includes:
+    if dut_netlist_rel:
+        lines.append(f"  - DUT netlist: `{dut_netlist_rel}`")
+    if other_includes:
         lines.append(
-            "  - Design cells: " + ", ".join(f"`{entry['path']}`" for entry in includes)
+            "  - Design cells: " + ", ".join(f"`{entry['path']}`" for entry in other_includes)
         )
     lines += [
         f"  - Netlist snapshot: `sim/{experiment}/{SNAPSHOT_DIR}/{record_id}.spice`",
@@ -595,9 +611,13 @@ def render_record(record: dict, experiment: str) -> str:
         f"- git: `{git['commit']}` on `{git['branch']}`"
         + (" (dirty)" if git["dirty"] else " (clean)"),
         f"- Testbench netlist sha256: `{tb['netlist_sha256']}`",
+    ]
+    if tb.get("dut_netlist_sha256"):
+        lines.append(f"- DUT netlist sha256: `{tb['dut_netlist_sha256']}`")
+    lines += [
         f"- Manifest sha256: `{tb['manifest_sha256']}`",
     ]
-    for entry in includes:
+    for entry in other_includes:
         lines.append(f"- Included design netlist `{entry['path']}` sha256: `{entry['sha256']}`")
     lines += [
         f"- Wall time: {record['wall_seconds']} s",
