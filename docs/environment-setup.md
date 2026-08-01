@@ -179,3 +179,32 @@ The full harness reference -- PDK resolution, corner definitions, how to
 write a testbench manifest, and the `sim/smoke-bias/` acceptance test -- is
 [`sim/harness/README.md`](../sim/harness/README.md). The record format it
 writes into is [`sim/README.md`](../sim/README.md).
+
+## 7. Also: DRC/LVS (only needed for `layout/`)
+
+Physical verification needs two tools beyond the simulation flow. Neither is
+required to run anything under `sim/`, so install them only when you touch
+`layout/`.
+
+| Tool | Version validated | Source |
+|---|---|---|
+| KLayout | **0.28.16** | `apt-get install klayout` (Debian/Ubuntu); [klayout.de](https://www.klayout.de) elsewhere. Needs to be the **standalone binary**, not just the `klayout` pip module -- the PDK's decks are run as `klayout -b -r <deck>`. |
+| klayout-tools (`klt`) | **0.1.0** | `uv tool install klayout-tools`, or `pipx install klayout-tools` |
+
+**The xschem version in §1 is load bearing for LVS specifically.** The LVS
+reference netlist is produced by xschem's `lvs_format` mechanism, which does
+not exist in xschem 3.4.4 -- the version Debian/Ubuntu package. On 3.4.4 the
+switch is silently ignored and you get a simulation netlist, which KLayout's
+SPICE reader mis-reads into a meaningless mismatch. Build 3.4.7 per §2;
+`layout/drclvs.py` detects the wrong netlist form and fails with a pointer
+rather than running a bogus compare.
+
+Check the whole set, and what the PDK resolver found, with:
+
+```bash
+python3 layout/drclvs.py --check-env
+```
+
+The DRC/LVS flow itself -- what it runs, what each result does and does not
+establish, and the known tool caveats -- is
+[`layout/README.md`](../layout/README.md).

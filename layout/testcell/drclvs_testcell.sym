@@ -1,0 +1,39 @@
+v {xschem version=3.4.7 file_version=1.2
+
+* drclvs_testcell -- symbol for the DRC/LVS bring-up test cell (issue #14).
+*
+* Nothing instantiates this cell: it exists only so that xschem netlists
+* drclvs_testcell.sch as a real `.subckt` with a fixed port order. Without a
+* symbol xschem emits the commented `**.subckt` / `*.iopin` form, which is
+* not what KLayout's SPICE reader (and therefore the gf180mcu LVS deck)
+* consumes.
+*
+* PORT ORDER -- must match the ipin/opin/iopin order in the schematic, and
+* is what layout/drclvs.py asserts against the layout's net labels:
+*
+*     D  G  S  VSS
+
+}
+G {}
+K {type=subcircuit
+format="@name @pinlist @symname"
+template="name=x1"
+}
+V {}
+S {}
+E {}
+P 4 5 -60 -40 60 -40 60 40 -60 40 -60 -40 {}
+B 5 57.5 -32.5 62.5 -27.5 {name=D dir=inout}
+L 7 60 -30 80 -30 {}
+T {D} 55 -34 0 1 0.2 0.2 {}
+B 5 -62.5 -12.5 -57.5 -7.5 {name=G dir=in}
+L 7 -80 -10 -60 -10 {}
+T {G} -55 -14 0 0 0.2 0.2 {}
+B 5 57.5 7.5 62.5 12.5 {name=S dir=inout}
+L 7 60 10 80 10 {}
+T {S} 55 6 0 1 0.2 0.2 {}
+B 5 -62.5 27.5 -57.5 32.5 {name=VSS dir=inout}
+L 7 -80 30 -60 30 {}
+T {VSS} -55 26 0 0 0.2 0.2 {}
+T {@symname} -35 -6 0 0 0.3 0.3 {}
+T {@name} -60 -52 0 0 0.2 0.2 {}

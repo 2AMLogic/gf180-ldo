@@ -1,0 +1,50 @@
+#### Project-local xschemrc for LVS-form netlisting.
+####
+#### Identical to design/xschemrc in every respect except one switch, so the
+#### two exports can never drift apart in library paths, netlist type or
+#### hierarchy handling:
+####
+####     set lvs_netlist 1
+####
+#### With that set, xschem renders each device instance from its symbol's
+#### `lvs_format` attribute instead of its `format` attribute. For the
+#### gf180mcu PDK symbols those two differ in exactly the way LVS needs
+#### (libs.tech/xschem/symbols/nfet_03v3.sym):
+####
+####     format     = "@spiceprefix@name @pinlist @model L=@L W=@W nf=@nf
+####                   ad=@ad as=@as pd=@pd ps=@ps nrd=@nrd nrs=@nrs
+####                   sa=@sa sb=@sb sd=@sd m=@m"
+####     lvs_format = "@name @pinlist @model L=@L W=@W nf=@nf m=@m"
+####
+#### i.e. the simulation form is `XM1 ... nfet_03v3 ...` (an ngspice
+#### subcircuit call, since the gf180mcu ngspice models are subcircuits),
+#### while the LVS form is `M1 ... nfet_03v3 L=... W=... nf=... m=...` -- a
+#### plain SPICE element whose leading letter names the device class and
+#### whose parameters are only the geometric ones. KLayout's
+#### `RBA::NetlistSpiceReader` (which the gf180mcu LVS deck drives) reads the
+#### second form and cannot evaluate the first form's parameter expressions
+#### (`ad='int((nf+1)/2) * W/nf * 0.18u'`).
+####
+#### Consequence for schematic authoring: in a cell that will be LVS'd,
+#### **name each device instance with the SPICE element letter its class
+#### needs** -- `M*` for MOS, `R*` for resistors, `C*` for capacitors --
+#### because `lvs_format` starts with a bare `@name` and that letter is what
+#### tells the reader which element it is looking at.
+####
+#### Requires xschem >= 3.4.6 (the repo pins 3.4.7 -- see
+#### docs/environment-setup.md). xschem 3.4.4, which is what Debian/Ubuntu
+#### package, has no `lvs_format` support at all and silently emits the
+#### simulation form instead; layout/drclvs.py checks the exported netlist
+#### for that and fails loudly rather than handing LVS a netlist it will
+#### mis-read.
+####
+#### Also note `lvs_netlist` must be set **before** the schematic is loaded --
+#### `--command "xschem set lvs_netlist 1; xschem netlist"` is too late and
+#### silently produces the simulation form. That is why this is an rcfile and
+#### not a command-line switch.
+
+set _lvs_rc_dir [file normalize [file dirname [info script]]]
+source [file join [file dirname $_lvs_rc_dir] design xschemrc]
+unset _lvs_rc_dir
+
+set lvs_netlist 1
