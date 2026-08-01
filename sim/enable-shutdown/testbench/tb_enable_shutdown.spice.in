@@ -1,0 +1,185 @@
+* enable-shutdown -- enable/disable behaviour and shutdown quiescent current
+* for ldo_core with Xilimit (issue #11).
+*
+* Substantiates the ratified "Enable / shutdown" row of README.md's target
+* specification: shutdown Iq, the settled disabled output state (pass device
+* off, NO internal active discharge), and Vin->Vout leakage; plus the
+* enable->active and active->disable transitions, including enable toggled
+* at the full rated load, which is the condition under which the current
+* limit necessarily engages during startup (there is no soft-start in this
+* design) and therefore the condition under which a foldback limit could
+* latch the regulator low.
+*
+* THE LOOP-TIE AMMETER
+*
+* ldo_core's ERRAMP_OUT and PASS_GATE are deliberately separate loop-break
+* ports that normal operation ties together (see design/README.md). This
+* bench ties them through Vloop, a 0 V source, which is electrically the
+* same plain wire sim/op-point-sanity uses but also meters the current
+* crossing the tie.
+*
+* That meter is a diagnostic on the disabled state specifically. While
+* disabled, Men holds PASS_GATE at VIN and the amplifier's output stage sits
+* on the other side of the tie; any current crossing it is current the
+* amplifier is still sinking from the pass-gate node, i.e. exactly the
+* failure mode #9's un-gated amplifier had (its bias branch stayed alive and
+* its M2N kept sinking). With #11's EN gating inside error_amp it should be
+* leakage-level, and the bench prints it at every corner rather than
+* asserting it.
+*
+* THE REFERENCE CURRENT IS METERED SEPARATELY AND ADDED IN
+*
+* Vref1 is an ideal 1.2 V source inside ldo_core standing in for a bandgap
+* that does not exist yet, so current drawn from it does NOT appear in
+* i(vin) -- a real bandgap would source it from VIN. It is therefore added
+* into the reported quiescent numbers rather than silently dropped. The
+* bandgap's OWN quiescent current is not in any number here and never can
+* be until that block exists.
+*
+* Template: run.sh substitutes the @TOKENS@ (PDK paths, corner sections,
+* temperature, supply) and runs the result with `ngspice -b`.
+
+.include "@DESIGN_INCLUDE@"
+.lib "@MODEL_LIB@" @MOS_CORNER@
+.lib "@MODEL_LIB@" @RES_CORNER@
+.lib "@MODEL_LIB@" @BJT_CORNER@
+.lib "@MODEL_LIB@" @DIODE_CORNER@
+.lib "@MODEL_LIB@" @MOSCAP_CORNER@
+.lib "@MODEL_LIB@" @MIMCAP_CORNER@
+
+.temp @TEMP_C@
+
+.include "@LDO_NETLIST@"
+
+* --- stimulus ------------------------------------------------------------
+Vin VIN 0 DC @VIN_V@
+* EN: low until 50 us, high until 450 us, low thereafter (1 us edges).
+Ven EN 0 DC 0 PWL(0 0 50u 0 51u @VIN_V@ 450u @VIN_V@ 451u 0)
+
+* --- DUT -----------------------------------------------------------------
+* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE
+Xdut VIN VOUT EN 0 EOUT PG ldo_core
+Vloop PG EOUT DC 0
+
+* --- output network ------------------------------------------------------
+* C_eff = 1 uF with 100 mOhm ESR: inside DR-0001's ratified 0.33-4.7 uF /
+* 0-500 mOhm window, and the same nominal point sim/op-point-sanity used.
+Resr VOUT n_esr 0.1
+Cout n_esr 0 1u
+
+* --- load ----------------------------------------------------------------
+* 36 ohm ~ 50 mA at 1.8 V: the full rated load. Resistive, not an ideal
+* current sink -- see sim/current-limit/testbench for why an ideal sink
+* makes the operating-point solve on this circuit ill-conditioned.
+Rload VOUT LN 36
+Vlmeas LN 0 DC 0
+
+* Forcing path for the Vin->Vout leakage measurement (1 Gohm = absent).
+Vforce VF 0 DC 0
+Rforce VOUT VF 1G
+
+* Every `op` starts a new ngspice plot and `let` vectors belong to the plot
+* current when they were created, so each measurement is printed right after
+* the analysis that produced it.
+.control
+set noaskquit
+
+* ======================================================================
+* Settled ENABLED state, full rated load
+* ======================================================================
+alter Ven dc = @VIN_V@
+op
+let m_vout_en = v(vout)
+let m_iload_en_ma = i(vlmeas)*1e3
+let m_isup_en_ua = -i(vin)*1e6
+let m_iref_en_ua = -i(v.xdut.vref1)*1e6
+* Quiescent current = everything the supply and reference deliver that does
+* not reach the load.
+let m_iq_en_ua = m_isup_en_ua + m_iref_en_ua - m_iload_en_ma*1e3
+print m_vout_en
+print m_iload_en_ma
+print m_isup_en_ua
+print m_iref_en_ua
+print m_iq_en_ua
+
+* ======================================================================
+* Settled DISABLED state, output free (no external load, no forcing)
+* ======================================================================
+alter Rload = 1G
+alter Ven dc = 0
+op
+let m_vout_off = v(vout)
+let m_isup_off_ua = -i(vin)*1e6
+let m_iref_off_ua = -i(v.xdut.vref1)*1e6
+let m_iloop_off_ua = i(vloop)*1e6
+let m_pg_off = v(pg)
+let m_clg_off = v(xdut.xilimit.clg)
+let m_nbias_off = v(xdut.xerramp.nbias)
+* Shutdown Iq = everything the supply and the (stand-in) reference deliver
+* while disabled. Nothing is subtracted: every element left in the disabled
+* circuit is a real device.
+let m_iq_off_ua = m_isup_off_ua + m_iref_off_ua
+print m_vout_off
+print m_pg_off
+print m_clg_off
+print m_nbias_off
+print m_isup_off_ua
+print m_iref_off_ua
+print m_iloop_off_ua
+print m_iq_off_ua
+
+* ======================================================================
+* Vin->Vout leakage, disabled, output held at 0 V
+* ======================================================================
+alter Rforce = 1m
+alter Vforce dc = 0
+op
+let m_ileak_vin_vout_ua = i(vforce)*1e6
+print m_ileak_vin_vout_ua
+alter Rforce = 1G
+
+* ======================================================================
+* Enable / disable transitions at the full rated load
+* ======================================================================
+alter Rload = 36
+alter Ven dc = 0
+tran 100n 700u
+let ivin_ma = -i(vin)*1e3
+let vclg = v(xdut.xilimit.clg)
+
+* Startup: does it reach regulation at all (a folded-back limit could latch
+* the output low here), how long does it take, and does it overshoot?
+meas tran m_t_startup TRIG v(en) VAL=1.4 RISE=1 TARG v(vout) VAL=1.764 RISE=1
+meas tran m_vout_settled FIND v(vout) AT=440u
+meas tran m_vout_max_en MAX v(vout) FROM=51u TO=450u
+meas tran m_vout_min_reg MIN v(vout) FROM=250u TO=450u
+* Peak supply current during startup: the limit engaging, which it must,
+* since there is no soft-start and the output cap has to be charged.
+meas tran m_isup_peak_ma MAX ivin_ma FROM=50u TO=450u
+* Is the limit clamp idle once the output is in regulation at the full rated
+* load? CLG (the clamp's gate) rests at VIN when the limit is NOT engaged and
+* is pulled down towards VSS when it is, so the MINIMUM of CLG over the
+* settled window is a direct, waveform-level answer to "does the limit ever
+* engage inside the rated load range?" -- independent of the DC V-I sweep in
+* sim/current-limit.
+meas tran m_clg_min_reg MIN vclg FROM=250u TO=450u
+* Peak SUPPLY current in the same settled window. The pass device's current
+* is the load current plus whatever the output capacitor is being charged
+* with, so on a loop that rings, the instantaneous pass current can exceed
+* the DC load by an order of magnitude even though the load is a fixed
+* 36 ohm. This measurement is what distinguishes "the limit tripped at
+* 50 mA of LOAD" (a design failure) from "the limit did its job on a
+* capacitor-charging current spike the ringing created" (a stability
+* finding, issue #10's).
+meas tran m_isup_peak_reg_ma MAX ivin_ma FROM=250u TO=450u
+* Residual output ripple in the same settled window. The main loop's phase
+* margin is issue #10's claim, not this bench's, but a large number here is
+* the difference between "the limit engaged" and "the main loop is ringing",
+* so it is measured rather than inferred.
+meas tran m_vout_pp_late PP v(vout) FROM=400u TO=450u
+* Disabled tail: the output must collapse and stay collapsed.
+meas tran m_vout_off_tran FIND v(vout) AT=690u
+meas tran m_vout_max_off MAX v(vout) FROM=600u TO=700u
+meas tran m_pg_off_tran FIND v(pg) AT=690u
+.endc
+.end

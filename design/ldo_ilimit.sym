@@ -1,0 +1,30 @@
+v {xschem version=3.4.7 file_version=1.2}
+G {}
+K {type=subcircuit
+format="@name @pinlist @symname"
+template="name=x1"
+}
+V {}
+S {}
+E {}
+P 4 5 -90 -70 90 -70 90 70 -90 70 -90 -70 {}
+B 5 -102.5 -52.5 -97.5 -47.5 {name=VIN dir=inout}
+L 7 -100 -50 -90 -50 {}
+T {VIN} -85 -54 0 0 0.2 0.2 {}
+B 5 97.5 -32.5 102.5 -27.5 {name=VOUT dir=inout}
+L 7 90 -30 100 -30 {}
+T {VOUT} 85 -34 0 1 0.2 0.2 {}
+B 5 -102.5 -12.5 -97.5 -7.5 {name=PASS_GATE dir=inout}
+L 7 -100 -10 -90 -10 {}
+T {PASS_GATE} -85 -14 0 0 0.2 0.2 {}
+B 5 -102.5 7.5 -97.5 12.5 {name=EN dir=in}
+L 7 -100 10 -90 10 {}
+T {EN} -85 6 0 0 0.2 0.2 {}
+B 5 -102.5 27.5 -97.5 32.5 {name=VREF dir=in}
+L 7 -100 30 -90 30 {}
+T {VREF} -85 26 0 0 0.2 0.2 {}
+B 5 -102.5 47.5 -97.5 52.5 {name=VSS dir=inout}
+L 7 -100 50 -90 50 {}
+T {VSS} -85 46 0 0 0.2 0.2 {}
+T {@symname} -40 45 0 0 0.3 0.3 {}
+T {@name} -90 -82 0 0 0.2 0.2 {}

@@ -7,6 +7,14 @@
 * .include, the corner .lib sections, .temp, the .control block and .end, and
 * emits the .include of design/netlist/error_amp.spice from tb.json's
 * "includes". Amp pinout: INP INN OUT VDD VSS (#8's ratified contract), INP
+*
+* EN (sixth port, appended by issue #11): each instance's EN is tied to ITS
+* OWN vdd node, i.e. the amplifier is enabled, which is the only state this
+* bench characterizes. That is also the physically honest wiring -- a real
+* enable is driven by CMOS logic on the same supply -- and it matters here
+* because EN is not a quiet node: it gates a local inverter whose output
+* holds the bias header's gate. Tying EN to a clean, separate source would
+* hide any supply coupling that path contributes.
 * non-inverting (= FB), INN inverting (= VREF).
 *
 * ---------------------------------------------------------------------------
@@ -59,7 +67,7 @@ Lfb1  vg1   nls1 1T
 Vls1  nls1  nref1 dc {vg_op-vcm}
 Cref1 nref1 0 1
 Cl1   vg1   0 {cgate}
-X1 nfb1 nref1 vg1 vdd1 0 error_amp
+X1 nfb1 nref1 vg1 vdd1 0 vdd1 error_amp
 
 * ==== X2: AC on the feedback input, supply quiet -> A =======================
 Vsup2 vdd2  0 dc {vdd_val}
@@ -68,4 +76,4 @@ Lfb2  vg2   nls2 1T
 Vls2  nls2  nref2 dc {vg_op-vcm}
 Cref2 nref2 0 1
 Cl2   vg2   0 {cgate}
-X2 nfb2 nref2 vg2 vdd2 0 error_amp
+X2 nfb2 nref2 vg2 vdd2 0 vdd2 error_amp

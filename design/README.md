@@ -5,21 +5,27 @@ directory is the **source of truth for the block's electrical interface**:
 `sim/` testbenches (and later `layout/` LVS) both consume the netlists
 exported from here.
 
-> **Status (issue #9): hierarchy, pinout, enable path and the error
-> amplifier are real; the current limit is out of scope.** Issue #8 built
-> this cell with a behavioral placeholder amp; issue #9 replaced that
-> placeholder with `error_amp`, a real two-stage OTA designed against
-> explicit offset / PSRR / Iq budgets (`design/error_amp.md`). See "Scope
-> split" below before building on top of this.
+> **Status (issue #11): hierarchy, pinout, error amplifier, current limit
+> and the full enable path are real.** Issue #8 built this cell with a
+> behavioral placeholder amp and a one-transistor enable stub; #9 replaced
+> the placeholder with `error_amp`, a real two-stage OTA
+> (`design/error_amp.md`); #11 added `ldo_ilimit` (constant-current limit)
+> and turned the enable stub into a real low-current disabled state by
+> gating every bias branch in the cell. What is still a stand-in: `Vref1`
+> (an ideal source -- no bandgap block exists) and `Mpass`'s width (2 mm,
+> #8's DC-sanity simplification of the ratified ~4 mm sizing). See "Scope
+> split" below.
 
 ## Cells
 
 ```
 ldo_core                          top level -- issue #8
-└── error_amp                     two-stage Miller-compensated OTA -- issue #9
-                                  (replaced ldo_erramp_placeholder on the same
-                                  INP INN OUT VDD VSS pinout; the placeholder
-                                  cell is deleted, its contract is not)
+├── error_amp                     two-stage Miller-compensated OTA -- issue #9
+│                                 (replaced ldo_erramp_placeholder on the same
+│                                 INP INN OUT VDD VSS pinout; the placeholder
+│                                 cell is deleted, its contract is not.
+│                                 Issue #11 APPENDED a sixth pin, EN)
+└── ldo_ilimit                    constant-current limit + enable gating -- #11
 ```
 
 ## `ldo_core` pinout (established by issue #8, in netlist port order)
@@ -27,8 +33,8 @@ ldo_core                          top level -- issue #8
 | Pin          | Dir   | Meaning |
 | ------------ | ----- | ------- |
 | `VIN`        | inout | Supply, 3.3 V nominal |
-| `VOUT`       | inout | Regulated output, 1.8 V nominal. Also the current-sense tap for issue #11 (see below). |
-| `EN`         | in    | Enable, active-high, CMOS-level (0 V / VIN) |
+| `VOUT`       | inout | Regulated output, 1.8 V nominal. Also the current-sense return for `ldo_ilimit` (see below). |
+| `EN`         | in    | Enable, active-high, CMOS-level (0 V / VIN). Gates the pass device, the amplifier's bias and the limit block's bias. |
 | `VSS`        | inout | Ground |
 | `ERRAMP_OUT` | out   | Loop-break point, output side (error-amp output) |
 | `PASS_GATE`  | in    | Loop-break point, input side (pass-device gate) |
@@ -58,26 +64,46 @@ without ever touching `design/ldo_core.sch`. This is why the ratified
 interface has 6 ports instead of the 4 a purely functional view would
 suggest.
 
-### Current-sense tap for issue #11
+### Current sensing: a replica, not a series element
 
-The pass device's drain connects directly to `VOUT` (`XMpass`'s `D` pin, in
-`design/ldo_core.spice`). That direct wire is the tap point: issue #11 (which
-this issue does **not** implement) cuts into that wire to insert a
-current-limit/foldback sense element, without needing to restructure
-anything else in this schematic.
+Issue #8 left the `XMpass` drain-to-`VOUT` wire as the place a series sense
+element would be cut in. **Issue #11 did not use it**, and the reason is the
+Iq budget: any series element in the pass path either burns the sensed
+current or drops voltage the dropout row cannot afford. Instead
+`ldo_ilimit`'s `Msense` is a 1/40 replica of `Mpass` (same `L`, same
+per-finger width, same source and same gate), and its current is returned to
+`VOUT` through the sense resistor. So the sensed current is *delivered to the
+load* rather than burned, the pass path is untouched, and `ldo_core`'s
+topology is unchanged -- `Xilimit` only attaches to existing nets (`VIN`,
+`VOUT`, `PASS_GATE`, `EN`, `VREF`, `VSS`) and adds no top-level port.
 
-### Enable stub
+**If `Mpass` is re-sized, `Msense` must be re-scaled with it**, or the limit
+moves by the same factor. In layout `Msense` should be one unit cell of the
+same array as `Mpass`, in the array's interior, so the ratio survives
+gradients.
 
-`Men`, a single `pfet_03v3` clamp (source/body tied to `VIN`, gate tied to
-`EN`, drain tied to `PASS_GATE`), pulls the pass-device gate to `VIN` --
-turning the pass FET off -- whenever `EN` = 0. This is a **minimal functional
-stub**, not a characterized shutdown path: full shutdown-quiescent-current
-verification is issue #11's job. See
-`sim/op-point-sanity/records/` for a measured confirmation that this turns
-the pass device off at the nominal PVT point. Since #9 landed a real
-(self-biased) amplifier, the residual disabled-state supply current is set by
-the amplifier's own bias branch (~9 uA), not by the pass device -- see
-"Error amplifier" below.
+### Enable path and the disabled state
+
+`EN` gates three things, all off the same net -- there is no second enable
+path anywhere in the hierarchy:
+
+| Gated by | Device(s) | Effect when `EN` = 0 |
+| --- | --- | --- |
+| `ldo_core` (#8) | `Men` | Pass-device gate clamped to `VIN`; pass device off |
+| `error_amp` (#11) | `Mbias_h`, `Mnb_pd`, `Mn1_pu`, `Mnd_pu` | Amplifier bias branch opened, mirror node grounded, both internal high-impedance nodes parked at `VDD` |
+| `ldo_ilimit` (#11) | `Mben`, `Men_t`, `Men_co`, `Mcoff` | Threshold bias opened, comparator tail opened and its output parked, clamp gate held at `VIN` |
+
+The disabled output state is **pass device off with no internal active
+discharge** -- nothing pulls `VOUT` down, which is what the ratified
+Enable/shutdown row asks for. With no external load the output therefore
+floats up on leakage until the 900 kOhm feedback divider sinks it: a real,
+measured ~0.18 V at the hottest/leakiest corner rather than 0 V.
+
+Measured (`sim/enable-shutdown/records/`, 63 PVT points): disabled-state
+supply current **0.20 uA** and `VIN`->`VOUT` leakage **0.21 uA** at the
+binding ff/125 C/3.63 V corner, against ratified budgets of 3 uA and 1 uA.
+Before #11 gated the amplifier the same disabled state drew **9.24 uA**
+(`sim/op-point-sanity/records/20260801-002928-712cb87.md`).
 
 ## Scope split (read before building on top of this)
 
@@ -95,29 +121,40 @@ different, non-overlapping piece:
   common-source pass device requires, and it must not be flipped. #9 also
   moved `VREF` from 0.6 V to 1.2 V and re-ratioed the divider (see
   "Reference voltage" below and `design/error_amp.md`).
-- **#11 (current limit / foldback, and enable verification)**: builds the
-  actual current-limit/foldback circuitry at the current-sense tap described
-  above, and does the full shutdown-Iq characterization the enable stub
-  above does not attempt. Neither is implemented here.
+- **#11 (current limit + enable -- landed)**: added `ldo_ilimit`, a
+  constant-current (brickwall) limit, and made the enable path real by
+  gating every bias branch in the hierarchy -- which required appending an
+  `EN` pin to `error_amp`, the interface decision #9 explicitly deferred to
+  here. Current-limit centering, the hard-limit-vs-foldback argument and
+  what is idealized live in `design/ldo_ilimit.sch`'s own notes; the corner
+  evidence is under `sim/current-limit/records/` and
+  `sim/enable-shutdown/records/`, and the one ratified row it cannot meet
+  (the +/-10 % current-limit window) is `spec/decision-records/DR-0005`.
 
 ## Error amplifier (`error_amp`)
 
-- Pinout: `INP INN OUT VDD VSS` -- unchanged from the placeholder it
-  replaced, so the swap was a symbol-name change in `ldo_core.sch` with no
-  rewiring (`error_amp.sym` deliberately reuses the placeholder's pin
-  coordinates).
+- Pinout: `INP INN OUT VDD VSS EN`. The first five are unchanged from the
+  placeholder this cell replaced (`error_amp.sym` reuses the placeholder's
+  pin coordinates), so #9's swap was a symbol-name change with no rewiring;
+  `EN` was **appended** by #11 so the first five keep both their order and
+  their coordinates. Positional instantiations need the extra node --
+  ngspice errors on the node count rather than mis-wiring silently.
 - Topology: two-stage Miller-compensated OTA -- NMOS input pair with a PMOS
   mirror load, PMOS common-source second stage into an NMOS current sink,
   Miller cap plus nulling resistor, self-biased from `VDD`. ~9 uA nominal.
 - Full rationale, the offset / PSRR / current budgets, and the measured PVT
   results live in **[`error_amp.md`](error_amp.md)**; the corner evidence is
   under `sim/amp-openloop/records/` and `sim/psrr-dc/records/`.
-- **It has no enable pin.** The 5-port contract has none, so the amp draws
-  its bias current whenever `VIN` is present: `Men` turns the *pass device*
-  off but does not gate the amplifier. The measured disabled-state supply
-  current of this cell is therefore ~9 uA, against a ratified
-  "shutdown Iq < 3 uA" row -- an interface question for #11, which owns
-  shutdown characterization. See `error_amp.md` "Handoffs".
+- **`EN` gates the bias in-cell** (issue #11). A supply header on this cell
+  would *not* work: with its `VDD` switched off while `Men` holds the
+  pass-gate -- and therefore this cell's `OUT` -- at `VIN`, `M2P`'s
+  drain-body diode forward-biases and powers the amplifier back up through
+  the diode. Gating the bias branch with the rails intact leaves every body
+  at its own rail and only leakage behind. The enabled-state cost is
+  `Mbias_h`'s < 5 mV of `Ron` drop on a ~2.5 V bias branch: re-running #9's
+  own 81-point open-loop and PSRR benches after the change moves every
+  measured quantity by < 0.2 % (`sim/amp-openloop/records/`,
+  `sim/psrr-dc/records/`).
 
 ## Reference voltage assumption
 
@@ -141,6 +178,29 @@ resistor -- issue #8's guidance allows either for this sanity netlist.
 Sheet-resistance-accurate `ppolyf_u_3k` sizing (needed for a layout-matched
 divider) is deferred to whichever future issue needs it (e.g. a mismatch /
 Monte Carlo study).
+
+## Current limit (`ldo_ilimit`)
+
+- Pinout: `VIN VOUT PASS_GATE EN VREF VSS`. No new `ldo_core` port.
+- Topology: a 1/40 replica sense FET off `PASS_GATE` returning its current to
+  `VOUT` through `Rsns`; a `VREF`/`Rbias`-derived reference current through
+  `Rref`, also returned to `VOUT`, so both comparator inputs ride on the
+  output and the comparison stays differential all the way down to a dead
+  short; a PMOS comparator pair with a resistor tail (headroom, not
+  elegance -- see the schematic notes) driving a PMOS clamp that sources
+  current into `PASS_GATE`.
+- **Constant-current (brickwall), not foldback.** Ratified: note 5 of the
+  spec table makes foldback a superseding decision record rather than an
+  implementation choice, because a folded-back limit can prevent startup
+  into an already-loaded output. Measured flatness from `Vout` = 1.764 V
+  down to a dead short is within 2.3 % at every corner.
+- **Threshold: 74.5 mA** at tt/27 C/3.30 V, 62.0..93.8 mA over the 63-point
+  PVT matrix. It never engages inside the rated 0..50 mA load at any corner
+  (worst-case onset 62.0 mA, +24 % over the rated load). The +/-20 % spread
+  is the gf180mcu poly-resistor sheet corner and nothing else -- the
+  FET-skew corners that hold resistors typical move it by under +/-1.2 % --
+  so it cannot be squeezed into the ratified +/-10 % window without trim.
+  See `spec/decision-records/DR-0005` and `sim/current-limit/records/`.
 
 ## Pass device sizing (a deliberate simplification for this issue)
 

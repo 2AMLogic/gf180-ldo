@@ -4,19 +4,26 @@ K {}
 V {}
 S {}
 E {}
-T {ldo_core -- LDO core (pass device, feedback divider, placeholder error amp,
-enable stub). Fixed 1.8 V output from a 3.3 V nominal input. Issue #8.} -700 -650 0 0 0.5 0.5 {}
+T {ldo_core -- LDO core (pass device, feedback divider, error amp, current
+limit, enable network). Fixed 1.8 V output from a 3.3 V nominal input.
+Issue #8 (skeleton), #9 (amp), #11 (current limit + enable).} -700 -650 0 0 0.5 0.5 {}
 T {Port order (also the .sym pin order -- do not reorder either file without
 updating both, and without re-running design/netlist.py --check):
   VIN         supply in, 3.3 V nominal (dropout spec assumes 2.10-3.63 V)
-  VOUT        regulated output, 1.8 V nominal. Also the current-sense tap
-              for issue #11: the wire from Mpass.D to this net is the
-              series point a future current-limit/foldback sense element
-              cuts into -- nothing else needs to change when #11 does that.
+  VOUT        regulated output, 1.8 V nominal. Also the current-sense
+              RETURN for issue #11's Xilimit: Msense inside that block is a
+              1/40 replica of Mpass whose current is returned here through
+              Rsns, so the Mpass.D-to-VOUT wire was never cut and no series
+              element was inserted in the pass path -- the sense current is
+              delivered to the load rather than burned, which is what keeps
+              it out of the Iq budget.
   EN          enable, active-high, CMOS-level (0 / VIN). Gates Men, a PMOS
               clamp that pulls PASS_GATE to VIN (pass device off) when
-              EN=0. Full shutdown-Iq verification is issue #11's job; this
-              is a minimal functional stub only.
+              EN=0. Issue #11 EXTENDS this same net rather than adding a
+              second enable path: it also gates Xerramp's bias (error_amp's
+              EN pin, appended by #11) and Xilimit's bias, comparator tail
+              and clamp. Shutdown-Iq characterization is #11's, in
+              sim/enable-shutdown/records/.
   VSS         ground
   ERRAMP_OUT  error-amp output (loop-break point, output side)
   PASS_GATE   pass-device gate (loop-break point, input side)
@@ -62,7 +69,17 @@ sizing the ratified spec calls for (needed to clear 300 mV dropout @
 size for THIS issue's DC-sanity loop-closure test only, at effectively no
 load beyond the feedback divider's ~6 uA. The full sizing (and the
 unit-cell partitioning a layout needs for matching) is layout-phase work,
-out of scope here.} -700 -600 0 0 0.28 0.28 {}
+out of scope here. NOTE (issue #11): Xilimit's Msense is a 1/40 replica of
+Mpass at equal L and equal per-finger width, so re-sizing Mpass without
+re-scaling Msense moves the current limit by the same factor.
+
+Current limit (issue #11): Xilimit (design/ldo_ilimit.sch) adds the
+constant-current (brickwall) clamp the ratified spec's Current-limit row
+calls for, plus the enable gating of its own bias. It attaches to VIN /
+VOUT / PASS_GATE / EN / VREF / VSS only -- no new top-level port, no
+change to any existing net's topology. See design/ldo_ilimit.sch for the
+threshold derivation, the hard-limit-vs-foldback decision, and what is
+idealized in it.} -700 -600 0 0 0.28 0.28 {}
 C {devices/iopin.sym} -700 -300 0 0 {name=p_vin lab=VIN}
 C {devices/iopin.sym} 700 -300 0 0 {name=p_vout lab=VOUT}
 C {devices/ipin.sym} -700 -100 0 0 {name=p_en lab=EN}
@@ -94,3 +111,11 @@ C {devices/lab_pin.sym} -100 -460 0 0 {name=l_amp_inn sig_type=std_logic lab=VRE
 C {devices/lab_pin.sym} 100 -450 0 0 {name=l_amp_out sig_type=std_logic lab=ERRAMP_OUT}
 C {devices/lab_pin.sym} -100 -440 0 0 {name=l_amp_vdd sig_type=std_logic lab=VIN}
 C {devices/lab_pin.sym} -100 -420 0 0 {name=l_amp_vss sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} -100 -400 0 0 {name=l_amp_en sig_type=std_logic lab=EN}
+C {ldo_ilimit.sym} 0 200 0 0 {name=Xilimit}
+C {devices/lab_pin.sym} -100 150 0 0 {name=l_il_vin sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 100 170 0 0 {name=l_il_vout sig_type=std_logic lab=VOUT}
+C {devices/lab_pin.sym} -100 190 0 0 {name=l_il_pg sig_type=std_logic lab=PASS_GATE}
+C {devices/lab_pin.sym} -100 210 0 0 {name=l_il_en sig_type=std_logic lab=EN}
+C {devices/lab_pin.sym} -100 230 0 0 {name=l_il_vref sig_type=std_logic lab=VREF}
+C {devices/lab_pin.sym} -100 250 0 0 {name=l_il_vss sig_type=std_logic lab=VSS}
