@@ -1,0 +1,26 @@
+{
+  "name": "dropout-vs-load",
+  "description": "Dropout voltage at the 50 mA full-load spec point, binding Vin=2.10V (DR-0004 note 4)",
+  "claim": "README.md Target specification, 'Dropout @ 50 mA' row (< 300 mV target, < 200 mV stretch); binding test point Vin=2.10V per DR-0004 note 4. The records committed under records/ were taken against the issue-#8 netlist (placeholder error amp, 2 mm pass FET -- design/README.md documented that sizing as chosen only for issue #8's DC-sanity loop-closure test, not the full spec); PR #35 has since replaced that placeholder with the real error amp (#9), so those numbers describe a superseded DUT and this row is not evidence for the current design until a fresh record supersedes them -- a --no-write re-run against the post-#35 ldo_core does not currently hold this margin. This is also a DC/loop-closure-only measurement: it does not account for stability (#10, open), so a margin this close to the 300 mV line is never final sign-off.",
+  "netlist": "tb_dropout.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 2.10,
+  "supply_tolerance": 0.0,
+  "temperatures_c": [-40, 27, 125],
+  "corners": ["mos"],
+  "analyses": ["op"],
+  "operating_conditions": {
+    "load_current": "50 mA (full-load dropout point, constant-current sink Iload)",
+    "output_cap": "1.0 uF nominal + 100 mOhm ESR (DR-0001 window; inert at this DC operating point)",
+    "enable_state": "enabled (EN tied to VIN at instantiation, Vgs=0 at the enable clamp)"
+  },
+  "measure": {
+    "vdrop_mv": "(v(vin) - v(vout))*1e3"
+  },
+  "checks": {
+    "vdrop_mv": {
+      "max": 300.0,
+      "description": "README.md Dropout @ 50 mA target (< 300 mV); the < 200 mV stretch bound is not separately gated"
+    }
+  }
+}

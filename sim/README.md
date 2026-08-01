@@ -219,12 +219,20 @@ pass/fail record, and it does not need to be force-fit into one
 
 ## Worked example
 
-**Illustrative only** — nothing in this section exists on disk. The paths,
-record IDs, and values below are invented to show the shape of a complete
-record; the first real files under `sim/dropout-vs-load/` will be written by
-an actual dropout run (see #12). This matches the sister repo
+**Illustrative only** — nothing in this section exists on disk, and the paths,
+record IDs, and values below remain invented to show the shape of a complete
+record without duplicating a real one here. This matches the sister repo
 (`2AMLogic/gf180-bandgap`), whose `sim/` likewise carries its worked example
 in the README rather than as a committed placeholder tree.
+
+Issue #12 has since landed the real `sim/dropout-vs-load/` (and six sibling
+experiment directories, one per ratified spec line) — see
+`sim/dropout-vs-load/records/` for an actual record in this exact shape, and
+`sim/harness/README.md`'s "Writing a testbench" section for the `dut_netlist`
+manifest field #12 added — which designates, among the design netlists #35's
+`includes` brings into the deck, the one that is the DUT — so a testbench can
+instantiate a real DUT (the LDO core) through this harness rather than only
+PDK primitives.
 
 Directory layout for a dropout-vs-load claim on the LDO output, followed by
 a post-layout extracted re-run of the same claim:

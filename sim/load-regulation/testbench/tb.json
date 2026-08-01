@@ -1,0 +1,30 @@
+{
+  "name": "load-regulation",
+  "description": "Load regulation across the ratified 1-50 mA window via a single in-run .dc sweep",
+  "claim": "README.md Target specification, 'Load reg (0-50 mA)' row: < 1% (18 mV), counted inside the +/-2% accuracy window rather than in addition to it. Measured 1 mA -> 50 mA (the divider's own ~2 uA preload plus a light 1 mA is used as the low end, per DR-0001's minimum-load statement folded into the ratified Load row).",
+  "netlist": "tb_load_reg.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.10,
+  "temperatures_c": [-40, 27, 125],
+  "corners": ["mos"],
+  "analyses": [
+    "dc Iload 1m 50m 49m"
+  ],
+  "operating_conditions": {
+    "load_current": "1 mA -> 50 mA, single .dc sweep (2 endpoints) per PVT point",
+    "output_cap": "1.0 uF nominal + 100 mOhm ESR (DR-0001 window)",
+    "enable_state": "enabled (EN tied to VIN at instantiation)"
+  },
+  "measure": {
+    "vout_1ma": "v(vout)[0]",
+    "vout_50ma": "v(vout)[1]",
+    "load_reg_mv": "abs(m_vout_1ma - m_vout_50ma)*1e3"
+  },
+  "checks": {
+    "load_reg_mv": {
+      "max": 18.0,
+      "description": "README.md Load reg (0-50 mA) target: < 1% = 18 mV around the 1.8 V nominal output"
+    }
+  }
+}

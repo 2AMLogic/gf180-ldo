@@ -1,0 +1,35 @@
+{
+  "name": "psrr-vs-freq",
+  "description": "PSRR vs frequency at the ratified binding light-load condition (1 mA), 1kHz and 100kHz spec points called out",
+  "claim": "README.md Target specification, 'PSRR' row (DR-0004 amendment A7): >50dB @ 1kHz (binding -- light load, per note 1) and >20dB @ 100kHz, at Iload=1mA, C_eff=1uF nominal. The 50mA condition the ratified row also names is not automated in this deck -- see tb_psrr.spice's header comment for why (a real, documented ngspice limitation hit during implementation), left as a follow-up rather than fabricated.",
+  "netlist": "tb_psrr.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.10,
+  "temperatures_c": [-40, 27, 125],
+  "corners": ["mos"],
+  "analyses": [
+    "ac dec 20 10 10meg",
+    "meas ac vout_1k FIND vdb(vout) AT=1k",
+    "meas ac vout_100k FIND vdb(vout) AT=100k"
+  ],
+  "operating_conditions": {
+    "load_current": "1 mA (binding light-load condition per README.md note 1)",
+    "output_cap": "1.0 uF nominal + 100 mOhm ESR (PSRR row's stated C_eff)",
+    "enable_state": "enabled (EN tied to VIN at instantiation)"
+  },
+  "measure": {
+    "psrr_1k_db": "-vout_1k",
+    "psrr_100k_db": "-vout_100k"
+  },
+  "checks": {
+    "psrr_1k_db": {
+      "min": 50.0,
+      "description": "README.md PSRR target: >50 dB @ 1 kHz (binding light-load point)"
+    },
+    "psrr_100k_db": {
+      "min": 20.0,
+      "description": "README.md PSRR target: >20 dB @ 100 kHz"
+    }
+  }
+}

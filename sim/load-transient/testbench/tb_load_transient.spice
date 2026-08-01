@@ -1,0 +1,34 @@
+* load-transient -- stimulus fragment for ldo_core (issue #12)
+*
+* Primary claim: load-transient step response (README.md Target
+* specification, "Load transient" row; DR-0004 amendment A4): 1<->50 mA
+* step, 1 us edges, C_eff = 0.33 uF (DR-0001's stability-window floor,
+* the hardest corner for this row) + 0-500 mOhm ESR (100 mOhm nominal
+* used here).
+*
+* Supplementary: after the load step settles, the same deck also exercises
+* a dynamic *line* step (+/-10% around this PVT point's own Vin, via
+* {vdd_val}) -- NOT a distinct ratified spec row (the ratified 'Line reg'
+* row is DC-only, see sim/line-regulation/), included because the original
+* issue #12 body asked for "load-transient and line-transient response" as
+* one item. Flagged as supplementary throughout tb.json.
+*
+* Timeline (see tb.json's analyses "tran ..." + "meas tran ..." lines):
+*   t=0..50us    : Iload=1mA,  Vsup={vdd_val}                (steady state)
+*   t=50-51us    : Iload steps 1mA -> 50mA (1us edge)
+*   t=51-150us   : Iload=50mA                                 (load-step window)
+*   t=150-151us  : Iload steps 50mA -> 1mA (1us edge)
+*   t=151-200us  : Iload=1mA, settle
+*   t=200-201us  : Vsup steps {vdd_val} -> {vdd_val*0.9} (1us edge)
+*   t=201-300us  : Vsup={vdd_val*0.9}                         (line-step window, low)
+*   t=300-301us  : Vsup steps {vdd_val*0.9} -> {vdd_val*1.1} (1us edge)
+*   t=301-400us  : Vsup={vdd_val*1.1}                         (line-step window, high)
+*
+* EN is tied to VIN at instantiation (enabled throughout).
+Vsup VIN 0 PWL(0 {vdd_val} 200u {vdd_val} 201u {vdd_val*0.9} 300u {vdd_val*0.9}
++ 301u {vdd_val*1.1} 400u {vdd_val*1.1})
+Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
+
+Iload VOUT 0 PWL(0 1m 50u 1m 51u 50m 150u 50m 151u 1m 400u 1m)
+Resr VOUT n_esr 0.1
+Cout n_esr 0 0.33u

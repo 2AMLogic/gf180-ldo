@@ -135,6 +135,14 @@ def build_parser() -> argparse.ArgumentParser:
         "(overrides the manifest's 'claim')",
     )
     parser.add_argument(
+        "--dut-netlist",
+        default="",
+        metavar="PATH",
+        help="repo-root-relative DUT netlist to include, e.g. "
+        "'design/netlist/ldo_core.spice' (overrides the manifest's 'dut_netlist'; "
+        "a 'layout/...' path records as an extracted-netlist run per #16)",
+    )
+    parser.add_argument(
         "--supersedes",
         default="",
         metavar="RECORD_ID",
@@ -243,6 +251,25 @@ def _fmt(value) -> str:
 def run(args: argparse.Namespace) -> int:
     tb_path = _resolve_tb_path(args.testbench)
     tb = tb_mod.load(tb_path)
+
+    if args.dut_netlist:
+        override = (REPO_ROOT / args.dut_netlist).resolve()
+        if not override.is_file():
+            print(
+                f"error: --dut-netlist {args.dut_netlist!r} does not exist "
+                f"(resolved to {override})",
+                file=sys.stderr,
+            )
+            return EXIT_ENVIRONMENT
+        tb.dut_netlist = override
+        tb.dut_netlist_rel = args.dut_netlist
+        # An overridden DUT is held to the same rule as a manifest one: it is
+        # pasted into a deck the harness owns, so it may not carry .end/.temp/…
+        try:
+            tb_mod.validate_netlist(tb)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ENVIRONMENT
 
     try:
         pdk = find_pdk()

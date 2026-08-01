@@ -1,0 +1,52 @@
+{
+  "name": "startup",
+  "description": "Startup into full load, minimum load, and an unprotected near-short, all in one tran run",
+  "claim": "README.md Target specification, 'Startup' row (DR-0004 amendment A9): monotonic into any load 0-50 mA, controlled ramp <=1V/ms, inside +/-2% within 3 ms of enable, overshoot <=+2%. Measured here for full load (~50 mA) and minimum/no external load. The third branch (near-short, 'startup into current limit') is honest evidence against the CURRENT design state only: no current-limit/foldback circuitry exists yet (issue #11 is open -- design/README.md documents the current-sense tap as unimplemented), so this branch measures inrush into an UNPROTECTED near-short, not a current-limit verification, and carries no pass/fail checks (there is nothing ratified to check it against yet). Re-run once #11 lands a real current limit.",
+  "netlist": "tb_startup.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.10,
+  "temperatures_c": [-40, 27, 125],
+  "corners": ["mos"],
+  "analyses": [
+    "tran 1u 6m",
+    "meas tran t_settle_full WHEN v(vout_full)=1.782 RISE=1 TD=1u",
+    "meas tran vpeak_full MAX v(vout_full) FROM=1u TO=6m",
+    "meas tran t_settle_min WHEN v(vout_min)=1.782 RISE=1 TD=1u",
+    "meas tran vpeak_min MAX v(vout_min) FROM=1u TO=6m",
+    "meas tran vpeak_short MAX v(vout_short) FROM=1u TO=6m",
+    "meas tran vfinal_short FIND v(vout_short) AT=6m",
+    "meas tran ipeak_short MAX i(vamm_short) FROM=1u TO=6m"
+  ],
+  "operating_conditions": {
+    "load_current": "~50 mA (Rload_full=36 Ohm), ~1 uA (Rload_min=1.8 MOhm, minimum/no external load), near-short (Rload_short=1 Ohm, unprotected -- see Claim)",
+    "output_cap": "4.7 uF (DR-0001 window's upper bound, the softest/slowest startup corner) + 100 mOhm ESR, all three branches",
+    "enable_state": "EN steps 0 -> VIN at t=1us (1ns edges) for all three branches simultaneously"
+  },
+  "measure": {
+    "tsettle_full_ms": "(t_settle_full-1u)*1e3",
+    "overshoot_full_mv": "(vpeak_full-1.836)*1e3",
+    "tsettle_min_ms": "(t_settle_min-1u)*1e3",
+    "overshoot_min_mv": "(vpeak_min-1.836)*1e3",
+    "vfinal_short_v": "vfinal_short",
+    "ipeak_short_ma": "ipeak_short*1e3"
+  },
+  "checks": {
+    "tsettle_full_ms": {
+      "max": 3.0,
+      "description": "README.md Startup target: inside +/-2% within 3 ms, full load"
+    },
+    "overshoot_full_mv": {
+      "max": 0.0,
+      "description": "README.md Startup target: overshoot <=+2% of final value (1.836V ceiling), full load"
+    },
+    "tsettle_min_ms": {
+      "max": 3.0,
+      "description": "README.md Startup target: inside +/-2% within 3 ms, minimum load"
+    },
+    "overshoot_min_mv": {
+      "max": 0.0,
+      "description": "README.md Startup target: overshoot <=+2% of final value (1.836V ceiling), minimum load"
+    }
+  }
+}

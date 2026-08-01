@@ -1,0 +1,37 @@
+{
+  "name": "line-regulation",
+  "description": "Line regulation over 2.97-3.63V at 1 mA and 50 mA via a nested in-run .dc sweep",
+  "claim": "README.md Target specification, 'Line reg' row (DR-0004 amendment A5): < 5 mV/V over Vin 2.97-3.63 V, at 1 mA and at 50 mA.",
+  "netlist": "tb_line_reg.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.0,
+  "temperatures_c": [-40, 27, 125],
+  "corners": ["mos"],
+  "analyses": [
+    "dc Vsup 2.97 3.63 0.66 Iload 1m 50m 49m"
+  ],
+  "operating_conditions": {
+    "load_current": "1 mA and 50 mA (nested .dc sweep; see measure fields for the 4 combinations)",
+    "output_cap": "1.0 uF nominal + 100 mOhm ESR (DR-0001 window)",
+    "enable_state": "enabled (EN tied to VIN at instantiation, tracks the Vsup sweep)"
+  },
+  "measure": {
+    "vout_1ma_lo": "v(vout)[0]",
+    "vout_1ma_hi": "v(vout)[1]",
+    "vout_50ma_lo": "v(vout)[2]",
+    "vout_50ma_hi": "v(vout)[3]",
+    "line_reg_1ma_mvpv": "abs(m_vout_1ma_hi - m_vout_1ma_lo)/0.66*1e3",
+    "line_reg_50ma_mvpv": "abs(m_vout_50ma_hi - m_vout_50ma_lo)/0.66*1e3"
+  },
+  "checks": {
+    "line_reg_1ma_mvpv": {
+      "max": 5.0,
+      "description": "README.md Line reg target at 1 mA"
+    },
+    "line_reg_50ma_mvpv": {
+      "max": 5.0,
+      "description": "README.md Line reg target at 50 mA"
+    }
+  }
+}

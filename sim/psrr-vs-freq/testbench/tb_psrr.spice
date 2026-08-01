@@ -1,0 +1,25 @@
+* psrr-vs-freq -- stimulus fragment for ldo_core (issue #12)
+*
+* PSRR vs frequency (README.md Target specification, "PSRR" row; DR-0004
+* amendment A7): >50dB @ 1kHz (binding -- light load, per note 1) and
+* >20dB @ 100kHz, C_eff=1uF nominal. A small-signal AC source rides on Vin
+* (Vsup ... AC 1); PSRR(f) = -Vout(f)/Vin(f) in dB = -vdb(vout) since the
+* 1V AC stimulus is 0dB.
+*
+* Scoped to the ratified binding condition, Iload=1mA (light load) --
+* NOT also swept at 50mA in this same deck. Combining two DC bias points
+* (via ngspice's "alter" between two .ac runs) in one control block was
+* tried and rejected during implementation: ngspice's per-.meas result
+* vectors (and any "let" derived from them) go out of scope as soon as a
+* later analysis becomes the current plot, so a second .ac after "alter"
+* silently drops the first .ac's captured values instead of erroring
+* (confirmed by hand: the harness's print-after-all-lets ordering emits
+* the SAME value for both "1mA" and "50mA" print lines). A 50mA re-run
+* is a documented follow-up (a second experiment or a --dut-netlist-style
+* CLI param override), not fabricated evidence here.
+Vsup VIN 0 DC {vdd_val} AC 1
+Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
+
+Iload VOUT 0 DC 1m
+Resr VOUT n_esr 0.1
+Cout n_esr 0 1u

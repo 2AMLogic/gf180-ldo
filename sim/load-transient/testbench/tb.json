@@ -1,0 +1,40 @@
+{
+  "name": "load-transient",
+  "description": "Load-transient step response (primary, ratified) plus a supplementary line-transient step, one tran deck",
+  "claim": "README.md Target specification, 'Load transient' row (DR-0004 amendment A4): 1<->50 mA step, 1us edges, C_eff=0.33uF (DR-0001's hardest stability-window corner) + 0-500 mOhm ESR: peak excursion <=150 mV (100 mV stretch), recovery to within +/-1% (18 mV) in <=20 us. This deck reports peak excursion (both directions); a precise .meas-based recovery-time number is intentionally NOT emitted here -- the placeholder error amp the committed records were taken against (issue #9, since landed by PR #35, which replaced the placeholder) is a near-ideal, effectively infinite-bandwidth behavioral source, so the observed excursion never leaves the +/-1% band and an ngspice '.meas WHEN' crossing search has no crossing to find (fails hard rather than reporting a trivial 0), which would make every corner ERROR for a measurement-plumbing reason rather than a real spec finding. Deferred to a future record once #9/#10 land a bandwidth-limited amp with a real settling transient to measure. The deck also runs a supplementary Vin step (+/-10% around this PVT point's own vdd_val) after the load step settles, exercising dynamic line response -- this is NOT a distinct ratified spec row (the ratified 'Line reg' row is DC-only, see sim/line-regulation/); reported for completeness per the original issue #12 body's 'load-transient and line-transient response' wording, and excluded from this record's pass/fail checks so it cannot be mistaken for a ratified verdict.",
+  "netlist": "tb_load_transient.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.10,
+  "temperatures_c": [-40, 27, 125],
+  "corners": ["mos"],
+  "analyses": [
+    "tran 20n 400u",
+    "meas tran vmin_load MIN v(vout) FROM=51u TO=71u",
+    "meas tran vmax_load MAX v(vout) FROM=151u TO=171u",
+    "meas tran vmin_line MIN v(vout) FROM=202u TO=222u",
+    "meas tran vmax_line MAX v(vout) FROM=302u TO=322u"
+  ],
+  "operating_conditions": {
+    "load_current": "1 mA <-> 50 mA step at t=50us (1us edges); held between 51-150us then reverted",
+    "output_cap": "0.33 uF (DR-0001 stability-window floor, the hardest corner for this row) + 100 mOhm ESR",
+    "enable_state": "enabled (EN tied to VIN at instantiation)",
+    "supplementary_line_step": "Vin steps to 0.9x/1.1x this PVT point's own vdd_val at t=200us/300us (Iload held at 1mA) -- NOT a ratified spec row, see Claim"
+  },
+  "measure": {
+    "undershoot_mv": "(1.8 - vmin_load)*1e3",
+    "overshoot_mv": "(vmax_load - 1.8)*1e3",
+    "line_step_dev_lo_mv": "(1.8 - vmin_line)*1e3",
+    "line_step_dev_hi_mv": "(vmax_line - 1.8)*1e3"
+  },
+  "checks": {
+    "undershoot_mv": {
+      "max": 150.0,
+      "description": "README.md Load transient target: peak excursion <=150mV (100mV stretch not separately gated)"
+    },
+    "overshoot_mv": {
+      "max": 150.0,
+      "description": "README.md Load transient target, overshoot direction"
+    }
+  }
+}

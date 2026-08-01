@@ -1,0 +1,20 @@
+* line-regulation -- stimulus fragment for ldo_core (issue #12)
+*
+* Line regulation over the ratified 2.97-3.63 V window, at 1 mA and 50 mA
+* (README.md Target specification, "Line reg" row; DR-0004 amendment A5).
+* A single in-run nested .dc sweep (Vsup outer x Iload inner) captures all
+* four combinations -- (2.97V,1mA) (3.63V,1mA) (2.97V,50mA) (3.63V,50mA) --
+* within one ngspice invocation per PVT (process x temp) point. See
+* tb.json's "analyses" field and its --subset-reason: the harness's usual
+* +/-10% supply GRID axis is deliberately collapsed to one value because
+* this experiment sweeps Vin internally instead (2.97-3.63V exactly, per
+* the ratified row, independent of the corner grid's own vdd_val).
+*
+* EN is tied to VIN at instantiation, so it tracks Vsup through the sweep
+* (Vgs=0 at the enable clamp at every swept point -- always "enabled").
+Vsup VIN 0 DC {vdd_val}
+Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
+
+Iload VOUT 0 DC 1m
+Resr VOUT n_esr 0.1
+Cout n_esr 0 1u

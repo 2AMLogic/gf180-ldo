@@ -1,0 +1,22 @@
+* dropout-vs-load -- stimulus fragment for ldo_core (issue #12)
+*
+* Measures dropout voltage (Vin - Vout) at the ratified 50 mA full-load spec
+* point. Per spec/decision-records/DR-0004-spec-ratification.md note 4,
+* dropout is measured at Vin = Vout + dropout ~= 2.10 V, not at the +/-10%
+* supply floor (2.97 V) -- undersizing from the 2.97 V rows undersizes the
+* pass device by ~50% (sim/devchar/CONCLUSIONS.md Sec.1). The harness's
+* normal supply grid is collapsed to this single binding value via tb.json's
+* nominal_supply_v/supply_tolerance (see the recorded --subset-reason).
+*
+* EN is tied directly to VIN at instantiation (same net used twice), which
+* wires Vgs=0 at the enable clamp -- the "enabled" state -- without a
+* separate source.
+Vsup VIN 0 DC {vdd_val}
+Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
+
+* 50 mA constant-current sink -- the full-load dropout point (README.md
+* Target specification, "Dropout @ 50 mA" row). Output network per DR-0001's
+* window (1.0 uF nominal + 100 mOhm ESR); inert at this DC operating point.
+Iload VOUT 0 DC 50m
+Resr VOUT n_esr 0.1
+Cout n_esr 0 1u
