@@ -1,0 +1,116 @@
+* tb_tian_selftest -- does the loop-gain extraction actually measure the loop gain?
+*
+* The stability record this experiment produces is only worth what the
+* extraction method is worth, so this deck checks the method against a loop
+* whose gain is known in closed form, and deliberately sets up the exact
+* condition (Z_source >> Z_load at the break) under which the *naive* method
+* -- plain series-voltage injection -- is wrong. If the arithmetic in
+* tb_loop_stability.spice.in were wrong, this deck would not agree with
+* theory; if plain voltage injection were good enough, this deck would show
+* no difference between the two.
+*
+* Reference loop (all ideal elements, no PDK devices, so the answer is exact):
+*
+*        +--------------------- Egain ------------------------+
+*        |   E = -A/(1+s/wp) * V(fb)                          |
+*        v                                                    |
+*   [ Rs ] --- A_node ==BREAK== B_node --- [ Rl ] --- [ Cl ] -+--> V(fb)
+*
+*   Egain      an ideal VCVS: e = -A * V(fb) / (1 + s/wp)
+*   Rs         the driver's output resistance   (RS)
+*   Rl, Cl     the load network, whose response IS the feedback quantity fb
+*
+* Around the loop, with the break shorted:
+*
+*   T(s) = A/(1+s/wp) * Zl(s)/(Rs + Zl(s)),  Zl(s) = Rl + 1/(sCl)
+*
+* i.e. exactly the "G * Zl/(Zs+Zl)" form the dual-injection formula is
+* supposed to recover. Naive voltage injection instead returns
+* Tv = A/(1+s/wp) + Rs/Zl, which blows up as Zl falls -- here Zl -> Rl = 10
+* ohm while Rs = 1e5 ohm, so Tv is wrong by ~80 dB in the decade that
+* decides the margins.
+*
+* selftest.py substitutes nothing: this deck is self-contained and prints
+* three columns per frequency (dual-injection T, naive Tv, analytic T) which
+* selftest.py compares.
+
+.param A=1000
+.param RP=1k
+.param CP=159.1549430918954n
+.param RS=1e5
+.param RL=10
+.param CL=1e-9
+* wp = 1/(RP*CP) = 6283.185307 rad/s  (fp = 1 kHz)
+
+* --- the loop ------------------------------------------------------------
+* single-pole inverting gain block, built from primitives (no LAPLACE):
+*   Egain gives -A*V(fb); RP/CP make the pole; Ebuf isolates it so the
+*   driver's output resistance at the break is exactly RS.
+Egain G1 0 FB 0 {-1*A}
+Rp G1 P {RP}
+Cp P 0 {CP}
+Ebuf EOUT 0 P 0 1
+Rs EOUT AINJ {RS}
+
+* injection network (identical topology to tb_loop_stability.spice.in)
+Vinj AINJ BINJ DC 0 AC 0
+Iinj 0 BINJ DC 0 AC 0
+
+* load network; its node voltage is the feedback quantity
+Rl BINJ FB {RL}
+Cl FB 0 {CL}
+
+.control
+set noaskquit
+
+* ---- voltage injection ---------------------------------------------------
+alter @Vinj[acmag] = 1
+alter @Iinj[acmag] = 0
+ac dec 20 1 1e9
+let tv = -v(ainj)/v(binj)
+set vplot = $curplot
+
+* ---- current injection ---------------------------------------------------
+alter @Vinj[acmag] = 0
+alter @Iinj[acmag] = 1
+ac dec 20 1 1e9
+let ti = -i(vinj)/(i(vinj)+1)
+let tvv = {$vplot}.tv
+
+* ---- dual-injection (Tian) loop gain ------------------------------------
+let t = (tvv*ti - 1)/(tvv + ti + 2)
+
+* ---- analytic reference --------------------------------------------------
+* Around the loop: the driver's open-circuit return gain from V(BINJ) is
+*   G = -A/(1+s/wp) * [ (1/sCL) / (RL + 1/sCL) ]      (the RL/CL divider)
+* and the break sees Zs = RS, Zl = RL + 1/sCL, so
+*   T = |G| * Zl/(Zs+Zl) = A/(1+s/wp) * (1/sCL)/(RS + RL + 1/sCL)
+* which is what the dual-injection formula must reproduce exactly.
+* .param values are not visible as control-language vectors, so the same
+* numbers are restated here; selftest.py asserts the two stay in step by
+* parsing both the netlist and this block.
+let a0 = 1000
+let wp0 = 1/(1e3*159.1549430918954e-9)
+let rs0 = 1e5
+let rl0 = 10
+let cl0 = 1e-9
+let jw = 2*pi*frequency*i
+let zc = 1/(jw*cl0)
+let tref = (a0/(1+jw/wp0)) * zc/(rs0+rl0+zc)
+
+let e_db = db(t) - db(tref)
+let e_ph = 180*(cph(t)-cph(tref))/pi
+let naive_db = db(tvv) - db(tref)
+
+* ---- margin extraction, byte-for-byte the idiom the real deck uses -------
+let tdb = db(t)
+let tph = 180*cph(t)/pi
+meas ac f0 when tdb=0 fall=1
+meas ac phx find tph when tdb=0 fall=1
+echo "MARGINS f0_hz=$&f0 phase_at_f0_deg=$&phx"
+
+echo "* columns: freq_hz t_db t_ph_deg tref_db tref_ph_deg err_db err_ph_deg naive_err_db"
+print frequency db(t) 180*cph(t)/pi db(tref) 180*cph(tref)/pi e_db e_ph naive_db
+echo "* SELFTEST COMPLETE"
+.endc
+.end

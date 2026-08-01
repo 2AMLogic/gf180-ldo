@@ -1,0 +1,164 @@
+* loop-stability -- Tian dual-injection loop-gain testbench for ldo_core (issue #10)
+*
+* Measures the LDO's loop gain T(s) and extracts phase margin / gain margin
+* against the ratified stability criterion in
+* spec/decision-records/DR-0001-output-cap-strategy.md (PM >= 45 deg AND
+* GM >= 10 dB, worst corner, across the full I_load x C_eff x ESR x PVT
+* matrix).
+*
+* ---------------------------------------------------------------------------
+* Where the loop is broken
+* ---------------------------------------------------------------------------
+* design/ldo_core.sch deliberately exposes the error-amp output and the
+* pass-device gate as two SEPARATE ports (ERRAMP_OUT, PASS_GATE) that are
+* unconnected inside the cell, precisely so a stability testbench can break
+* the loop there without editing the core (see #8, and the op-point-sanity
+* testbench which ties them together for normal operation). This deck
+* instantiates the core with those two ports on distinct nodes AINJ / BINJ
+* and inserts the injection network between them:
+*
+*     ERRAMP_OUT (AINJ) --[Vinj]-- (BINJ) PASS_GATE
+*                                    |
+*                                  [Iinj] (from ground)
+*
+* AINJ is the DRIVER side (the error amp's 1 Meg output resistance) and
+* BINJ is the LOAD side (the pass-device + enable-clamp gate capacitance).
+* Vinj is DC 0, so the DC operating point is exactly the closed-loop one --
+* no replica bias, no DC loop break, no perturbation of the bias point.
+*
+* ---------------------------------------------------------------------------
+* Why dual injection (Tian / Middlebrook), not plain voltage injection
+* ---------------------------------------------------------------------------
+* Plain series-voltage injection is only accurate where Z_load >> Z_source at
+* the break. Here Z_source is the amp's 1 Meg output resistance and Z_load is
+* a few pF of gate capacitance, so that inequality FAILS above roughly
+* 1/(2*pi*1Meg*Cgate) ~ tens of kHz -- which is exactly where crossover sits.
+* Voltage injection alone would therefore report a loop gain that is wrong in
+* the decade that decides stability. The Tian/Middlebrook dual-injection
+* result is exact regardless of the impedance ratio:
+*
+*   voltage injection (Vinj ac=1, Iinj ac=0):  Tv = -V(AINJ)/V(BINJ)
+*   current injection (Vinj ac=0, Iinj ac=1):  Ti = -I_driver/I_load
+*                                                 = -i(Vinj)/(i(Vinj)+1)
+*   loop gain:                                 T  = (Tv*Ti - 1)/(Tv + Ti + 2)
+*
+* With Vinj ac=0 the two nodes are an AC short, so i(Vinj) is the current the
+* driver delivers into the junction and i(Vinj)+1 is the current the load
+* draws from it (the 1 A phasor being Iinj's injection into BINJ).
+*
+* T(s) so defined is the loop gain in the T = A*beta sense: positive real at
+* DC for this negative-feedback loop, closed-loop suppression 1/(1+T),
+* instability at T = -1. Hence
+*     phase margin = 180 deg + phase(T) at the 0 dB crossing
+*     gain margin  = -|T|dB at the first -180 deg phase crossing.
+*
+* ---------------------------------------------------------------------------
+* Load / output-network model
+* ---------------------------------------------------------------------------
+* I_load is an ideal DC current source (infinite small-signal impedance).
+* That is the standard -- and the conservative -- LDO stability model: a
+* resistive load would add 1/gload of damping in parallel with the output
+* pole, flattering the result. DR-0001's 0 mA point means "no external load"
+* (only the feedback divider's ~6 uA), which this deck models as Iload = 0.
+*
+* C_eff / ESR are the DERATED effective output capacitance and its ESR at the
+* output pin, per DR-0001 -- not a nominal component value.
+*
+* Template: the at-sign-delimited placeholders below are substituted by
+* sweep.py (PDK paths, corner sections, temperature, supply, and the sweep
+* lists) before the deck is handed to `ngspice -b`.
+
+.include "@DESIGN_INCLUDE@"
+.lib "@MODEL_LIB@" @MOS_CORNER@
+.lib "@MODEL_LIB@" @RES_CORNER@
+.lib "@MODEL_LIB@" @BJT_CORNER@
+.lib "@MODEL_LIB@" @DIODE_CORNER@
+.lib "@MODEL_LIB@" @MOSCAP_CORNER@
+.lib "@MODEL_LIB@" @MIMCAP_CORNER@
+
+.temp @TEMP_C@
+
+.include "@LDO_NETLIST@"
+
+* --- stimulus ------------------------------------------------------------
+Vin VIN 0 DC @VIN_V@
+Ven EN 0 DC @VIN_V@
+
+* --- DUT, loop broken at ERRAMP_OUT -> PASS_GATE --------------------------
+* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE
+Xdut VIN VOUT EN 0 AINJ BINJ ldo_core
+
+* --- Tian dual-injection network -----------------------------------------
+* Vinj is a DC short: the operating point is the true closed-loop one.
+Vinj AINJ BINJ DC 0 AC 0
+Iinj 0 BINJ DC 0 AC 0
+
+* --- load + output network (swept below; these are the initial values) ----
+Iload VOUT 0 DC 0
+Resr VOUT NESR 0.001
+Cout NESR 0 1e-6
+
+.control
+set noaskquit
+
+echo "* corner_id=@CORNER_ID@ corner=@CORNER_NAME@ temp_c=@TEMP_C@ vin_v=@VIN_V@"
+echo "* ac sweep: dec @AC_DEC@ @F_START@ @F_STOP@ ; Tian dual injection at ERRAMP_OUT->PASS_GATE"
+echo "* columns: ROW iload_a ceff_f esr_ohm vout_v dcgain_db f0_hz phase_at_f0_deg f180_hz gain_at_f180_db f0_rising_hz"
+echo "* (phase margin = 180 + phase_at_f0_deg ; gain margin = -gain_at_f180_db ;"
+echo "*  an empty f180/gain field means the phase never reaches -180 deg in band)"
+
+foreach il @ILOAD_LIST@
+  foreach ce @CEFF_LIST@
+    foreach es @ESR_LIST@
+      destroy all
+      alter Iload = $il
+      alter Cout = $ce
+      alter Resr = $es
+
+      * ---- DC operating point (closed loop; Vinj is a DC short) ----------
+      op
+      let vout_dc = v(vout)
+      set vout_str = "$&vout_dc"
+
+      * ---- voltage injection --------------------------------------------
+      alter @Vinj[acmag] = 1
+      alter @Iinj[acmag] = 0
+      ac dec @AC_DEC@ @F_START@ @F_STOP@
+      let tv = -v(ainj)/v(binj)
+      set vplot = $curplot
+
+      * ---- current injection --------------------------------------------
+      alter @Vinj[acmag] = 0
+      alter @Iinj[acmag] = 1
+      ac dec @AC_DEC@ @F_START@ @F_STOP@
+      let ti = -i(vinj)/(i(vinj)+1)
+      let tvv = {$vplot}.tv
+
+      * ---- Tian loop gain, magnitude and unwrapped phase -----------------
+      let t = (tvv*ti - 1)/(tvv + ti + 2)
+      let tdb = db(t)
+      let tph = 180*cph(t)/pi
+
+      * ---- margins -------------------------------------------------------
+      * A failed `meas` (no such crossing anywhere in the swept band) prints
+      * an ngspice error, leaves the variable unset, and the row's field
+      * comes out empty -- which sweep.py reads as "no crossing", the
+      * physically correct reading for f180/gmx (phase never reaches
+      * -180 deg => gain margin is not the limiting criterion). f0r is a
+      * self-check: a RISING 0 dB crossing above f0 would mean the gain
+      * peaks back over unity and the single-crossover phase-margin reading
+      * is not the whole story; sweep.py flags any such point.
+      meas ac dcg find tdb at=@F_START@
+      meas ac f0 when tdb=0 fall=1
+      meas ac phx find tph when tdb=0 fall=1
+      meas ac f180 when tph=-180 fall=1
+      meas ac gmx find tdb when tph=-180 fall=1
+      meas ac f0r when tdb=0 rise=1
+
+      echo "ROW $il $ce $es $vout_str $&dcg $&f0 $&phx $&f180 $&gmx $&f0r"
+    end
+  end
+end
+echo "* SWEEP COMPLETE @CORNER_ID@"
+.endc
+.end
