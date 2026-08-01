@@ -92,3 +92,20 @@ Each `corners/<record-id>/<corner-id>.log` carries one `ROW` line per
 (load, cap, ESR) configuration; `records/<record-id>-matrix.csv` is the
 machine-readable rollup of all points, and `records/<record-id>.md` is the
 summary record with the worst point called out explicitly.
+
+### Where this stands
+
+The first record, `20260801-002833-b8ce7d0`, is a **FAIL** against DR-0001:
+worst-corner phase margin 2.07° (bar: ≥ 45°) at
+`ff / −40 °C / 3.63 V`, 50 mA, 0.33 µF, 1 mΩ. That is a measurement of the
+core with the *placeholder* error amplifier still in place — the loop's
+crossover rises with load current until it walks into the fixed pole formed
+by the placeholder's 1 MΩ output resistance and the pass-device gate
+capacitance. Per #10's scope, fixing that is #9's (error amplifier) work,
+not this testbench's; the record states the crossover frequencies the
+amplifier's output pole has to clear. Read the record's *"What this record
+asks of the next design step"* section before designing that amplifier.
+
+Notably, the a-priori worst point — light load, minimum C_eff, no ESR zero —
+*passes*; see the record's *"Structure of the result"* for why the load axis
+reverses here.
