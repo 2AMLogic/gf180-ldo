@@ -2,7 +2,13 @@
 
 - **Status**: proposed — ratification is the operator's (issue #1's process,
   the same one DR-0001 itself went through: "Decided by: Builder agent …
-  recommendation only")
+  recommendation only"). Still `proposed`, and **nothing in this record is in
+  force until an operator ratifies it** — the "Coverage check" subsection
+  below maps this record's proposed envelope onto the head-of-chain
+  loop-stability record's failure set, but that mapping is an argument
+  offered for ratification, not a ratification, and it does not by itself
+  discharge issue #51's acceptance criteria (see that subsection's closing
+  paragraph).
 - **Date**: 2026-08-01
 - **Decided by**: Builder agent, issue #51 (recommendation only)
 
@@ -224,10 +230,103 @@ Two observations bound it for whoever picks it up:
   narrower `A_plat` window. `design/error_amp.md` §5 already names it and its
   cost (it needs a start-up circuit, because unlike the present topology a
   beta-multiplier has a stable zero-current state). That is a design issue,
-  not a spec question, and is filed as one.
+  not a spec question, and is filed as one — **issue #53**, with the root
+  cause above and a suggested direction.
 - Raising `Cff` (the `ldo_core` feedforward zero) was re-tried against these
   points specifically — 15 pF → 45 pF — and recovered 3 of 15. It was not
   kept: the area is real and the mechanism is the wrong one.
+
+**A standalone check of the constant-gm lever, for whoever picks up #53.** A
+four-transistor self-biased constant-gm core (cross-coupled PMOS/NMOS mirror
+pair, one leg degenerated through a resistor at a size ratio `K` = 4, no
+connection to `Rbias`/`MB1` at all) was built and probed in isolation — *not*
+integrated into `design/error_amp.sch`, not a recorded result, no PR-worthy
+evidence, just a feasibility check against this record's own claim that the
+lever is real:
+
+- **The core current is genuinely close to constant-gm.** At fixed
+  temperature, sweeping `tt`/`ff`/`ss` and 2.97–3.63 V together moved the
+  branch current by **< 7 %** (vs. the present bias's combined ±13 % supply
+  + corner + `Rbias` spread). Across the full −40…125 °C / 2.97…3.63 V / five
+  MOS-corner grid the current moved **266–424 nA**, a 1.6× span dominated
+  almost entirely by temperature (mobility), not supply or MOS skew — a real
+  reduction from the present circuit's measured 2.5× (`design/error_amp.md`
+  §5), consistent with removing the `(VDD − Vgs)/Rbias` supply term
+  entirely.
+- **The start-up circuit is the real cost, and it is not a formality.** A
+  first-attempt start-up device (a minimum-size PMOS sensing the reference
+  node) did **not** reliably pull the loop out of its zero-current state in a
+  transient enable test at several PVT corners — the loop stayed off. This is
+  the concrete version of the caution `design/error_amp.md` §5 and this
+  record both already state in the abstract: a constant-gm bias is not a
+  drop-in swap for `Rbias`/`MB1`, and #53's own acceptance criteria (full
+  amp-level regression, not just the loop-stability matrix) are sized
+  correctly for that cost. Getting the start-up circuit right, and proving it
+  starts at all 45 static corners *and* through the enable transient the
+  existing `Mbias_h`/`Mnb_pd` headers already have to coordinate with, is
+  its own verification effort and is why this record does not attempt the
+  integration.
+
+### Coverage check against the current head-of-chain record
+
+Issue #51's own acceptance criteria require that *every* point still failing
+in the loop-stability record be either passing or backed by a decision
+record. This subsection checks this record's proposed envelope against that
+failure set, point for point, so a ratification decision can be made against
+an explicit account rather than an implied one. The head-of-chain record as
+of this pass is still
+`sim/loop-stability/records/20260801-191742-84f67b8.md` — nothing in
+`design/` changed in the pass that added this subsection, so re-running the
+unmodified
+3240-point matrix would reproduce it exactly (ngspice's AC analysis here is
+deterministic given an unchanged netlist and models; a byte-for-byte rerun
+would add churn, not evidence, so none was minted). Its full failure set is
+**551 points, all at `I_load ∈ {0, 0.1} mA`** — 536 at 0 mA (this record's
+"not reachable" argument, above) and 15 at 0.1 mA (the outliers just above,
+tracked in #53). There is no failing point at 1, 10, 25 or 50 mA.
+
+The proposed replacement `Stability` row under "Decision" claims exactly
+`1 mA ≤ I_load ≤ 50 mA` — it does not claim 0.1 mA, even though 525 of its
+540 points already pass, precisely because a verified envelope has to be a
+bound met at *every* point inside it and this design is not there yet. That
+means the proposed envelope's excluded range (`I_load < 1 mA`, 1080 points)
+is a superset of, and exactly aligned with, the record's real failure set —
+it does not carve out an unrelated or partial excuse, and it does not leave
+any failing point outside `{0, 0.1} mA` unexplained. Nothing here silently
+narrows DR-0001's matrix or the testbench that runs it — the full grid is
+still swept and still reported as a FAIL against DR-0001 as originally
+written; this record only changes what is *claimed* as the ratified
+envelope, per DR-0001's own anticipated remedy for a corner that the
+evidence says is not there yet.
+
+**The two excluded columns are not excluded on the same footing, and this
+record does not pretend otherwise.** The 536 points at 0 mA are argued to be
+*legitimately* out of scope on the merits: the area and PSRR derivations
+above independently rule the corner out for this topology, so no future
+design pass is expected to recover it and the exclusion is meant to be
+permanent. The 15 points at 0.1 mA are **not** argued that way. This record
+makes no case that 0.1 mA is infeasible — the opposite, in fact: it
+root-causes those points to the bias branch's 2.5× PVT spread, measures a
+lever (constant-gm bias, feasibility-checked above) that plausibly closes
+them, and #53 is open with acceptance criteria that require all 540 points
+at 0.1 mA to *pass*. Their exclusion from the proposed envelope is therefore
+**provisional and evidentiary** — this design has not verified that column
+yet, so it must not be claimed — not a finding that the column is out of
+scope.
+
+**What that means for issue #51.** #51's acceptance criteria distinguish
+exactly these two things: a failing corner must either pass, or be backed by
+a decision record "explaining why it is out of scope," and #51 states that a
+silent partial-pass record is not sufficient. This record supplies that
+explanation for the 0 mA column only. For the 0.1 mA column it supplies a
+root cause, a candidate fix and an open issue — which is a plan, not an
+out-of-scope finding. So #51 is **not** discharged by this record, and stays
+open until both of the following hold: (1) an operator ratifies this record,
+putting the 0 mA exclusion in force; and (2) #53 lands a superseding
+loop-stability record in which all 540 points at 0.1 mA pass both DR-0001
+bars — at which point #53's own third criterion re-extends the envelope's
+lower bound from 1 mA to 0.1 mA by a superseding record, and the provisional
+exclusion added here disappears rather than hardening into a claim.
 
 ## Alternatives considered
 
