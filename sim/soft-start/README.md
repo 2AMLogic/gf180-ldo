@@ -33,7 +33,7 @@ NO_RECORD=1 CORNERS=tt TEMPS=27 SUPPLIES=3.30 \
 | `isup_peak_ma` | Peak **supply** current, for the "stays ≥ 10 mA below the current limit" clause, against the 62.0 mA worst-corner limit measured in `sim/current-limit/records/`. |
 | `t_startup_ms` | Enable edge → V_out = 1.764 V, i.e. the **±2% within 3 ms** clause. |
 | `vout_max_en` | **Overshoot**, against the ratified +2% = 1.836 V. |
-| `ssr_end` / `clg_end` | Hand-over sanity: the soft-start ramp node must finish **above** V_REF and the clamp gate must finish at V_IN, or the soft-start block is still fighting the main loop after startup. |
+| `ssr_end` / `clg_end` | Hand-over sanity: the soft-start ramp node must finish **above** V_REF and the clamp gate must finish at V_IN, or the soft-start block is still fighting the main loop after startup. Both halves are adjudicated in `summarize.py` — `ssr_end < 1.2 V`, and `clg_end` more than 0.2 V below V_IN. The 0.2 V is a *reporting* threshold, not a ratified bound (no spec line names this node); it sits well under the \|V_tp\| range in `sim/devchar/CONCLUSIONS.md` so that any point where `Mclamp_ss` is meaningfully out of cutoff gets named. |
 | `ssr_off_tran` | The ramp capacitor must be **reset** by disable, or the next enable does not ramp. |
 
 ### Inrush is the capacitor current, not the supply current

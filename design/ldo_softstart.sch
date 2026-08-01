@@ -53,12 +53,19 @@ entire requirement.
 
 It also has three properties the reference-ramp version does not:
 
-  * It is OUT of the signal path when it is not ramping. The reference-ramp
-    version puts a follower's offset (a few mV) permanently in series with
-    VREF, i.e. permanently inside the +/-2% output-accuracy budget, at every
-    corner, forever. This block's steady-state footprint on the main loop is
-    one PMOS in cutoff (Mclamp_ss with Vsg = 0) on PASS_GATE and one MOS gate
-    on FB.
+  * It adds no DC error term. The reference-ramp version puts a follower's
+    offset (a few mV) permanently in series with VREF, i.e. permanently
+    inside the +/-2% output-accuracy budget, at every corner, forever. This
+    block's steady-state footprint on the main loop is one MOS gate on FB,
+    plus Mclamp_ss and Cm_ss on PASS_GATE. Mclamp_ss is INTENDED to sit in
+    cutoff there (CLG parked at VIN, Vsg = 0) and does at 147 of the 163
+    measured points; at the other 16 CLG ends the enable window more than
+    0.2 V below VIN (11 of them by more than 0.3 V, worst 0.85 V), i.e.
+    Mclamp_ss carries a Vsg rather than none. That is measured, it is not
+    what this note originally claimed, and it is adjudicated by
+    sim/soft-start/testbench/summarize.py and written up as a caveat in
+    sim/soft-start/records/20260801-071013-6026a64.md. Cm_ss's 7.2 pF stays
+    on PASS_GATE unconditionally: see HOW THE CLAMP WORKS below.
   * It leaves ldo_core's existing nets alone. #8's Men still has its gate on
     EN, error_amp's INN is still VREF: ldo_core.sch's diff for this issue is
     purely the addition of one instance.
@@ -124,6 +131,22 @@ HOW THE CLAMP WORKS
   whatever current the load and the capacitor need in order for VOUT to move
   at the ramp's rate, which is exactly what a soft start is.
 
+  Cm_ss is the clamp stage's local compensation, and it is deliberately the
+  same 60 um x 60 um plate as Css (7.2 pF). It sits gate-to-drain across
+  Mclamp_ss, i.e. it is a Miller capacitor around the clamp device: with
+  Rl2_ss's ~6.2 Mohm on CLG it puts this loop's dominant pole far below the
+  main loop's, which is the same reason ldo_ilimit's Cc exists -- a SECOND
+  feedback loop around the same pass device has to be slow relative to the
+  first or the two interact. It is sized against the pass device's own
+  Cgd = 3.02 pF (sim/devchar/CONCLUSIONS.md section 3): the compensation
+  capacitor has to dominate the pass gate's gate-drain capacitance for the
+  pole split to be set by this block rather than by Mpass, and 7.2 pF is
+  2.4x it. The cost is stated in design/README.md and repeated here because
+  it is the one part of this block that does NOT vanish after hand-over:
+  whatever Mclamp_ss ends up doing, Cm_ss is still 7.2 pF hanging on
+  PASS_GATE, and that is an added capacitance on a main-loop node that this
+  issue does not characterise in AC. Issue #10 owns that loop.
+
   Rl2_ss/Men_l are the common-source stage's load. The load is in SERIES with
   an EN-gated PMOS switch, not tied straight to VIN as ldo_ilimit's Rl2 is,
   because this block's disabled state parks CLG LOW (below) and a bare
@@ -164,19 +187,49 @@ WHAT IS IDEALIZED HERE
 
 SIZING AS BUILT
 
+  Everything below is a read-back of the instances in this file after
+  bring-up, not a statement of intent, and every derived number is labelled
+  either "nominal" (arithmetic from the values above) or "MEASURED" (from the
+  163-point sweep in sim/soft-start/records/20260801-071013-6026a64.md).
+  Where the two disagree, the measurement wins and the arithmetic is the
+  thing that is wrong.
+
   Rss_bias  ppolyf_u_3k, 1000 squares  ~3.1 Mohm  -> Iref_ss ~ 0.39 uA
-  k_ss      0.0077                                -> I_ramp  ~ 3.0 nA
+  k_ss      0.0060                                -> I_ramp  ~ 2.3 nA
   Css       60 um x 60 um cap_mim_2f0             ~7.2 pF
-    => dSSR/dt ~ 0.41 V/ms, dVout/dt ~ 0.62 V/ms at tt/27 C/3.30 V.
+    => nominal dSSR/dt ~ 0.32 V/ms, so dVout/dt ~ 0.48 V/ms.
+       MEASURED at tt/27 C/3.30 V, 1 uF/100 mOhm, 50 mA (corner
+       tt_27c_3.30v_1u_0.1_36): 0.4936 V/ms, with startup to 1.764 V in
+       3.75 ms. Over all 163 points: 0.296 .. 0.867 V/ms.
   Rtail_ss  ppolyf_u_3k, 600 squares   ~1.86 Mohm -> tail 0.7..1.4 uA
-  Rl2_ss    ppolyf_u_3k, 1000 squares  ~3.1 Mohm  (carries ~0 once handed over)
+  Rl2_ss    ppolyf_u_3k, 2000 squares  ~6.2 Mohm  (carries ~0 once handed over)
+  Cc_ss     25 um x 20 um cap_mim_2f0  ~1.0 pF    CO to VSS
+  Cm_ss     60 um x 60 um cap_mim_2f0  ~7.2 pF    CLG to PASS_GATE
+
+  k_ss and Rl2_ss are the two values that moved during bring-up (from 0.0077
+  and 1000 squares). k_ss sets the ramp rate directly and was reduced to put
+  the fastest corner under the ratified 1 V/ms bound with margin -- the
+  measured fastest point is 0.867 V/ms. Rl2_ss is the common-source stage's
+  load, so it sets that stage's gain and the pull-up on CLG; it was doubled
+  to keep the clamp in control at the corners where Mg2_ss is strongest. Both
+  changes are upstream of every number in the record above: the 163 points
+  were run against the values printed here, from the frozen netlist snapshot
+  sim/soft-start/netlist-snapshots/20260801-071013-6026a64.spice, so the
+  record is the authority on what this sizing does and this block is only the
+  arithmetic that led to it.
+
+  Capacitor values use the 1.990 fF/um2 measured for cap_mim_2f0 in
+  sim/devchar/CONCLUSIONS.md section 3, not the 2.0 fF/um2 of the model name:
+  3600 um2 -> 7.16 pF, quoted as 7.2 pF. Css and Cm_ss are the same plate.
 
   Added enabled quiescent current is the tail plus the bias branch, ~1.5 uA
   at tt/27 C; the common-source stage's load carries no current in the
   settled enabled state because CO ends up at VSS and Mg2_ss ends up off.
-  Added area is dominated by Css (3600 um2) and the three poly resistors
-  (2600 um2) -- about 6% of the ratified 0.1 mm2 core-area row, which is a
-  real cost and is called out here rather than discovered at layout.} -1200 -1470 0 0 0.28 0.28 {}
+  Added area is 7700 um2 of capacitor (Css 3600, Cm_ss 3600, Cc_ss 500) plus
+  3600 um2 of poly resistor (1000 + 600 + 2000 squares at W = 1 um), about
+  11300 um2 -- roughly 11% of the ratified 0.1 mm2 core-area row. That is a
+  real cost, it is dominated by the two 60 x 60 capacitors, and it is called
+  out here rather than discovered at layout.} -1200 -1470 0 0 0.28 0.28 {}
 C {devices/iopin.sym} -1200 -100 0 0 {name=p_vin lab=VIN}
 C {devices/ipin.sym} -1000 -100 0 0 {name=p_fb lab=FB}
 C {devices/iopin.sym} -800 -100 0 0 {name=p_pass_gate lab=PASS_GATE}

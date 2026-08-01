@@ -230,20 +230,40 @@ Monte Carlo study).
   the ramp; a prototype of that topology free-runs to an 11 mA charging edge
   in ~2 µs at tt/27 °C before the ramp reference has moved 20 mV. The full
   argument, with the measurement, is in `design/ldo_softstart.sch`'s notes.
-- **Nothing in the settled loop moves.** `Men`'s gate is still `EN`,
+- **Nothing in the settled loop's DC path moves.** `Men`'s gate is still `EN`,
   `Xerramp`'s `INN` is still `VREF`, and this block's only touch on `FB` is a
   MOS gate — so the divider ratio, the feedback factor β, #9's offset gain-up
-  and #10's loop gain are unchanged by construction, not by measurement.
-  Its steady-state footprint is `Mclamp_ss` in cutoff on `PASS_GATE` plus
-  `Cm_ss` (3.6 pF, the clamp stage's local compensation) between `PASS_GATE`
-  and a `CLG` node that rests at `VIN`.
-- Measured: peak supply current during a 50 mA startup drops from
-  **153–289 mA** to **≈ 51–121 mA**, and overshoot from up to **+6.5%** to
-  within **+2%** at all but the hottest fast corners. What it does **not**
-  meet is the ratified 3 ms settling window at the slow end of the ramp's own
-  PVT spread, and peak (as opposed to steady) `dVout/dt` during two short
-  transients per startup. Both are recorded, with numbers, in
-  `spec/decision-records/DR-0006` and `sim/soft-start/records/`.
+  and #10's loop **gain** are unchanged by construction.
+- **Its AC footprint on `PASS_GATE` is not nothing, and is not claimed to
+  be.** `Cm_ss` (**7.2 pF** — 60 µm × 60 µm of `cap_mim_2f0` at the
+  1.990 fF/µm² measured in `sim/devchar/CONCLUSIONS.md` §3, the same plate as
+  `Css`; it is the clamp stage's Miller compensation across `Mclamp_ss`) sits
+  between `PASS_GATE` and `CLG`, and stays there after hand-over regardless of
+  what the clamp does. That is 2.4× the pass device's own `Cgd` (3.02 pF, same
+  record) added to a main-loop node. It has **not** been characterised in AC
+  here — issue #10 owns the loop's AC evidence — and the transient evidence
+  that does exist is mixed: at **16 of the 163 measured points** `CLG` ends
+  the enable window more than 0.2 V below `VIN` rather than at `VIN` (11 of
+  them by more than 0.3 V, worst 0.85 V), so `Mclamp_ss` is carrying a `Vsg`
+  there rather than sitting in cutoff. Twelve of the sixteen are at the 1 mΩ
+  ESR edge of DR-0001's window; the worst at the nominal 1 µF / 100 mΩ output
+  is `ff_125c_2.97v_1u_0.1_36`, `CLG` = 2.472 V against `VIN` = 2.97 V.
+  `sim/soft-start/testbench/summarize.py` now adjudicates this invariant, and
+  the caveat is recorded in
+  `sim/soft-start/records/20260801-071013-6026a64.md`.
+- Measured: peak supply current during a 50 mA startup, on the same 63-corner
+  enable/shutdown matrix at 1 µF / 100 mΩ, drops from **153.4–289.1 mA** to
+  **53.2–138.9 mA**; the soft-start bench's own 63-corner matrix at the same
+  load and output network gives **53.2–137.2 mA**. Across all 143 loaded
+  points, i.e. including DR-0001's full capacitor window, the spread is
+  **50.3–201.1 mA**, the top end at 0.33 µF / 1 mΩ
+  (`ff_-40c_3.63v_0.33u_0.001_36`) — the low-ESR edge the record calls out
+  separately — and the bottom at 0.33 µF / 500 mΩ. Overshoot drops from up
+  to **+6.5%** to within **+2%** at all but the hottest fast corners. What it
+  does **not** meet is the ratified 3 ms settling window at the slow end of
+  the ramp's own PVT spread, and peak (as opposed to steady) `dVout/dt`
+  during two short transients per startup. Both are recorded, with numbers,
+  in `spec/decision-records/DR-0006` and `sim/soft-start/records/`.
 - Added quiescent current: **+1.7 µA** enabled (24.1 µA vs 22.4 µA at the
   binding ff/125 °C/3.63 V corner, against the ratified < 30 µA) and
   **+1 nA** disabled (0.2037 µA vs 0.2026 µA, against < 3 µA). There is no

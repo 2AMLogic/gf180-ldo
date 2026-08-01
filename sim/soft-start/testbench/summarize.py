@@ -28,13 +28,22 @@ SCALARS = [
 
 # Ratified bounds (README.md "Startup" row) plus the two measured references
 # the row is written against.
-VOUT_NOM = 1.8
 VOUT_LO = 1.764          # -2%
 VOUT_HI = 1.836          # +2%
 RAMP_MAX_VPMS = 1.0      # ratified controlled-ramp bound
 INRUSH_MAX_MA = 5.0      # ratified inrush bound (at C_eff = 4.7 uF)
 ILIMIT_MIN_MA = 62.0     # worst-corner measured limit, sim/current-limit/records/
 SETTLE_MAX_S = 3e-3      # ratified "+/-2% within 3 ms of enable"
+
+# Hand-over invariant, per tb_soft_start.spice.in's own comment: CLG must
+# finish at VIN, or Mclamp_ss is still carrying a Vsg and the soft-start clamp
+# has not fully let go of PASS_GATE. The bench measured m_clg_end from the
+# start and nothing adjudicated it; this is the missing predicate. 0.2 V is a
+# reporting threshold, not a ratified bound -- there is no spec line on this
+# node -- chosen well below the |Vtp| range measured in
+# sim/devchar/CONCLUSIONS.md (0.622 V at ff/125 C .. 1.031 V at ss/-40 C) so
+# that any point where the clamp is meaningfully out of cutoff is named.
+CLG_END_BELOW_VIN_MAX = 0.2
 
 CORNER_RE = re.compile(
     r"^(?P<corner>tt|ff|ss|fs|sf|res_ff|res_ss)_"
@@ -72,6 +81,10 @@ def main() -> None:
         dt = v["m_t_v14"] - v["m_t_v04"]
         v["m_slope_vpms"] = 1.0 / (dt * 1e3) if dt > 0 else float("nan")
         v["m_t_startup_ms"] = v["m_t_startup"] * 1e3
+        # Vsg(Mclamp_ss) at the end of the enable window. Derived for the
+        # hand-over predicate only, and deliberately NOT a CSV column: the
+        # committed summary.csv is evidence and its schema does not move.
+        v["m_clg_end_below_vin"] = float(m.group("vin")) - v["m_clg_end"]
         rows.append((cid, m.groupdict(), v))
 
     cols = SCALARS + ["m_slope_vpms", "m_t_startup_ms"]
@@ -128,6 +141,9 @@ def main() -> None:
          lambda v: v["m_vout_pp_late"] > 0.018)
     flag("soft-start ramp did not finish above VREF (clamp still engaged):",
          lambda v: v["m_ssr_end"] < 1.2)
+    flag(f"clamp gate ended >{CLG_END_BELOW_VIN_MAX} V below VIN "
+         "(Mclamp_ss not fully off):",
+         lambda v: v["m_clg_end_below_vin"] > CLG_END_BELOW_VIN_MAX)
     flag("disabled output above 10 mV at the end of the tail:",
          lambda v: v["m_vout_off_tran"] > 0.010)
     flag("soft-start ramp capacitor not reset by disable (>10 mV):",

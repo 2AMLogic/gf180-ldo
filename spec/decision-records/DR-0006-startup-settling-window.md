@@ -25,15 +25,18 @@ and the 0 mA load case over a bracketing corner subset
 The trigger has fired, and the measurement says the cause is arithmetic, not a
 deficiency of this particular circuit.
 
-### The two clauses jointly admit a 1.63 : 1 window
+### The two clauses jointly admit a 1.70 : 1 window
 
-A monotonic ramp that never exceeds 1 V/ms needs at least 1.836 ms to reach the
-+2% edge of a 1.8 V output. The settling clause allows 3 ms. So the ramp rate
-must lie in
+A rising output enters the ±2% band at its **lower** edge, 1.764 V — that is
+what `m_t_startup` measures (`sim/soft-start/testbench/tb_soft_start.spice.in`:
+`TRIG v(en) ... TARG v(vout) VAL=1.764 RISE=1`), and it is the arithmetic this
+record uses throughout. A monotonic ramp that never exceeds 1 V/ms therefore
+needs at least 1.764 ms to reach the band. The settling clause allows 3 ms. So
+the ramp rate must lie in
 
-    1.836 V / 3 ms = 0.612 V/ms   ≤   dV_out/dt   ≤   1.0 V/ms
+    1.764 V / 3 ms = 0.588 V/ms   ≤   dV_out/dt   ≤   1.0 V/ms
 
-— a **1.63 : 1** band, and every part in every corner of every lot has to land
+— a **1.70 : 1** band, and every part in every corner of every lot has to land
 inside it. (A ramp shape other than a straight line only makes this worse: the
 straight line is the shape with the largest average-to-peak slope ratio, which
 is exactly the quantity being squeezed. An RC reference charged toward `VREF`,
@@ -58,13 +61,13 @@ alone. The poly resistor's temperature coefficient over −40…125 °C widens i
 further. **Measured across the 163 points: 0.296 … 0.867 V/ms, a 2.93 : 1
 spread.**
 
-2.93 does not fit inside 1.63. Neither does 2.04. Re-centring the nominal rate
+2.93 does not fit inside 1.70. Neither does 2.04. Re-centring the nominal rate
 trades one failure for the other and cannot satisfy both:
 
 | nominal centring | fastest corner | slowest corner | verdict |
 |---|---|---|---|
-| fastest corner at 1.0 V/ms | 1.00 V/ms ✓ | 0.34 V/ms → 5.4 ms | settling fails |
-| slowest corner at 0.612 V/ms | 1.79 V/ms | 0.612 V/ms ✓ | ramp bound fails |
+| fastest corner at 1.0 V/ms | 1.00 V/ms ✓ | 0.34 V/ms → 5.2 ms | settling fails |
+| slowest corner at 0.588 V/ms | 1.72 V/ms | 0.588 V/ms ✓ | ramp bound fails |
 
 The as-built design takes the first option, with margin: the fastest measured
 corner is 0.867 V/ms (13% under the bound) and the slowest is 0.296 V/ms.
@@ -87,9 +90,12 @@ with
 
 and add a note recording why: the ramp rate is an untrimmed on-chip `R · C`
 whose measured PVT spread is 2.93 : 1, so a settling window narrower than
-`1.836 ms × 2.93 ≈ 5.4 ms` cannot coexist with the ≤ 1 V/ms bound without a
-trim provision. 6 ms is 5.88 ms (the slowest measured point, `ss` / −40 °C /
-3.63 V at 0 mA load) plus ~2%.
+`1.764 ms × 2.93 ≈ 5.2 ms` cannot coexist with the ≤ 1 V/ms bound without a
+trim provision. 6 ms is not that floor, though — it is 5.88 ms, the slowest
+**measured** point (`ss` / −40 °C / 3.63 V at 0 mA load), plus ~2%. The
+measured slowest point is the binding number here, and it is above the
+arithmetic floor because the as-built ramp is not centred with its fastest
+corner exactly on 1 V/ms (it is at 0.867 V/ms).
 
 **Every other clause of the row is left exactly as ratified**, including the
 clauses this design does not currently meet. Specifically, this record does
@@ -144,9 +150,9 @@ pass, which CLAUDE.md forbids and which this record declines to do.
   `R · C`, plus it adds a digital block, switching noise on a regulator's own
   supply, and area, to buy nothing.
 - **Two-slope ramp (fast, then slow near the target).** Rejected: it improves
-  neither bound. The peak slope still has to be ≤ 1 V/ms and the total distance
-  is still 1.836 V, so the minimum time is unchanged; only the *average* rate
-  gets worse.
+  neither bound. The peak slope still has to be ≤ 1 V/ms and the distance to
+  the band's lower edge is still 1.764 V, so the minimum time is unchanged;
+  only the *average* rate gets worse.
 
 ## Consequences
 
