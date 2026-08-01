@@ -103,25 +103,35 @@ summary record with the worst point called out explicitly.
 
 ### Where this stands
 
-The current record is **`20260801-050406-65416d2`**, a **FAIL** against
-DR-0001: worst-corner phase margin **−12.89°** (bar: ≥ 45°) and gain margin
-**−28.87 dB** (bar: ≥ 10 dB) at `ff / 27 °C / 3.30 V`, 50 mA, 0.33 µF, 1 mΩ,
-with crossover at 293 kHz. 64 of 3240 points pass. This is the **real** loop —
-transistor-level `design/error_amp.sch` and the real `design/ldo_ilimit.sch` —
-so it is a property of this compensation, not of a stand-in.
+The current record is **`20260801-140530-d6d47f5`**, a **FAIL** against
+DR-0001, but a substantially narrower one than the previous record: adding a
+feedforward compensation zero (`Cff`, `design/ldo_core.sch`, issue #42)
+improves the worst-corner phase margin from **−12.89°** to **−1.26°** and gain
+margin from **−28.87 dB** to **−2.50 dB**, and raises passing points from
+64/3240 to **150/3240**. It still does not clear the ≥ 45° / ≥ 10 dB bar. This
+is the **real** loop — transistor-level `design/error_amp.sch` (untouched by
+`Cff`) and the real `design/ldo_ilimit.sch` — so it is a property of this
+compensation, not of a stand-in.
 
 That does not contradict the amplifier's own records: the amplifier was sized
 against the offset, PSRR and Iq budgets, and closing the LDO loop around it is
-a separate requirement nothing has yet been sized against. This record is the
-first measurement of it. Read the record's *"What this record asks of the next
-design step"* before touching the compensation.
+a separate requirement nothing has yet been sized against. Read the record's
+*"Structure of the result"* and *"What this record asks of the next design
+step"* before touching the compensation further — it documents, with the
+empirical rescaling experiments that ruled other levers out, why a
+feedforward-only fix cannot close the remaining gap: the amplifier's own
+Miller-set pole and the load-dependent output pole are structurally many
+decades below crossover at the DC loop gain the load-regulation/PSRR rows
+require, for any on-chip-scale `XCc`/`XRz` in `design/error_amp.sch`.
 
-It supersedes `20260801-002833-b8ce7d0`, which measured the same testbench
-against the *placeholder* error amplifier that PR #35 deleted. That record
-stays on disk — evidence here is append-only — but nothing should cite its
-numbers: the amplifier they describe no longer exists.
+It supersedes `20260801-050406-65416d2` (issue #10's original measurement,
+worst PM −12.89°/GM −28.87 dB, 64/3240 passing), which in turn superseded
+`20260801-002833-b8ce7d0`, measured against the *placeholder* error amplifier
+PR #35 deleted. Both older records stay on disk — evidence here is
+append-only — but the placeholder-amp record's numbers should never be cited:
+the amplifier it describes no longer exists.
 
-The failure is broad rather than concentrated: the a-priori worst point
-(light load, minimum C_eff, no ESR zero) fails too, at −0.09°. See the
-record's *"Structure of the result"* for which axis actually drives the
-verdict — the load axis runs the opposite way to the a-priori expectation.
+The failure is still broad rather than concentrated at one load point: the
+a-priori worst configuration (light load, minimum C_eff, no ESR zero) fails
+too, at 1.18°. See the record's *"Structure of the result"* for which axis
+actually drives the verdict.
