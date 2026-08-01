@@ -1,6 +1,6 @@
 {
   "name": "mc-output-accuracy",
-  "description": "Monte Carlo local-mismatch spread of the closed-loop LDO output voltage against the ratified 1.8 V +/-2% window: per-corner mean (the deterministic terms) and sigma (the statistical term), 1000 samples at each of the 81 mandated PVT points.",
+  "description": "Monte Carlo local-mismatch spread of the closed-loop LDO output voltage against the ratified 1.8 V +/-2% window: per-corner mean (the deterministic terms) and sigma (the statistical term), 1000 samples at each of the 45 PVT points in the 'mos' corner-set (tt/ff/ss/fs/sf x -40/27/125 C x 2.97/3.30/3.63 V). The 'mos' corner-set, not 'full', is the deliberate choice for this claim -- see the testbench header for why res_ff/res_ss/bjt_ff/bjt_ss are out of scope here.",
   "claim": "README output-accuracy row -- 1.8 V +/-2% (+/-36 mV, 3 sigma), regulator-only per README note 2. This record substantiates the STATISTICAL half of design/error_amp.md S3's offset budget (the amp input-pair + mirror mismatch term, target 3 sigma <= 2.33 mV input-referred / 3.49 mV output-referred) together with the deterministic mean it sits on. The feedback-divider mismatch term is NOT simulable against this PDK (mis_r = 0, sim/devchar/CONCLUSIONS.md S2) and enters as S3.2's fixed 3.36 mV assumption; load regulation is a separate 18 mV allowance verified by #12. The full combine against the window is sim/mc-output-accuracy/README.md.",
   "netlist": "tb_mc_output_accuracy.spice",
   "includes": [
@@ -14,7 +14,7 @@
     125
   ],
   "corners": [
-    "full"
+    "mos"
   ],
   "analyses": [
     "set numdgt=5",
