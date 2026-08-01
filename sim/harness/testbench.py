@@ -9,8 +9,15 @@ that experiment's ``testbench/`` subdirectory:
 
 The fragment must NOT contain ``.include`` of models, ``.lib``, ``.temp``,
 ``.control`` or ``.end``: the harness owns all of those so that one netlist
-can be swept across the whole PVT grid without editing. The harness hands
-the fragment these parameters:
+can be swept across the whole PVT grid without editing. A testbench that
+instantiates a design cell declares it in the manifest's ``includes`` list
+instead (paths relative to the ``testbench/`` directory), e.g.
+
+    "includes": ["../../../design/error_amp.spice"]
+
+so the ``.include`` directive stays harness-owned, the included file is
+validated the same way the fragment is, and both are frozen into the
+record's netlist snapshot. The harness hands the fragment these parameters:
 
     vdd_val   the supply for this PVT point (nominal, +tol or -tol)
     vdd_nom   the nominal supply, for ratio-style measurements
@@ -47,6 +54,12 @@ class Testbench:
     directory: Path
     name: str
     netlist: Path
+    #: Design netlists (xschem exports under ``design/``) this testbench
+    #: instantiates. The harness emits the ``.include`` lines for these --
+    #: the fragment itself never may -- and freezes their contents into the
+    #: record's netlist snapshot so a record stays reproducible after the
+    #: schematic moves on.
+    includes: tuple[Path, ...] = ()
     description: str = ""
     claim: str = ""
     nominal_supply_v: float = DEFAULT_NOMINAL_SUPPLY_V
@@ -89,7 +102,20 @@ class Testbench:
     def manifest_sha256(self) -> str:
         return hashlib.sha256((self.directory / MANIFEST_NAME).read_bytes()).hexdigest()
 
-    def provenance(self) -> dict:
+    def include_provenance(self, repo_root: Path | None = None) -> list[dict]:
+        """Path + sha256 of every design netlist this testbench includes."""
+        entries = []
+        for path in self.includes:
+            try:
+                shown = str(path.relative_to(repo_root)) if repo_root else str(path)
+            except ValueError:
+                shown = str(path)
+            entries.append(
+                {"path": shown, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+            )
+        return entries
+
+    def provenance(self, repo_root: Path | None = None) -> dict:
         return {
             "name": self.name,
             "description": self.description,
@@ -99,6 +125,7 @@ class Testbench:
             "netlist": self.netlist.name,
             "netlist_sha256": self.netlist_sha256,
             "manifest_sha256": self.manifest_sha256,
+            "includes": self.include_provenance(repo_root),
             "nominal_supply_v": self.nominal_supply_v,
             "supply_tolerance": self.supply_tolerance,
         }
@@ -141,10 +168,20 @@ def load(directory: str | Path) -> Testbench:
                 "(it becomes an ngspice vector name)"
             )
 
+    includes = []
+    for entry in manifest.get("includes", []):
+        path = (directory / entry).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"{manifest_path}: include {entry!r} resolves to {path}, which does not exist"
+            )
+        includes.append(path)
+
     tb = Testbench(
         directory=directory,
         name=manifest.get("name", directory.parent.name),
         netlist=netlist,
+        includes=tuple(includes),
         description=manifest.get("description", ""),
         claim=manifest.get("claim", ""),
         nominal_supply_v=float(manifest.get("nominal_supply_v", DEFAULT_NOMINAL_SUPPLY_V)),
@@ -166,27 +203,43 @@ def load(directory: str | Path) -> Testbench:
     return tb
 
 
+def _forbidden_directives(path: Path, allow: tuple[str, ...] = ()) -> list[str]:
+    problems: list[str] = []
+    for lineno, raw in enumerate(path.read_text().splitlines(), start=1):
+        line = raw.strip().lower()
+        if not line.startswith("."):
+            continue
+        directive = line.split()[0]
+        if directive in FORBIDDEN_DIRECTIVES and directive not in allow:
+            problems.append(f"  line {lineno}: {raw.strip()}")
+    return problems
+
+
 def validate_netlist(tb: Testbench) -> None:
     """Reject fragments that try to own what the harness owns.
 
     Catching this here is much friendlier than debugging a duplicated
     ``.end`` or a hardcoded ``.temp 27`` that silently pins every corner to
-    room temperature.
+    room temperature. Design netlists named in ``includes`` are held to the
+    same rule: an xschem export that still carries a trailing ``.end`` would
+    truncate the deck at the point it is included.
     """
-    problems: list[str] = []
-    for lineno, raw in enumerate(tb.netlist.read_text().splitlines(), start=1):
-        line = raw.strip().lower()
-        if not line.startswith("."):
-            continue
-        directive = line.split()[0]
-        if directive in FORBIDDEN_DIRECTIVES:
-            problems.append(f"  line {lineno}: {raw.strip()}")
+    problems = _forbidden_directives(tb.netlist)
     if problems:
         raise ValueError(
             f"{tb.netlist}: netlist fragments must not contain "
             f"{', '.join(FORBIDDEN_DIRECTIVES)} -- the harness supplies the models, "
             "corner libs, temperature and control block:\n" + "\n".join(problems)
         )
+    for include in tb.includes:
+        problems = _forbidden_directives(include)
+        if problems:
+            raise ValueError(
+                f"{include}: an included design netlist must not contain "
+                f"{', '.join(FORBIDDEN_DIRECTIVES)} either -- it is pasted into a deck "
+                "the harness owns (export it with xschem's top_is_subckt, which emits a "
+                "bare .subckt/.ends pair):\n" + "\n".join(problems)
+            )
 
 
 def discover(root: str | Path) -> list[Path]:

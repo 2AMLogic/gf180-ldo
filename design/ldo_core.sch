@@ -29,25 +29,31 @@ of this schematic is ever needed to reach it. A normal-operation testbench
 instantiation (a plain wire); a stability testbench replaces that tie with
 an injection network instead. See design/README.md.
 
-Error amp: instantiates ldo_erramp_placeholder (issue #9 swaps this for a
-real amp; pinout INP INN OUT VDD VSS is the swap-in contract -- see that
-cell's own schematic). INP=FB (non-inverting), INN=VREF (inverting) -- this
-polarity is required for negative feedback around a PMOS common-source
-pass device (Vout falls as the gate voltage rises); do not swap when
-replacing the placeholder.
+Error amp: instantiates error_amp (design/error_amp.sch), the real
+two-stage Miller-compensated OTA issue #9 designed against the offset /
+PSRR / Iq budgets in design/error_amp.md. It replaced issue #8's behavioral
+ldo_erramp_placeholder on the pinout that cell established -- INP INN OUT
+VDD VSS, with INP=FB (non-inverting) and INN=VREF (inverting), the polarity
+negative feedback around a PMOS common-source pass device requires (Vout
+falls as the gate voltage rises). The swap was a symbol-name change only:
+error_amp.sym reuses the placeholder's pin coordinates.
 
-Reference: VREF is an ideal 0.6 V source (Vref1), not a real bandgap --
-there is no bandgap block designed yet for this repo. The feedback divider
-ratio below is chosen against this 0.6 V assumption; if a future bandgap
-issue lands a different reference voltage, the divider ratio (not the
-topology) is what needs to change.
+Reference: VREF is an ideal 1.2 V source (Vref1), not a real bandgap --
+there is no bandgap block designed yet for this repo. 1.2 V (not the 0.6 V
+issue #8 first assumed) is the reference DR-0003 budgets against: it puts the
+amplifier's offset gain-up at 1/beta = Vout/Vref = 1.5, and it is the input
+common mode design/error_amp.sch's NMOS input pair needs to keep its tail
+source in saturation at the 2.10 V dropout test point. Changed with issue #9
+-- see design/error_amp.md "Why 1.2 V, not 0.6 V".
 
-Feedback divider: Rtop=200k, Rbot=100k (plain behavioral R, not the PDK's
+Feedback divider: Rtop=300k, Rbot=600k (plain behavioral R, not the PDK's
 ppolyf_u_3k poly resistor -- guidance said either is acceptable for this
-sanity netlist; sheet-resistance-accurate ppolyf_u_3k sizing is deferred to
-whichever future issue needs layout-matched divider values, e.g. a
-mismatch/Monte Carlo study). FB = VOUT * Rbot/(Rtop+Rbot) = VOUT/3, so
-VOUT settles at 3*VREF = 1.8 V.
+sanity netlist; sheet-resistance-accurate sizing and the unit-resistor
+matching plan are #15's/#13's, and design/error_amp.md's offset table states
+the area the mismatch assumption implies). FB = VOUT * Rbot/(Rtop+Rbot)
+= 2*VOUT/3, so VOUT settles at 1.5*VREF = 1.8 V. The 900 kOhm total is what
+DR-0003 calls for to hold the divider's standing current near 2 uA
+(1.8 V / 900 kOhm = 2.0 uA).
 
 Pass device Mpass: pfet_03v3, L=0.28u (model minimum), W=2000u (2 mm),
 nf=40, m=1. This is a SIMPLIFICATION of the full ~4 mm / 40-unit-cell
@@ -73,16 +79,16 @@ C {devices/lab_pin.sym} 280 -450 0 0 {name=l_men_g sig_type=std_logic lab=EN}
 C {devices/lab_pin.sym} 320 -420 0 0 {name=l_men_d sig_type=std_logic lab=PASS_GATE}
 C {devices/lab_pin.sym} 320 -480 0 0 {name=l_men_s sig_type=std_logic lab=VIN}
 C {devices/lab_pin.sym} 320 -450 0 0 {name=l_men_b sig_type=std_logic lab=VIN}
-C {devices/res.sym} 550 -250 0 0 {name=Rtop value=200k footprint=1206 device=resistor m=1}
+C {devices/res.sym} 550 -250 0 0 {name=Rtop value=300k footprint=1206 device=resistor m=1}
 C {devices/lab_pin.sym} 550 -280 0 0 {name=l_rtop_p sig_type=std_logic lab=VOUT}
 C {devices/lab_pin.sym} 550 -220 0 0 {name=l_rtop_m sig_type=std_logic lab=FB}
-C {devices/res.sym} 550 -100 0 0 {name=Rbot value=100k footprint=1206 device=resistor m=1}
+C {devices/res.sym} 550 -100 0 0 {name=Rbot value=600k footprint=1206 device=resistor m=1}
 C {devices/lab_pin.sym} 550 -130 0 0 {name=l_rbot_p sig_type=std_logic lab=FB}
 C {devices/lab_pin.sym} 550 -70 0 0 {name=l_rbot_m sig_type=std_logic lab=VSS}
-C {devices/vsource.sym} -300 -350 0 0 {name=Vref1 value=0.6}
+C {devices/vsource.sym} -300 -350 0 0 {name=Vref1 value=1.2}
 C {devices/lab_pin.sym} -300 -380 0 0 {name=l_vref_p sig_type=std_logic lab=VREF}
 C {devices/lab_pin.sym} -300 -320 0 0 {name=l_vref_m sig_type=std_logic lab=VSS}
-C {ldo_erramp_placeholder.sym} 0 -450 0 0 {name=Xerramp}
+C {error_amp.sym} 0 -450 0 0 {name=Xerramp}
 C {devices/lab_pin.sym} -100 -480 0 0 {name=l_amp_inp sig_type=std_logic lab=FB}
 C {devices/lab_pin.sym} -100 -460 0 0 {name=l_amp_inn sig_type=std_logic lab=VREF}
 C {devices/lab_pin.sym} 100 -450 0 0 {name=l_amp_out sig_type=std_logic lab=ERRAMP_OUT}

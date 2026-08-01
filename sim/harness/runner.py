@@ -73,6 +73,13 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
     for option in tb.options:
         lines.append(f".options {option}")
 
+    if tb.includes:
+        lines += [
+            "",
+            "* ---- design cells (manifest 'includes') ------------------------------",
+        ]
+        lines += [f'.include "{path}"' for path in tb.includes]
+
     lines += [
         "",
         "* ---- testbench ------------------------------------------------------",

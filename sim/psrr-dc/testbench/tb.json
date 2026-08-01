@@ -1,0 +1,62 @@
+{
+  "name": "psrr-dc",
+  "description": "Error-amplifier contribution to PSRR at 1 kHz across full PVT: supply-to-output coupling G and differential gain A, plus the projected LDO PSRR = A*beta/|1-G|.",
+  "claim": "README 'PSRR' row -- > 50 dB @ 1 kHz (stretch 60 dB) -- **amplifier contribution only**. This record substantiates the amp-level half of the budget in design/error_amp.md; the closed-loop measurement (pass device + divider + output network) is #12's and should get its own experiment slug rather than reusing this one.",
+  "netlist": "tb_psrr_amp.spice",
+  "includes": ["../../../design/netlist/error_amp.spice"],
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.1,
+  "temperatures_c": [-40, 27, 125],
+  "corners": ["full"],
+  "analyses": [
+    "set units=degrees",
+    "op",
+    "ac dec 20 1 1e6",
+    "meas ac gpsr10_db find vdb(vg1) at=10",
+    "meas ac gpsr100_db find vdb(vg1) at=100",
+    "meas ac gpsr1k_db find vdb(vg1) at=1k",
+    "meas ac gpsr10k_db find vdb(vg1) at=10k",
+    "meas ac gpsr100k_db find vdb(vg1) at=100k",
+    "meas ac adiff1k_db find vdb(vg2) at=1k",
+    "meas ac adiff10k_db find vdb(vg2) at=10k",
+    "meas ac adiff100k_db find vdb(vg2) at=100k",
+    "ac lin 1 1k 1k"
+  ],
+  "operating_conditions": {
+    "load_current": "N/A -- amp-level characterisation. PSRR ~= A*beta/|1-G| is load-independent to first order (Zout, ro_pass and gm_pass cancel; see the testbench header), which is exactly why the budget is carried by amp gain rather than by the pass-device topology.",
+    "amp_output_load": "6.14 pF lumped -- the measured worst-case Cgg of the pfet_03v3 pass device at W = 4 mm / L = 0.28 um, ss / -40 C (sim/devchar/CONCLUSIONS.md S1)",
+    "output_cap": "N/A -- outside the amplifier boundary; the DR-0001 cap/ESR window is #10's and #12's to verify",
+    "input_common_mode": "1.2 V (ldo_core's ratified divider: 1.8 V out from a 1.2 V reference, beta = 2/3)",
+    "bias": "self-biased from VDD inside the cell, so the bias branch's own supply sensitivity is included in the measured G rather than idealised away",
+    "enable_state": "N/A -- the 5-port interface has no enable pin",
+    "output_operating_point": "both instances servo'd to OUT = 2.0 V, the ~50 mA regulation point at Vin = 3.3 V",
+    "spec_point": "1 kHz. 10 Hz / 100 Hz / 10 kHz / 100 kHz are extracted into the raw corner logs for context; DC is not measurable on this bench because the DC servo nulls it by construction."
+  },
+  "measure": {
+    "gpsr_1k_vv": "mag(v(vg1))",
+    "gpsr_1k_db": "ac1.gpsr1k_db",
+    "gpsr_100k_db": "ac1.gpsr100k_db",
+    "adiff_1k_db": "ac1.adiff1k_db",
+    "adiff_100k_db": "ac1.adiff100k_db",
+    "psrr_amp_1k_db": "ac1.adiff1k_db - ac1.gpsr1k_db",
+    "psrr_ldo_1k_db": "ac1.adiff1k_db + db(2.0/3.0)",
+    "psrr_ldo_10k_db": "ac1.adiff10k_db + db(2.0/3.0)",
+    "psrr_ldo_1k_tracking_db": "db(mag(v(vg2)*(2.0/3.0)/(1-v(vg1))))"
+  },
+  "checks": {
+    "psrr_ldo_1k_db": {
+      "min": 50.0,
+      "description": "README PSRR row: > 50 dB @ 1 kHz (stretch 60 dB). This is the BUDGETED projection A*beta with |1-G| forced to 1, i.e. the amp must clear the spec on gain alone and the measured supply tracking is treated as unbudgeted margin (see design/error_amp.md)."
+    },
+    "adiff_1k_db": {
+      "min": 53.5,
+      "min_spread_pct": 5.0,
+      "description": "50 dB PSRR needs 50 - 20*log10(2/3) = 53.5 dB of amp gain at 1 kHz. The spread floor is a harness-integrity check that the corner .lib sections and .temp actually took effect."
+    },
+    "gpsr_1k_vv": {
+      "min": 0.0,
+      "max": 2.0,
+      "description": "supply-to-output coupling must stay inside the range where it helps rather than hurts (|1-G| <= 1)"
+    }
+  }
+}
