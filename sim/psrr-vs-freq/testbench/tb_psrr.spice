@@ -20,6 +20,46 @@
 Vsup VIN 0 DC {vdd_val} AC 1
 Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
 
-Iload VOUT 0 DC 1m
+* --- Compliance-limited load sink (#46) --------------------------------
+* Vilc carries the COMMANDED load current as a number of volts (1 V == 1 A).
+* It is a control node only and conducts no circuit current. Bload draws
+* that current out of VOUT through the 0 V ammeter Vlmeas, scaled by a
+* compliance factor that is 1 for VOUT well above ground and 0 at or below
+* it:
+*     f(VOUT) = 0.5 * (1 + tanh((VOUT - 0.2) / 0.05))
+* At VOUT >= 1.0 V, 1 - f < 1.3e-14, so the DC sink is ideal to well past
+* double precision; and -- what matters for an AC measurement -- the
+* small-signal conductance the sink presents at the operating point is
+* df/dVOUT * v(ilc) < 5.1e-16 S at 1 mA (and ~6e-30 S at the ~1.8 V this
+* design actually regulates to), i.e. an open circuit at AC exactly like the
+* ideal sink it replaces. dc_vout_v / dc_iload_ma below read the .op plot
+* directly so both properties are checked at every corner instead of
+* assumed.
+*
+* The "op" entry in tb.json's analyses list exists for that reporting, not
+* to steer the .ac: ngspice's ac command solves its own operating point.
+* Verified by hand at tt_27c_3.30v (#46): with the OLD ideal sink, running
+* ac cold with no preceding op gives vdb(vout)@1kHz = +25.2 dB (a
+* small-signal expansion about the sub-ground root, i.e. PSRR = -25 dB);
+* with this compliance-limited sink the same cold ac gives -77.91 dB
+* (PSRR = +77.91 dB), identical to the op-then-ac ordering. The fix is
+* therefore order-independent -- the unphysical root is gone, not merely
+* avoided by a lucky initial guess.
+*
+* What the bound removes is the *unphysical* branch of an ideal sink. An
+* ideal sink demands its current at any terminal voltage, including tens of
+* volts BELOW ground, where the only thing that can supply it is
+* forward-biased substrate junctions inside the PDK device models. That is
+* a genuine second solution for the operating point this .ac linearizes
+* around, not a convergence failure, and a cold Newton-Raphson start
+* reached it at most PVT points (#40, #46) -- which makes the small-signal
+* PSRR that follows meaningless. No real load sinks current from a rail
+* below its own ground, so bounding the sink at 0 V deletes that solution
+* instead of hiding it. See sim/harness/README.md, "Compliance-limited load
+* sinks".
+Vilc ILC 0 DC 1m
+Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+Vlmeas NLOAD 0 DC 0
+
 Resr VOUT n_esr 0.1
 Cout n_esr 0 1u

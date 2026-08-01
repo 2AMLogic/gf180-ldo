@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -803,6 +804,108 @@ class DutNetlistProvenanceTests(unittest.TestCase):
         self.assertEqual(
             len([ln for ln in text.splitlines() if ln.startswith("- Included design netlist")]), 1
         )
+
+
+class TestComplianceLimitedLoadSinks(unittest.TestCase):
+    """#46: every deck that replaced its ideal current sink with a
+    compliance-limited behavioural sink must also *check* that the sink
+    actually delivered the commanded current.
+
+    The compliance bound is what deletes the unphysical sub-ground DC root
+    (see sim/harness/README.md, "Compliance-limited load sinks"). It is only
+    sound while the bound never engages on a real operating point -- and the
+    only thing that turns "it never engages" from an assumption into evidence
+    is a per-corner check on the delivered current. These assertions exist so
+    a future edit cannot quietly drop that check and leave the records
+    asserting an unverified property.
+    """
+
+    SIM = SIM_DIR
+
+    # A behavioural current source (B-element) whose expression contains the
+    # tanh() compliance factor -- i.e. the sink documented in
+    # sim/harness/README.md, "Compliance-limited load sinks".
+    COMPLIANCE_SINK = re.compile(r"(?mi)^B\w+\s+.*\bI\s*=.*tanh\(")
+
+    def _decks_with_compliance_sinks(self):
+        for manifest in sorted(self.SIM.glob("*/testbench/tb.json")):
+            tb = json.loads(manifest.read_text())
+            text = (manifest.parent / tb["netlist"]).read_text()
+            if self.COMPLIANCE_SINK.search(text):
+                yield manifest, tb, text
+
+    def test_at_least_the_five_known_decks_use_a_compliance_limited_sink(self):
+        slugs = {m.parents[1].name for m, _, _ in self._decks_with_compliance_sinks()}
+        self.assertLessEqual(
+            {
+                "load-regulation",
+                "line-regulation",
+                "load-transient",
+                "psrr-vs-freq",
+                "quiescent-current",
+            },
+            slugs,
+        )
+
+    def test_every_compliance_sink_deck_measures_the_delivered_current(self):
+        for manifest, tb, _ in self._decks_with_compliance_sinks():
+            with self.subTest(manifest.parents[1].name):
+                measured = {
+                    name
+                    for name, expr in tb.get("measure", {}).items()
+                    if "vlmeas" in expr.lower() or "iload_plateau" in expr.lower()
+                }
+                self.assertTrue(
+                    measured,
+                    "no measure reads the ammeter in series with the compliance-limited sink",
+                )
+
+    def test_every_compliance_sink_deck_checks_the_delivered_current(self):
+        for manifest, tb, _ in self._decks_with_compliance_sinks():
+            with self.subTest(manifest.parents[1].name):
+                measure = tb.get("measure", {})
+                checked = {
+                    name
+                    for name in tb.get("checks", {})
+                    if "vlmeas" in measure.get(name, "").lower()
+                    or "iload_plateau" in measure.get(name, "").lower()
+                }
+                self.assertTrue(
+                    checked,
+                    "the delivered load current is measured but never checked -- the "
+                    "record would assert the sink stayed ideal without evidence",
+                )
+
+    def test_no_compliance_sink_deck_still_carries_an_ideal_sink(self):
+        for manifest, _, text in self._decks_with_compliance_sinks():
+            with self.subTest(manifest.parents[1].name):
+                stray = [
+                    line
+                    for line in text.splitlines()
+                    if line[:1].upper() == "I" and not line.startswith("*")
+                ]
+                self.assertEqual([], stray, "an ideal current-source load survived the fix")
+
+    def test_dropout_vs_load_keeps_its_nodeset_hint(self):
+        """#40's single-instance .op deck is deliberately NOT converted."""
+        tb = json.loads((self.SIM / "dropout-vs-load" / "testbench" / "tb.json").read_text())
+        self.assertIn("nodeset", tb)
+        self.assertIn("vout", {k.lower() for k in tb["nodeset"]})
+
+
+class TestStartupDeckStaysResistivelyLoaded(unittest.TestCase):
+    """#46: sim/startup/ is immune to the artifact because it loads
+    resistively and starts genuinely disabled. Guard both properties."""
+
+    def test_startup_loads_are_resistors_not_current_sinks(self):
+        text = (SIM_DIR / "startup" / "testbench" / "tb_startup.spice").read_text()
+        body = [ln for ln in text.splitlines() if ln and not ln.startswith("*")]
+        self.assertTrue([ln for ln in body if ln.startswith("Rload_")])
+        self.assertEqual([], [ln for ln in body if ln[:1].upper() == "I"])
+
+    def test_startup_enable_ramps_from_a_disabled_state(self):
+        text = (SIM_DIR / "startup" / "testbench" / "tb_startup.spice").read_text()
+        self.assertRegex(text, r"(?m)^Ven EN 0 PULSE\(0 ")
 
 
 if __name__ == "__main__":

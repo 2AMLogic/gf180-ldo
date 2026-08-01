@@ -208,6 +208,90 @@ deck), a single nodeset value tuned to one bias point may still leave some
 grid points on the wrong root, in which case treat that as a genuine open
 problem per `sim/README.md` (see #40) rather than as evidence.
 
+**Compliance-limited load sinks (#46) delete the unphysical root instead of
+biasing the solver away from it.** `nodeset` above is a *hint* — for a
+testbench that sweeps load current or PVT supply inside one deck (a
+`.dc`/`.tran` sweep, or several DUT instances sharing one deck), a single
+nodeset tuned to one bias point was found (#40, #46) to still leave a
+persistent tail of grid points on the wrong root. The root cause: an ideal
+current-sink load (`Iload VOUT 0 DC 50m`) demands its commanded current at
+*any* terminal voltage, including tens of volts below ground — a genuine
+second KCL/KVL-satisfying DC solution in which the pass device is off and
+the sink pulls VOUT deeply negative to draw its current through forward-biased
+substrate junctions in the PDK device models. No real load does that: a real
+load stops sinking current once its terminal drops to (or below) its own
+ground reference. Replacing the ideal sink with a **compliance-limited**
+behavioral sink encodes that physical fact directly into the deck, so the
+unphysical branch has no solution to converge to in the first place — this
+is a stronger fix than a nodeset hint, and (unlike a nodeset) it is
+insensitive to the sweep's or the multi-instance deck's own initial bias:
+
+```spice
+Vilc ILC 0 DC 1m
+Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+Vlmeas NLOAD 0 DC 0
+```
+
+- `Vilc` carries the *commanded* load current as a voltage (1 V == 1 A) —
+  a control node only, so a `.dc`/`.tran` sweep of the load can drive it
+  directly (`dc Vilc 1m 50m 49m`, or a `PWL` for a transient step) in place
+  of sweeping/stepping the old `Iload` source.
+- `Bload` is a behavioral current source that draws `v(ilc)` amperes out of
+  `VOUT` through the ammeter `Vlmeas`, scaled by a smooth compliance factor
+  `f(VOUT) = 0.5*(1 + tanh((VOUT - 0.2) / 0.05))` that is 1 for `VOUT` well
+  above ground and 0 at or below it. At `VOUT >= 1.0 V` (this design's
+  entire useful output range), `1 - f < 1.3e-14` and `df/dVOUT < 5.1e-13`
+  per volt — under `2.6e-14 S` of small-signal conductance even at 50 mA,
+  and smaller by another 14 orders of magnitude at the ~1.8 V the design
+  actually regulates to. The sink is therefore an ideal current sink to well
+  past double precision everywhere the design operates, including in
+  small-signal (AC) analyses, where that residual conductance is negligible
+  compared to the loop's own output impedance. (Pick the `0.2 V` knee and
+  `0.05 V` softness to sit well below the lowest output voltage a deck
+  legitimately visits — including transient undershoot — so the bound never
+  engages on a real operating point.)
+- `Vlmeas` is a zero-volt ammeter: `i(vlmeas)` reads the *actually delivered*
+  current, so a testbench should measure and check it against the commanded
+  value (e.g. `iload_50ma_ma: "i(vlmeas)[1]*1e3"`, checked with a tight
+  `min`/`max` band) rather than assume compliance held. This is what turns
+  "the sink is ideal to 1.3e-14" from a claim into a per-corner-checked fact.
+  Pair it with a `vout`-range check where the deck has one (`dc_vout_v`,
+  `vout_full_v`) so a record asserts *both* that the sink stayed ideal and
+  that the solver landed on the physical root.
+
+Two properties of the fix are worth knowing, both established by hand at
+`tt_27c_3.30v` under #46 and reproducible with `ngspice -b` on a deck under
+`sim/.work/<slug>/<run-id>/`:
+
+- **It is analysis-order independent, which a `nodeset` is not.** ngspice's
+  `ac` command solves its own operating point, so an `.op` listed before it
+  does not steer it. With the old ideal sink, running `ac` cold gives
+  `vdb(vout)@1kHz = +25.2 dB` — a small-signal expansion about the sub-ground
+  root, i.e. PSRR = −25 dB — while `op` *then* `ac` happens to recover
+  `−77.91 dB`. With the compliance-limited sink both orderings give
+  `−77.91 dB`. The unphysical root is gone, not merely avoided by a lucky
+  initial guess.
+- **In a multi-instance deck the artifact is not confined to the instance
+  that has the sink.** `sim/quiescent-current/` runs three `ldo_core`
+  instances in one `.op`; only `_full` has a load. With the old ideal sink
+  `_full` sat at `vout_full = −28.65 V`, *and* the unloaded `_en` instance
+  was also off its physical root (`vout_en = 1.014 V` with `fb = 0.677 V`,
+  nowhere near its 1.2 V reference). All instances share one Newton
+  iteration over one matrix, so a pathological branch drags its deck-mates
+  with it — do not assume a sibling measurement is trustworthy just because
+  its own sub-circuit looks innocent.
+
+This is a **testbench fix, not a harness-mechanism change** — no new
+manifest field or runner code is needed, it is plain SPICE inside the
+netlist fragment, so it composes with everything else `nodeset` and this
+section describe. Reach for a compliance-limited sink instead of (or in
+addition to) a `nodeset` hint whenever a deck's load sink is an ideal
+current sink and the deck sweeps load/PVT/multiple instances in one run; a
+`nodeset` alone remains the right (cheaper) tool for a single-instance
+`.op`-only deck like `sim/dropout-vs-load/`. A deck that loads the DUT
+**resistively** (e.g. `sim/startup/`) has no unphysical branch to begin with
+and needs neither.
+
 **Gotcha: `vdd_val`/`vdd_nom` are `.param`s, not vectors — reference the node
 instead.** They work fine substituted into the *netlist fragment* itself
 (`Vsup VIN 0 DC {vdd_val}`, standard SPICE `.param` substitution), but a bare

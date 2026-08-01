@@ -1,7 +1,7 @@
 {
   "name": "load-regulation",
   "description": "Load regulation across the ratified 1-50 mA window via a single in-run .dc sweep",
-  "claim": "README.md Target specification, 'Load reg (0-50 mA)' row: < 1% (18 mV), counted inside the +/-2% accuracy window rather than in addition to it. Measured 1 mA -> 50 mA (the divider's own ~2 uA preload plus a light 1 mA is used as the low end, per DR-0001's minimum-load statement folded into the ratified Load row).",
+  "claim": "README.md Target specification, 'Load reg (0-50 mA)' row: < 1% (18 mV), counted inside the +/-2% accuracy window rather than in addition to it. Measured 1 mA -> 50 mA (the divider's own ~2 uA preload plus a light 1 mA is used as the low end, per DR-0001's minimum-load statement folded into the ratified Load row). This record supersedes 20260801-002618-b64d60e -- a stale record from an earlier design state (commit b64d60e, before #39's current-limit/shutdown path and #44's soft-start landed) whose own stored per-corner values are physically sane; the append-only rule means that record is not itself in error and is left untouched. Re-running this SAME testbench topology against the CURRENT (post-#39/#44) ldo_core.spice with a cold, all-zero-guess Newton-Raphson start does not reproduce those sane numbers: #40's investigation found 0 of 45 PVT points converging to the physical solution, instead reporting 8.6-58.9 V of 'load regulation' -- root-caused in #40 and fixed here. The deck's ideal 50 mA current sink had a second, unphysical DC solution in which the pass device is off and the sink holds VOUT tens of volts BELOW ground, drawing its current through forward-biased substrate junctions in the PDK device models; a cold Newton-Raphson start reached that solution at most corners, and #40 showed a .nodeset hint alone could not clear it for a swept deck. The sink is now compliance-limited (see tb_load_reg.spice and sim/harness/README.md, 'Compliance-limited load sinks'): it draws its commanded current for VOUT well above ground and nothing at or below ground, which is what any real load does, and which deletes the unphysical solution rather than biasing the solver away from it. The sink is an ideal current sink to within 1.4e-14 relative error at every operating point reported here, and iload_1ma_ma/iload_50ma_ma below measure the actually-delivered current so that claim is checked at every corner instead of assumed. No ratified threshold was changed. This remains a DC/loop-closure measurement only: it does not account for stability (#10) or for the DR-0001 capacitor window.",
   "netlist": "tb_load_reg.spice",
   "dut_netlist": "design/netlist/ldo_core.spice",
   "nominal_supply_v": 3.3,
@@ -9,22 +9,34 @@
   "temperatures_c": [-40, 27, 125],
   "corners": ["mos"],
   "analyses": [
-    "dc Iload 1m 50m 49m"
+    "dc Vilc 1m 50m 49m"
   ],
   "operating_conditions": {
-    "load_current": "1 mA -> 50 mA, single .dc sweep (2 endpoints) per PVT point",
+    "load_current": "1 mA -> 50 mA, single .dc sweep (2 endpoints) per PVT point, commanded through a compliance-limited sink (Vilc/Bload/Vlmeas) and verified by iload_1ma_ma / iload_50ma_ma",
     "output_cap": "1.0 uF nominal + 100 mOhm ESR (DR-0001 window)",
     "enable_state": "enabled (EN tied to VIN at instantiation)"
   },
   "measure": {
     "vout_1ma": "v(vout)[0]",
     "vout_50ma": "v(vout)[1]",
-    "load_reg_mv": "abs(m_vout_1ma - m_vout_50ma)*1e3"
+    "load_reg_mv": "abs(m_vout_1ma - m_vout_50ma)*1e3",
+    "iload_1ma_ma": "i(vlmeas)[0]*1e3",
+    "iload_50ma_ma": "i(vlmeas)[1]*1e3"
   },
   "checks": {
     "load_reg_mv": {
       "max": 18.0,
       "description": "README.md Load reg (0-50 mA) target: < 1% = 18 mV around the 1.8 V nominal output"
+    },
+    "iload_1ma_ma": {
+      "min": 0.999,
+      "max": 1.001,
+      "description": "Harness integrity, not a ratified spec line: the compliance-limited sink must deliver the commanded 1 mA (see Claim) -- catches any point where the compliance bound is actually engaging"
+    },
+    "iload_50ma_ma": {
+      "min": 49.95,
+      "max": 50.05,
+      "description": "Harness integrity, not a ratified spec line: the compliance-limited sink must deliver the commanded 50 mA (see Claim)"
     }
   }
 }

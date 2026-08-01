@@ -26,4 +26,42 @@ Xdut_dis VIN_DIS VOUT_DIS 0 0 LOOP_DIS LOOP_DIS ldo_core
 
 Vamm_full VIN VIN_FULL 0
 Xdut_full VIN_FULL VOUT_FULL VIN_FULL 0 LOOP_FULL LOOP_FULL ldo_core
-Iload_full VOUT_FULL 0 DC 50m
+
+* --- Compliance-limited load sink on the _full instance (#46) -----------
+* Vilc carries the COMMANDED load current as a number of volts (1 V == 1 A).
+* It is a control node only and conducts no circuit current. Bload_full
+* draws that current out of VOUT_FULL through the 0 V ammeter Vlmeas_full,
+* scaled by a compliance factor that is 1 for VOUT_FULL well above ground
+* and 0 at or below it:
+*     f(VOUT_FULL) = 0.5 * (1 + tanh((VOUT_FULL - 0.2) / 0.05))
+* At VOUT_FULL >= 1.0 V, 1 - f < 1.3e-14 (and df/dVOUT_FULL < 5.1e-13 per
+* volt, i.e. under 2.6e-14 S of small-signal conductance at 50 mA), so the
+* sink is an ideal 50 mA current sink to well past double precision -- and
+* the bound tightens by another 14 orders of magnitude at the ~1.8 V this
+* instance actually regulates to. iload_full_ma below
+* measures the delivered current so that stays true rather than being
+* assumed. That measurement matters more here than anywhere else, because
+* iq_full_ua subtracts the injected 50 mA back out: if the sink ever
+* delivered less than it was commanded, the subtraction would silently
+* fabricate a negative Iq.
+*
+* What the bound removes is the *unphysical* branch of an ideal sink. An
+* ideal sink demands its current at any terminal voltage, including tens of
+* volts BELOW ground, where the only thing that can supply it is
+* forward-biased substrate junctions inside the PDK device models. That is
+* a genuine second DC solution of this deck, not a convergence failure, and
+* it is what made iq_full_ua non-physical (#40, #46). Only _full has a load
+* sink, so only _full introduces that second solution -- but all three
+* instances are solved by ONE Newton iteration over ONE matrix, so it drags
+* its deck-mates with it. Hand-checked at tt_27c_3.30v (#46): with the old
+* ideal sink, vout_full = -28.65 V and iq_full_ua = -7.79 uA, and the _en
+* instance is off the physical root too (vout_en = 1.014 V with
+* xdut_en.fb = 0.677 V, nowhere near the 1.2 V VREF it must regulate to,
+* reporting iq_en_ua = 17.44 uA). With this sink the same corner gives
+* vout_full = vout_en = 1.79945 V, xdut_en.fb = 1.19964 V, iq_en_ua = 13.78
+* uA. No real load sinks current from a rail below its own ground, so
+* bounding the sink at 0 V deletes that solution instead of hiding it. See
+* sim/harness/README.md, "Compliance-limited load sinks".
+Vilc ILC 0 DC 50m
+Bload_full VOUT_FULL NLOAD_FULL I = 'v(ilc) * 0.5 * (1 + tanh((v(vout_full) - 0.2) / 0.05))'
+Vlmeas_full NLOAD_FULL 0 DC 0
