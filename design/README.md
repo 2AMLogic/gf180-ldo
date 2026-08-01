@@ -5,13 +5,15 @@ directory is the **source of truth for the block's electrical interface**:
 `sim/` testbenches (and later `layout/` LVS) both consume the netlists
 exported from here.
 
-> **Status (issue #11): hierarchy, pinout, error amplifier, current limit
-> and the full enable path are real.** Issue #8 built this cell with a
-> behavioral placeholder amp and a one-transistor enable stub; #9 replaced
-> the placeholder with `error_amp`, a real two-stage OTA
+> **Status (issue #38): hierarchy, pinout, error amplifier, current limit,
+> soft start and the full enable path are real.** Issue #8 built this cell
+> with a behavioral placeholder amp and a one-transistor enable stub; #9
+> replaced the placeholder with `error_amp`, a real two-stage OTA
 > (`design/error_amp.md`); #11 added `ldo_ilimit` (constant-current limit)
 > and turned the enable stub into a real low-current disabled state by
-> gating every bias branch in the cell. What is still a stand-in: `Vref1`
+> gating every bias branch in the cell; #38 added `ldo_softstart`, the
+> controlled output ramp the ratified Startup row asks for. What is still
+> a stand-in: `Vref1`
 > (an ideal source -- no bandgap block exists) and `Mpass`'s width (2 mm,
 > #8's DC-sanity simplification of the ratified ~4 mm sizing). See "Scope
 > split" below.
@@ -25,7 +27,8 @@ ldo_core                          top level -- issue #8
 │                                 INP INN OUT VDD VSS pinout; the placeholder
 │                                 cell is deleted, its contract is not.
 │                                 Issue #11 APPENDED a sixth pin, EN)
-└── ldo_ilimit                    constant-current limit + enable gating -- #11
+├── ldo_ilimit                    constant-current limit + enable gating -- #11
+└── ldo_softstart                 controlled output ramp at enable -- #38
 ```
 
 ## `ldo_core` pinout (established by issue #8, in netlist port order)
@@ -34,7 +37,7 @@ ldo_core                          top level -- issue #8
 | ------------ | ----- | ------- |
 | `VIN`        | inout | Supply, 3.3 V nominal |
 | `VOUT`       | inout | Regulated output, 1.8 V nominal. Also the current-sense return for `ldo_ilimit` (see below). |
-| `EN`         | in    | Enable, active-high, CMOS-level (0 V / VIN). Gates the pass device, the amplifier's bias and the limit block's bias. |
+| `EN`         | in    | Enable, active-high, CMOS-level (0 V / VIN). Gates the pass device, the amplifier's bias, the limit block's bias and the soft-start block's bias and ramp reset. |
 | `VSS`        | inout | Ground |
 | `ERRAMP_OUT` | out   | Loop-break point, output side (error-amp output) |
 | `PASS_GATE`  | in    | Loop-break point, input side (pass-device gate) |
@@ -84,7 +87,7 @@ gradients.
 
 ### Enable path and the disabled state
 
-`EN` gates three things, all off the same net -- there is no second enable
+`EN` gates four things, all off the same net -- there is no second enable
 path anywhere in the hierarchy:
 
 | Gated by | Device(s) | Effect when `EN` = 0 |
@@ -92,6 +95,7 @@ path anywhere in the hierarchy:
 | `ldo_core` (#8) | `Men` | Pass-device gate clamped to `VIN`; pass device off |
 | `error_amp` (#11) | `Mbias_h`, `Mnb_pd`, `Mn1_pu`, `Mnd_pu` | Amplifier bias branch opened, mirror node grounded, both internal high-impedance nodes parked at `VDD` |
 | `ldo_ilimit` (#11) | `Mben`, `Men_t`, `Men_co`, `Mcoff` | Threshold bias opened, comparator tail opened and its output parked, clamp gate held at `VIN` |
+| `ldo_softstart` (#38) | `Mben_ss`, `Men_t_ss`, `Men_l`, `Mdis_ss`, `Mpark_ss` | Ramp bias branch opened, comparator tail opened, common-source load opened, ramp capacitor shorted to `VSS`, clamp gate parked at `VSS` (clamp **on**, so the pass gate is never ungoverned at the enable edge) |
 
 The disabled output state is **pass device off with no internal active
 discharge** -- nothing pulls `VOUT` down, which is what the ratified
@@ -107,7 +111,7 @@ Before #11 gated the amplifier the same disabled state drew **9.24 uA**
 
 ## Scope split (read before building on top of this)
 
-Three sibling issues share this schematic's territory; each owns a
+Four sibling issues share this schematic's territory; each owns a
 different, non-overlapping piece:
 
 - **#8**: pass device, feedback divider, compensation-ready `VOUT` node,
@@ -130,6 +134,12 @@ different, non-overlapping piece:
   evidence is under `sim/current-limit/records/` and
   `sim/enable-shutdown/records/`, and the one ratified row it cannot meet
   (the +/-10 % current-limit window) is `spec/decision-records/DR-0005`.
+- **#38 (soft start -- landed)**: added `ldo_softstart`, a clamp on
+  `PASS_GATE` that holds `VOUT` to a linear internal ramp until that ramp
+  passes `VREF`. It changes no existing net in `ldo_core` and no other cell.
+  The one ratified clause it cannot meet -- the 3 ms settling window, at the
+  slow end of the ramp's own resistor x capacitor corner spread -- is
+  `spec/decision-records/DR-0006`; the evidence is `sim/soft-start/records/`.
 
 ## Error amplifier (`error_amp`)
 
@@ -201,6 +211,45 @@ Monte Carlo study).
   FET-skew corners that hold resistors typical move it by under +/-1.2 % --
   so it cannot be squeezed into the ratified +/-10 % window without trim.
   See `spec/decision-records/DR-0005` and `sim/current-limit/records/`.
+
+## Soft start (`ldo_softstart`)
+
+- Pinout: `VIN FB PASS_GATE EN VREF VSS`. No new `ldo_core` port, and — like
+  `ldo_ilimit` — it only attaches to nets that already existed.
+- Topology: a linear voltage ramp (`Css` charged by a scaled copy of the same
+  `VREF`/`Rbias` current `ldo_ilimit` uses, with a `VREF`-referenced ceiling
+  device above it) compared against `FB` by a **PMOS**-input pair with a
+  resistor tail, driving a common-source stage and a PMOS clamp that sources
+  current into `PASS_GATE`. Structurally the same clamp idiom as
+  `ldo_ilimit`; electrically it holds `VOUT` at `1.5 × ramp` until the ramp
+  passes `VREF`, then disengages and hands the pass gate back to `error_amp`.
+- **The ramp is NOT applied to `error_amp`'s reference**, which is the obvious
+  way to build a soft start and does not work on this amplifier. `error_amp`'s
+  input pair is NMOS, so with `VOUT` near 0 both of its inputs are under the
+  pair's common-mode floor and the main loop is not closed over the bottom of
+  the ramp; a prototype of that topology free-runs to an 11 mA charging edge
+  in ~2 µs at tt/27 °C before the ramp reference has moved 20 mV. The full
+  argument, with the measurement, is in `design/ldo_softstart.sch`'s notes.
+- **Nothing in the settled loop moves.** `Men`'s gate is still `EN`,
+  `Xerramp`'s `INN` is still `VREF`, and this block's only touch on `FB` is a
+  MOS gate — so the divider ratio, the feedback factor β, #9's offset gain-up
+  and #10's loop gain are unchanged by construction, not by measurement.
+  Its steady-state footprint is `Mclamp_ss` in cutoff on `PASS_GATE` plus
+  `Cm_ss` (3.6 pF, the clamp stage's local compensation) between `PASS_GATE`
+  and a `CLG` node that rests at `VIN`.
+- Measured: peak supply current during a 50 mA startup drops from
+  **153–289 mA** to **≈ 51–121 mA**, and overshoot from up to **+6.5%** to
+  within **+2%** at all but the hottest fast corners. What it does **not**
+  meet is the ratified 3 ms settling window at the slow end of the ramp's own
+  PVT spread, and peak (as opposed to steady) `dVout/dt` during two short
+  transients per startup. Both are recorded, with numbers, in
+  `spec/decision-records/DR-0006` and `sim/soft-start/records/`.
+- Added quiescent current: **+1.7 µA** enabled (24.1 µA vs 22.4 µA at the
+  binding ff/125 °C/3.63 V corner, against the ratified < 30 µA) and
+  **+1 nA** disabled (0.2037 µA vs 0.2026 µA, against < 3 µA). There is no
+  resistor to a rail anywhere in the block: the common-source stage's load
+  resistor sits behind an `EN`-gated PMOS switch precisely because this
+  block's disabled state parks its clamp gate **low**.
 
 ## Pass device sizing (a deliberate simplification for this issue)
 

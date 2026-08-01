@@ -1,0 +1,145 @@
+* soft-start -- controlled output ramp at enable, for ldo_core with
+* Xsoftstart (issue #38).
+*
+* Substantiates the ratified "Startup" row of README.md's target
+* specification, clause by clause:
+*
+*   controlled ramp <= 1 V/ms      -> m_slope_vpms (the ramp's own rate, taken
+*                                     between two fixed output voltages) and
+*                                     m_dvout_max (the largest instantaneous
+*                                     dVout/dt anywhere in the enable window,
+*                                     which includes the two transients the
+*                                     steady ramp rate does NOT cover: the
+*                                     loop acquiring at the bottom of the ramp
+*                                     and the hand-over to the main loop at
+*                                     the top)
+*   inrush <= 5 mA                 -> m_icap_peak_ma, measured with an ammeter
+*                                     IN SERIES WITH C_out. That is the
+*                                     physically correct inrush quantity:
+*                                     total supply current also carries the
+*                                     load current, which at the rated 50 mA
+*                                     load is 10x the inrush bound by itself
+*                                     and would make the clause unmeasurable.
+*   monotonic into any load 0-50mA -> m_dvout_min (a negative excursion during
+*                                     the ramp is a non-monotonic startup) and
+*                                     m_vout_max_en vs m_vout_settled
+*   inside +/-2% within 3 ms       -> m_t_startup (enable -> 1.764 V)
+*   overshoot <= +2%               -> m_vout_max_en (bound 1.836 V)
+*   startup at full rated load
+*     stays >= 10 mA below the
+*     current limit                -> m_isup_peak_ma against the 62.0 mA
+*                                     worst-corner limit measured in
+*                                     sim/current-limit/records/
+*
+* WHY THIS IS A SEPARATE EXPERIMENT FROM sim/enable-shutdown
+*
+* sim/enable-shutdown owns the Enable/shutdown row: the settled disabled
+* state, shutdown Iq and Vin->Vout leakage, all of which are DC operating
+* points. It also carries a startup transient, but it was written (issue #11)
+* for a design with NO soft start, so its enable window is 400 us long -- two
+* orders of magnitude shorter than the ramp this bench exists to measure.
+* Widening that window is done there too (so its own startup numbers stay
+* honest), but the per-clause startup measurements, the in-series capacitor
+* ammeter and the DR-0001 capacitor-window axis live here, in one experiment
+* whose whole subject is the Startup row.
+*
+* Template: run.sh substitutes the @TOKENS@ (PDK paths, corner sections,
+* temperature, supply, output network, load) and runs the result with
+* `ngspice -b`.
+
+.include "@DESIGN_INCLUDE@"
+.lib "@MODEL_LIB@" @MOS_CORNER@
+.lib "@MODEL_LIB@" @RES_CORNER@
+.lib "@MODEL_LIB@" @BJT_CORNER@
+.lib "@MODEL_LIB@" @DIODE_CORNER@
+.lib "@MODEL_LIB@" @MOSCAP_CORNER@
+.lib "@MODEL_LIB@" @MIMCAP_CORNER@
+
+.temp @TEMP_C@
+
+.include "@LDO_NETLIST@"
+
+* --- stimulus ------------------------------------------------------------
+Vin VIN 0 DC @VIN_V@
+* EN: low until 100 us, high until 8 ms, low thereafter (1 us edges). The
+* enable window has to outlast the slowest corner's ramp (ss / -40 C, where
+* the poly resistor and the mim capacitor are both at their slow corner) with
+* room to settle afterwards.
+Ven EN 0 DC 0 PWL(0 0 100u 0 101u @VIN_V@ 8m @VIN_V@ 8.001m 0)
+
+* --- DUT -----------------------------------------------------------------
+* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE
+* ERRAMP_OUT and PASS_GATE are tied together here (plain closed loop) -- see
+* design/README.md for why they are separate ports.
+Xdut VIN VOUT EN 0 EOUT PG ldo_core
+Vloop PG EOUT DC 0
+
+* --- output network ------------------------------------------------------
+* C_eff and ESR are swept over DR-0001's ratified window (0.33-4.7 uF,
+* 0-500 mOhm). Vcmeas is a 0 V source in series with C_out: it is
+* electrically a wire and it meters the capacitor's own charging current,
+* which is the inrush the Startup row bounds.
+Resr VOUT n_esr @ESR_OHM@
+Cout n_esr n_cap @COUT@
+Vcmeas n_cap 0 DC 0
+
+* --- load ----------------------------------------------------------------
+* Resistive, not an ideal current sink -- see sim/current-limit/testbench for
+* why an ideal sink makes the operating-point solve on this circuit
+* ill-conditioned. 36 ohm ~ 50 mA at 1.8 V (full rated load); 1 Gohm is the
+* ratified 0 mA "no external load" case, where the feedback divider's ~2 uA
+* is the only preload.
+Rload VOUT LN @RLOAD_OHM@
+Vlmeas LN 0 DC 0
+
+* Loosened from the ngspice defaults on the two tolerances that dominate a
+* 9 ms transient's step count, and left at the default reltol. abstol is
+* still 10 pA and vntol still 10 uV, i.e. four orders of magnitude below the
+* smallest quantity this bench reports (a ~2 nA ramp current appears only via
+* its integral, the ramp slope).
+.options reltol=1e-3 vntol=1e-5 abstol=1e-11 chgtol=1e-14
+
+.control
+set noaskquit
+
+tran 1u 9m
+let icap_ma = i(vcmeas)*1e3
+let ivin_ma = -i(vin)*1e3
+let iload_ma = i(vlmeas)*1e3
+* deriv() over the transient's own (adaptive) time vector, scaled to V/ms.
+let dvout_vpms = deriv(v(vout))*1e-3
+
+* --- the ramp's own rate -------------------------------------------------
+* Taken between two fixed output voltages well inside the ramp, so it is the
+* steady ramp rate and not contaminated by either end transient. run.sh turns
+* the pair into 1.0 V / (t14 - t04).
+meas tran m_t_v04 WHEN v(vout)=0.4 RISE=1
+meas tran m_t_v14 WHEN v(vout)=1.4 RISE=1
+
+* --- the clauses ---------------------------------------------------------
+meas tran m_t_startup TRIG v(en) VAL=1.4 RISE=1 TARG v(vout) VAL=1.764 RISE=1
+meas tran m_vout_max_en MAX v(vout) FROM=101u TO=8m
+meas tran m_vout_settled FIND v(vout) AT=7.9m
+meas tran m_icap_peak_ma MAX icap_ma FROM=100u TO=8m
+meas tran m_isup_peak_ma MAX ivin_ma FROM=100u TO=8m
+meas tran m_dvout_max MAX dvout_vpms FROM=105u TO=8m
+meas tran m_dvout_min MIN dvout_vpms FROM=105u TO=8m
+
+* --- hand-over sanity ----------------------------------------------------
+* SSR must finish ABOVE VREF (1.2 V) and CLG must finish at VIN, or the
+* soft-start clamp never disengaged and is still fighting the main loop.
+meas tran m_ssr_end FIND v(xdut.xsoftstart.ssr) AT=7.9m
+meas tran m_clg_end FIND v(xdut.xsoftstart.clg) AT=7.9m
+* Residual ripple once everything has settled: distinguishes "settled" from
+* "still ringing slowly".
+meas tran m_vout_pp_late PP v(vout) FROM=7.5m TO=7.9m
+
+* --- disabled tail -------------------------------------------------------
+* The output must collapse and stay collapsed, and the soft-start ramp
+* capacitor must be reset so the NEXT enable starts from 0 V again.
+meas tran m_vout_off_tran FIND v(vout) AT=8.9m
+meas tran m_pg_off_tran FIND v(pg) AT=8.9m
+meas tran m_ssr_off_tran FIND v(xdut.xsoftstart.ssr) AT=8.9m
+meas tran m_clg_off_tran FIND v(xdut.xsoftstart.clg) AT=8.9m
+.endc
+.end

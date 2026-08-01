@@ -192,7 +192,8 @@ print()
 flag("shutdown Iq above the ratified 3 uA:", lambda v: v["m_iq_off_ua"] > 3.0)
 flag("enabled Iq above the ratified 30 uA:", lambda v: v["m_iq_en_ua"] > 30.0)
 flag("Vin->Vout leakage above 1 uA:", lambda v: abs(v["m_ileak_vin_vout_ua"]) > 1.0)
-flag("startup failed to reach 1.764 V:", lambda v: not (0 < v["m_t_startup"] < 4e-4))
+flag("startup failed to reach 1.764 V inside the enable window:",
+     lambda v: not (0 < v["m_t_startup"] < 8e-3))
 flag("settled output outside +/-2% while enabled:",
      lambda v: not (1.764 <= v["m_vout_settled"] <= 1.836))
 flag("regulation dipped below 1.764 V after settling:",
