@@ -1,7 +1,7 @@
 {
   "name": "line-regulation",
   "description": "Line regulation over 2.97-3.63V at 1 mA and 50 mA via a nested in-run .dc sweep",
-  "claim": "README.md Target specification, 'Line reg' row (DR-0004 amendment A5): < 5 mV/V over Vin 2.97-3.63 V, at 1 mA and at 50 mA.",
+  "claim": "README.md Target specification, 'Line reg' row (DR-0004 amendment A5): < 5 mV/V over Vin 2.97-3.63 V, at 1 mA and at 50 mA. This record supersedes 20260801-002659-b64d60e -- a stale record from an earlier design state (commit b64d60e, before #39's current-limit/shutdown path and #44's soft-start landed) whose own stored per-corner values are physically sane; the append-only rule means that record is not itself in error and is left untouched. Re-running this SAME testbench topology against the CURRENT (post-#39/#44) ldo_core.spice with a cold, all-zero-guess Newton-Raphson start does not reproduce those sane numbers: #40's investigation found non-physical line-regulation numbers at most PVT points -- root-caused in #40 and fixed here. The deck's ideal current sink had a second, unphysical DC solution in which the pass device is off and the sink holds VOUT tens of volts BELOW ground, drawing its current through forward-biased substrate junctions in the PDK device models; a cold Newton-Raphson start reached that solution at most corners, and #40 showed a .nodeset hint alone could not clear it for a swept deck. The sink is now compliance-limited (see tb_line_reg.spice and sim/harness/README.md, 'Compliance-limited load sinks'): it draws its commanded current for VOUT well above ground and nothing at or below ground, which is what any real load does, and which deletes the unphysical solution rather than biasing the solver away from it. The sink is an ideal current sink to within 1.4e-14 relative error at every operating point reported here, and iload_err_max_ua below measures the worst deviation of the delivered current from the commanded current over all four swept points, so that claim is checked at every corner instead of assumed. No ratified threshold was changed.",
   "netlist": "tb_line_reg.spice",
   "dut_netlist": "design/netlist/ldo_core.spice",
   "nominal_supply_v": 3.3,
@@ -9,10 +9,10 @@
   "temperatures_c": [-40, 27, 125],
   "corners": ["mos"],
   "analyses": [
-    "dc Vsup 2.97 3.63 0.66 Iload 1m 50m 49m"
+    "dc Vsup 2.97 3.63 0.66 Vilc 1m 50m 49m"
   ],
   "operating_conditions": {
-    "load_current": "1 mA and 50 mA (nested .dc sweep; see measure fields for the 4 combinations)",
+    "load_current": "1 mA and 50 mA (nested .dc sweep; see measure fields for the 4 combinations), commanded through a compliance-limited sink (Vilc/Bload/Vlmeas) and verified by iload_err_max_ua",
     "output_cap": "1.0 uF nominal + 100 mOhm ESR (DR-0001 window)",
     "enable_state": "enabled (EN tied to VIN at instantiation, tracks the Vsup sweep)"
   },
@@ -22,7 +22,8 @@
     "vout_50ma_lo": "v(vout)[2]",
     "vout_50ma_hi": "v(vout)[3]",
     "line_reg_1ma_mvpv": "abs(m_vout_1ma_hi - m_vout_1ma_lo)/0.66*1e3",
-    "line_reg_50ma_mvpv": "abs(m_vout_50ma_hi - m_vout_50ma_lo)/0.66*1e3"
+    "line_reg_50ma_mvpv": "abs(m_vout_50ma_hi - m_vout_50ma_lo)/0.66*1e3",
+    "iload_err_max_ua": "maximum(abs(i(vlmeas) - v(ilc)))*1e6"
   },
   "checks": {
     "line_reg_1ma_mvpv": {
@@ -32,6 +33,10 @@
     "line_reg_50ma_mvpv": {
       "max": 5.0,
       "description": "README.md Line reg target at 50 mA"
+    },
+    "iload_err_max_ua": {
+      "max": 1.0,
+      "description": "Harness integrity, not a ratified spec line: worst deviation of delivered from commanded load current over all four swept points must be under 1 uA (see Claim) -- catches any point where the compliance bound is actually engaging"
     }
   }
 }

@@ -1,22 +1,30 @@
 {
   "name": "load-transient",
   "description": "Load-transient step response (primary, ratified) plus a supplementary line-transient step, one tran deck",
-  "claim": "README.md Target specification, 'Load transient' row (DR-0004 amendment A4): 1<->50 mA step, 1us edges, C_eff=0.33uF (DR-0001's hardest stability-window corner) + 0-500 mOhm ESR: peak excursion <=150 mV (100 mV stretch), recovery to within +/-1% (18 mV) in <=20 us. This deck reports peak excursion (both directions); a precise .meas-based recovery-time number is intentionally NOT emitted here -- the placeholder error amp the committed records were taken against (issue #9, since landed by PR #35, which replaced the placeholder) is a near-ideal, effectively infinite-bandwidth behavioral source, so the observed excursion never leaves the +/-1% band and an ngspice '.meas WHEN' crossing search has no crossing to find (fails hard rather than reporting a trivial 0), which would make every corner ERROR for a measurement-plumbing reason rather than a real spec finding. Deferred to a future record once #9/#10 land a bandwidth-limited amp with a real settling transient to measure. The deck also runs a supplementary Vin step (+/-10% around this PVT point's own vdd_val) after the load step settles, exercising dynamic line response -- this is NOT a distinct ratified spec row (the ratified 'Line reg' row is DC-only, see sim/line-regulation/); reported for completeness per the original issue #12 body's 'load-transient and line-transient response' wording, and excluded from this record's pass/fail checks so it cannot be mistaken for a ratified verdict.",
+  "claim": "README.md Target specification, 'Load transient' row (DR-0004 amendment A4): 1<->50 mA step, 1us edges, C_eff=0.33uF (DR-0001's hardest stability-window corner) + 0-500 mOhm ESR: peak excursion <=150 mV (100 mV stretch), recovery to within +/-1% (18 mV) in <=20 us. This deck reports peak excursion (both directions); a precise .meas-based recovery-time number is intentionally NOT emitted here to keep this record's scope to fixing the convergence artifact below -- adding one is a follow-up refinement, not required here. (A prior claim on this field asserted the excursion 'never leaves the +/-1% band', reasoning that the amp landed by #35 was a near-ideal, effectively-infinite-bandwidth source; this record's own Result below falsifies that for several corners -- see the non-physical-solution paragraph -- so that reasoning is retracted rather than repeated.) The deck also runs a supplementary Vin step (+/-10% around this PVT point's own vdd_val) after the load step settles, exercising dynamic line response -- this is NOT a distinct ratified spec row (the ratified 'Line reg' row is DC-only, see sim/line-regulation/); reported for completeness per the original issue #12 body's 'load-transient and line-transient response' wording, and excluded from this record's pass/fail checks so it cannot be mistaken for a ratified verdict. This record supersedes 20260801-002806-b64d60e -- a stale record from an earlier design state (commit b64d60e, before #39's current-limit/shutdown path and #44's soft-start landed) whose own stored per-corner values are physically sane; the append-only rule means that record is not itself in error and is left untouched. Re-running this SAME testbench topology against the CURRENT (post-#39/#44) ldo_core.spice with a cold, all-zero-guess Newton-Raphson start does not reproduce those sane numbers: #40's investigation found non-physical excursions at most PVT points for the t=0 operating point -- root-caused in #40 and fixed here. The deck's ideal current sink had a second, unphysical solution for the t=0 operating point in which the pass device is off and the sink holds VOUT tens of volts BELOW ground, drawing its current through forward-biased substrate junctions in the PDK device models; a cold Newton-Raphson start reached that solution at most corners and poisoned the whole transient. The sink is now compliance-limited (see tb_load_transient.spice and sim/harness/README.md, 'Compliance-limited load sinks'): it draws its commanded current for VOUT well above ground and nothing at or below ground, which is what any real load does, and which deletes the unphysical solution rather than biasing the solver away from it. iload_err_max_ua below takes the worst deviation of the delivered load current from the commanded load current over EVERY timepoint of the 400 us run and checks it under 1 uA, so 'the compliance bound never engaged' is a directly measured per-corner fact here rather than an assumption or a voltage-envelope proxy. vout_min_global_v reports how deep the excursion actually went; its 0.5 V floor is derived from the compliance factor itself (1 - f = 6.2e-6 there, i.e. 0.31 uA at 50 mA), not picked as a round number. For scale, the deepest point any corner reaches is 0.984 V at ss_-40c_2.97v, where the sink is still ideal to 2.4e-14 (1.2e-9 uA at 50 mA), and iload_plateau_ma below measures the actually-delivered current in the 50 mA window so that claim is checked at every corner instead of assumed. No ratified threshold was changed. With the convergence artifact fixed, the numbers below are physical -- and they are mostly FAILs: 41 of 45 PVT points fail the ratified 150 mV peak-excursion clause (39 on undershoot, worst 448.3 mV at fs_-40c_2.97v; 24 on overshoot, worst 1152.9 mV at ss_-40c_3.30v). Only tt_27c_3.63v, ff_-40c_3.63v, fs_-40c_3.63v and sf_-40c_3.63v pass. This is a real design finding, not a harness artifact: it tracks the main-loop compensation marginality at the DR-0001 0.33 uF stability-window floor this deck deliberately runs at, already recorded in sim/loop-stability/ (near-zero or negative phase margin at many of the same corners) and tracked by the still-open #42. No loop change is attempted here, per #46's own non-goal against folding a design change in silently; this record is the load-transient evidence #42 will be measured against.",
   "netlist": "tb_load_transient.spice",
   "dut_netlist": "design/netlist/ldo_core.spice",
   "nominal_supply_v": 3.3,
-  "supply_tolerance": 0.10,
-  "temperatures_c": [-40, 27, 125],
-  "corners": ["mos"],
+  "supply_tolerance": 0.1,
+  "temperatures_c": [
+    -40,
+    27,
+    125
+  ],
+  "corners": [
+    "mos"
+  ],
   "analyses": [
     "tran 20n 400u",
     "meas tran vmin_load MIN v(vout) FROM=51u TO=71u",
     "meas tran vmax_load MAX v(vout) FROM=151u TO=171u",
     "meas tran vmin_line MIN v(vout) FROM=202u TO=222u",
-    "meas tran vmax_line MAX v(vout) FROM=302u TO=322u"
+    "meas tran vmax_line MAX v(vout) FROM=302u TO=322u",
+    "meas tran iload_plateau AVG i(vlmeas) FROM=100u TO=140u",
+    "meas tran vout_min_global MIN v(vout) FROM=0 TO=400u"
   ],
   "operating_conditions": {
-    "load_current": "1 mA <-> 50 mA step at t=50us (1us edges); held between 51-150us then reverted",
+    "load_current": "1 mA <-> 50 mA step at t=50us (1us edges); held between 51-150us then reverted. Commanded through a compliance-limited sink (Vilc/Bload/Vlmeas) and verified by iload_plateau_ma",
     "output_cap": "0.33 uF (DR-0001 stability-window floor, the hardest corner for this row) + 100 mOhm ESR",
     "enable_state": "enabled (EN tied to VIN at instantiation)",
     "supplementary_line_step": "Vin steps to 0.9x/1.1x this PVT point's own vdd_val at t=200us/300us (Iload held at 1mA) -- NOT a ratified spec row, see Claim"
@@ -25,7 +33,10 @@
     "undershoot_mv": "(1.8 - vmin_load)*1e3",
     "overshoot_mv": "(vmax_load - 1.8)*1e3",
     "line_step_dev_lo_mv": "(1.8 - vmin_line)*1e3",
-    "line_step_dev_hi_mv": "(vmax_line - 1.8)*1e3"
+    "line_step_dev_hi_mv": "(vmax_line - 1.8)*1e3",
+    "iload_plateau_ma": "iload_plateau*1e3",
+    "vout_min_global_v": "vout_min_global",
+    "iload_err_max_ua": "maximum(abs(i(vlmeas) - v(ilc)))*1e6"
   },
   "checks": {
     "undershoot_mv": {
@@ -35,6 +46,19 @@
     "overshoot_mv": {
       "max": 150.0,
       "description": "README.md Load transient target, overshoot direction"
+    },
+    "iload_plateau_ma": {
+      "min": 49.95,
+      "max": 50.05,
+      "description": "Harness integrity, not a ratified spec line: the compliance-limited sink must deliver the commanded 50 mA across the load-step plateau (see Claim) -- catches any point where the compliance bound is actually engaging"
+    },
+    "vout_min_global_v": {
+      "min": 0.5,
+      "description": "Harness integrity, not a ratified spec line: the lowest v(vout) anywhere in the 400 us run. The floor is 0.5 V because that is where the compliance factor first deviates from ideal at the ppm level (1 - f = 6.2e-6, i.e. 0.31 uA at 50 mA); above it the sink is ideal to far better than the 1 uA iload_err_max_ua band. Reported primarily as evidence of how deep the excursion actually went (see Claim)"
+    },
+    "iload_err_max_ua": {
+      "max": 1.0,
+      "description": "Harness integrity, not a ratified spec line: the worst deviation of the delivered load current from the commanded load current, taken over EVERY timepoint of the 400 us run, must stay under 1 uA. This is the direct measurement of 'the compliance bound never engaged' -- it needs no assumption about how deep VOUT went (see Claim)"
     }
   }
 }

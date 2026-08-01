@@ -2,7 +2,7 @@
 *
 * Line regulation over the ratified 2.97-3.63 V window, at 1 mA and 50 mA
 * (README.md Target specification, "Line reg" row; DR-0004 amendment A5).
-* A single in-run nested .dc sweep (Vsup outer x Iload inner) captures all
+* A single in-run nested .dc sweep (Vilc outer x Vsup inner) captures all
 * four combinations -- (2.97V,1mA) (3.63V,1mA) (2.97V,50mA) (3.63V,50mA) --
 * within one ngspice invocation per PVT (process x temp) point. See
 * tb.json's "analyses" field and its --subset-reason: the harness's usual
@@ -15,6 +15,34 @@
 Vsup VIN 0 DC {vdd_val}
 Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
 
-Iload VOUT 0 DC 1m
+* --- Compliance-limited load sink (#46) --------------------------------
+* Vilc carries the COMMANDED load current as a number of volts (1 V == 1 A).
+* It is a control node only -- it conducts no circuit current -- which is
+* what lets .dc sweep the load with a voltage source. Bload draws that
+* current out of VOUT through the 0 V ammeter Vlmeas, scaled by a
+* compliance factor that is 1 for VOUT well above ground and 0 at or below
+* it:
+*     f(VOUT) = 0.5 * (1 + tanh((VOUT - 0.2) / 0.05))
+* At VOUT >= 1.0 V, 1 - f < 1.3e-14 and df/dVOUT < 5.1e-13 per volt (so the
+* sink's own small-signal conductance is under 2.6e-14 S even at 50 mA), and
+* at the ~1.8 V this design actually regulates to both are smaller by
+* another 14 orders of magnitude. At every operating point this experiment
+* reports, the sink is therefore an ideal current sink to well past double
+* precision -- and i(Vlmeas) is measured and checked against the commanded
+* current so that stays true rather than being assumed.
+*
+* What the bound removes is the *unphysical* branch of an ideal sink. An
+* ideal sink demands its current at any terminal voltage, including tens of
+* volts BELOW ground, where the only thing that can supply it is
+* forward-biased substrate junctions inside the PDK device models. That is
+* a genuine second DC solution of this deck, not a convergence failure, and
+* a cold Newton-Raphson start reached it at most PVT points (#40, #46). No
+* real load sinks current from a rail below its own ground, so bounding the
+* sink at 0 V deletes that solution instead of hiding it. See
+* sim/harness/README.md, "Compliance-limited load sinks".
+Vilc ILC 0 DC 1m
+Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+Vlmeas NLOAD 0 DC 0
+
 Resr VOUT n_esr 0.1
 Cout n_esr 0 1u
