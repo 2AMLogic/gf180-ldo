@@ -92,6 +92,18 @@ class Testbench:
     params: dict[str, str | float] = field(default_factory=dict)
     checks: dict[str, dict] = field(default_factory=dict)
     options: tuple[str, ...] = ()
+    #: Optional ``.nodeset`` bias hints, e.g. ``{"vout": "1.8", "loop": "1.0"}``
+    #: -> rendered as ``.nodeset v(vout)=1.8 v(loop)=1.0``. A closed-loop LDO
+    #: driven from an all-zero initial guess has more than one op-point
+    #: solution that satisfies KCL/KVL to ngspice's convergence tolerance --
+    #: at full load, plain Newton-Raphson can converge "successfully" onto a
+    #: non-physical fixed point (e.g. Vout pinned tens of volts below ground)
+    #: instead of falling back to gmin/source stepping, because it never
+    #: fails to converge in the first place. A nodeset biases the initial
+    #: guess into the physical solution's basin of attraction without
+    #: constraining the converged answer -- see #40's investigation writeup
+    #: (sim/dropout-vs-load/records/ Claim field) for the reproduction.
+    nodeset: dict[str, str | float] = field(default_factory=dict)
     #: LDO-specific extension to sim/README.md's evidence record (a bandgap
     #: has no load pin and does not need this): load current / output cap
     #: / enable state, or any other operating-point property this claim
@@ -277,6 +289,7 @@ def load(directory: str | Path) -> Testbench:
         params={k: v for k, v in manifest.get("params", {}).items()},
         checks=dict(manifest.get("checks", {})),
         options=tuple(manifest.get("options", ())),
+        nodeset={str(k): manifest["nodeset"][k] for k in manifest.get("nodeset", {})},
         operating_conditions={
             str(k): str(v) for k, v in manifest.get("operating_conditions", {}).items()
         },

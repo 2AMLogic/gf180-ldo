@@ -72,6 +72,9 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
     ]
     for option in tb.options:
         lines.append(f".options {option}")
+    if tb.nodeset:
+        terms = " ".join(f"v({node})={value}" for node, value in tb.nodeset.items())
+        lines.append(f".nodeset {terms}")
 
     # One harness-owned include block for every design netlist: the manifest's
     # 'dut_netlist' (the designated DUT, first) followed by its 'includes'.

@@ -151,6 +151,7 @@ distinct claim under test, kebab-case.
   "analyses": ["op"],
   "params": {"iload": "50m"},
   "options": ["reltol=1e-5"],
+  "nodeset": {"vout": "1.8", "loop": "0.7"},
   "operating_conditions": {
     "load_current": "50mA (full-load dropout point)",
     "output_cap": "1.0uF, ESR=100mOhm (nominal)",
@@ -187,6 +188,25 @@ sha256, each behind its own header) into the record's single netlist snapshot.
 Omit both for a testbench that instantiates only PDK primitives (e.g.
 smoke-bias); omit just `dut_netlist` for a testbench that drives a design cell
 without designating a DUT of its own (e.g. amp-openloop).
+
+**`nodeset` (#40) biases the initial DC operating-point guess, without
+constraining the converged answer.** A closed, high-gain feedback loop driven
+from ngspice's default all-zero initial guess can have more than one
+KCL/KVL-satisfying fixed point — plain Newton-Raphson can converge
+"successfully" onto a non-physical one (e.g. the pass device latched off, with
+an ideal current-sink load forcing the output rail to tens of volts to satisfy
+KCL through parasitic leakage) instead of falling back to gmin/source
+stepping, because it never fails to converge in the first place. `nodeset`
+renders as `.nodeset v(<node>)=<value> ...`; pick values from a corner that
+already converges to the physical solution (e.g. by adding a `print
+v(<node>)` to a generated deck under `sim/.work/<slug>/<run-id>/` and
+re-running it by hand with `ngspice -b`). It is a hint, not a constraint — it
+only affects which basin of attraction the solver starts in. It is not a
+universal fix: for a testbench that also sweeps load current or PVT supply
+inside one deck (a `.dc`/`.tran` sweep, or several DUT instances sharing one
+deck), a single nodeset value tuned to one bias point may still leave some
+grid points on the wrong root, in which case treat that as a genuine open
+problem per `sim/README.md` (see #40) rather than as evidence.
 
 **Gotcha: `vdd_val`/`vdd_nom` are `.param`s, not vectors — reference the node
 instead.** They work fine substituted into the *netlist fragment* itself

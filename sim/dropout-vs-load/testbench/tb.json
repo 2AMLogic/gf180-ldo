@@ -1,7 +1,7 @@
 {
   "name": "dropout-vs-load",
   "description": "Dropout voltage at the 50 mA full-load spec point, binding Vin=2.10V (DR-0004 note 4)",
-  "claim": "README.md Target specification, 'Dropout @ 50 mA' row (< 300 mV target, < 200 mV stretch); binding test point Vin=2.10V per DR-0004 note 4. The records committed under records/ were taken against the issue-#8 netlist (placeholder error amp, 2 mm pass FET -- design/README.md documented that sizing as chosen only for issue #8's DC-sanity loop-closure test, not the full spec); PR #35 has since replaced that placeholder with the real error amp (#9), so those numbers describe a superseded DUT and this row is not evidence for the current design until a fresh record supersedes them -- a --no-write re-run against the post-#35 ldo_core does not currently hold this margin. This is also a DC/loop-closure-only measurement: it does not account for stability (#10, open), so a margin this close to the 300 mV line is never final sign-off.",
+  "claim": "README.md Target specification, 'Dropout @ 50 mA' row (< 300 mV target, < 200 mV stretch); binding test point Vin=2.10V per DR-0004 note 4. The prior record (20260801-002525-b64d60e, from #37) was taken against the amp landed by #35, before #39's constant-current-limit and enable/shutdown additions changed the DUT again; #40 supersedes it against the current netlist. This is also a DC/loop-closure-only measurement: it does not account for stability (#10, open), so a margin this close to the 300 mV line is never final sign-off. #40 investigation note: a cold-start Newton-Raphson op-point solve of this closed, high-gain loop at full load has more than one KCL/KVL-satisfying fixed point -- with an all-zero initial guess, several corners converged 'successfully' onto a non-physical point where the PMOS pass device is off and the 50 mA ideal current sink has no DC path (Cout blocks DC) except through parasitic junction leakage, forcing Vout to tens of volts negative to satisfy KCL against that leakage's exponential I-V curve. This is a harness convergence artifact, not a DC design bug (confirmed by inspecting the op-point node voltages directly with 'print all'/manual node prints). The 'nodeset' hint below (Vout=1.8V, the pass-gate/loop node=0.7V, both read off a corner that already converged physically) reliably biases every corner in this experiment's grid into the physical solution's basin of attraction -- verified 15/15 points converge to a consistent ~300 mV reading before this record was minted. The same artifact was found in load-regulation, line-regulation, load-transient, psrr-vs-freq, and quiescent-current's full-load sub-measurement, but a nodeset hint did not reliably clear it for those (multi-corner-times-load-sweep, or multi-instance-per-deck) experiments within this issue's investigation -- see #40 for the follow-up this leaves open.",
   "netlist": "tb_dropout.spice",
   "dut_netlist": "design/netlist/ldo_core.spice",
   "nominal_supply_v": 2.10,
@@ -22,5 +22,9 @@
       "max": 300.0,
       "description": "README.md Dropout @ 50 mA target (< 300 mV); the < 200 mV stretch bound is not separately gated"
     }
+  },
+  "nodeset": {
+    "vout": "1.8",
+    "loop": "0.7"
   }
 }
