@@ -7,11 +7,11 @@ each split.
 
 Evidence for every measured number here:
 
-- `sim/amp-openloop/records/` — gain, UGBW, phase margin, systematic offset,
+- `sim/amp-openloop/records/20260801-002830-712cb87.md` — gain, UGBW, phase margin, systematic offset,
   Iq, headroom and the pass-gate drive extremes, 81 PVT points.
-- `sim/psrr-dc/records/` — supply-to-output coupling `G`, differential gain
+- `sim/psrr-dc/records/20260801-002908-712cb87.md` — supply-to-output coupling `G`, differential gain
   `A`, and the projected LDO PSRR, 81 PVT points.
-- `sim/op-point-sanity/records/` — `ldo_core` closing the loop at 1.8 V with
+- `sim/op-point-sanity/records/20260801-002928-712cb87.md` — `ldo_core` closing the loop at 1.8 V with
   this amplifier in place of #8's behavioral placeholder.
 
 Nothing below is a closed-loop claim. Loop stability is #10, the full
@@ -356,7 +356,7 @@ is `M2N`'s current.
 | Issue | What to take |
 |---|---|
 | **#10 stability** | §6 in full: UGBW, PM, phase at 1 kHz, slew, gate load, and the "needs an ESR-independent zero" statement |
-| **#11 current limit / enable** | **The 5-port interface has no enable pin.** This cell draws its bias whenever VDD is present (≈ 9 µA); `ldo_core`'s `Men` clamp turns the *pass device* off but not the amplifier. `sim/op-point-sanity/records/` measures the disabled state directly. The ratified "shutdown Iq < 3 µA" row therefore cannot be met without either gating this cell's supply or renegotiating the pinout to add EN — an interface decision, so it is flagged here, not made here |
+| **#11 current limit / enable** | **The 5-port interface has no enable pin.** This cell draws its bias whenever VDD is present (≈ 9 µA); `ldo_core`'s `Men` clamp turns the *pass device* off but not the amplifier. `sim/op-point-sanity/records/20260801-002928-712cb87.md` measures the disabled state directly (9.24 uA). The ratified "shutdown Iq < 3 µA" row therefore cannot be met without either gating this cell's supply or renegotiating the pinout to add EN — an interface decision, so it is flagged here, not made here |
 | **#12 testbench suite** | PSRR at 100 kHz is a closed-loop claim (§4); load/line regulation ride on the 110 dB DC gain; the falling-slew number above bounds the transient |
 | **#13 Monte Carlo mismatch** | §3's split: verify 3σ ≤ 2.33 mV input-referred for the amplifier. Do **not** cite a PDK Monte Carlo for the divider term — §3.2 |
 | **#15 floorplan / matching** | 360 µm² of common-centroid input-pair area and 64 µm² mirror devices are budgeted requirements, not suggestions; the divider needs ≥ 95/191 µm² unit-resistor legs for §3.2's number |
