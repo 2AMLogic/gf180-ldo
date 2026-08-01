@@ -37,11 +37,17 @@ sim/loop-stability/
 `--explore` is DR-0001's recommended first pass: sweep `I_load × C_eff × ESR`
 at `tt/27 °C/3.3 V` to find the worst triple before committing to the full
 grid. The full run is 45 ngspice invocations covering 3240 loop-gain points
-(the load/cap/ESR axes are swept *inside* each deck), about a minute on a
-laptop.
+(the load/cap/ESR axes are swept *inside* each deck) — about 18 minutes at
+`-j 10` on an M-series laptop against the transistor-level amplifier. Use
+`-j` to match your core count.
 
 Exit codes match `sim/run_corners.py`: `0` pass, `1` a stability check
-failed, `2` a simulation failed, `3` an environment/usage problem.
+failed, `2` a simulation failed, `3` an environment/usage problem. A run is
+also refused outright (exit `2`) if any point's DC output is not within 10 %
+of the regulation target: the ideal current-source load admits a second,
+non-regulating DC solution, and a loop margin measured about it would be a
+meaningless number that looks like a meaningful one. See the deck's
+*"removing the non-physical DC branch"* comment.
 
 ## How the loop is measured
 
@@ -59,9 +65,11 @@ T  = (Tv*Ti - 1)/(Tv + Ti + 2)        the loop gain
 ```
 
 Dual injection rather than plain series-voltage injection because the break
-sits between a ~1 MΩ driver impedance and a few pF of pass-gate capacitance,
-so `Z_load ≫ Z_source` — the condition single-injection accuracy depends on —
-fails in exactly the decade that decides the margins. `selftest.py`
+sits between a high-impedance driver — the error amp's class-A output stage,
+`1/(gds_p+gds_n)` ≈ 9.3 MΩ at tt / 27 °C / 3.3 V / 25 mA — and a few pF of
+pass-gate capacitance, so `Z_load ≫ Z_source`, the condition single-injection
+accuracy depends on, fails from a few kHz upward: decades below where
+crossover actually sits. `selftest.py`
 demonstrates this quantitatively on a reference loop with a closed-form
 answer: dual injection reproduces the analytic loop gain to < 1e-6 dB, while
 single-injection is wrong by up to ~256 dB in the same band.
@@ -95,17 +103,25 @@ summary record with the worst point called out explicitly.
 
 ### Where this stands
 
-The first record, `20260801-002833-b8ce7d0`, is a **FAIL** against DR-0001:
-worst-corner phase margin 2.07° (bar: ≥ 45°) at
-`ff / −40 °C / 3.63 V`, 50 mA, 0.33 µF, 1 mΩ. That is a measurement of the
-core with the *placeholder* error amplifier still in place — the loop's
-crossover rises with load current until it walks into the fixed pole formed
-by the placeholder's 1 MΩ output resistance and the pass-device gate
-capacitance. Per #10's scope, fixing that is #9's (error amplifier) work,
-not this testbench's; the record states the crossover frequencies the
-amplifier's output pole has to clear. Read the record's *"What this record
-asks of the next design step"* section before designing that amplifier.
+The current record is **`20260801-050406-65416d2`**, a **FAIL** against
+DR-0001: worst-corner phase margin **−12.89°** (bar: ≥ 45°) and gain margin
+**−28.87 dB** (bar: ≥ 10 dB) at `ff / 27 °C / 3.30 V`, 50 mA, 0.33 µF, 1 mΩ,
+with crossover at 293 kHz. 64 of 3240 points pass. This is the **real** loop —
+transistor-level `design/error_amp.sch` and the real `design/ldo_ilimit.sch` —
+so it is a property of this compensation, not of a stand-in.
 
-Notably, the a-priori worst point — light load, minimum C_eff, no ESR zero —
-*passes*; see the record's *"Structure of the result"* for why the load axis
-reverses here.
+That does not contradict the amplifier's own records: the amplifier was sized
+against the offset, PSRR and Iq budgets, and closing the LDO loop around it is
+a separate requirement nothing has yet been sized against. This record is the
+first measurement of it. Read the record's *"What this record asks of the next
+design step"* before touching the compensation.
+
+It supersedes `20260801-002833-b8ce7d0`, which measured the same testbench
+against the *placeholder* error amplifier that PR #35 deleted. That record
+stays on disk — evidence here is append-only — but nothing should cite its
+numbers: the amplifier they describe no longer exists.
+
+The failure is broad rather than concentrated: the a-priori worst point
+(light load, minimum C_eff, no ESR zero) fails too, at −0.09°. See the
+record's *"Structure of the result"* for which axis actually drives the
+verdict — the load axis runs the opposite way to the a-priori expectation.
