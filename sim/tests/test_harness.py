@@ -146,6 +146,45 @@ class TestbenchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             testbench.load(self._write("v1 out 0 dc 3.3\n", {"measure": {}}))
 
+    def _write_design(self, text: str, name: str = "cell.spice") -> Path:
+        design = self.dir / "design"
+        design.mkdir(parents=True, exist_ok=True)
+        (design / name).write_text(text)
+        return design / name
+
+    def test_includes_are_resolved_relative_to_the_testbench_directory(self):
+        self._write_design(".subckt cell a b\nr1 a b 1k\n.ends\n")
+        tb = testbench.load(
+            self._write(
+                "x1 in out cell\n",
+                {"includes": ["../../design/cell.spice"]},
+            )
+        )
+        self.assertEqual([p.name for p in tb.includes], ["cell.spice"])
+        self.assertTrue(tb.includes[0].is_file())
+
+    def test_a_missing_include_is_rejected_with_the_resolved_path(self):
+        with self.assertRaises(FileNotFoundError) as ctx:
+            testbench.load(self._write("x1 in out cell\n", {"includes": ["../../design/nope.spice"]}))
+        self.assertIn("nope.spice", str(ctx.exception))
+
+    def test_an_included_design_netlist_may_not_carry_end(self):
+        """A trailing `.end` inside an include truncates the whole deck."""
+        self._write_design(".subckt cell a b\nr1 a b 1k\n.ends\n.end\n")
+        with self.assertRaises(ValueError) as ctx:
+            testbench.load(self._write("x1 in out cell\n", {"includes": ["../../design/cell.spice"]}))
+        self.assertIn("included design netlist", str(ctx.exception))
+
+    def test_include_provenance_carries_a_sha256_per_file(self):
+        self._write_design(".subckt cell a b\nr1 a b 1k\n.ends\n")
+        tb = testbench.load(
+            self._write("x1 in out cell\n", {"includes": ["../../design/cell.spice"]})
+        )
+        entries = tb.include_provenance(self.dir.resolve())
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["path"], "design/cell.spice")
+        self.assertEqual(len(entries[0]["sha256"]), 64)
+
     def test_the_repo_smoke_testbench_is_valid(self):
         tb = testbench.load(SIM_DIR / "smoke-bias")
         self.assertEqual(tb.nominal_supply_v, 3.3)
@@ -204,6 +243,51 @@ class DeckTests(unittest.TestCase):
         self.assertIn("let m_iq = -i(v1)", self.deck)
         self.assertIn("print m_vout", self.deck)
         self.assertTrue(self.deck.rstrip().endswith(".end"))
+
+
+class DeckIncludeTests(unittest.TestCase):
+    """`includes` puts design cells in the deck ahead of the fragment."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        (root / "design").mkdir()
+        self.cell = (root / "design" / "cell.spice").resolve()
+        self.cell.write_text(".subckt cell a b\nr1 a b 1k\n.ends\n")
+        (root / "tb").mkdir()
+        (root / "tb" / "x.spice").write_text("x1 out 0 cell\n")
+        (root / "tb" / "tb.json").write_text(
+            json.dumps(
+                {
+                    "name": "x",
+                    "netlist": "x.spice",
+                    "includes": ["../design/cell.spice"],
+                    "measure": {"vout": "v(out)"},
+                }
+            )
+        )
+        self.root = root
+        self.tb = testbench.load(root / "tb")
+        self.pdk = fake_pdk(root / "gf180mcuD")
+        self.point = corners.build_grid(corners.resolve_corners(["tt"]), (27,), [3.3])[0]
+
+    def test_design_cell_is_included_before_the_fragment(self):
+        deck = runner.compose_deck(self.tb, self.pdk, self.point)
+        cell_at = deck.index(str(self.cell))
+        frag_at = deck.index("x.spice")
+        self.assertLess(cell_at, frag_at)
+        self.assertIn(f'.include "{self.cell}"', deck)
+
+    def test_snapshot_freezes_the_design_cell_and_the_fragment(self):
+        experiment_dir = self.root / "tb"  # stands in for sim/<slug>/
+        path = report.write_netlist_snapshot(self.tb, experiment_dir, "20260731-000000-abc1234")
+        text = path.read_text()
+        self.assertIn("r1 a b 1k", text)          # the design cell
+        self.assertIn("x1 out 0 cell", text)      # the testbench fragment
+        self.assertLess(text.index("r1 a b 1k"), text.index("x1 out 0 cell"))
+        self.assertIn("included design cell", text)
+        self.assertIn(self.tb.netlist_sha256, text)
 
 
 class ParseTests(unittest.TestCase):

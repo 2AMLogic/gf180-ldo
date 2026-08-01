@@ -322,7 +322,7 @@ def build_record(
         "operating_conditions": resolved_oc,
         "subset_reason": subset_reason,
         "matrix": matrix_conformance(tb, points),
-        "testbench": tb.provenance(),
+        "testbench": tb.provenance(repo_root),
         "environment": environment(pdk, ngspice, repo_root, git),
         "grid": {
             "corners": corners,
@@ -363,22 +363,62 @@ def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str) 
     ``sim/README.md``: ``netlist-snapshots/<record-id>.spice`` is "the frozen
     DUT netlist used for this record", so later edits to ``testbench/`` never
     change what an existing record refers to.
+
+    When the manifest names design cells under ``includes`` (e.g. an xschem
+    export from ``design/``), the DUT is spread across several files. They are
+    concatenated into the same single snapshot file -- design cells first, in
+    include order, then the testbench fragment -- each behind a header naming
+    its source path and sha256. That keeps the ratified one-snapshot-per-record
+    shape while still freezing everything the record's numbers depend on.
     """
+    repo_root = experiment_dir.parent.parent
     out_dir = experiment_dir / SNAPSHOT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{record_id}.spice"
     if path.exists():
         raise RecordExists(f"{path} already exists; append-only evidence is never rewritten")
-    header = "\n".join(
-        [
-            f"* Frozen netlist snapshot for record {record_id}",
-            f"* source     : {tb.netlist.relative_to(experiment_dir.parent.parent)}",
-            f"* sha256     : {tb.netlist_sha256}",
-            "* This is a verbatim copy taken at record time. Do not edit.",
-            "",
-        ]
+
+    def _rel(p: Path) -> str:
+        try:
+            return str(p.relative_to(repo_root))
+        except ValueError:
+            return str(p)
+
+    chunks = [
+        "\n".join(
+            [
+                f"* Frozen netlist snapshot for record {record_id}",
+                "* This is a verbatim copy taken at record time. Do not edit.",
+                "",
+            ]
+        )
+    ]
+    for entry, source in zip(tb.include_provenance(repo_root), tb.includes):
+        chunks.append(
+            "\n".join(
+                [
+                    "* ======================================================================",
+                    f"* included design cell : {entry['path']}",
+                    f"* sha256               : {entry['sha256']}",
+                    "* ======================================================================",
+                    "",
+                ]
+            )
+            + source.read_text()
+        )
+    chunks.append(
+        "\n".join(
+            [
+                "* ======================================================================",
+                f"* testbench fragment   : {_rel(tb.netlist)}",
+                f"* sha256               : {tb.netlist_sha256}",
+                "* ======================================================================",
+                "",
+            ]
+        )
+        + tb.netlist.read_text()
     )
-    path.write_text(header + tb.netlist.read_text())
+    path.write_text("\n".join(chunks))
     return path
 
 
@@ -499,7 +539,15 @@ def render_record(record: dict, experiment: str) -> str:
     git = env["git"]
     pdk = env["pdk"]
 
-    provenance = f"schematic (`sim/{experiment}/{TESTBENCH_DIR}/{tb['netlist']}`)"
+    includes = tb.get("includes") or []
+    if includes:
+        provenance = (
+            "schematic ("
+            + ", ".join(f"`{entry['path']}`" for entry in includes)
+            + f"), driven by `sim/{experiment}/{TESTBENCH_DIR}/{tb['netlist']}`"
+        )
+    else:
+        provenance = f"schematic (`sim/{experiment}/{TESTBENCH_DIR}/{tb['netlist']}`)"
     if git["dirty"]:
         provenance += (
             f" — **taken against a dirty working tree** at commit `{git['commit']}`; "
@@ -525,6 +573,12 @@ def render_record(record: dict, experiment: str) -> str:
         "- **Links**:",
         f"  - Testbench: `sim/{experiment}/{TESTBENCH_DIR}/{tb['netlist']}`, "
         f"`sim/{experiment}/{TESTBENCH_DIR}/tb.json`",
+    ]
+    if includes:
+        lines.append(
+            "  - Design cells: " + ", ".join(f"`{entry['path']}`" for entry in includes)
+        )
+    lines += [
         f"  - Netlist snapshot: `sim/{experiment}/{SNAPSHOT_DIR}/{record_id}.spice`",
         f"  - Raw logs: `sim/{experiment}/{CORNERS_DIR}/{record_id}/`",
         f"- **Timestamp / author**: {record['started_utc']}, {env['user']}",
@@ -542,6 +596,10 @@ def render_record(record: dict, experiment: str) -> str:
         + (" (dirty)" if git["dirty"] else " (clean)"),
         f"- Testbench netlist sha256: `{tb['netlist_sha256']}`",
         f"- Manifest sha256: `{tb['manifest_sha256']}`",
+    ]
+    for entry in includes:
+        lines.append(f"- Included design netlist `{entry['path']}` sha256: `{entry['sha256']}`")
+    lines += [
         f"- Wall time: {record['wall_seconds']} s",
         "",
         "Per-corner model sections used:",

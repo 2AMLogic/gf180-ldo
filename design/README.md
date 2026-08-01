@@ -5,16 +5,21 @@ directory is the **source of truth for the block's electrical interface**:
 `sim/` testbenches (and later `layout/` LVS) both consume the netlists
 exported from here.
 
-> **Status (issue #8): hierarchy, pinout, and the enable path are real; the
-> error amplifier and current limit are placeholders / out of scope.** See
-> "Scope split" below before building on top of this.
+> **Status (issue #9): hierarchy, pinout, enable path and the error
+> amplifier are real; the current limit is out of scope.** Issue #8 built
+> this cell with a behavioral placeholder amp; issue #9 replaced that
+> placeholder with `error_amp`, a real two-stage OTA designed against
+> explicit offset / PSRR / Iq budgets (`design/error_amp.md`). See "Scope
+> split" below before building on top of this.
 
 ## Cells
 
 ```
 ldo_core                          top level -- issue #8
-└── ldo_erramp_placeholder        behavioral placeholder error amp -- issue #8
-                                  (real amp lands with issue #9, same pinout)
+└── error_amp                     two-stage Miller-compensated OTA -- issue #9
+                                  (replaced ldo_erramp_placeholder on the same
+                                  INP INN OUT VDD VSS pinout; the placeholder
+                                  cell is deleted, its contract is not)
 ```
 
 ## `ldo_core` pinout (established by issue #8, in netlist port order)
@@ -68,59 +73,68 @@ anything else in this schematic.
 turning the pass FET off -- whenever `EN` = 0. This is a **minimal functional
 stub**, not a characterized shutdown path: full shutdown-quiescent-current
 verification is issue #11's job. See
-`sim/op-point-sanity/records/` for a measured confirmation that this drops
-supply current roughly 300x (1.007 mA -> 3.3 uA) at the nominal PVT point.
+`sim/op-point-sanity/records/` for a measured confirmation that this turns
+the pass device off at the nominal PVT point. Since #9 landed a real
+(self-biased) amplifier, the residual disabled-state supply current is set by
+the amplifier's own bias branch (~9 uA), not by the pass device -- see
+"Error amplifier" below.
 
 ## Scope split (read before building on top of this)
 
 Three sibling issues share this schematic's territory; each owns a
 different, non-overlapping piece:
 
-- **#8 (this issue)**: pass device, feedback divider, compensation-ready
-  `VOUT` node, enable stub, and a **placeholder** error amp -- just enough
+- **#8**: pass device, feedback divider, compensation-ready `VOUT` node,
+  enable stub, and (originally) a **placeholder** error amp -- just enough
   to close the loop for a DC sanity check.
-- **#9 (error amp)**: replaces `ldo_erramp_placeholder` with a real
-  differential-pair + gain-stage subcircuit. Must keep the `INP INN OUT VDD
-  VSS` pinout (see `ldo_erramp_placeholder.sym`) and the `INP`=non-inverting,
-  `INN`=inverting polarity (`INP` wired to `FB`, `INN` wired to `VREF` inside
-  `ldo_core` -- do not flip this when replacing the placeholder; it is the
-  polarity negative feedback around a PMOS common-source pass device
-  requires).
+- **#9 (error amp -- landed)**: replaced `ldo_erramp_placeholder` with
+  `error_amp`, a real two-stage OTA. It keeps the `INP INN OUT VDD VSS`
+  pinout and the `INP`=non-inverting / `INN`=inverting polarity (`INP` wired
+  to `FB`, `INN` wired to `VREF` inside `ldo_core`) that the placeholder
+  established; that polarity is what negative feedback around a PMOS
+  common-source pass device requires, and it must not be flipped. #9 also
+  moved `VREF` from 0.6 V to 1.2 V and re-ratioed the divider (see
+  "Reference voltage" below and `design/error_amp.md`).
 - **#11 (current limit / foldback, and enable verification)**: builds the
   actual current-limit/foldback circuitry at the current-sense tap described
   above, and does the full shutdown-Iq characterization the enable stub
   above does not attempt. Neither is implemented here.
 
-## Placeholder error amp (`ldo_erramp_placeholder`)
+## Error amplifier (`error_amp`)
 
-- Pinout: `INP INN OUT VDD VSS` (the swap-in contract for #9).
-- Implementation: a behavioral (`B`) source, `V(OUT') = clamp(av*(V(INP)
-  - V(INN)), V(VSS), V(VDD))`, `av` = 3162 (~70 dB, within the 60-80 dB the
-  issue's guidance allows), through a 1 MOhm output resistor to `OUT`.
-  - The clamp matters: without it, an ideal *unclamped* linear source
-    overdriven by a large differential (e.g. `EN`=0, where `FB` collapses
-    towards 0 V while `VREF` stays at 0.6 V) computes a wildly
-    out-of-range value that then fights the enable clamp through `Rout`
-    instead of being dominated by it.
-  - The 1 MOhm `Rout` has **zero effect on the enabled-case DC solution**
-    (`PASS_GATE` only ever sinks/sources a real MOSFET gate's ~0 DC
-    current there) -- it only has to be large enough that the enable
-    clamp (a modest, unsized-for-this single PMOS) reliably wins the node
-    when `EN`=0. Do not shrink it to "look more realistic" without
-    re-checking the disabled-state op point.
-- `Rplaceholder_vdd` (1 TOhm, `VDD` to `VSS`) is not design content -- it only
-  avoids a floating `VDD` pin on a stub with no real bias network yet.
-  Delete it when #9 lands a real amp that draws bias current from `VDD`.
+- Pinout: `INP INN OUT VDD VSS` -- unchanged from the placeholder it
+  replaced, so the swap was a symbol-name change in `ldo_core.sch` with no
+  rewiring (`error_amp.sym` deliberately reuses the placeholder's pin
+  coordinates).
+- Topology: two-stage Miller-compensated OTA -- NMOS input pair with a PMOS
+  mirror load, PMOS common-source second stage into an NMOS current sink,
+  Miller cap plus nulling resistor, self-biased from `VDD`. ~9 uA nominal.
+- Full rationale, the offset / PSRR / current budgets, and the measured PVT
+  results live in **[`error_amp.md`](error_amp.md)**; the corner evidence is
+  under `sim/amp-openloop/records/` and `sim/psrr-dc/records/`.
+- **It has no enable pin.** The 5-port contract has none, so the amp draws
+  its bias current whenever `VIN` is present: `Men` turns the *pass device*
+  off but does not gate the amplifier. The measured disabled-state supply
+  current of this cell is therefore ~9 uA, against a ratified
+  "shutdown Iq < 3 uA" row -- an interface question for #11, which owns
+  shutdown characterization. See `error_amp.md` "Handoffs".
 
 ## Reference voltage assumption
 
 There is no bandgap block designed yet for this repo. `Vref1`, an ideal
-0.6 V DC source, stands in for it inside `ldo_core`. The feedback divider
-(`Rtop`=200k, `Rbot`=100k, plain behavioral `R`, from `VOUT` to `VSS` via the
-`FB` midpoint) is sized against this 0.6 V assumption: `FB = VOUT *
-Rbot/(Rtop+Rbot) = VOUT/3`, so `VOUT` settles at `3 * VREF` = 1.8 V. If a
-future bandgap issue lands a different reference voltage, the divider
-**ratio** (not the topology) is what needs to change.
+**1.2 V** DC source, stands in for it inside `ldo_core`. The feedback divider
+(`Rtop`=300k, `Rbot`=600k, plain behavioral `R`, from `VOUT` to `VSS` via the
+`FB` midpoint) gives `FB = VOUT * Rbot/(Rtop+Rbot) = 2*VOUT/3`, so `VOUT`
+settles at `1.5 * VREF` = 1.8 V, and the 900 kOhm total holds the divider's
+standing current at 1.8 V / 900 kOhm = 2.0 uA -- the value DR-0003 budgets.
+
+Issue #8 originally assumed 0.6 V here and said the divider **ratio** (not
+the topology) is what changes if a different reference lands. Issue #9 made
+that change, for two independent reasons documented in
+[`error_amp.md`](error_amp.md): the offset gain-up `1/beta = Vout/Vref` is
+1.5 at 1.2 V instead of 3.0 at 0.6 V (DR-0003 budgets against exactly the
+1.5 figure), and a 0.6 V common mode cannot bias the NMOS input pair the
+amplifier needs to survive the 2.10 V dropout test point.
 
 The divider itself is plain behavioral `R`, not the PDK's `ppolyf_u_3k` poly
 resistor -- issue #8's guidance allows either for this sanity netlist.
@@ -143,7 +157,7 @@ layout-phase work, out of scope here.
 ```bash
 python3 design/netlist.py            # regenerate design/netlist/*.spice
 python3 design/netlist.py --check    # verify committed netlists are current
-python3 design/netlist.py --cell ldo_erramp_placeholder -v
+python3 design/netlist.py --cell error_amp -v
 ```
 
 Requirements: `xschem` on `PATH` and the gf180mcu PDK installed. PDK discovery
@@ -195,10 +209,10 @@ is usable as a pre-commit or CI gate once a runner exists.
 `design/netlist/` holds one file per cell:
 
 - `ldo_core.spice` -- the whole hierarchy: `ldo_core` plus every sub-circuit
-  it instantiates (currently just `ldo_erramp_placeholder`). Include this to
-  simulate the block.
-- `ldo_erramp_placeholder.spice` -- that sub-circuit alone, so a future
-  amp-only bench can target it in isolation.
+  it instantiates (currently just `error_amp`). Include this to simulate the
+  block.
+- `error_amp.spice` -- that sub-circuit alone, which is what the amp-only
+  benches `sim/amp-openloop/` and `sim/psrr-dc/` include.
 
 ```spice
 .include design/netlist/ldo_core.spice
@@ -206,8 +220,8 @@ Xdut VIN VOUT EN VSS ERRAMP_OUT PASS_GATE ldo_core
 ```
 
 > **Include exactly one of these files per deck.** `ldo_core.spice` already
-> contains the sub-circuit definition; including it *and*
-> `ldo_erramp_placeholder.spice` redefines the same `.subckt` twice.
+> contains the sub-circuit definition; including it *and* `error_amp.spice`
+> redefines the same `.subckt` twice.
 
 Port order is positional in SPICE -- take it from the `.subckt` line of the
 file you include, or from the symbol pin list, which the check above keeps in
@@ -232,7 +246,7 @@ Conventions:
 - **Generic xschem devices are referenced as `devices/<name>.sym`** (e.g.
   `devices/res.sym`, `devices/vsource.sym`, `devices/bsource.sym`,
   `devices/lab_pin.sym`).
-- **Project cells are referenced by bare name** (`ldo_erramp_placeholder.sym`),
+- **Project cells are referenced by bare name** (`error_amp.sym`),
   resolved against `design/`.
 - **Connectivity is expressed with net labels** (`devices/lab_pin.sym`
   placed exactly at a device pin's coordinate, or the `lab=` attribute on an
