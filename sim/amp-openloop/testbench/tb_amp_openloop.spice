@@ -35,6 +35,14 @@
 * Monte Carlo is a distribution claim and belongs to #13, not to a corner
 * record. See design/error_amp.md.
 *
+* EN (sixth port, appended by issue #11): each instance's EN is tied to ITS
+* OWN vdd node, i.e. the amplifier is enabled, which is the only state this
+* bench characterizes. That is also the physically honest wiring -- a real
+* enable is driven by CMOS logic on the same supply -- and it matters here
+* because EN is not a quiet node: it gates a local inverter whose output
+* holds the bias header's gate. Tying EN to a clean, separate source would
+* hide any supply coupling that path contributes.
+*
 * ---------------------------------------------------------------------------
 * Instances
 * ---------------------------------------------------------------------------
@@ -73,7 +81,7 @@ Lfb1  vg1   nls1 1T
 Vls1  nls1  nref1 dc {vg_op-vcm}
 Cref1 nref1 0 1
 Cl1   vg1   0 {cgate}
-X1 nfb nref1 vg1 vdd1 0 error_amp
+X1 nfb nref1 vg1 vdd1 0 vdd1 error_amp
 
 * ==== X2: servo'd to OUT = vdd_val - 0.4 (light-load operating point) =======
 Vsup2 vdd2  0 dc {vdd_val}
@@ -81,7 +89,7 @@ Lfb2  vg2   nls2 1T
 Vls2  nls2  nref2 dc {vdd_val-0.4-vcm}
 Cref2 nref2 0 1
 Cl2   vg2   0 {cgate}
-X2 nfb nref2 vg2 vdd2 0 error_amp
+X2 nfb nref2 vg2 vdd2 0 vdd2 error_amp
 
 * ==== X3: dropout test point (VDD = 2.10 V), servo'd to OUT = vg_drop =======
 Vsup3 vdd3  0 dc {vdrop}
@@ -89,18 +97,18 @@ Lfb3  vg3   nls3 1T
 Vls3  nls3  nref3 dc {vg_drop-vcm}
 Cref3 nref3 0 1
 Cl3   vg3   0 {cgate}
-X3 nfb nref3 vg3 vdd3 0 error_amp
+X3 nfb nref3 vg3 vdd3 0 vdd3 error_amp
 
 * ==== X4: dropout test point, driven to pull the pass gate DOWN ============
 Vsup4 vdd4  0 dc {vdrop}
 Vref4 nref4 0 dc {vcm}
 Vfb4  nfb4  0 dc {vcm-0.25}
 Cl4   vg4   0 {cgate}
-X4 nfb4 nref4 vg4 vdd4 0 error_amp
+X4 nfb4 nref4 vg4 vdd4 0 vdd4 error_amp
 
 * ==== X5: driven to pull the pass gate UP (pass device off) ================
 Vsup5 vdd5  0 dc {vdd_val}
 Vref5 nref5 0 dc {vcm}
 Vfb5  nfb5  0 dc {vcm+0.25}
 Cl5   vg5   0 {cgate}
-X5 nfb5 nref5 vg5 vdd5 0 error_amp
+X5 nfb5 nref5 vg5 vdd5 0 vdd5 error_amp

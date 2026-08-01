@@ -7,13 +7,15 @@ E {}
 T {error_amp -- LDO error amplifier (issue #9).
 Two-stage Miller-compensated OTA, self-biased, ~11 uA nominal.} -900 -960 0 0 0.5 0.5 {}
 T {Ports -- the swap-in contract issue #8 ratified (design/README.md,
-ldo_erramp_placeholder.sym). Do not reorder or rename: ldo_core, #10's
-loop-break bench and #12's testbench suite instantiate this positionally.
+ldo_erramp_placeholder.sym), plus EN appended by issue #11. Do not reorder
+or rename: ldo_core, #10's loop-break bench and #12's testbench suite
+instantiate this positionally.
   INP  non-inverting input, wired to FB    in ldo_core
   INN  inverting input,     wired to VREF  in ldo_core
   OUT  drives the PMOS pass-device gate
   VDD  supply (VIN)
   VSS  ground
+  EN   enable, active-high, CMOS level (0 / VDD)   <- issue #11
 
 TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
   Stage 1  MIN1/MIN2 NMOS input pair on tail MTAIL, PMOS mirror load
@@ -32,7 +34,8 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      puts the zero near the OUT-node pole instead of
                      leaving it in the right half plane. CL is the measured
                      6.14 pF pass-gate Cgg (sim/devchar/CONCLUSIONS.md S1).
-  Bias     MB1,Rbias Supply-referenced self-bias: Iref = (VDD - Vgs)/Rbias
+  Bias     MB1,Rbias Supply-referenced self-bias, fed through the EN header
+                     Mbias_h (see ENABLE): Iref = (VDD - Vgs)/Rbias
                      through the diode-connected NMOS MB1, whose gate NBIAS
                      mirrors to MTAIL (1:1) and M2N (5:3). No start-up
                      circuit is needed: unlike a beta-multiplier this
@@ -60,12 +63,44 @@ sim/amp-openloop/records/):
   total                       ~11 uA against the 10-15 uA error-amp
                                allocation in spec/architecture-survey.md S5.
 
-NO ENABLE PORT. The ratified 5-port interface has no EN pin, so this cell
-draws bias current whenever VDD is present. ldo_core's Men clamp turns the
-pass device off but does not gate this cell, so the ratified
-"shutdown Iq < 3 uA" row cannot be met without gating this cell's supply or
-renegotiating the pinout to add EN. Flagged to #11, which owns shutdown
-characterization -- see design/error_amp.md "Handoffs".
+ENABLE (issue #11 -- the interface decision #9 deferred)
+Issue #9 shipped this cell with no EN pin and measured the consequence:
+9.24 uA of supply current with the pass device already off
+(sim/op-point-sanity/records/20260801-002928-712cb87.md), against a ratified
+3 uA shutdown budget, because Men gates the PASS DEVICE and not the
+amplifier. #11 owns the shutdown-Iq row, so it makes the call #9 flagged:
+add EN and gate the bias INSIDE this cell.
+
+  Minv_p/Minv_n  local inverter, EN -> ENB. Both devices off in either
+                 static state (EN is specified as a CMOS level, never
+                 mid-rail), so the inverter itself costs no static current.
+  Mbias_h        PMOS header between VDD and Rbias's top (RBT), gated by
+                 ENB. Kills the ONLY DC path from VDD to VSS in this cell
+                 when EN = 0. W = 20u/0.5u so its Ron drops < 5 mV of the
+                 ~2.5 V across the 1 Mohm bias resistor when enabled, i.e.
+                 < 0.2 % on Iref -- a deliberate over-size, since this
+                 device sits directly in the bias-accuracy path #9
+                 characterized.
+  Mnb_pd         pulls NBIAS to VSS when disabled, so MTAIL and M2N are
+                 definitively off rather than left floating on a dead
+                 mirror node.
+  Mn1_pu, Mnd_pu pull N1 and ND to VDD when disabled (gated by EN itself,
+                 exactly like ldo_core's Men), so M2P and the mirror load
+                 are definitively off and no node in the cell is left
+                 floating for the operating-point solve.
+
+Why gate here rather than put a supply header on this cell in ldo_core:
+with the cell's VDD switched off, OUT is still held at VIN by ldo_core's
+Men clamp, and M2P's drain-body diode (its body is this cell's VDD) then
+FORWARD-BIASES and powers the whole amplifier back up through the diode --
+the bias branch keeps drawing microamps out of a supply that is nominally
+off. Gating the bias with the rails intact has no such path: every body
+stays at its own rail and only device leakage is left.
+
+Disabled state costs 4 devices and nothing static; enabled state is
+unchanged except for Mbias_h's < 5 mV Ron drop. Measured both ways in
+sim/enable-shutdown/records/ (shutdown Iq) and re-measured against #9's own
+budgets in sim/amp-openloop/records/ (no enabled-state regression).
 
 Connectivity is by net label (lab_pin) placed on each device pin, the same
 convention ldo_core.sch uses -- no routed wires.} -900 -920 0 0 0.28 0.28 {}
@@ -75,9 +110,10 @@ C {devices/ipin.sym} -900 -340 0 0 {name=p_inn lab=INN}
 C {devices/opin.sym} 900 -400 0 0 {name=p_out lab=OUT}
 C {devices/iopin.sym} -900 -460 0 0 {name=p_vdd lab=VDD}
 C {devices/iopin.sym} -900 -280 0 0 {name=p_vss lab=VSS}
+C {devices/ipin.sym} -900 -220 0 0 {name=p_en lab=EN}
 
 C {symbols/ppolyf_u_1k.sym} -600 -600 0 0 {name=Rbias model=ppolyf_u_1k W=1u L=1000u m=1}
-C {devices/lab_pin.sym} -600 -630 0 0 {name=l_rb_p sig_type=std_logic lab=VDD}
+C {devices/lab_pin.sym} -600 -630 0 0 {name=l_rb_p sig_type=std_logic lab=RBT}
 C {devices/lab_pin.sym} -600 -570 0 0 {name=l_rb_m sig_type=std_logic lab=NBIAS}
 C {devices/lab_pin.sym} -620 -600 0 0 {name=l_rb_b sig_type=std_logic lab=VSS}
 
@@ -137,3 +173,39 @@ C {devices/lab_pin.sym} 720 -180 0 0 {name=l_m2n_d sig_type=std_logic lab=OUT}
 C {devices/lab_pin.sym} 680 -150 0 0 {name=l_m2n_g sig_type=std_logic lab=NBIAS}
 C {devices/lab_pin.sym} 720 -120 0 0 {name=l_m2n_s sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 720 -150 0 0 {name=l_m2n_b sig_type=std_logic lab=VSS}
+
+C {symbols/pfet_03v3.sym} -600 -150 0 0 {name=Minv_p model=pfet_03v3 L=0.5u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} -620 -150 0 0 {name=l_invp_g sig_type=std_logic lab=EN}
+C {devices/lab_pin.sym} -580 -120 0 0 {name=l_invp_d sig_type=std_logic lab=ENB}
+C {devices/lab_pin.sym} -580 -180 0 0 {name=l_invp_s sig_type=std_logic lab=VDD}
+C {devices/lab_pin.sym} -580 -150 0 0 {name=l_invp_b sig_type=std_logic lab=VDD}
+
+C {symbols/nfet_03v3.sym} -450 -150 0 0 {name=Minv_n model=nfet_03v3 L=0.5u W=2u nf=1 m=1}
+C {devices/lab_pin.sym} -430 -180 0 0 {name=l_invn_d sig_type=std_logic lab=ENB}
+C {devices/lab_pin.sym} -470 -150 0 0 {name=l_invn_g sig_type=std_logic lab=EN}
+C {devices/lab_pin.sym} -430 -120 0 0 {name=l_invn_s sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} -430 -150 0 0 {name=l_invn_b sig_type=std_logic lab=VSS}
+
+C {symbols/pfet_03v3.sym} -750 -600 0 0 {name=Mbias_h model=pfet_03v3 L=0.5u W=20u nf=1 m=1}
+C {devices/lab_pin.sym} -770 -600 0 0 {name=l_bh_g sig_type=std_logic lab=ENB}
+C {devices/lab_pin.sym} -730 -570 0 0 {name=l_bh_d sig_type=std_logic lab=RBT}
+C {devices/lab_pin.sym} -730 -630 0 0 {name=l_bh_s sig_type=std_logic lab=VDD}
+C {devices/lab_pin.sym} -730 -600 0 0 {name=l_bh_b sig_type=std_logic lab=VDD}
+
+C {symbols/nfet_03v3.sym} -750 -400 0 0 {name=Mnb_pd model=nfet_03v3 L=0.5u W=10u nf=1 m=1}
+C {devices/lab_pin.sym} -730 -430 0 0 {name=l_nbpd_d sig_type=std_logic lab=NBIAS}
+C {devices/lab_pin.sym} -770 -400 0 0 {name=l_nbpd_g sig_type=std_logic lab=ENB}
+C {devices/lab_pin.sym} -730 -370 0 0 {name=l_nbpd_s sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} -730 -400 0 0 {name=l_nbpd_b sig_type=std_logic lab=VSS}
+
+C {symbols/pfet_03v3.sym} 100 -600 0 0 {name=Mn1_pu model=pfet_03v3 L=0.5u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 80 -600 0 0 {name=l_n1pu_g sig_type=std_logic lab=EN}
+C {devices/lab_pin.sym} 120 -570 0 0 {name=l_n1pu_d sig_type=std_logic lab=N1}
+C {devices/lab_pin.sym} 120 -630 0 0 {name=l_n1pu_s sig_type=std_logic lab=VDD}
+C {devices/lab_pin.sym} 120 -600 0 0 {name=l_n1pu_b sig_type=std_logic lab=VDD}
+
+C {symbols/pfet_03v3.sym} -250 -600 0 0 {name=Mnd_pu model=pfet_03v3 L=0.5u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} -270 -600 0 0 {name=l_ndpu_g sig_type=std_logic lab=EN}
+C {devices/lab_pin.sym} -230 -570 0 0 {name=l_ndpu_d sig_type=std_logic lab=ND}
+C {devices/lab_pin.sym} -230 -630 0 0 {name=l_ndpu_s sig_type=std_logic lab=VDD}
+C {devices/lab_pin.sym} -230 -600 0 0 {name=l_ndpu_b sig_type=std_logic lab=VDD}

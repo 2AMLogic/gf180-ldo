@@ -1,0 +1,156 @@
+* current-limit -- constant-current (brickwall) limit characterization for
+* ldo_core with Xilimit (issue #11).
+*
+* Substantiates the ratified "Current limit" row of README.md's target
+* specification: threshold over PVT, constant-current (not folded-back)
+* behaviour, and -- the safety-critical half -- that the limit never engages
+* for I_load in [0, 50] mA at any corner.
+*
+* Two load styles share one deck, selected by `alter` from the .control
+* block below, because both claims must be taken at the SAME PVT point:
+*
+*   regulation mode   Rforce = 1 Gohm (the forcing path is effectively
+*                     absent), Rload is a resistive load. Answers "is the
+*                     output still in the +/-2% window at 0 mA and at
+*                     50 mA?", i.e. did the limit engage inside the rated
+*                     load range.
+*   V-I mode          Rforce = 1 mohm (the forcing source owns VOUT),
+*                     Rload open. Sweeping the forced VOUT down to a dead
+*                     short traces the whole current-limit characteristic;
+*                     its FLATNESS is the brickwall claim, and its value is
+*                     the threshold.
+*
+* Both load styles are RESISTIVE or VOLTAGE-FORCED, never an ideal current
+* sink, and that is deliberate. With an ideal current sink the only DC paths
+* left at VOUT are the feedback divider (300 kohm) and the sense/threshold
+* resistors, so the node's DC impedance is enormous and the operating-point
+* solve is badly conditioned: sweeping a current sink from 0 to 55 mA on
+* this circuit returns physically absurd answers (Vout = -64 V at 2 mA,
+* +1.802 V at 6 mA, -3.5 V at 15 mA) that are solver artifacts, not a
+* bistable circuit. A resistor cannot pull the output below ground and
+* keeps the node's impedance bounded, so every point converges to the
+* physical branch. The load current is measured (Vlmeas) rather than
+* assumed, since a resistive load's current depends on the settled Vout.
+*
+* 1 mohm at 90 mA is a 90 uV error on the forced node and 1 Gohm at 1.8 V
+* leaks 1.8 nA: both are far below anything measured here.
+*
+* ERRAMP_OUT and PASS_GATE are ldo_core's deliberately separate loop-break
+* ports; normal operation ties them together at instantiation (net LOOP),
+* exactly as sim/op-point-sanity does. See design/README.md.
+*
+* Template: run.sh substitutes the @TOKENS@ (PDK paths, corner sections,
+* temperature, supply) and runs the result with `ngspice -b`.
+
+.include "@DESIGN_INCLUDE@"
+.lib "@MODEL_LIB@" @MOS_CORNER@
+.lib "@MODEL_LIB@" @RES_CORNER@
+.lib "@MODEL_LIB@" @BJT_CORNER@
+.lib "@MODEL_LIB@" @DIODE_CORNER@
+.lib "@MODEL_LIB@" @MOSCAP_CORNER@
+.lib "@MODEL_LIB@" @MIMCAP_CORNER@
+
+.temp @TEMP_C@
+
+.include "@LDO_NETLIST@"
+
+* --- stimulus ------------------------------------------------------------
+Vin VIN 0 DC @VIN_V@
+Ven EN 0 DC @VIN_V@
+
+* --- DUT -----------------------------------------------------------------
+* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE
+Xdut VIN VOUT EN 0 LOOP LOOP ldo_core
+
+* --- load ----------------------------------------------------------------
+* Rload values: 1 Gohm = open, 72 ohm ~ 25 mA, 36 ohm ~ 50 mA at Vout = 1.8 V.
+Rload VOUT LN 1G
+Vlmeas LN 0 DC 0
+Vforce VF 0 DC 0
+Rforce VOUT VF 1G
+
+* Each `op` below starts a NEW ngspice plot, and `let` vectors live in the
+* plot that was current when they were created -- so every measurement is
+* printed immediately after the analysis that produced it, and all derived
+* quantities (limit spread, brickwall flatness, short-circuit power) are
+* computed by the rollup in run.sh rather than across plots here.
+.control
+set noaskquit
+
+* ======================================================================
+* Regulation mode: does the limit engage anywhere inside 0..50 mA?
+* ======================================================================
+alter Rforce = 1G
+
+alter Rload = 1G
+op
+let m_vout_0ma = v(vout)
+let m_ivin_0ma_ua = -i(vin)*1e6
+print m_vout_0ma
+print m_ivin_0ma_ua
+
+alter Rload = 72
+op
+let m_vout_25ma = v(vout)
+let m_iload_25ma = i(vlmeas)*1e3
+print m_vout_25ma
+print m_iload_25ma
+
+alter Rload = 36
+op
+let m_vout_50ma = v(vout)
+let m_iload_50ma = i(vlmeas)*1e3
+let m_clg_50ma = v(xdut.xilimit.clg)
+let m_isns_mv_50ma = (v(xdut.xilimit.isns) - v(vout))*1e3
+let m_vth_mv_50ma = (v(xdut.xilimit.vth) - v(vout))*1e3
+* Sense-path headroom at the rated load: how far below the threshold the
+* sensed voltage still is. This is the margin the limit has against
+* nuisance-tripping inside the rated range, expressed in the sense domain.
+let m_sense_margin_pct = (m_vth_mv_50ma - m_isns_mv_50ma)/m_vth_mv_50ma*100
+print m_vout_50ma
+print m_clg_50ma
+print m_isns_mv_50ma
+print m_vth_mv_50ma
+print m_sense_margin_pct
+print m_iload_50ma
+
+alter Rload = 1G
+
+* ======================================================================
+* V-I mode: the current-limit characteristic
+* ======================================================================
+alter Rforce = 1m
+
+alter Vforce = 1.764
+op
+let m_ilim_1764_ma = i(vforce)*1e3
+print m_ilim_1764_ma
+
+alter Vforce = 1.5
+op
+let m_ilim_1500_ma = i(vforce)*1e3
+print m_ilim_1500_ma
+
+alter Vforce = 0.9
+op
+let m_ilim_0900_ma = i(vforce)*1e3
+print m_ilim_0900_ma
+
+alter Vforce = 0.3
+op
+let m_ilim_0300_ma = i(vforce)*1e3
+print m_ilim_0300_ma
+
+alter Vforce = 0
+op
+let m_ilim_0000_ma = i(vforce)*1e3
+let m_pshort_mw = m_ilim_0000_ma*@VIN_V@
+print m_ilim_0000_ma
+print m_pshort_mw
+
+* Full characteristic, for the record's raw evidence.
+dc Vforce 0 1.9 0.05
+let vi_ma = i(vforce)*1e3
+print v(vf) vi_ma
+.endc
+.end

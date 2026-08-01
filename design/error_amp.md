@@ -273,12 +273,18 @@ ratified `Iq < 30 µA` row (binding corner ff/125 °C/3.63 V):
 | Feedback divider | 1–3 µA | **2.0 µA** | 1.8 V / 900 kΩ, `ldo_core` (DR-0003's number exactly) |
 | Reference (black box, not this issue) | 3–5 µA | 3–5 µA assumed | no bandgap block exists yet |
 | **Error amp** | **10–15 µA** | **9.0 µA nominal, 5.8–14.3 µA over PVT** | measured, `sim/amp-openloop` |
-| Pass-gate bias / misc | 2–3 µA | 0 µA so far | the amp needs no external bias; current limit is #11 |
+| Pass-gate bias / misc | 2–3 µA | **≈ 3.6 µA over PVT** | `ldo_ilimit`'s threshold bias + comparator tail, issue #11 (measured: total no-load supply current rises from ≈ 9 µA to 8.8–21.2 µA across PVT with the limit block present, `sim/current-limit/records/`) |
 | Pass-device off-state leakage | — | 0.417 µA at ff/125 °C | `sim/devchar/CONCLUSIONS.md` §1 |
-| **Total, worst amp corner** | 16–26 µA | **≈ 21.7 µA** (14.3 + 2.0 + 5.0 + 0.4) | **27 % margin under 30 µA** |
+| **Total, worst amp corner** | 16–26 µA | **≈ 21.7 µA** (14.3 + 2.0 + 5.0 + 0.4) — **25.3 µA** with #11's limit block | **27 % / 16 % margin under 30 µA** |
 
 Within the amplifier, nominal (tt/27 °C/3.3 V, simulated op point): bias branch
 2.44 µA, stage-1 tail 2.43 µA, stage-2 sink 4.18 µA.
+
+Issue #11 measured the *assembled* regulator against this budget rather than
+the block allocations: 14.2 µA at tt/27 °C/3.3 V and **22.4 µA at the binding
+ff/125 °C/3.63 V corner** with a 50 mA load, i.e. the ratified < 30 µA row is
+met with 25 % margin including the current-limit block — and 0.20 µA disabled
+(`sim/enable-shutdown/records/`).
 
 **Where the 2.5× PVT spread comes from.** The bias is supply-referenced,
 `Iref = (VDD − Vgs(MB1))/Rbias`, so it moves with supply (±13 % over
@@ -356,7 +362,7 @@ is `M2N`'s current.
 | Issue | What to take |
 |---|---|
 | **#10 stability** | §6 in full: UGBW, PM, phase at 1 kHz, slew, gate load, and the "needs an ESR-independent zero" statement |
-| **#11 current limit / enable** | **The 5-port interface has no enable pin.** This cell draws its bias whenever VDD is present (≈ 9 µA); `ldo_core`'s `Men` clamp turns the *pass device* off but not the amplifier. `sim/op-point-sanity/records/20260801-002928-712cb87.md` measures the disabled state directly (9.24 uA). The ratified "shutdown Iq < 3 µA" row therefore cannot be met without either gating this cell's supply or renegotiating the pinout to add EN — an interface decision, so it is flagged here, not made here |
+| **#11 current limit / enable — RESOLVED** | This row asked #11 to make an interface decision: the 5-port contract had no enable pin, so the cell drew ≈ 9 µA whenever VDD was present (9.24 µA measured disabled, `sim/op-point-sanity/records/20260801-002928-712cb87.md`) against a ratified "shutdown Iq < 3 µA" row. **#11 appended `EN` as a sixth pin and gated the bias inside this cell** (`Mbias_h`/`Mnb_pd`/`Mn1_pu`/`Mnd_pu`, and a local EN→ENB inverter). A supply header was rejected: with VDD switched off while `Men` holds OUT at VIN, `M2P`'s drain-body diode forward-biases and re-powers the cell. Disabled current is now 0.20 µA at ff/125 °C/3.63 V (`sim/enable-shutdown/records/`); the enabled-state numbers in §5/§6 below move by < 0.2 % (re-measured, `sim/amp-openloop/records/`) |
 | **#12 testbench suite** | PSRR at 100 kHz is a closed-loop claim (§4); load/line regulation ride on the 110 dB DC gain; the falling-slew number above bounds the transient |
 | **#13 Monte Carlo mismatch** | §3's split: verify 3σ ≤ 2.33 mV input-referred for the amplifier. Do **not** cite a PDK Monte Carlo for the divider term — §3.2 |
 | **#15 floorplan / matching** | 360 µm² of common-centroid input-pair area and 64 µm² mirror devices are budgeted requirements, not suggestions; the divider needs ≥ 95/191 µm² unit-resistor legs for §3.2's number |

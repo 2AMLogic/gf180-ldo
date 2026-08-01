@@ -10,15 +10,24 @@ v {xschem version=3.4.7 file_version=1.2
 * PORT ORDER IS THE SWAP-IN CONTRACT issue #8 ratified for the error amp
 * (design/README.md, ldo_erramp_placeholder.sym):
 *
-*     INP INN OUT VDD VSS
+*     INP INN OUT VDD VSS EN
 *
 * INP is the NON-inverting input (wired to FB in ldo_core), INN is the
 * INVERTING input (wired to VREF). That polarity is what negative feedback
 * around a PMOS common-source pass device requires -- do not flip it.
 *
-* The pin *coordinates* below are deliberately identical to
+* The first five pins' *coordinates* are deliberately identical to
 * ldo_erramp_placeholder.sym's, so replacing the placeholder instance in
-* ldo_core.sch is a one-token symbol-name change with no rewiring.
+* ldo_core.sch was a one-token symbol-name change with no rewiring.
+*
+* EN (issue #11) is APPENDED as a sixth pin, so the first five keep both
+* their order and their coordinates. Issue #9 flagged the missing enable
+* explicitly ("the ratified 5-port interface has no EN pin, so this cell
+* draws bias current whenever VDD is present ... flagged to #11") and #11
+* owns the shutdown-Iq row, so #11 makes the interface decision #9 deferred.
+* Positional instantiations DO need the extra node -- ngspice errors on the
+* node count rather than mis-wiring silently, and design/netlist.py --check
+* re-asserts symbol-vs-schematic pin order on every export.
 }
 G {}
 K {type=subcircuit
@@ -28,7 +37,7 @@ template="name=x1"
 V {}
 S {}
 E {}
-P 4 5 -80 -50 80 -50 80 50 -80 50 -80 -50 {}
+P 4 5 -80 -50 80 -50 80 60 -80 60 -80 -50 {}
 B 5 -102.5 -32.5 -97.5 -27.5 {name=INP dir=in}
 L 7 -100 -30 -80 -30 {}
 T {INP} -75 -34 0 0 0.2 0.2 {}
@@ -44,5 +53,8 @@ T {VDD} -75 6 0 0 0.2 0.2 {}
 B 5 -102.5 27.5 -97.5 32.5 {name=VSS dir=inout}
 L 7 -100 30 -80 30 {}
 T {VSS} -75 26 0 0 0.2 0.2 {}
+B 5 -102.5 47.5 -97.5 52.5 {name=EN dir=in}
+L 7 -100 50 -80 50 {}
+T {EN} -75 46 0 0 0.2 0.2 {}
 T {@symname} -47.5 -6 0 0 0.3 0.3 {}
 T {@name} -80 -62 0 0 0.2 0.2 {}
