@@ -1,7 +1,7 @@
 {
   "name": "startup",
-  "description": "Startup into full load, minimum load, and an unprotected near-short, all in one tran run",
-  "claim": "README.md Target specification, 'Startup' row (DR-0004 amendment A9): monotonic into any load 0-50 mA, controlled ramp <=1V/ms, inside +/-2% within 3 ms of enable, overshoot <=+2%. Measured here for full load (~50 mA) and minimum/no external load. The third branch (near-short, 'startup into current limit') is honest evidence against the CURRENT design state only: no current-limit/foldback circuitry exists yet (issue #11 is open -- design/README.md documents the current-sense tap as unimplemented), so this branch measures inrush into an UNPROTECTED near-short, not a current-limit verification, and carries no pass/fail checks (there is nothing ratified to check it against yet). Re-run once #11 lands a real current limit.",
+  "description": "Startup into full load, minimum load, and a protected near-short, all in one tran run",
+  "claim": "README.md Target specification, 'Startup' row (DR-0004 amendment A9): monotonic into any load 0-50 mA, controlled ramp <=1V/ms, inside +/-2% within 3 ms of enable, overshoot <=+2%. Measured here for full load (~50 mA) and minimum/no external load. The third branch (near-short, 'startup into current limit') is evidence-only: a near-short is outside the ratified 0-50 mA load range and README.md's target table has no short-circuit-current row to check its peak against, so it carries no pass/fail checks. The DUT now instantiates Xilimit (issue #11 / PR #39, closed) and Xsoftstart (issue #38 / PR #44), so this is inrush into a PROTECTED near-short, unlike the unprotected-inrush framing of the pre-#39 record this one supersedes. Integration method: '.options method=gear' (tb_startup.spice header) -- ngspice's default trapezoidal integrator rings across the near-short branch's fast current-limit clamping and collapses the whole deck's global timestep, making this matrix unrunnable against the post-#39/#44 DUT (issue #48); Gear/BDF integration does not ring across that event. Not a tolerance relaxation -- reltol/abstol/vntol/chgtol stay at ngspice defaults -- but disclosed here per the sim/soft-start/ precedent for integrator-choice changes; see tb_startup.spice for the measured CPU cost and a same-corner sanity check against the (unaffected, still-trapezoidal) _full/_min branches.",
   "netlist": "tb_startup.spice",
   "dut_netlist": "design/netlist/ldo_core.spice",
   "nominal_supply_v": 3.3,
@@ -19,7 +19,7 @@
     "meas tran ipeak_short MAX i(vamm_short) FROM=1u TO=6m"
   ],
   "operating_conditions": {
-    "load_current": "~50 mA (Rload_full=36 Ohm), ~1 uA (Rload_min=1.8 MOhm, minimum/no external load), near-short (Rload_short=1 Ohm, unprotected -- see Claim)",
+    "load_current": "~50 mA (Rload_full=36 Ohm), ~1 uA (Rload_min=1.8 MOhm, minimum/no external load), near-short (Rload_short=1 Ohm, protected by Xilimit -- see Claim)",
     "output_cap": "4.7 uF (DR-0001 window's upper bound, the softest/slowest startup corner) + 100 mOhm ESR, all three branches",
     "enable_state": "EN steps 0 -> VIN at t=1us (1ns edges) for all three branches simultaneously"
   },

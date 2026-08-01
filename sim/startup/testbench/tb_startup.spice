@@ -13,17 +13,50 @@
 *              condition, using a large-but-finite R so the op point is
 *              well-posed at t=0 before EN asserts)
 *   - _short : Rload=1 Ohm (near dead short -- "startup into current
-*              limit"). IMPORTANT: no current-limit/foldback circuitry
-*              exists yet (issue #11 is open; design/README.md documents
-*              the current-sense tap as unimplemented). This branch is
-*              therefore evidence of inrush into an UNPROTECTED near-short
-*              with the current design, not a current-limit verification --
-*              see tb.json's Claim for the honest framing. Re-run once #11
-*              lands.
+*              limit"). The DUT now instantiates Xilimit (issue #11 / PR
+*              #39, closed) and Xsoftstart (issue #38 / PR #44), so this
+*              branch is evidence of inrush into a PROTECTED near-short
+*              (not the unprotected inrush the pre-#39 record measured),
+*              still against no ratified short-circuit-current row -- see
+*              tb.json's Claim for the honest framing and carries no
+*              pass/fail checks either way.
 * Resistive loads (not ideal current sinks) are used throughout because an
 * ideal current sink into Vout=0V at t=0 (EN still low) is non-physical and
 * drives the node to an unbounded negative rail before EN ever asserts --
 * confirmed by hand during implementation.
+*
+* INTEGRATION METHOD (issue #48)
+*
+* Once the DUT gained Xilimit and Xsoftstart, this deck stopped being
+* runnable: ngspice's default trapezoidal integrator rang on the _short
+* branch (a cold enable into a near dead short immediately drives
+* Xilimit's current limiter into its clamped regime, which is a fast,
+* near-discontinuous switching event) and collapsed its timestep for the
+* rest of the 6 ms window -- ngspice integrates one deck on one global
+* timestep, so the other two branches paid for it too. Measured at
+* tt/27C/3.30V, CPU seconds to simulate the full 6 ms window:
+*
+*   default (trapezoidal) integration      >120 s CPU and still not done
+*                                           (matches this issue's own
+*                                           finding of ~2 min CPU to reach
+*                                           only 1.49 ms of 6 ms, i.e. an
+*                                           extrapolated ~8 min/corner)
+*   .options method=gear                   11.7 s CPU, completes cleanly
+*
+* Gear (backward-differentiation) integration is the standard SPICE fix
+* for exactly this failure mode: it does not ring the way trapezoidal
+* does across a fast switching event, so it does not need to shrink its
+* timestep to control it. Switching to it is an integration-METHOD choice,
+* not a tolerance relaxation -- reltol/abstol/vntol/chgtol are all left at
+* the ngspice defaults -- but it changes which numerical algorithm produces
+* the recorded values, so it is disclosed here and in tb.json's Claim per
+* the sim/soft-start/ precedent for disclosing integrator changes. Sanity
+* check against the (still trapezoidal, unaffected) _full/_min branches
+* run standalone: tsettle_full_ms 3.79087 vs 3.79087, overshoot_full_mv
+* -27.688 vs -27.358 mV, tsettle_min_ms 3.88350 vs 3.88377,
+* overshoot_min_mv -13.663 vs -13.661 mV (gear vs default trapezoidal) --
+* sub-1.2%-of-scale agreement, well inside corner-to-corner spread.
+.options method=gear
 Vsup VIN 0 DC {vdd_val}
 Ven EN 0 PULSE(0 {vdd_val} 1u 1n 1n 10m 20m)
 
