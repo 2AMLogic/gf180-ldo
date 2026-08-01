@@ -79,7 +79,16 @@ shelf, one pole), which reduces to `f_c/f_z ≥ 1`, i.e.
 
 ```
 Rz · sqrt(Cc)  ≥  K · sqrt(C_out / (β · gm(MIN) · gm_pass))
+                                     K = 2^(-1/4) ~ 0.84, the sqrt(2) at the
+                                     zero corner carried through the sqrt
 ```
+
+**Caution — `f_c` here is the *shelf-asymptote* crossover, not the crossover
+the matrix reports.** Where the loop actually crosses below `f_z` (which is
+the case at every failing 0 mA point), the reported `f_crossover_hz` sits in
+the −40 dB/dec region and is a different quantity; substituting it into
+`f_c/f_z ≥ 1` and reading off a growth factor understates what `Cc` must do by
+that factor again. The worked derivation below does it properly.
 
 `gm_pass` is what collapses at 0 mA: the pass device carries only the
 divider's ~2 µA there, so `gm_pass` falls by roughly **110×** between 0.1 mA
@@ -89,7 +98,7 @@ Both components are bounded, and both bounds are *measured*, not assumed:
 | Bound | What sets it | Measured limit |
 |---|---|---|
 | `Rz` (hence `A_plat`) | the heavy-load crossover `β·A_plat·gm_pass/(2π·C_out)` must stay below the buffer / BG-node poles | `Rz` = 6 MΩ passes 0.1–50 mA everywhere; **7 MΩ already loses corners at 1–50 mA**; 9 MΩ loses them all |
-| `Cc` | the amplifier's 1 kHz gain is `gm(MIN)/(2π·Cc·1 kHz)`, and the ratified **PSRR > 50 dB @ 1 kHz** row rides on it | `Cc` = 4.80 pF gives worst-corner `psrr_ldo_1k_db` = **50.0 dB** against a 50 dB floor; `Cc` = 7.4 pF measures **46.3 dB**, a hard FAIL |
+| `Cc` | the amplifier's 1 kHz gain is `gm(MIN)/(2π·Cc·1 kHz)` — while `f_z` > 1 kHz; see the shelf caveat below — and the ratified **PSRR > 50 dB @ 1 kHz** row rides on it | `Cc` = 4.80 pF gives worst-corner `psrr_ldo_1k_db` = **50.0 dB** against a 50 dB floor; `Cc` = 7.4 pF measures **46.3 dB**, a hard FAIL |
 
 The design shipped by #51 sits **on** that frontier, not inside it: worst-corner
 amplifier gain at 1 kHz is 53.5 dB against a 53.5 dB floor, and worst-corner PM
@@ -97,21 +106,84 @@ at the lightest verified load (0.1 mA / 4.7 µF / 1 mΩ) is 45.4° against a 45�
 floor. Both ratified rows are simultaneously at their limits with the same two
 components.
 
-Closing the 0 mA column from that frontier needs `Rz·sqrt(Cc)` to grow by
-**15×** (measured: PM 3.8° ⇒ `f_c/f_z` = 0.066 at the worst 0 mA point, and
-`f_c/f_z` must reach 1). With `Rz` already at its measured ceiling, that has
-to come from `Cc`, which must grow **228×**, to ≈ 1.1 nF:
+Closing the 0 mA column from that frontier is a **quadratic** ask in `Cc`, and
+it is worth deriving that explicitly, because the ratio the measurements hand
+you (`f_c/f_z` = 0.07 at the worst 0 mA point) is *not* the factor `Cc` has to
+grow by — the naive reading is low by more than an order of magnitude.
 
-- **Area.** 1.1 nF of `cap_mim_2f0` is ≈ 5.5 × 10⁵ µm² = **0.55 mm²**, against
-  a ratified **< 0.1 mm² total core area** row (pass FET included). It is
-  5.5× the whole area budget for one capacitor.
-- **PSRR, which is the harder one.** The same 228× on `Cc` drops the
-  amplifier's 1 kHz gain by 20·log₁₀(228) = **47 dB**, taking the ratified
-  PSRR > 50 dB @ 1 kHz row from a measured 50.0 dB to roughly 3 dB. So the
-  0 mA column is not merely expensive in area: **the single component that
-  would fix it destroys a different ratified row by 47 dB**, and no amount of
-  area buys that back, because `Cc` appears in both expressions with opposite
-  sign.
+At the worst 0 mA point the loop does not cross unity on the shelf at all: it
+crosses **below** `f_z`, where the amplifier is still an integrator and the
+loop rolls off at −40 dB/dec. The matrix shows that directly — crossover
+scales as `1/sqrt(C_out)`, not `1/C_out` (1465 / 836 / 385 Hz at 0.33 / 1 /
+4.7 µF: ratios 1.75 and 2.17, against `sqrt(3.03)` = 1.74 and `sqrt(4.7)`
+= 2.17). In that region `|T| ∝ 1/(f²·Cc)`, so writing `Cc = k·Cc0` and using
+`|T(f_c0)| = 1` at the present `Cc0` = 4.80 pF:
+
+```
+|T(f)|   = (f_c0/f)² / k        for f << f_z
+f_z(k)   = f_z0 / k
+```
+
+PM ≥ 45° requires crossing at or above `f_z`, i.e. `|T(f_z)| ≥ 1`. Evaluating
+at `f_z(k)`, where the exact `|Rz + 1/(jωCc)|` is `sqrt(2)`× its asymptote:
+
+```
+|T(f_z(k))| = sqrt(2) · k · (f_c0/f_z0)²  ≥  1
+        k  ≥  1 / ( sqrt(2) · (f_c0/f_z0)² )
+```
+
+**`Cc` grows as the *square* of the crossover-to-zero frequency ratio, not in
+proportion to it** — equivalently, it is `Rz·sqrt(Cc)` that scales with
+`f_c/f_z`, which is why the feasibility boundary above is written in that
+combination. With the measured `f_c0` = 384.9 Hz at the worst 0 mA point
+(`ff_125c_2.97v` / 4.7 µF / 1 mΩ) and `f_z0` = 1/(2π·6 MΩ·4.80 pF) = 5.53 kHz,
+`f_c0/f_z0` = 0.070, so
+
+```
+k ≥ 1 / (sqrt(2) · 0.070²) ≈ 150      ⇒   Cc ≥ 0.70 nF
+```
+
+i.e. `Rz·sqrt(Cc)` must grow ≈ 12×, all of it from `Cc` because `Rz` is
+already at its measured ceiling. **≈ 150× is a floor, not an estimate**: the
+two-pole-plus-zero model ignores the extra lag the loop picks up as crossover
+falls into the tens of hertz, which moves the real requirement up, not down.
+Both rows below are therefore evaluated at the *most* favourable `Cc` the
+model permits.
+
+- **Area.** 0.70 nF of `cap_mim_2f0`, at the 1.990 fF/µm² measured in
+  `sim/devchar/CONCLUSIONS.md` §3, is ≈ 3.5 × 10⁵ µm² = **0.35 mm²**, against
+  a ratified **< 0.1 mm² total core area** row (pass FET included). One
+  capacitor is 3.5× the whole area budget, and `error_amp`'s present total is
+  0.0164 mm² (`design/error_amp.md` §8), so there is nothing to trade back.
+- **PSRR, which is the harder one — and note that it saturates.** The
+  `gm(MIN)/(2π·Cc·1 kHz)` form of the amplifier's 1 kHz gain holds only while
+  `f_z` is **above** 1 kHz. The exact dependence is
+  `A(1 kHz) ∝ |Rz + 1/(j2π·1 kHz·Cc)|`, which flattens onto the Type-II shelf
+  plateau `A_plat = gm(MIN)·Rz` as soon as `Cc` pushes `f_z` below 1 kHz —
+  that is, for any `Cc` ≳ 27 pF, far short of the ≈ 0.7 nF the 0 mA column
+  needs. So the gain loss does not keep growing with `Cc`; it **saturates** at
+
+  ```
+  20·log₁₀( sqrt(1 + (f_z0 / 1 kHz)²) ) = 20·log₁₀(5.62) = 15.0 dB
+  ```
+
+  and 15.0 dB is therefore the *entire* PSRR penalty that growing `Cc` at
+  `Rz` = 6 MΩ can ever cost. It is already fatal: worst-corner amplifier gain
+  at 1 kHz goes 53.5 dB → ≈ **38.5 dB** against a 53.5 dB floor, and
+  worst-corner `psrr_ldo_1k_db` goes 50.0 dB → ≈ **35.0 dB** against a
+  ratified 50 dB floor. **Every `Cc` big enough to reach 0 mA pays the full
+  15 dB, and no amount of area buys it back**, because area and PSRR ride on
+  the same component with opposite sign.
+
+  Those two figures are an extrapolation from recorded points, not themselves
+  a recorded measurement, and are flagged as such: the expression above
+  reproduces the two `Cc` points that *are* recorded to 0.1 dB (4.80 pF →
+  50.0 dB; 7.4 pF → predicted 46.4 dB, measured 46.3 dB), but both of those
+  sit in the integrator region, so the plateau branch is modelled rather than
+  measured. A recorded point at `Cc` ≈ 0.7 nF would close that gap and is
+  worth taking if anyone revisits this; it cannot change the outcome, because
+  the row is failing at **every** `Cc` along the path — monotonically, from
+  50.0 dB at 4.80 pF down to the 35.0 dB asymptote.
 
 The alternative that does not touch `Cc` is to stop `gm_pass` collapsing —
 i.e. an internal preload holding the pass device at its 0.1 mA operating point.
@@ -120,9 +192,11 @@ for the whole regulator), so it overruns that row by 3.3×. DR-0001 also
 forbids assuming an external preload resistor, which is precisely why this has
 to be a spec decision rather than an application note.
 
-Three ratified rows — PSRR @ 1 kHz, core area, and Iq — each independently
-block the only three levers that reach 0 mA. That is the case for moving the
-point out of the envelope rather than continuing to design against it.
+Three ratified rows — PSRR @ 1 kHz (15 dB short, and the shortfall saturates,
+so it cannot be traded down), core area (3.5× over budget for one capacitor),
+and Iq (3.3× over for the preload alternative) — each independently block the
+only three levers that reach 0 mA. That is the case for moving the point out
+of the envelope rather than continuing to design against it.
 
 ### The 15 outliers at 0.1 mA are the same frontier, seen from the other side
 
@@ -161,10 +235,11 @@ Two observations bound it for whoever picks it up:
   row a consumer of this block designs against; "stable at exactly zero load"
   is a condition an integrator can guarantee with a resistor. Trading a
   first-class AC specification for one endpoint of the load axis is the worse
-  bargain, and the 47 dB it would cost is not a trim — it is the row.
-- **Keep 0 mA and relax the area row.** Rejected on its own terms (5.5× the
+  bargain, and the 15 dB it would cost takes a 50 dB row to 35 dB — that is
+  not a trim, it is a different specification.
+- **Keep 0 mA and relax the area row.** Rejected on its own terms (3.5× the
   budget) and, more decisively, it does not work: the area buys `Cc`, and `Cc`
-  is what breaks PSRR. Paying the area still leaves the PSRR row 47 dB short.
+  is what breaks PSRR. Paying the area still leaves the PSRR row 15 dB short.
 - **Add a 100 µA internal preload.** Rejected: 3.3× over the ratified Iq row,
   and it burns 100 µA continuously at exactly the condition (no load) where a
   regulator's quiescent current matters most.

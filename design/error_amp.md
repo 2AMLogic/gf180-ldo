@@ -428,9 +428,17 @@ components:
 
 This cell sits **on** that frontier — 53.5 dB against a 53.5 dB gain floor and
 45.4° against a 45° PM floor at the same time. Reaching 0 mA from there needs
-`Rz·sqrt(Cc)` 15× larger; with `Rz` at its ceiling that is `Cc` ≈ 1.1 nF,
-which is 0.55 mm² of MIM (5.5× the whole core-area row) **and** drops the
-1 kHz gain by 47 dB, so it cannot be bought with area either. The full
+`Rz·sqrt(Cc)` ≈ 12× larger, and with `Rz` at its ceiling that has to come from
+`Cc` alone — which therefore grows as the **square** of that, ≥ 150×, because
+the worst 0 mA point crosses unity *below* `f_z` where the loop rolls off at
+−40 dB/dec (`|T| ∝ 1/(f²·Cc)`; the measured crossover scales as
+`1/sqrt(C_out)`, confirming it). That is `Cc` ≥ 0.70 nF, i.e. ≥ 0.35 mm² of
+MIM — 3.5× the whole core-area row for one capacitor — **and** it drops the
+amplifier's 1 kHz gain onto the Type-II shelf plateau, ≈ 15 dB down (53.5 dB
+→ ≈ 38.5 dB), taking the ratified PSRR row from 50.0 dB to ≈ 35 dB. Note the
+`1/Cc` gain law saturates there: past `Cc` ≈ 27 pF the 1 kHz gain sits on the
+plateau `gm(MIN)·Rz` and stops falling, so 15 dB is the *whole* PSRR penalty
+available — and it is already fatal, and area cannot buy it back. The full
 argument, the alternatives (preload, `C_eff` floor, re-topology) and the
 proposed spec change are
 `spec/decision-records/DR-0007-light-load-stability-envelope.md`.
