@@ -281,6 +281,37 @@ at effectively no load beyond the ~1 mA the sanity testbench applies. The
 full sizing (and the unit-cell partitioning a layout needs for matching) is
 layout-phase work, out of scope here.
 
+## Loop compensation: `Cff` (issue #42)
+
+`Cff` (`cap_mim_2f0`, 87 um x 87 um, ~15.1 pF) sits in `ldo_core.sch` from
+`VOUT` to `FB`, in parallel with `Rtop` -- a feedforward zero at
+`1/(2*pi*Rtop*Cff)` with a companion pole at `1/(2*pi*(Rtop||Rbot)*Cff)`,
+the lever `design/error_amp.md` section 6 named ahead of time. It is an
+`ldo_core`-level addition: `error_amp.sch` and its netlist are untouched, so
+none of #9's offset/PSRR/Iq records (measured with the amplifier driving its
+own 6.14 pF gate load in isolation) need re-verification.
+
+**Why here and not across `Rbot`.** A feedforward cap in parallel with the
+resistor on the `VOUT` side (`Rtop`) gives a genuine left-half-plane zero
+before its companion pole; the same cap in parallel with the ground-side
+resistor (`Rbot`) gives a pure pole (added phase lag, not lead) -- confirmed
+both by the transfer-function derivation and by a control run that measured
+materially worse margins with it wired across `Rbot`. Do not move it.
+
+**What it does and does not fix.** `sim/loop-stability/records/` (issue
+#10's testbench, unmodified) shows `Cff` substantially improves the
+matrix's moderate-to-heavy-load, higher-ESR corners, but does not bring the
+very-light-load (0-0.1 mA) corners over the ratified 45 deg / 10 dB bar: at
+that load the loop's two lowest poles (the amplifier's own Miller-set pole
+and the output pole set by `Rtop+Rbot` = 900 kOhm against DR-0001's cap
+window) both sit at sub-Hz frequencies regardless of any on-chip
+compensation this issue tried, and a feedforward network's fixed
+`Rtop/(Rtop||Rbot)` = 1.5x zero/pole spacing caps its phase lift at roughly
+11.5 deg -- far short of what that corner needs. See the loop-stability
+record for the full worst-corner table, the empirical rescaling experiments
+that ruled out fixing this via `error_amp.sch`'s `XCc`/`XRz` alone, and the
+follow-up issue this hands to the next compensation iteration.
+
 ## Exporting the netlist
 
 ```bash

@@ -62,6 +62,49 @@ the area the mismatch assumption implies). FB = VOUT * Rbot/(Rtop+Rbot)
 DR-0003 calls for to hold the divider's standing current near 2 uA
 (1.8 V / 900 kOhm = 2.0 uA).
 
+Loop compensation -- Cff (issue #42): a feedforward capacitor from VOUT to
+FB, in parallel with Rtop, per the lever design/error_amp.md section 6
+already named ("the conventional one is a feedforward capacitor across
+Rtop"). #10's stability record (sim/loop-stability/records/
+20260801-050406-65416d2.md) measured a hard FAIL (worst PM -12.89 deg,
+worst GM -28.87 dB) with a -180 deg crossing at every PVT point: the
+amplifier's own Miller-set dominant pole (~2.6 Hz, XCc/XRz in
+design/error_amp.sch) and the load-dependent output pole at VOUT are BOTH
+always many decades below crossover across the whole matrix -- an
+unavoidable consequence of a two-pole system with the ~140 dB DC loop gain
+the load-regulation and PSRR rows require (crossover self-consistently
+lands near sqrt(A0*fp1*fp2), never close to either pole) -- so no amount of
+re-scaling XCc alone moves the phase margin off its near-0 deg floor
+(confirmed empirically: 3-100x XCc rescaling left the light-load floor
+within a degree of 0 deg either way). Cff adds a genuine LHP zero at
+1/(2*pi*Rtop*Cff) with a companion pole at 1/(2*pi*(Rtop||Rbot)*Cff) --
+DOES NOT depend on the external output cap's ESR (DR-0001's "no minimum
+ESR" constraint), costs no quiescent current, and needs no change to
+design/error_amp.sch (so none of #9's offset/PSRR/Iq records, measured with
+the amplifier driving its own 6.14 pF gate load in isolation, need
+re-verification). NOTE the sign: a feedforward cap across Rbot instead
+(the resistor to ground) gives a PURE POLE, not a zero -- it must go across
+Rtop (VOUT side), confirmed both by the transfer-function derivation and by
+a control experiment that measured a further ~50 deg WORSE margin with it
+across Rbot.
+
+Measured, sim/loop-stability/records/ (this record supersedes
+20260801-050406-65416d2): Cff materially improves the matrix (most of the
+moderate-to-heavy-load, higher-ESR corners now clear both bars, some by a
+wide margin), but it does not reach a full pass. The near-0 deg PM floor at
+very light load (0-0.1 mA) is NOT fixed by Cff or by any XCc rescaling this
+issue tried: at that corner both dominant poles sit at sub-Hz frequencies
+(the output pole there is set by the 900 kOhm feedback divider DR-0003
+ratifies, not by load), so closing even a fraction of the gap needs a zero
+sited at a few hundred Hz -- a feedforward network with the fixed 1.5x
+Rtop/(Rtop||Rbot) spacing has a hard ceiling of about 11.5 deg of phase lift
+regardless of Cff's value (confirmed empirically at 10 pF and 22 pF), and an
+on-chip cap large enough to relocate the zero itself down to that frequency
+against a realistic on-chip resistance is one to two orders of magnitude
+over the < 0.1 mm^2 core area budget. See the evidence record for the full
+worst-corner table and the follow-up issue this hands to the next
+compensation iteration.
+
 Pass device Mpass: pfet_03v3, L=0.28u (model minimum), W=2000u (2 mm),
 nf=40, m=1. This is a SIMPLIFICATION of the full ~4 mm / 40-unit-cell
 sizing the ratified spec calls for (needed to clear 300 mV dropout @
@@ -113,6 +156,9 @@ C {devices/lab_pin.sym} 320 -450 0 0 {name=l_men_b sig_type=std_logic lab=VIN}
 C {devices/res.sym} 550 -250 0 0 {name=Rtop value=300k footprint=1206 device=resistor m=1}
 C {devices/lab_pin.sym} 550 -280 0 0 {name=l_rtop_p sig_type=std_logic lab=VOUT}
 C {devices/lab_pin.sym} 550 -220 0 0 {name=l_rtop_m sig_type=std_logic lab=FB}
+C {symbols/cap_mim_2f0fF.sym} 750 -250 0 0 {name=Cff model=cap_mim_2f0_m2m3_noshield W=87u L=87u m=1}
+C {devices/lab_pin.sym} 750 -280 0 0 {name=l_cff_g sig_type=std_logic lab=VOUT}
+C {devices/lab_pin.sym} 750 -220 0 0 {name=l_cff_b sig_type=std_logic lab=FB}
 C {devices/res.sym} 550 -100 0 0 {name=Rbot value=600k footprint=1206 device=resistor m=1}
 C {devices/lab_pin.sym} 550 -130 0 0 {name=l_rbot_p sig_type=std_logic lab=FB}
 C {devices/lab_pin.sym} 550 -70 0 0 {name=l_rbot_m sig_type=std_logic lab=VSS}
