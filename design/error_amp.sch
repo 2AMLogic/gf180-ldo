@@ -82,6 +82,25 @@ sim/amp-openloop/records/):
   pass-gate bandwidth per microamp in the buffer than it did in a
   9 MOhm-output common-source stage.
 
+CAUTION (issue #53): THE COMPENSATION BELOW IS NOT VERIFIED AND THE CELL
+OSCILLATES. Rz/Cc is not only the LDO loop's compensation -- it is a
+feedback loop in its own right, from N1 around M2P and the class-AB buffer
+back to OUT, and it stays closed when the LDO loop is broken at
+ERRAMP_OUT/PASS_GATE. Above f_z that loop is closed RESISTIVELY (through
+Rz), which removes its own Miller compensation across the whole band the LDO
+loop uses, and it is unstable: measured 21-58 dB of gain peaking at
+420-750 kHz with a +180 deg phase ADVANCE (a right-half-plane pole pair) at
+every corner tried, and 3.31 V pk-pk on BG / 2.14 V pk-pk on the pass gate /
+372 mV pk-pk on VOUT in a settled, undriven transient at tt/27C/3.30V and
+50 mA (sim/amp-selfosc/records/). Because the LDO loop gain then has RHP
+poles, DR-0001's Bode PM/GM criterion does not apply to it and the
+"2689/3240 passing" reading of sim/loop-stability/records/ is not a
+stability result -- see design/error_amp.md S6.6 and
+spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md. The
+COMPENSATION and BUFFER sections below are kept as #51 wrote them because
+they are still the correct account of what the devices are FOR; they are not
+a correct account of what the cell does.
+
 COMPENSATION -- why the Miller network is a gain SHELF (issue #51)
 #10's stability record measured the pre-#51 loop as a textbook two-pole
 system: the amplifier's Miller-set dominant pole (~2.6 Hz) and the output

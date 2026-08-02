@@ -1,0 +1,84 @@
+* amp-selfosc -- does the error amplifier's INTERNAL loop oscillate?
+*
+* Stimulus fragment for ldo_core (issue #53). The harness supplies the title,
+* the gf180mcu model .include, the corner .lib sections, .temp, the .control
+* block and .end, plus the DUT .include named by tb.json's "dut_netlist".
+* Harness-supplied parameters: vdd_val, vdd_nom, temp_c.
+*
+* ---------------------------------------------------------------------------
+* Why this experiment exists
+* ---------------------------------------------------------------------------
+* sim/loop-stability/ measures the LDO loop's Bode phase and gain margins.
+* Those two numbers are a valid stability test ONLY when the loop gain T(s)
+* has no right-half-plane poles -- i.e. when the forward path is itself
+* stable with the loop broken. That precondition is not checked anywhere,
+* and it is not free: design/error_amp.sch closes a LOCAL feedback loop
+* inside the amplifier (the Rz/Cc Miller network from N1 around the stage-2
+* driver M2P and the class-AB gate buffer back to OUT) which stays closed
+* when the LDO loop is broken at ERRAMP_OUT/PASS_GATE. If that local loop is
+* unstable, T(s) has RHP poles, the Bode criterion does not apply, and
+* `180 + phase` at the 0 dB crossing reports a large positive number that
+* sails past a ">= 45 deg" check while the amplifier is ringing.
+*
+* This bench answers the question the frequency-domain benches cannot: with
+* the regulator settled and NOTHING driving it, is there residual periodic
+* activity on the amplifier's own nodes? A stable loop settles to its DC
+* operating point and stays there, so the peak-to-peak of an internal node
+* over a late, quiet window is a direct, waveform-level, pass/fail answer
+* that no phase-unwrapping convention can launder.
+*
+* ---------------------------------------------------------------------------
+* How it is set up
+* ---------------------------------------------------------------------------
+* Two ldo_core instances, both with the loop tied closed (ERRAMP_OUT and
+* PASS_GATE on one node, the normal-operation wiring design/README.md
+* describes), share one supply and one enable:
+*
+*   _light  18 kOhm  -> ~0.1 mA, the lightest load DR-0001's stability
+*                      envelope still claims, and the load column issue #53
+*                      is about
+*   _heavy  36 Ohm   -> ~50 mA, the full rated load, so a positive result
+*                      cannot be dismissed as a light-load-only artifact
+*
+* Both carry C_eff = 0.33 uF with 1 mOhm ESR: the a-priori worst point of
+* DR-0001's window (smallest capacitance, no ESR zero).
+*
+* EN is held at VIN for the whole run rather than stepped, so the operating
+* point the transient starts from IS the settled regulating solution and the
+* measured window contains no enable transient to confuse with oscillation.
+* An instability then grows out of the integrator's own truncation noise,
+* which is exactly the physical situation: a real circuit with RHP poles is
+* started by its own thermal noise.
+*
+* Resistive loads, not ideal current sinks -- the same reason
+* sim/startup/testbench and sim/current-limit/testbench give: an ideal sink
+* makes the t=0 operating point ill-posed.
+*
+* ---------------------------------------------------------------------------
+* Integration method
+* ---------------------------------------------------------------------------
+* .options method=gear, for the same reason sim/startup/ uses it (issue #48)
+* and for one more that matters here specifically: Gear/BDF integration is
+* NUMERICALLY DAMPING, while ngspice's default trapezoidal rule is not and
+* can sustain a ringing artifact of its own. Measuring an oscillation under
+* the damping integrator is the conservative choice -- a positive result
+* here cannot be an artifact of the integrator, because the integrator is
+* biased against it. reltol/abstol/vntol/chgtol stay at ngspice defaults.
+*
+* The 100 ns maximum timestep resolves the ~500 kHz activity this bench was
+* written to catch (about 20 points per period) with margin, and the 0.4 ms
+* of settling before the measurement window is ~200 periods of it.
+
+.options method=gear
+Vsup VIN 0 DC {vdd_val}
+Ven  EN  0 DC {vdd_val}
+
+Xdut_light VIN VOUT_LIGHT EN 0 LOOP_LIGHT LOOP_LIGHT ldo_core
+Rload_light VOUT_LIGHT 0 18k
+Resr_light  VOUT_LIGHT n_esr_light 0.001
+Cout_light  n_esr_light 0 0.33u
+
+Xdut_heavy VIN VOUT_HEAVY EN 0 LOOP_HEAVY LOOP_HEAVY ldo_core
+Rload_heavy VOUT_HEAVY 0 36
+Resr_heavy  VOUT_HEAVY n_esr_heavy 0.001
+Cout_heavy  n_esr_heavy 0 0.33u

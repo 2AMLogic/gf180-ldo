@@ -29,6 +29,10 @@
     "meas ac g1kll_db find vdb(vg2) at=1k",
     "meas ac a0dr_db find vdb(vg3) at=0.1",
     "meas ac g1kdr_db find vdb(vg3) at=1k",
+    "meas ac apk_db max vdb(vg1) from=2e5 to=5e6",
+    "meas ac a200k_db find vdb(vg1) at=2e5",
+    "meas ac apkll_db max vdb(vg2) from=2e5 to=5e6",
+    "meas ac a200kll_db find vdb(vg2) at=2e5",
     "ac lin 1 1k 1k"
   ],
   "operating_conditions": {
@@ -56,7 +60,9 @@
     "tail_hdr_mv": "op1.v(x1.tail)*1e3",
     "tail_hdr_dropout_mv": "op1.v(x3.tail)*1e3",
     "vg_pulldown_mv": "op1.v(vg4)*1e3",
-    "vg_pullup_hdr_mv": "(op1.v(vdd5)-op1.v(vg5))*1e3"
+    "vg_pullup_hdr_mv": "(op1.v(vdd5)-op1.v(vg5))*1e3",
+    "peak_excess_db": "ac1.apk_db - ac1.a200k_db",
+    "peak_excess_lightload_db": "ac1.apkll_db - ac1.a200kll_db"
   },
   "checks": {
     "a0_db": {
@@ -77,7 +83,7 @@
     },
     "pm_deg": {
       "min": 45.0,
-      "description": "the amplifier's own phase margin driving 6.14 pF, i.e. the stability row's PM >= 45 deg criterion applied to the block. The LDO loop's margin is #10's claim, not this one."
+      "description": "the amplifier's own phase margin driving 6.14 pF, i.e. the stability row's PM >= 45 deg criterion applied to the block. The LDO loop's margin is #10's claim, not this one. CAUTION (issue #53): this is computed as 180 + vp(), and ngspice's vp() WRAPS to (-180, 180], so a forward path carrying 288 deg of lag at unity gain reports here as 252 deg and clears this bar. This row therefore cannot on its own distinguish a well-compensated amplifier from one whose local loop has rotated the phase by +180 deg -- that is what peak_excess_db below is for, and this bar is kept unchanged rather than reinterpreted so the two are independent."
     },
     "vos_sys_uv": {
       "min": -2000.0,
@@ -108,6 +114,14 @@
       "min": 400.0,
       "min_spread_pct": 10.0,
       "description": "UGBW floor keeps gain @ 1 kHz above the PSRR budget; the spread floor is a harness-integrity check that the corner .lib sections and .temp actually took effect"
+    },
+    "peak_excess_db": {
+      "max": 1.0,
+      "description": "How far the amplifier's gain climbs back ABOVE its value at 200 kHz anywhere in 200 kHz - 5 MHz. Zero for a stable Type-II shelf, whose gain falls monotonically from the shelf through unity. A positive value is resonance in the amplifier's OWN local feedback loop -- the Rz/Cc Miller network around M2P and the class-AB gate buffer -- which is the loop that stays closed when the LDO loop is broken at ERRAMP_OUT/PASS_GATE. If it rings, the LDO loop gain T(s) has right-half-plane poles and DR-0001's Bode PM/GM criterion does not apply to it (spec/decision-records/DR-0008). 1 dB is numerical slack on a quantity that is exactly 0 for a monotone response, not a tuning allowance. Note the resolution it is read at: the shared `ac dec 40` sweep samples ~5.9 % frequency steps, so a high-Q peak's tip is undersampled and the number reported here UNDERSTATES the true peak -- measured at dec 200 on the same netlist the same peak reads 20-58 dB where this row reports 7-12 dB. It is a detector, not a measurement of the peak's height."
+    },
+    "peak_excess_lightload_db": {
+      "max": 1.0,
+      "description": "Same bar at the light-load operating point, where the class-AB buffer's pull-up is closest to cutoff and the local loop is least damped."
     }
   }
 }

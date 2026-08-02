@@ -101,6 +101,33 @@ Each `corners/<record-id>/<corner-id>.log` carries one `ROW` line per
 machine-readable rollup of all points, and `records/<record-id>.md` is the
 summary record with the worst point called out explicitly.
 
+### PRECONDITION: this experiment's numbers are only a stability test when
+### the loop gain has no right-half-plane poles
+
+A Bode phase margin and gain margin are a valid stability test **only when
+`T(s)` has no right-half-plane poles**, i.e. only when the forward path is
+stable with the loop broken. This deck breaks the loop at
+`ERRAMP_OUT`/`PASS_GATE`, which leaves the amplifier's **own** `Rz`/`Cc`
+Miller loop (around `M2P` and the class-AB gate buffer) closed — so that
+precondition is a property of `design/error_amp.sch`, not something this
+deck can assume.
+
+**Measured, it does not currently hold** (issue #53): the amplifier
+oscillates at ≈ 500 kHz at every PVT corner, and where the resulting
+right-half-plane pole pair rotates the phase by ≈ +180°, this deck's
+`180 + phase` reports a large positive "phase margin" at a crossing that
+sits *above* a resonance where `|T|` had already climbed back over unity.
+The evidence and the argument are
+`sim/amp-selfosc/records/` and
+`spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md`.
+
+**So: do not cite a record here as evidence for DR-0001's stability row
+unless the `sim/amp-selfosc/` record taken against the same `design/`
+netlist passes.** Everything in "Where this stands" below is preserved as
+written, but its verdicts are subject to this precondition — including the
+"2160/2160 at 1–50 mA" reading of the head-of-chain record, which DR-0008
+argues is not a stability result.
+
 ### Where this stands
 
 The current record is **`20260801-140530-d6d47f5`**, a **FAIL** against
