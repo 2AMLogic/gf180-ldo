@@ -1193,9 +1193,17 @@ Everything needed to re-run this record:
 - Command: `./sim/loop-stability/testbench/run.sh`
 - AC sweep: `dec {args.ac_dec} {F_START} {F_STOP}` per injection, two injections
   per point{'' if args.ac_dec == int(AC_DEC) else f' (**not** the default `dec {AC_DEC}` -- see Subset reason)'}.
-  Issue #58 derives the default from the phase-unwrap bound: `cph()` resolves a
-  resonance of quality factor `Q` onto the correct 360 deg branch only while
-  `dec > 1.47*Q`, so `dec {AC_DEC}` is honest up to `Q ~ {int(AC_DEC) / 1.47:.0f}`.
+  The resolution is part of this measurement, not a performance setting
+  (issue #58). Sampling a resonance of quality factor `Q` on a log grid worst
+  case (peak midway between two samples, relative detuning
+  `d = 10^(1/(2*dec)) - 1`) reads `20*log10(sqrt((2*Q*d)^2 + 1))` dB low, so
+  `dec {args.ac_dec}` holds any resonance up to
+  **Q ~ {math.sqrt(10 ** 0.1 - 1) / (2 * (10 ** (1 / (2 * args.ac_dec)) - 1)):.0f}**
+  to within 1 dB -- a tenth of the {GM_MIN_DB:g} dB gain-margin bar. `dec 50`,
+  which every record through `20260802-171044-db620a6` used, held that only to
+  Q ~ 11. This is a stated capability, not a proof of sufficiency: no finite
+  grid resolves an arbitrarily sharp feature. See "Sweep resolution" in
+  `sim/loop-stability/README.md`.
 
 ---
 
