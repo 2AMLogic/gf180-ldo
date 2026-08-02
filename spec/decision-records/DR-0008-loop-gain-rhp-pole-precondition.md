@@ -148,7 +148,7 @@ separates them.
   necessary for a Bode misreading, not sufficient to prove RHP poles — and
   it would have to be added to the deck that mints the ratified record,
   which is a change to the ratified experiment rather than a new,
-  independent one. Filed as a follow-up instead.
+  independent one. Filed as a follow-up instead (#59).
 - **Widen the amplifier's buffer until the local loop is stable at its
   present bandwidth.** The local loop's second pole is
   `gm(Mbuf)/(2π·6.14 pF)`; putting it far enough above a 1.6 MHz crossover
