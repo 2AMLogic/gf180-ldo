@@ -245,7 +245,8 @@ class TestDeckTemplate(unittest.TestCase):
 
         pvt = PvtPoint(corner=CORNERS["ss"], temp_c=-40.0, vdd=2.97)
         deck = sweep.render_deck(
-            pvt, FakePdk(), [0.0, 50e-3], [0.33e-6], [0.001, 0.5]
+            pvt, FakePdk(), [0.0, 50e-3], [0.33e-6], [0.001, 0.5],
+            int(sweep.AC_DEC),
         )
         # Bare '@' survives legitimately (ngspice's `alter @Vinj[acmag]`);
         # what must not survive is an unsubstituted @PLACEHOLDER@.
@@ -255,6 +256,34 @@ class TestDeckTemplate(unittest.TestCase):
         self.assertIn("Vin VIN 0 DC 2.97", deck)
         self.assertIn("foreach il 0 0.05", deck)
         self.assertIn("foreach es 0.001 0.5", deck)
+        # The AC resolution is threaded through, not hard-coded in the deck:
+        # issue #58 made it a parameter of the measurement, and the resurgence
+        # scan's start offset (10^(1/AC_DEC)) has to track it or the metric
+        # silently changes meaning.
+        self.assertIn(f"ac dec {sweep.AC_DEC} 0.01 1e9", deck)
+        self.assertIn(f"let fres = f0*10^(1/{sweep.AC_DEC})", deck)
+
+    def test_ac_resolution_resolves_the_q_the_policy_claims(self):
+        """`AC_DEC` must deliver the bound issue #58's policy states.
+
+        The worst case for sampling a resonance of quality factor Q on a log
+        grid is the peak landing midway between two samples, a relative
+        detuning of d = 10^(1/(2*dec)) - 1, which reads
+        20*log10(sqrt((2*Q*d)^2 + 1)) dB low. The policy is "worst-case miss
+        under 1 dB out to Q ~ 88" -- a tenth of DR-0001's 10 dB gain-margin
+        bar. This test is the arithmetic half of that claim; selftest.py's
+        third reference loop is the measured half.
+        """
+        import math
+
+        dec = int(sweep.AC_DEC)
+        d = 10 ** (1 / (2 * dec)) - 1
+        miss = lambda q: 20 * math.log10(math.sqrt((2 * q * d) ** 2 + 1))  # noqa: E731
+        self.assertLess(miss(88.0), 1.0)
+        # ... and the resolution the repository ran before #58 did not.
+        d50 = 10 ** (1 / 100.0) - 1
+        self.assertGreater(20 * math.log10(math.sqrt((2 * 88.0 * d50) ** 2 + 1)),
+                           1.0)
 
     def test_template_breaks_the_loop_at_the_ports_ldo_core_exposes(self):
         text = (REPO_ROOT / "sim" / "loop-stability" / "testbench"

@@ -2,7 +2,7 @@
 """Prove the loop-gain extraction before trusting anything it reports.
 
 Runs ``tb_tian_selftest.spice`` -- a loop built entirely from ideal elements,
-whose loop gain is known in closed form -- and checks three things:
+whose loop gain is known in closed form -- and checks five things:
 
 1. **The dual-injection arithmetic is right.** The extracted
    ``T = (Tv*Ti - 1)/(Tv + Ti + 2)`` must match the analytic
@@ -24,6 +24,24 @@ whose loop gain is known in closed form -- and checks three things:
    positive -- that loop never returns above unity), and it must recover the
    analytically known peak of a **second** reference loop, built with a
    lightly damped resonance above its first crossing precisely so it does.
+5. **The sweep RESOLUTION policy resolves a high-Q feature** (issue #58).
+   Check 4 places its resonance *on* a grid point, so it tests the
+   extraction's arithmetic and says nothing about whether the grid samples a
+   sharp feature at all. A **third** reference loop closes that gap: Q = 80
+   (four times check 4's Q = 20) placed at the worst-case sampling **offset**
+   for ``dec 400`` -- the resolution ``sweep.py`` now runs -- so the policy is
+   tested at its own blind spot rather than at a frequency that happens to be
+   on-grid for it. Its gain is tuned so the true continuous peak clears 0 dB
+   by only a few dB, i.e. the smallest resurgence still unambiguously over
+   the DR-0008 bar. Three assertions come out of it: the OLD default
+   (``dec 50``) reports this loop as a **false PASS** despite a real,
+   analytically known resurgence (issue #58's general concern -- a coarse
+   grid can misreport *any* sharp feature -- made concrete); ``dec 400``
+   recovers the true peak inside the analytic worst-case bound
+   ``sweep.py``'s ``AC_DEC`` comment derives; and ``cph()`` unwraps the
+   resonance onto the correct 360 deg branch at BOTH resolutions, which is
+   the other half of issue #58's question and turns out to be a non-issue
+   for a minimum-phase pole pair.
 
 No PDK and no design netlist are involved, so this test is a pure statement
 about the *method*. Run it before (or after) ``sweep.py``; it writes nothing.
@@ -58,9 +76,34 @@ A2 = 100.0
 LL2 = 0.8
 CL2 = 0.2e-12
 # The AC resolution the resurging loop is swept at, which is also the step
-# the resurgence scan starts above the crossing. It is the real deck's dec 50
-# (the monotonic loop above keeps its historical dec 20).
+# the resurgence scan starts above the crossing. Deliberately left at the
+# HISTORICAL dec 50 even though the real deck now runs dec 400 (issue #58):
+# this loop's resonance is placed on a dec-50 grid point so that the sampled
+# and continuous peaks agree, which makes it a check of the extraction's
+# arithmetic. Resolution is loop 3's job, below. (The monotonic loop above
+# keeps its own historical dec 20.)
 DEC2 = 50
+# ... and the third, high-Q grid-blind-spot reference loop (issue #58).
+A3 = 8.0
+LL3 = 3.1167613229529993
+CL3 = 4.868965725279348e-14
+# f_res = 10^(2244.5/400) Hz -- the geometric midpoint of the *dec-400* grid
+# points 10^(2244/400) and 10^(2245/400) Hz, counted from 1 Hz. That is the
+# WORST-CASE sampling offset for the new default resolution (and 87.5% of
+# worst case for the old dec 50), so this loop tests the policy being adopted
+# at its own blind spot rather than at a frequency that happens to be
+# on-grid for it.
+FRES3 = 10 ** (2244.5 / 400.0)
+# The old (pre-issue-#58) and new AC_DEC. Must match sweep.py's AC_DEC and
+# the literal `ac dec` calls in tb_tian_selftest.spice's loop-3 section.
+DEC3_OLD = 50
+DEC3_NEW = 400
+# Loop 3 is one real pole plus one (minimum-phase) resonant pole pair, so its
+# unwrapped phase asymptotes to -270 deg. cph() mis-unwrapping the resonance
+# would land 360 deg away from that.
+PH3_ASYMPTOTE_DEG = -270.0
+PH3_PROBE_HZ = 1e8
+MAX_PH3_ERR_DEG = 5.0
 
 # Tolerances. The extraction is exact arithmetic on exact elements, so these
 # are numerical-noise budgets, not engineering tolerances.
@@ -81,6 +124,17 @@ MAX_PM_ERR_DEG = 0.5
 # is set an order of magnitude above that, and still far below the +14 dB
 # feature it has to resolve.
 MAX_RESURGENCE_ERR_DB = 0.25
+# The old dec-50 default must UNDER-report this loop's resurgence by at
+# least this much (i.e. read a visibly less-positive, or outright negative,
+# number) for the reference loop to be exercising the blind spot it exists
+# to demonstrate.
+MIN_GRIDBLIND_MISS_DB = 3.0
+# The new dec-400 default's recovered peak vs the analytic continuous peak.
+# Budget derived the same way as MAX_RESURGENCE_ERR_DB above: at Q=80 the
+# worst-case (peak exactly between two grid points) miss at dec 400 is
+# bounded by ~0.84 dB (20*log10(sqrt((2*eps*Q)^2+1)), eps = sqrt(10^(1/400))-1);
+# the budget below is set comfortably above that bound.
+MAX_GRIDBLIND_ERR_DB = 1.5
 
 
 def analytic_t(f: float) -> complex:
@@ -162,6 +216,59 @@ def analytic_resurgence() -> tuple[float, float, float]:
     return f0, peak, peak_on_grid
 
 
+def analytic_t3(f: float) -> complex:
+    """The third reference loop: same topology, a much higher-Q (80 vs 20)
+    resonance placed at ``FRES3`` -- the worst-case ``dec 50`` sampling
+    offset (issue #58) -- rather than on a grid point (issue #59's loop 2,
+    above). ``A3`` is tuned so the true continuous peak clears 0 dB by only
+    a few dB while both `dec 50` grid points immediately either side of
+    ``FRES3`` read several dB below it.
+    """
+    jw = 2j * math.pi * f
+    zc = 1.0 / (jw * CL3)
+    return (A3 / (1 + jw / WP)) * zc / (RS + RL + jw * LL3 + zc)
+
+
+def _db3(f: float) -> float:
+    return 20 * math.log10(abs(analytic_t3(f)))
+
+
+def analytic_gridblind() -> tuple[float, float, float, float]:
+    """(first 0 dB crossing, continuous peak above it,
+    dec-DEC3_OLD-sampled peak, dec-DEC3_NEW-sampled peak).
+
+    Same bracket-then-bisect method as ``analytic_resurgence`` above (this
+    loop also crosses 0 dB three times), evaluated against BOTH the old and
+    the new AC_DEC to show the old default missing the resurgence and the
+    new one recovering it.
+    """
+    scan = [10 ** (k / 500.0) for k in range(0, 500 * 9 + 1)]
+    lo = hi = None
+    for a, b in zip(scan, scan[1:]):
+        if _db3(a) > 0 >= _db3(b):
+            lo, hi = a, b
+            break
+    if lo is None:
+        raise SystemExit("grid-blind-spot reference loop never crosses 0 dB falling")
+    for _ in range(200):
+        mid = math.sqrt(lo * hi)
+        if _db3(mid) > 0:
+            lo = mid
+        else:
+            hi = mid
+    f0 = math.sqrt(lo * hi)
+
+    fine = [10 ** (k / 5000.0) for k in range(0, 5000 * 9 + 1)]
+    peak = max(_db3(f) for f in fine if f >= f0 * 10 ** (1.0 / 5000.0))
+
+    def sampled_peak(dec: int) -> float:
+        start = f0 * 10 ** (1.0 / dec)
+        grid = [10 ** (k / float(dec)) for k in range(0, dec * 9 + 1)]
+        return max(_db3(f) for f in grid if f >= start)
+
+    return f0, peak, sampled_peak(DEC3_OLD), sampled_peak(DEC3_NEW)
+
+
 def parse(text: str):
     """(freq, err_db, err_deg, naive_err_db) rows, plus the measured margins."""
     numeric = []
@@ -190,7 +297,23 @@ def parse(text: str):
     margins = (float(m.group(1)), float(m.group(2)), float(m.group(3))) if m else None
     r = re.search(r"RESURGING ac_dec=\S+ f0_hz=(\S+) resurgence_db=(\S+)", text)
     resurging = (float(r.group(1)), float(r.group(2))) if r else None
-    return rows, margins, resurging
+    c = re.search(
+        r"GRIDBLIND coarse ac_dec=\S+ f0_hz=(\S+) resurgence_coarse_db=(\S+)"
+        r" phase_1e8_deg=(\S+)",
+        text,
+    )
+    gridblind_coarse = (
+        (float(c.group(1)), float(c.group(2)), float(c.group(3))) if c else None
+    )
+    n = re.search(
+        r"GRIDBLIND new ac_dec=\S+ f0_hz=(\S+) resurgence_new_db=(\S+)"
+        r" phase_1e8_deg=(\S+)",
+        text,
+    )
+    gridblind_new = (
+        (float(n.group(1)), float(n.group(2)), float(n.group(3))) if n else None
+    )
+    return rows, margins, resurging, gridblind_coarse, gridblind_new
 
 
 def main() -> int:
@@ -203,7 +326,7 @@ def main() -> int:
         print("FATAL: selftest deck did not complete:\n" + text[-2000:], file=sys.stderr)
         return 3
 
-    rows, margins, resurging = parse(text)
+    rows, margins, resurging, gridblind_coarse, gridblind_new = parse(text)
     max_err_db = max(abs(r[1]) for r in rows)
     max_err_deg = max(abs(r[2]) for r in rows)
     max_naive = max(abs(r[3]) for r in rows)
@@ -295,6 +418,86 @@ def main() -> int:
             f"({abs(res2_m - peak_ref):.4f} dB error, budget "
             f"{MAX_RESURGENCE_ERR_DB:g} dB)",
         )
+
+    f0_gb_ref, peak_gb_ref, peak_gb_old, peak_gb_new = analytic_gridblind()
+    q3 = math.sqrt(LL3 / CL3) / (RS + RL)
+    print(f"\ngrid-blind-spot reference loop (issue #58): A3={A3:g}, "
+          f"fp={WP / (2 * math.pi):g} Hz, Ll={LL3:g} H, Cl={CL3:g} F "
+          f"(f_res={FRES3:.6g} Hz, Q={q3:.3g}, placed at the WORST-CASE "
+          f"sampling offset for dec {DEC3_NEW} -- and 87.5% of worst case for "
+          f"dec {DEC3_OLD}); analytic 0 dB crossing {f0_gb_ref:.6g} Hz, "
+          f"continuous peak above it {peak_gb_ref:+.4f} dB "
+          f"({peak_gb_old:+.4f} dB sampled at dec {DEC3_OLD}, "
+          f"{peak_gb_new:+.4f} dB sampled at dec {DEC3_NEW})")
+    if gridblind_coarse is None or gridblind_new is None:
+        check("grid-blind-spot extraction", False,
+              "no GRIDBLIND coarse/new line in the ngspice output")
+    else:
+        f0_gb_coarse_m, res_gb_coarse_m, ph_gb_coarse_m = gridblind_coarse
+        f0_gb_new_m, res_gb_new_m, ph_gb_new_m = gridblind_new
+        check(
+            "the grid-blind-spot loop really does resurge (true peak > 0 dB)",
+            peak_gb_ref > 0.0,
+            f"analytic continuous peak above crossover {peak_gb_ref:+.3f} dB "
+            "-- a real resurgence exists for the old default to miss",
+        )
+        check(
+            f"the OLD default (dec {DEC3_OLD}) misses it: reports a false PASS",
+            res_gb_coarse_m < 0.0
+            and (peak_gb_ref - res_gb_coarse_m) >= MIN_GRIDBLIND_MISS_DB,
+            f"dec {DEC3_OLD} reports resurgence_db = {res_gb_coarse_m:+.4f} dB "
+            f"(the DR-0008 bar is <= 0 dB, so this reads as a clean PASS) "
+            f"against a true continuous peak of {peak_gb_ref:+.4f} dB -- a "
+            f"{peak_gb_ref - res_gb_coarse_m:.2f} dB miss, budget "
+            f">= {MIN_GRIDBLIND_MISS_DB:g} dB. This is issue #58's general "
+            "concern made concrete: a coarse grid can misreport a sharp "
+            "feature entirely, not only land the margin on its flank.",
+        )
+        check(
+            "meas-extracted crossover frequency (grid-blind-spot loop)",
+            abs(f0_gb_coarse_m - f0_gb_ref) / f0_gb_ref <= MAX_F0_REL_ERR,
+            f"{f0_gb_coarse_m:.6g} Hz vs analytic {f0_gb_ref:.6g} Hz "
+            f"({100 * abs(f0_gb_coarse_m - f0_gb_ref) / f0_gb_ref:.3f}%, "
+            f"budget {100 * MAX_F0_REL_ERR:g}%)",
+        )
+        check(
+            f"the NEW default (dec {DEC3_NEW}) recovers the true peak",
+            abs(res_gb_new_m - peak_gb_ref) <= MAX_GRIDBLIND_ERR_DB,
+            f"{res_gb_new_m:+.4f} dB vs analytic {peak_gb_ref:+.4f} dB "
+            f"({abs(res_gb_new_m - peak_gb_ref):.4f} dB error, budget "
+            f"{MAX_GRIDBLIND_ERR_DB:g} dB) -- correctly flags this loop as "
+            "resurging (positive, above the DR-0008 bar) where the old "
+            "default read a clean pass",
+        )
+        check(
+            "meas-extracted crossover frequency stays consistent at the new dec",
+            abs(f0_gb_new_m - f0_gb_ref) / f0_gb_ref <= MAX_F0_REL_ERR,
+            f"{f0_gb_new_m:.6g} Hz vs analytic {f0_gb_ref:.6g} Hz "
+            f"({100 * abs(f0_gb_new_m - f0_gb_ref) / f0_gb_ref:.3f}%, "
+            f"budget {100 * MAX_F0_REL_ERR:g}%)",
+        )
+        # Issue #58 asks specifically whether `cph()`'s phase unwrap picks the
+        # wrong 360 deg branch when a sharp feature is under-sampled. Answered
+        # here rather than asserted: this loop is minimum-phase with a known
+        # -270 deg asymptote, so a mis-unwrap is visible as a 360 deg offset.
+        for label, dec, ph in (
+            (f"OLD default (dec {DEC3_OLD})", DEC3_OLD, ph_gb_coarse_m),
+            (f"NEW default (dec {DEC3_NEW})", DEC3_NEW, ph_gb_new_m),
+        ):
+            check(
+                f"cph() unwraps the Q={math.sqrt(LL3 / CL3) / (RS + RL):.0f} "
+                f"resonance onto the right branch -- {label}",
+                abs(ph - PH3_ASYMPTOTE_DEG) <= MAX_PH3_ERR_DEG,
+                f"unwrapped phase at {PH3_PROBE_HZ:g} Hz = {ph:+.2f} deg vs the "
+                f"analytic asymptote {PH3_ASYMPTOTE_DEG:+.0f} deg "
+                f"(budget {MAX_PH3_ERR_DEG:g} deg; a mis-unwrap would land "
+                f"360 deg away). A minimum-phase pole PAIR has 180 deg of total "
+                f"phase variation, so no sampling of it can produce a >180 deg "
+                f"step -- the unwrap is safe at both resolutions, and the "
+                f"resolution-sensitive quantity is the MAGNITUDE, which the "
+                f"check above shows dec {DEC3_OLD} getting wrong by "
+                f"{peak_gb_ref - res_gb_coarse_m:.1f} dB on this same loop.",
+            )
 
     print(f"\nSELFTEST {'PASS' if ok else 'FAIL'}")
     return 0 if ok else 1

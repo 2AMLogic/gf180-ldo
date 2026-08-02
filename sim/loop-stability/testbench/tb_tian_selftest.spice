@@ -51,6 +51,41 @@
 * built here from ideal elements so the answer is known in closed form. The
 * resonance is placed on a `dec 50` grid point so the sampled peak and the
 * continuous peak agree to ~0.02 dB.
+*
+* ---------------------------------------------------------------------------
+* Third reference loop: a HIGH-Q resonance the `dec 50` grid MISSES entirely
+* (issue #58)
+* ---------------------------------------------------------------------------
+* Loop 2 above deliberately sits ON a `dec 50` grid point, so it proves the
+* resurgence metric is *accurate when sampled*. It says nothing about whether
+* `dec 50` samples a sharp feature at all. Loop 3 is that missing case: same
+* topology, a much higher Q (80 vs 20) resonance placed at a frequency chosen
+* to be near-worst-case for the OLD `dec 50` grid and EXACTLY worst-case for
+* the NEW one, so the same loop tests both halves of the policy honestly:
+*
+*   f_res3 = 10^(2244.5/400) Hz = 408554.5 Hz
+*
+* Counting the log grid up from 1 Hz, that exponent sits exactly halfway
+* between the `dec 400` grid points 10^(2244/400) and 10^(2245/400) -- the
+* worst sampling offset a `dec 400` sweep has -- and 0.00875 decades from the
+* nearest `dec 50` point (0.01 being that grid's worst possible offset), i.e.
+* 87.5 % of worst case there. Placing it at the dec-50 midpoint instead would
+* have made it land exactly ON a dec-400 grid point, which would have flattered
+* the new policy by testing it at its BEST case; this placement does the
+* opposite.
+*
+* `A3` is chosen so the true continuous peak clears 0 dB by only a few dB,
+* narrow enough that every neighbouring `dec 50` sample reads well below 0 dB.
+* A `dec 50` sweep therefore reports this loop as cleanly non-resurging (a
+* false PASS on the DR-0008 precondition check) despite a real, analytically
+* known resurgence above the first crossing -- issue #58's general concern (a
+* coarse grid can misreport *any* sharp feature, not only the specific RHP
+* mechanism #59 already detects) made concrete and falsifiable. selftest.py
+* checks both halves: that the OLD default (`dec 50`) reads a false negative
+* on this loop, and that the NEW default `sweep.py` now runs (`dec 400`, a
+* single global bump -- see sweep.py's `AC_DEC` comment) recovers the true
+* peak at its own worst-case sampling offset, within the analytic bound
+* sweep.py's comment derives.
 
 .param A=1000
 .param RP=1k
@@ -64,6 +99,21 @@
 .param LL2=0.8
 .param CL2=0.2e-12
 * f_res = 1/(2*pi*sqrt(LL2*CL2)) = 397887 Hz, Q = sqrt(LL2/CL2)/(RS+RL) = 20.0
+* third (high-Q, grid-blind-spot) loop; same pole, same source/load
+* resistances, much higher Q, resonance at the worst-case dec-400 offset
+* (and 87.5% of worst case for dec 50) -- see the header comment.
+.param A3=8
+.param LL3=3.1167613229529993
+.param CL3=48.68965725279348e-15
+* f_res = 10^(2244.5/400) = 408554.5015 Hz, i.e. the geometric midpoint of the
+* dec-400 grid points 10^(2244/400) and 10^(2245/400) Hz counted from 1 Hz.
+* Q = sqrt(LL3/CL3)/(RS+RL) = 80.0; LL3 = Q*(RS+RL)/(2*pi*f_res) and
+* CL3 = 1/(2*pi*f_res*Q*(RS+RL)). A3 = 8 puts the resonant peak at
+* |T3| ~ A3*Q/(f_res/fp) = +3.9 dB, which is the smallest resurgence that is
+* still unambiguously above the DR-0008 bar -- deliberately small, because a
+* huge one would be caught by any grid.
+* See sim/loop-stability/README.md "Sweep resolution" for the bound these
+* numbers are chosen to exercise.
 
 * --- the loop ------------------------------------------------------------
 * single-pole inverting gain block, built from primitives (no LAPLACE):
@@ -97,6 +147,19 @@ Iinj2 0 BINJ2 DC 0 AC 0
 Rl2 BINJ2 NL2 {RL}
 Ll2 NL2 FB2 {LL2}
 Cl2 FB2 0 {CL2}
+
+* --- third loop: identical topology, high-Q worst-case-aligned resonance --
+* Independent of the two loops above (they share only ground).
+Egain3 G3 0 FB3 0 {-1*A3}
+Rp3 G3 P3 {RP}
+Cp3 P3 0 {CP}
+Ebuf3 EOUT3 0 P3 0 1
+Rs3 EOUT3 AINJ3 {RS}
+Vinj3 AINJ3 BINJ3 DC 0 AC 0
+Iinj3 0 BINJ3 DC 0 AC 0
+Rl3 BINJ3 NL3 {RL}
+Ll3 NL3 FB3 {LL3}
+Cl3 FB3 0 {CL3}
 
 .control
 set noaskquit
@@ -181,6 +244,65 @@ meas ac f02 when tdb2=0 fall=1
 let fres2 = f02*10^(1/50)
 meas ac tres2 max tdb2 from=$&fres2 to=1e9
 echo "RESURGING ac_dec=50 f0_hz=$&f02 resurgence_db=$&tres2"
+
+* ---- third reference loop: the grid BLIND SPOT (issue #58) ---------------
+* First at `dec 50` -- the OLD default, and byte-for-byte the real deck's
+* previous idiom -- to reproduce the false-negative issue #58 describes: a
+* real resurgence the coarse grid samples as a clean pass.
+alter @Vinj2[acmag] = 0
+alter @Iinj2[acmag] = 0
+alter @Vinj3[acmag] = 1
+alter @Iinj3[acmag] = 0
+ac dec 50 1 1e9
+let tv3 = -v(ainj3)/v(binj3)
+set vplot3 = $curplot
+
+alter @Vinj3[acmag] = 0
+alter @Iinj3[acmag] = 1
+ac dec 50 1 1e9
+let ti3 = -i(vinj3)/(i(vinj3)+1)
+let tvv3 = {$vplot3}.tv3
+
+let t3 = (tvv3*ti3 - 1)/(tvv3 + ti3 + 2)
+let tdb3 = db(t3)
+let tph3 = 180*cph(t3)/pi
+meas ac f03 when tdb3=0 fall=1
+let fres3 = f03*10^(1/50)
+meas ac tres3_coarse max tdb3 from=$&fres3 to=1e9
+* The terminal UNWRAPPED phase, far above the resonance, is the direct test
+* of whether cph() picked the right 360 deg branch on the way through it --
+* the question issue #58 raises about the real deck's `tph`. This loop is a
+* 3-pole minimum-phase response (one real pole plus the resonant pair), so
+* the analytic answer is -270 deg regardless of AC resolution; anything
+* 360 deg away from that is a mis-unwrap.
+meas ac ph3hi_coarse find tph3 at=1e8
+echo "GRIDBLIND coarse ac_dec=50 f0_hz=$&f03 resurgence_coarse_db=$&tres3_coarse phase_1e8_deg=$&ph3hi_coarse"
+
+* ---- same loop, at the NEW default AC_DEC (issue #58) --------------------
+* sweep.py's resolution policy is a single global bump to `dec 400`, not a
+* two-pass local refine -- see sweep.py's `AC_DEC` comment and
+* sim/loop-stability/README.md "Sweep resolution" for why. Same idiom, same
+* reference loop, just denser.
+alter @Vinj3[acmag] = 1
+alter @Iinj3[acmag] = 0
+ac dec 400 1 1e9
+let tv3n = -v(ainj3)/v(binj3)
+set vplot3n = $curplot
+
+alter @Vinj3[acmag] = 0
+alter @Iinj3[acmag] = 1
+ac dec 400 1 1e9
+let ti3n = -i(vinj3)/(i(vinj3)+1)
+let tvv3n = {$vplot3n}.tv3n
+
+let t3n = (tvv3n*ti3n - 1)/(tvv3n + ti3n + 2)
+let tdb3n = db(t3n)
+let tph3n = 180*cph(t3n)/pi
+meas ac f03n when tdb3n=0 fall=1
+let fres3n = f03n*10^(1/400)
+meas ac tres3_new max tdb3n from=$&fres3n to=1e9
+meas ac ph3hi_new find tph3n at=1e8
+echo "GRIDBLIND new ac_dec=400 f0_hz=$&f03n resurgence_new_db=$&tres3_new phase_1e8_deg=$&ph3hi_new"
 
 echo "* SELFTEST COMPLETE"
 .endc
