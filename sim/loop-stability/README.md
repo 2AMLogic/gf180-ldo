@@ -36,10 +36,14 @@ sim/loop-stability/
 
 `--explore` is DR-0001's recommended first pass: sweep `I_load × C_eff × ESR`
 at `tt/27 °C/3.3 V` to find the worst triple before committing to the full
-grid. The full run is 45 ngspice invocations covering 3240 loop-gain points
-(the load/cap/ESR axes are swept *inside* each deck) — about 18 minutes at
-`-j 10` on an M-series laptop against the transistor-level amplifier. Use
-`-j` to match your core count.
+grid. The full run is 63 ngspice invocations covering 4536 loop-gain points
+(the load/cap/ESR axes are swept *inside* each deck) — about 30 minutes at
+`-j 28`, longer at lower `-j`. Use `-j` to match your core count. The process
+axis is `tt ff ss fs sf res_ff res_ss`: issue #54 added `res_ff`/`res_ss`
+because `Rz` (`ppolyf_u_1k`, since #51/#56's Type-II gain-shelf
+recompensation) sets both the shelf gain and the shelf corner frequency, so
+its ~40% process spread (`sim/devchar/CONCLUSIONS.md` §2) is a first-order
+input to the result, not a second-order one.
 
 Exit codes match `sim/run_corners.py`: `0` pass, `1` a stability check
 failed, `2` a simulation failed, `3` an environment/usage problem. A run is
