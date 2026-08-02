@@ -17,6 +17,20 @@ Evidence for every measured number here:
 Nothing below is a closed-loop claim. Loop stability is #10, the full
 testbench suite is #12, mismatch Monte Carlo is #13.
 
+> **Read §6.6 first (issue #53).** The cell as committed has an unstable
+> *local* feedback loop — the `Rz`/`Cc` Miller network around `M2P` and the
+> class-AB buffer — and oscillates at ≈ 500 kHz at every PVT corner.
+> §6.2–§6.5's stability reasoning, and the `sim/loop-stability/` record it
+> cites, are written as though that loop were stable; §6.6 is the correction
+> and the evidence:
+>
+> - `sim/amp-selfosc/records/` — settled, undriven transient: volts of
+>   peak-to-peak on the amplifier's own nodes.
+> - `sim/amp-openloop/records/20260802-013956-bb0a991.md` — supersedes
+>   `20260801-193812-84f67b8`; identical on every pre-existing row, plus the
+>   `peak_excess_db` detector, which is above its bar at **81 of 81** points.
+> - `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md`.
+
 ---
 
 > **Issue #51 amendment (2026-08-01).** This document was written for the
@@ -457,6 +471,86 @@ need to be constraints in the floorplan rather than discoveries in extraction:
   follow-up.
 - `Cc` at 4.80 pF has ≈ 0 dB of PSRR margin, so any parasitic capacitance
   added to the `NZ`/`OUT` net comes straight off the ratified PSRR row.
+
+### 6.6 The local loop this compensation closes is unstable (issue #53)
+
+> **Everything in §6.2–§6.5 above is written as if the numbers in
+> `sim/loop-stability/records/20260801-191742-84f67b8.md` were a stability
+> result. Issue #53 measured that they are not.** §6.6 is the correction and
+> it takes precedence over §6.4's reading; the measurements in §6.3 (gain,
+> UGBW, offset, Iq) are unaffected, because they are not stability claims.
+
+`Rz`/`Cc` is not only the LDO loop's compensation: it is itself a **feedback
+loop**, from `N1` around the stage-2 driver `M2P` and the class-AB gate
+buffer and back to `OUT`. That local loop stays closed when the LDO loop is
+broken at `ERRAMP_OUT`/`PASS_GATE`, which is exactly the condition
+`sim/loop-stability/` measures in — so its stability is a **precondition**
+for reading a Bode phase/gain margin off `T(s)` at all, not a detail.
+
+Above `f_z` the feedback impedance is `Rz` (that is the whole point of the
+shelf), so the local loop becomes a **resistively** closed loop around a
+forward path with three high-impedance-ish poles — `N1`, `BG`, and the pass
+gate at `1/gm(Mbuf)·6.14 pF` — and nothing compensates it. Raising `Rz` from
+~30 kΩ to 6 MΩ moved `f_z` from ~1.7 MHz down to ~5.4 kHz, i.e. it took the
+local loop's own Miller compensation away across the entire band the LDO
+loop uses. Measured consequences, all against `design/` as committed:
+
+| Measurement | Result |
+|---|---|
+| Amplifier alone (`sim/amp-openloop/`'s servo, 6.14 pF load), `ss`/−40 °C/3.63 V | gain **peaks at 55.9 dB (heavy op point) / 58.7 dB (light)** at 502 kHz, with the continuous phase **advancing** from −15° to +134° through it |
+| Same, every corner tried (`tt`/27, `ss`/−40, `ff`/−40, `fs`/−40, `sf`/−40, `ss`/125) | a peak of **21…58 dB** at 420…750 kHz at **all** of them |
+| `sim/amp-selfosc/` — settled, undriven, `tt`/27 °C/3.30 V, 50 mA, 0.33 µF | `BG` **3.31 V pk-pk**, pass gate **2.14 V pk-pk**, `VOUT` **372 mV pk-pk**, mean `VOUT` 1.787 V |
+| Same bench, 0.1 mA at the same corner | 0.37 µV / 0.34 µV — quiet, which is why the 0.1 mA column looked like the whole problem |
+
+A gain peak with a **+180° phase advance** is a right-half-plane complex
+pole pair, and the transient confirms it: the amplifier oscillates. The
+`+180°` is also precisely why none of this was visible. `sim/amp-openloop/`'s
+`pm_deg` is `180 + vp(...)` and `vp()` **wraps** to (−180, 180], so a forward
+path carrying 288° of lag reports **252°** of "phase margin" and clears its
+own `≥ 45°` bar — which is the 247.6…256.4° column in
+`sim/amp-openloop/records/20260801-193812-84f67b8.md`, against 49.0…69.8° for
+the pre-#51 cell. In the LDO loop the same rotation puts the 0 dB crossing
+*above* the resonance, so `sim/loop-stability/` reports a large positive
+phase margin at 2160 heavy-load points where `|T|` had already climbed back
+above unity (684 of 720 sampled points do, worst **+52.5 dB**).
+
+**What this does to §6.4's frontier.** The `Rz` ceiling quoted there
+(6 MΩ passes, 7 MΩ loses corners) was measured through this artifact and is
+not a reliable bound. So is DR-0007's reading of the 15 outliers at 0.1 mA:
+they are the subset of the resonance's footprint where the phase falls
+through −180° *below* crossover rather than leading through it above, which
+is why they present as a gain-margin failure with a 67…102° phase margin and
+why they cluster at one corner of the bias spread without the bias being the
+cause.
+
+**Two levers were measured against it** (issue #53; both recorded in
+`spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md` so the
+next attempt does not repeat them):
+
+- A **constant-gm (beta-multiplier) bias** — DR-0007's and #53's suggested
+  direction — makes all 15 points *report* a pass while leaving `|T|` above
+  unity after crossover at 38 of the same 72 points (worst +15.3 dB). It
+  would have shipped a false pass. It also does not deliver what it was
+  added for: its start-up injector puts a supply-referenced 0.23…0.91 µA
+  into `NBIAS` (18–27 % of the branch current), and the branch current still
+  spreads **2.6×** against this bias's 2.5×.
+- A **small capacitor across `Rz`** (`Cf`, `N1`→`OUT`, 50…200 fF) restores
+  the local loop's pole-splitting above the shelf and **works** at light
+  load: no gain resurgence anywhere in the 72 target points (worst `|T|`
+  above crossover −4.2 dB vs +26.1 dB), and the `ss`/−40 °C/3.63 V transient
+  goes from 0.95 V pk-pk on `BG` to **150 nV**. Holding `Cc + Cf` at #51's
+  4.825 pF makes it PSRR-neutral by construction (worst-corner
+  `psrr_ldo_1k_db` 50.03 dB, amp gain at 1 kHz 53.55 dB — both a hair
+  *better* than the committed cell). It is **not shippable as it stands**:
+  it ends the shelf at `1/(2π·Rz·Cf)`, and the 50 mA crossover (1.2…1.6 MHz)
+  sits above that corner, so 616 of 720 points at 1–50 mA then fail on phase
+  margin.
+
+Those two bound the next design step. The resonance can be damped cheaply
+and without spending PSRR — but not while the loop also needs a flat ~43 dB
+shelf out past 1.6 MHz. **Separating the shelf's upper corner from the
+heavy-load crossover is the problem to solve**, and neither `Rz`/`Cc` alone
+nor the bias branch is the lever that separates them.
 
 ## 7. Handoffs
 

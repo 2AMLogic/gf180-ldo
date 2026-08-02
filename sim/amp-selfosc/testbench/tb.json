@@ -1,0 +1,73 @@
+{
+  "name": "amp-selfosc",
+  "description": "Residual periodic activity on the error amplifier's internal nodes with the regulator settled and undriven -- i.e. does the amplifier's own (Rz/Cc Miller + class-AB buffer) local loop oscillate?",
+  "claim": "The precondition under which sim/loop-stability/'s Bode phase and gain margins are a stability test at all: DR-0001's 'PM >= 45 deg and GM >= 10 dB' criterion is only valid when the loop gain T(s) has no right-half-plane poles, i.e. when the forward path is stable with the LDO loop broken. design/error_amp.sch keeps a LOCAL feedback loop (Rz/Cc from N1 around M2P and the class-AB gate buffer back to OUT) closed in exactly that condition, so the precondition is a design property that has to be measured, not assumed. This bench measures it in the time domain, where no phase-unwrapping convention can hide it: with EN held high and the loop settled, the peak-to-peak of the amplifier's internal BG node and of the pass gate over a late, quiet window must be at the noise floor. This bench makes NO claim about the LDO loop's own margins -- that is sim/loop-stability/'s (issue #10's) claim, and it is the claim this one is a precondition for.",
+  "netlist": "tb_amp_selfosc.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.1,
+  "temperatures_c": [
+    -40,
+    27,
+    125
+  ],
+  "corners": [
+    "mos"
+  ],
+  "analyses": [
+    "tran 200n 0.3m 0.15m 200n",
+    "meas tran bg_pp_light PP v(xdut_light.xerramp.bg) FROM=0.2m TO=0.3m",
+    "meas tran pg_pp_light PP v(loop_light) FROM=0.2m TO=0.3m",
+    "meas tran vo_pp_light PP v(vout_light) FROM=0.2m TO=0.3m",
+    "meas tran vo_avg_light AVG v(vout_light) FROM=0.2m TO=0.3m",
+    "meas tran bg_pp_heavy PP v(xdut_heavy.xerramp.bg) FROM=0.2m TO=0.3m",
+    "meas tran pg_pp_heavy PP v(loop_heavy) FROM=0.2m TO=0.3m",
+    "meas tran vo_pp_heavy PP v(vout_heavy) FROM=0.2m TO=0.3m",
+    "meas tran vo_avg_heavy AVG v(vout_heavy) FROM=0.2m TO=0.3m"
+  ],
+  "operating_conditions": {
+    "load_current": "~0.1 mA (Rload_light = 18 kOhm) and ~50 mA (Rload_heavy = 36 Ohm), both resistive -- see tb_amp_selfosc.spice",
+    "output_cap": "0.33 uF with 1 mOhm ESR on both branches: the a-priori worst point of DR-0001's window (smallest C_eff, no ESR zero)",
+    "enable_state": "EN held at VIN for the whole run -- the transient starts from the settled regulating operating point, so the measured window contains no enable transient",
+    "stimulus": "a 1 nA, 1 us current pulse into each pass gate at t = 10 us -- 190 us (~95 periods of the activity this bench catches) before the measurement window opens. It is a defined SEED, not a drive: without it an unstable loop grows out of the integrator's truncation noise and how far it has grown by a given time is not reproducible (measured: 1.21 V pk-pk vs sub-microvolt on the same netlist in two windows). See tb_amp_selfosc.spice. Nothing drives either instance inside the window.",
+    "timestep_and_window": "tran 200n 0.3m 0.15m 200n, measured over 0.2-0.3 ms. The 200 ns ceiling is ~10 points per period of the ~500 kHz activity this bench exists to catch and is load-bearing rather than a performance knob: Gear/BDF integration is numerically damping, so a coarser ceiling damps the very signal being measured. Verified by hand at tt/27C/3.30V -- a 400 ns ceiling reports 37 nV pk-pk on the heavy branch where this setting reports 3.31 V. The coarse setting is the false negative; do not loosen it to make the matrix cheaper."
+  },
+  "measure": {
+    "bg_pp_light_mv": "bg_pp_light*1e3",
+    "pg_pp_light_mv": "pg_pp_light*1e3",
+    "vout_pp_light_mv": "vo_pp_light*1e3",
+    "vout_avg_light_v": "vo_avg_light",
+    "bg_pp_heavy_mv": "bg_pp_heavy*1e3",
+    "pg_pp_heavy_mv": "pg_pp_heavy*1e3",
+    "vout_pp_heavy_mv": "vo_pp_heavy*1e3",
+    "vout_avg_heavy_v": "vo_avg_heavy"
+  },
+  "checks": {
+    "bg_pp_light_mv": {
+      "max": 1.0,
+      "description": "Stage-2 output node BG, light load. A settled, undriven, stable loop sits at its DC operating point; 1 mV is ~3 decades above the integrator's own residue on this node and ~3 decades below the swing a sustained oscillation produces, so it separates the two without being a tolerance to tune."
+    },
+    "pg_pp_light_mv": {
+      "max": 1.0,
+      "description": "Pass-device gate (ERRAMP_OUT/PASS_GATE tie), light load. Same bar, on the node that actually modulates the pass device -- this is the one a consumer of the block would see as output ripple and as excess Iq."
+    },
+    "bg_pp_heavy_mv": {
+      "max": 1.0,
+      "description": "Same as bg_pp_light_mv at the full rated 50 mA load, so a failure cannot be dismissed as a light-load-only condition (and a pass cannot be claimed from the light branch alone)."
+    },
+    "pg_pp_heavy_mv": {
+      "max": 1.0,
+      "description": "Same as pg_pp_light_mv at the full rated 50 mA load."
+    },
+    "vout_avg_light_v": {
+      "min": 1.62,
+      "max": 1.98,
+      "description": "Branch check, not an accuracy check: confirms the light instance is on the regulating DC solution (+/-10% of 1.8 V), so the peak-to-peak numbers above are about the operating point they claim to be about. Accuracy is sim/load-regulation/'s claim."
+    },
+    "vout_avg_heavy_v": {
+      "min": 1.62,
+      "max": 1.98,
+      "description": "Same branch check for the 50 mA instance."
+    }
+  }
+}
