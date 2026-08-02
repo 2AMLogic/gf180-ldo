@@ -81,6 +81,66 @@ the first −180° crossing. Where the phase never reaches −180° in
 −180° from above never inverts, so no finite gain multiplier drives it to
 `T = -1`.
 
+## `resurgence_db` — the precondition on reading a Bode margin at all
+
+A phase/gain margin read off a Bode plot is a stability test **only when
+`T(s)` has no right-half-plane poles** — the standard precondition on the
+Bode form of the Nyquist criterion. That is not a formality here:
+`design/error_amp.sch` closes a *local* feedback loop inside the amplifier
+(the `Rz`/`Cc` Miller network around the stage-2 driver and the class-AB gate
+buffer) which stays closed when the LDO loop is broken at
+`ERRAMP_OUT`/`PASS_GATE`, and
+[`DR-0008`](../../spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md)
+records that the precondition did **not** hold for the amplifier as committed
+at `b304bd5` — three loop-stability records were minted against a loop that
+oscillates.
+
+So every point of this sweep also reports:
+
+| metric | definition | bar |
+|---|---|---|
+| `resurgence_db` | the largest `\|T\|` in dB **anywhere above the first (falling) 0 dB crossing** | **≤ 0 dB** |
+
+The scan starts one AC-grid step (`10^(1/50)`) above the crossing, so the
+crossing itself — where `|T|` is 0 dB by definition — is never reported as its
+own resurgence. For a loop that rolls off monotonically through crossover
+every remaining point is below unity, so the metric is negative *by
+construction*; that is why the bar is `≤ 0 dB` with no engineering slack in
+it, and why a value above it means the gain genuinely climbed back over unity
+after having crossed down. Where that happens, the phase margin above is read
+at a crossing that is not the last one.
+
+This bar is reported and failed **separately** from the DR-0001 PM/GM
+verdict — it appears as its own `resurgence_db` / `resurgence_result` column
+pair in the matrix CSV and as its own section of the record, and it is
+deliberately not folded into the `passes` property, because it is a different
+claim against a criterion that is not yet ratified.
+
+**It is necessary-but-not-sufficient evidence of a right-half-plane pole
+pair**, and it does **not** replace [`sim/amp-selfosc/`](../amp-selfosc/),
+which measures the oscillation directly in the time domain and remains the
+load-bearing check per DR-0008:
+
+- A well-damped but under-margined loop could in principle resurge above
+  unity without any RHP pole pair, so a flagged point is a *prompt to run the
+  time-domain bench*, not a verdict about pole locations.
+- Equally, a clean `resurgence_db` does not license the PM/GM verdict on its
+  own. It removes the signature DR-0008 traced (a crossover taken on the far
+  side of a resonance the RHP pair has already rotated ≈ +180° through), not
+  every way the precondition can break. A phase margin above 180°, for
+  instance — the phase *leading* at crossover — is a separate tell that this
+  bar does not flag.
+
+The point of measuring it here is cost: it falls out of the AC sweep this
+bench already runs, on every future compensation iteration, for free, whereas
+`sim/amp-selfosc/` costs ~6 CPU-minutes **per PVT point**.
+
+`selftest.py` validates the extraction against two loops with closed-form
+answers: the monotonic one it has always used (which must **not** flag —
+measured `−3.97 dB`), and a second loop built with a lightly damped resonance
+above its first crossing, whose `+14.04 dB` analytic peak the metric must
+recover within 0.25 dB.
+
 ## Load and output-network model
 
 `I_load` is an **ideal DC current source** — the conservative LDO stability
@@ -100,6 +160,16 @@ Each `corners/<record-id>/<corner-id>.log` carries one `ROW` line per
 (load, cap, ESR) configuration; `records/<record-id>-matrix.csv` is the
 machine-readable rollup of all points, and `records/<record-id>.md` is the
 summary record with the worst point called out explicitly.
+
+`ROW` lines are written `key=value`, not as bare positional fields, because a
+failed `meas` (no such crossing in band) leaves its value **empty** — and an
+empty positional field vanishes into the whitespace, so every field after it
+is read as the wrong quantity. Records up to and including
+`20260801-191742-84f67b8` were parsed positionally and 387 of their 3240 rows
+had `f0_rising_hz` recorded as `f_180_hz` for exactly that reason, which is
+why that record's multiple-0 dB-crossing note reports 14 points instead of
+401. The driver now refuses a `ROW` line whose field list does not match the
+deck's rather than absorbing it as a plausible number.
 
 ### PRECONDITION: this experiment's numbers are only a stability test when
 ### the loop gain has no right-half-plane poles

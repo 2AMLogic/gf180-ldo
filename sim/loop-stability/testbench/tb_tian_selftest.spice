@@ -33,6 +33,24 @@
 * selftest.py substitutes nothing: this deck is self-contained and prints
 * three columns per frequency (dual-injection T, naive Tv, analytic T) which
 * selftest.py compares.
+*
+* ---------------------------------------------------------------------------
+* Second reference loop: a deliberately RESURGING loop gain (issue #59)
+* ---------------------------------------------------------------------------
+* The loop above is monotonic through crossover, so it can only ever show
+* that the resurgence metric does not fire when it should not. The second
+* loop below is the positive control: the same topology with the load
+* network's capacitor put in series with an inductor, giving a lightly damped
+* resonance ABOVE the first 0 dB crossing.
+*
+*   T2(s) = A2/(1+s/wp) * (1/sCL2)/(RS + RL + sLL2 + 1/sCL2)
+*
+* which is 40 dB at DC, crosses 0 dB falling at ~108 kHz, dips to about
+* -3.7 dB and then climbs back to about +14 dB at the ~398 kHz resonance
+* before falling for good -- exactly the shape DR-0008 found on the real loop,
+* built here from ideal elements so the answer is known in closed form. The
+* resonance is placed on a `dec 50` grid point so the sampled peak and the
+* continuous peak agree to ~0.02 dB.
 
 .param A=1000
 .param RP=1k
@@ -41,6 +59,11 @@
 .param RL=10
 .param CL=1e-9
 * wp = 1/(RP*CP) = 6283.185307 rad/s  (fp = 1 kHz)
+* second (resurging) loop; same pole, same source/load resistances
+.param A2=100
+.param LL2=0.8
+.param CL2=0.2e-12
+* f_res = 1/(2*pi*sqrt(LL2*CL2)) = 397887 Hz, Q = sqrt(LL2/CL2)/(RS+RL) = 20.0
 
 * --- the loop ------------------------------------------------------------
 * single-pole inverting gain block, built from primitives (no LAPLACE):
@@ -59,6 +82,21 @@ Iinj 0 BINJ DC 0 AC 0
 * load network; its node voltage is the feedback quantity
 Rl BINJ FB {RL}
 Cl FB 0 {CL}
+
+* --- second loop: identical topology, resonant load network --------------
+* Independent of the loop above (they share only ground), and its injection
+* sources are AC 0 while the first loop is being measured, so neither loop
+* perturbs the other's answer.
+Egain2 G2 0 FB2 0 {-1*A2}
+Rp2 G2 P2 {RP}
+Cp2 P2 0 {CP}
+Ebuf2 EOUT2 0 P2 0 1
+Rs2 EOUT2 AINJ2 {RS}
+Vinj2 AINJ2 BINJ2 DC 0 AC 0
+Iinj2 0 BINJ2 DC 0 AC 0
+Rl2 BINJ2 NL2 {RL}
+Ll2 NL2 FB2 {LL2}
+Cl2 FB2 0 {CL2}
 
 .control
 set noaskquit
@@ -107,10 +145,43 @@ let tdb = db(t)
 let tph = 180*cph(t)/pi
 meas ac f0 when tdb=0 fall=1
 meas ac phx find tph when tdb=0 fall=1
-echo "MARGINS f0_hz=$&f0 phase_at_f0_deg=$&phx"
+
+* ---- resurgence, byte-for-byte the idiom the real deck uses --------------
+* Negative control: this loop's |T| falls monotonically through crossover, so
+* every point above the crossing is below unity and the metric MUST come out
+* negative. (The grid here is dec 20, so the offset is one dec-20 step.)
+let fres = f0*10^(1/20)
+meas ac tres max tdb from=$&fres to=1e9
+echo "MARGINS f0_hz=$&f0 phase_at_f0_deg=$&phx resurgence_db=$&tres"
 
 echo "* columns: freq_hz t_db t_ph_deg tref_db tref_ph_deg err_db err_ph_deg naive_err_db"
 print frequency db(t) 180*cph(t)/pi db(tref) 180*cph(tref)/pi e_db e_ph naive_db
+
+* ---- second reference loop: the resurgence POSITIVE control -------------
+* Same extraction, same idiom, on a loop whose gain deliberately climbs back
+* above 0 dB after its first crossing. Run at dec 50 -- the real deck's AC
+* resolution -- so the metric is exercised on the grid it actually runs on.
+alter @Vinj[acmag] = 0
+alter @Iinj[acmag] = 0
+alter @Vinj2[acmag] = 1
+alter @Iinj2[acmag] = 0
+ac dec 50 1 1e9
+let tv2 = -v(ainj2)/v(binj2)
+set vplot2 = $curplot
+
+alter @Vinj2[acmag] = 0
+alter @Iinj2[acmag] = 1
+ac dec 50 1 1e9
+let ti2 = -i(vinj2)/(i(vinj2)+1)
+let tvv2 = {$vplot2}.tv2
+
+let t2 = (tvv2*ti2 - 1)/(tvv2 + ti2 + 2)
+let tdb2 = db(t2)
+meas ac f02 when tdb2=0 fall=1
+let fres2 = f02*10^(1/50)
+meas ac tres2 max tdb2 from=$&fres2 to=1e9
+echo "RESURGING ac_dec=50 f0_hz=$&f02 resurgence_db=$&tres2"
+
 echo "* SELFTEST COMPLETE"
 .endc
 .end
