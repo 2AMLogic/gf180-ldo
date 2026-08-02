@@ -45,12 +45,18 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      roll off at -20 dB/dec (not -40) where it crosses
                      unity, which is the whole point: see COMPENSATION.
            Cf1,Cf2   Inner Miller cap N1 -> BG across the stage-2 driver
-                     M2P (issue #53). Two 12x12 um MIM in SERIES, i.e.
-                     ~149 fF: what this device has to be is SMALL, and a
+                     M2P (issue #53). Two 7x7 um MIM in SERIES, i.e.
+                     ~49 fF: what this device has to be is SMALL, and a
                      series pair reaches it without drawing a MIM below
                      the 5 um the model's own width branch is cut at.
                      Without it the Rz/Cc network's own loop has RHP poles
                      and the cell oscillates -- see LOCAL LOOP below.
+                     Cf also sets the TOP of the gain shelf, f_2 =
+                     1/(2*pi*Rz*Cf), exactly the way Cc sets its bottom,
+                     f_z = 1/(2*pi*Rz*Cc) -- so the shelf is Cc/Cf wide
+                     and Cf is the component that decides how much of
+                     DR-0001's load x cap box the shelf can cover. See
+                     SHELF WIDTH below.
   Bias     MB1,Rbias Supply-referenced self-bias, fed through the EN header
                      Mbias_h (see ENABLE): Iref = (VDD - Vgs)/Rbias
                      through the diode-connected NMOS MB1, whose gate NBIAS
@@ -120,14 +126,36 @@ i.e. the amplifier's gain now falls monotonically through the whole
   49u -> 48u so the 1 kHz gain floor keeps its margin: measured 53.60 dB
   worst corner against the 53.5 dB budget line, vs 53.5 dB before.
 
-  WHAT THIS DOES NOT FIX. The local loop's crossover is also the upper
-  corner of the gain shelf, f_2 ~ 180 kHz here, and the LDO loop needs the
-  shelf to reach its own crossover, which at 50 mA / 0.33 uF is ~6 MHz.
-  Both are set by the buffer's gm and stage 2's gm, i.e. by Iq: MEASURED,
-  tripling both currents (8.6 -> 16.4 uA, already over the 15 uA amp row)
-  moves f_2 only 131 -> 393 kHz. So this cell is stable but its verified
-  load range is NARROW -- see design/error_amp.md S6.7 and
-  spec/decision-records/DR-0009.
+SHELF WIDTH -- what Cf actually sets, and what limits how small it can be
+(issue #53, DR-0012; this section corrects the claim DR-0009 made here)
+The local loop's crossover IS the upper corner of the gain shelf, and it
+works out to f_2 = 1/(2*pi*Rz*Cf) -- the same form as f_z = 1/(2*pi*Rz*Cc),
+because in the shelf region the loop gain is (1/s*Cf)/Rz times a forward
+gain that cancels. So the shelf spans f_z..f_2 and its WIDTH is Cc/Cf,
+independent of Rz and of every device current in the cell. Measured with
+everything else held: Cf 149 fF -> f_2 ~ 178 kHz, Cf 49 fF -> f_2 ~ 540 kHz,
+and the 0.1 mA / 0.33 uF / -40 degC phase margin moves 32.4 -> 43.4 deg
+purely on that. DR-0009 reported f_2 as Iq-bound ("tripling both currents
+moves f_2 only 131 -> 393 kHz"); what that measured is the CEILING on f_2,
+not f_2 itself.
+
+  THE CEILING. Shrinking Cf raises f_2 but lowers the local loop's own
+  non-dominant pole (Miller pole splitting: p2 ~ gm(M2P)*Cf/(C_N1*C_BG)),
+  so the two converge and the loop rings -- sim/amp-openloop/'s
+  peak_excess_db goes POSITIVE. That is the real Iq/capacitance frontier,
+  and the cheap lever on it is not current but AREA: C_N1 is dominated by
+  Cgs(M2P) and C_BG by Cgg(Mbuf), so shrinking those two gates buys p2
+  headroom for free. MEASURED at Cf = 36 fF: with M2P 150u/2u and Mbuf
+  150u/1u, peak_excess_db = +1.6...+2.3 dB at nine 125 degC corners (FAIL);
+  with M2P 60u/1u and Mbuf 60u/0.5u it drops by ~0.7 dB, and at the
+  committed Cf = 49 fF it is -0.10...+0.09 dB at 81 of 81 points.
+
+  WHAT IS STILL NOT FIXED. The shelf now covers the whole 0.1 mA column
+  (540/540, DR-0001 both bars) with 1-13 deg of margin, but 1-50 mA needs
+  the shelf to reach ~6 MHz at 50 mA / 0.33 uF, which is another ~10x of
+  Cc/Cf. Cf cannot go there against the p2 ceiling and Cc cannot grow into
+  it without spending the ratified PSRR row. See design/error_amp.md S6.10
+  and spec/decision-records/DR-0012.
 
 COMPENSATION -- why the Miller network is a gain SHELF (issue #51)
 #10's stability record measured the pre-#51 loop as a textbook two-pole
@@ -317,7 +345,7 @@ C {devices/lab_pin.sym} -620 -400 0 0 {name=l_mb1_g sig_type=std_logic lab=NBIAS
 C {devices/lab_pin.sym} -580 -370 0 0 {name=l_mb1_s sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} -580 -400 0 0 {name=l_mb1_b sig_type=std_logic lab=VSS}
 
-C {symbols/nfet_03v3.sym} -300 -150 0 0 {name=MTAIL model=nfet_03v3 L=4u W=6u nf=1 m=1}
+C {symbols/nfet_03v3.sym} -300 -150 0 0 {name=MTAIL model=nfet_03v3 L=4u W=6.6u nf=1 m=1}
 C {devices/lab_pin.sym} -280 -180 0 0 {name=l_mt_d sig_type=std_logic lab=TAIL}
 C {devices/lab_pin.sym} -320 -150 0 0 {name=l_mt_g sig_type=std_logic lab=NBIAS}
 C {devices/lab_pin.sym} -280 -120 0 0 {name=l_mt_s sig_type=std_logic lab=VSS}
@@ -356,15 +384,15 @@ C {symbols/cap_mim_2f0fF.sym} 400 -400 0 0 {name=Cc model=cap_mim_2f0_m2m3_noshi
 C {devices/lab_pin.sym} 400 -430 0 0 {name=l_cc_g sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 400 -370 0 0 {name=l_cc_b sig_type=std_logic lab=OUT}
 
-C {symbols/cap_mim_2f0fF.sym} 250 -250 0 0 {name=Cf1 model=cap_mim_2f0_m2m3_noshield W=12u L=12u m=1}
+C {symbols/cap_mim_2f0fF.sym} 250 -250 0 0 {name=Cf1 model=cap_mim_2f0_m2m3_noshield W=7u L=7u m=1}
 C {devices/lab_pin.sym} 250 -280 0 0 {name=l_cf1_g sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 250 -220 0 0 {name=l_cf1_b sig_type=std_logic lab=NF}
 
-C {symbols/cap_mim_2f0fF.sym} 400 -250 0 0 {name=Cf2 model=cap_mim_2f0_m2m3_noshield W=12u L=12u m=1}
+C {symbols/cap_mim_2f0fF.sym} 400 -250 0 0 {name=Cf2 model=cap_mim_2f0_m2m3_noshield W=7u L=7u m=1}
 C {devices/lab_pin.sym} 400 -280 0 0 {name=l_cf2_g sig_type=std_logic lab=NF}
 C {devices/lab_pin.sym} 400 -220 0 0 {name=l_cf2_b sig_type=std_logic lab=BG}
 
-C {symbols/pfet_03v3.sym} 700 -600 0 0 {name=M2P model=pfet_03v3 L=2u W=150u nf=15 m=1}
+C {symbols/pfet_03v3.sym} 700 -600 0 0 {name=M2P model=pfet_03v3 L=1u W=60u nf=6 m=1}
 C {devices/lab_pin.sym} 680 -600 0 0 {name=l_m2p_g sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 720 -570 0 0 {name=l_m2p_d sig_type=std_logic lab=BG}
 C {devices/lab_pin.sym} 720 -630 0 0 {name=l_m2p_s sig_type=std_logic lab=VDD}
@@ -381,13 +409,13 @@ C {devices/lab_pin.sym} 850 -630 0 0 {name=l_rbufb_p sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 850 -570 0 0 {name=l_rbufb_m sig_type=std_logic lab=NBP}
 C {devices/lab_pin.sym} 830 -600 0 0 {name=l_rbufb_b sig_type=std_logic lab=VSS}
 
-C {symbols/pfet_03v3.sym} 1000 -600 0 0 {name=Mbufb model=pfet_03v3 L=2u W=200u nf=20 m=1}
+C {symbols/pfet_03v3.sym} 1000 -600 0 0 {name=Mbufb model=pfet_03v3 L=1u W=100u nf=10 m=1}
 C {devices/lab_pin.sym} 980 -600 0 0 {name=l_bufb_g sig_type=std_logic lab=NBP}
 C {devices/lab_pin.sym} 1020 -570 0 0 {name=l_bufb_d sig_type=std_logic lab=OUT}
 C {devices/lab_pin.sym} 1020 -630 0 0 {name=l_bufb_s sig_type=std_logic lab=VDD}
 C {devices/lab_pin.sym} 1020 -600 0 0 {name=l_bufb_b sig_type=std_logic lab=VDD}
 
-C {symbols/pfet_03v3.sym} 1000 -300 0 0 {name=Mbuf model=pfet_03v3 L=1u W=150u nf=15 m=1}
+C {symbols/pfet_03v3.sym} 1000 -300 0 0 {name=Mbuf model=pfet_03v3 L=0.5u W=60u nf=6 m=1}
 C {devices/lab_pin.sym} 980 -300 0 0 {name=l_buf_g sig_type=std_logic lab=BG}
 C {devices/lab_pin.sym} 1020 -330 0 0 {name=l_buf_d sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 1020 -270 0 0 {name=l_buf_s sig_type=std_logic lab=OUT}
