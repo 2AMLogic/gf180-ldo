@@ -56,6 +56,31 @@
 *     gain margin  = -|T|dB at the first -180 deg phase crossing.
 *
 * ---------------------------------------------------------------------------
+* Gain resurgence above the first 0 dB crossing (issue #59, DR-0008)
+* ---------------------------------------------------------------------------
+* Both of those margins are a valid stability test only when T(s) has no
+* right-half-plane poles -- the standard precondition on the Bode form of the
+* Nyquist criterion. design/error_amp.sch closes a LOCAL loop inside the
+* amplifier (the Rz/Cc network around the stage-2 driver and the class-AB gate
+* buffer) which stays closed when the LDO loop is broken here, so the
+* precondition is a real question, not a formality; DR-0008 records that it
+* did not hold for the amplifier as committed at b304bd5.
+*
+* This deck therefore also measures the cheapest frequency-domain signature of
+* that failure: the largest |T| anywhere ABOVE the first 0 dB crossing. For a
+* loop whose gain rolls off monotonically through crossover this is negative
+* by construction (every point above the crossing is below unity), so any
+* positive value means |T| climbs back over unity after having crossed down --
+* which is necessary for the misreading DR-0008 documents (crossover taken on
+* the far side of a resonance the RHP pair has already rotated +180 deg
+* through), though on its own it is NOT sufficient to prove RHP poles.
+* sim/amp-selfosc/ remains the load-bearing time-domain measurement.
+*
+* The scan starts one AC-grid step above f0 rather than at f0 itself, so the
+* crossing point (|T| = 0 dB by definition) cannot be reported as its own
+* resurgence.
+*
+* ---------------------------------------------------------------------------
 * Load / output-network model
 * ---------------------------------------------------------------------------
 * I_load is an ideal DC current source (infinite small-signal impedance).
@@ -150,9 +175,14 @@ set noaskquit
 
 echo "* corner_id=@CORNER_ID@ corner=@CORNER_NAME@ temp_c=@TEMP_C@ vin_v=@VIN_V@"
 echo "* ac sweep: dec @AC_DEC@ @F_START@ @F_STOP@ ; Tian dual injection at ERRAMP_OUT->PASS_GATE"
-echo "* columns: ROW iload_a ceff_f esr_ohm vout_v dcgain_db f0_hz phase_at_f0_deg f180_hz gain_at_f180_db f0_rising_hz"
+echo "* columns: ROW iload_a= ceff_f= esr_ohm= vout_v= dcgain_db= f0_hz= phase_at_f0_deg="
+echo "*          f180_hz= gain_at_f180_db= f0_rising_hz= resurgence_db="
 echo "* (phase margin = 180 + phase_at_f0_deg ; gain margin = -gain_at_f180_db ;"
+echo "*  resurgence_db = max |T| in dB above the first 0 dB crossing, DR-0008 ;"
 echo "*  an empty f180/gain field means the phase never reaches -180 deg in band)"
+echo "* Fields are written key=value BECAUSE a failed meas leaves its value"
+echo "* empty: with bare positional fields an empty one vanishes into the"
+echo "* whitespace and every field after it is read as the wrong quantity."
 
 foreach il @ILOAD_LIST@
   foreach ce @CEFF_LIST@
@@ -202,7 +232,20 @@ foreach il @ILOAD_LIST@
       meas ac gmx find tdb when tph=-180 fall=1
       meas ac f0r when tdb=0 rise=1
 
-      echo "ROW $il $ce $es $vout_str $&dcg $&f0 $&phx $&f180 $&gmx $&f0r"
+      * ---- gain resurgence above the first 0 dB crossing (#59, DR-0008) ---
+      * The largest |T| in dB anywhere above the first (falling) 0 dB
+      * crossing. The scan starts one AC-grid step above f0 -- 10^(1/AC_DEC)
+      * -- so the crossing itself, where |T| is 0 dB by definition, is not
+      * reported as its own resurgence; every remaining point of a
+      * monotonically falling |T| is strictly below 0 dB, so the metric is
+      * negative unless the gain genuinely climbs back over unity.
+      * If f0 does not exist (no 0 dB crossing in band) this meas fails the
+      * same way f180/gmx do above and the field comes out empty, which
+      * sweep.py reads as "no crossing, so no region above one".
+      let fres = f0*10^(1/@AC_DEC@)
+      meas ac tres max tdb from=$&fres to=@F_STOP@
+
+      echo "ROW iload_a=$il ceff_f=$ce esr_ohm=$es vout_v=$vout_str dcgain_db=$&dcg f0_hz=$&f0 phase_at_f0_deg=$&phx f180_hz=$&f180 gain_at_f180_db=$&gmx f0_rising_hz=$&f0r resurgence_db=$&tres"
     end
   end
 end

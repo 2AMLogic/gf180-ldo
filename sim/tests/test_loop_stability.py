@@ -39,6 +39,7 @@ def row(**kw) -> "sweep.Row":
         iload_a=1e-3, ceff_f=1e-6, esr_ohm=0.05, vout_v=1.8,
         dcgain_db=90.0, f0_hz=1e5, phase_at_f0_deg=-120.0,
         f180_hz=None, gain_at_f180_db=None, f0_rising_hz=None,
+        resurgence_db=None,
     )
     base.update(kw)
     return sweep.Row(**base)
@@ -93,6 +94,109 @@ class TestMarginSemantics(unittest.TestCase):
     def test_worst_of_prefers_an_unmeasurable_point_over_a_measured_one(self):
         rows = [row(phase_at_f0_deg=-179.0), row(f0_hz=None, phase_at_f0_deg=None)]
         self.assertIsNone(sweep.worst_of(rows).pm_deg)
+
+
+class TestResurgenceBar(unittest.TestCase):
+    """DR-0008's precondition check (issue #59), a bar of its own.
+
+    A phase/gain margin is only a stability test when T(s) has no
+    right-half-plane poles. |T| climbing back above 0 dB above its first 0 dB
+    crossing is necessary (not sufficient) for that precondition to be broken,
+    and it is cheap to read off the sweep this bench already runs.
+    """
+
+    def test_the_bar_has_no_slack_in_it(self):
+        # For a loop that rolls off monotonically through crossover every
+        # point above the crossing is below unity, so anything above 0 dB is
+        # a resurgence. There is no engineering margin to allow here.
+        self.assertEqual(sweep.RESURGENCE_MAX_DB, 0.0)
+
+    def test_a_positive_resurgence_is_flagged(self):
+        self.assertTrue(row(resurgence_db=24.4).resurges)
+        self.assertTrue(row(resurgence_db=0.01).resurges)
+
+    def test_a_gain_that_stays_below_unity_is_not_flagged(self):
+        self.assertFalse(row(resurgence_db=-4.2).resurges)
+        self.assertFalse(row(resurgence_db=0.0).resurges)
+
+    def test_an_unmeasurable_resurgence_is_not_a_resurgence(self):
+        # No 0 dB crossing => no region above one. Such a point already fails
+        # the phase-margin bar on its own account, so it is not a silent pass.
+        r = row(f0_hz=None, phase_at_f0_deg=None, resurgence_db=None)
+        self.assertFalse(r.resurges)
+        self.assertFalse(r.passes)
+        self.assertEqual(sweep.res_str(r), "n/a")
+
+    def test_the_resurgence_bar_is_orthogonal_to_the_dr0001_verdict(self):
+        # The whole point of keeping it out of `passes`: a point can clear
+        # DR-0001's two bars and still be a point whose margins are not a
+        # legitimate reading (DR-0008's finding), and vice versa.
+        r = row(phase_at_f0_deg=-100.0, resurgence_db=52.5)
+        self.assertTrue(r.passes)
+        self.assertTrue(r.resurges)
+        r = row(phase_at_f0_deg=-170.0, resurgence_db=-30.0)
+        self.assertFalse(r.passes)
+        self.assertFalse(r.resurges)
+
+    def test_worst_resurgence_picks_the_largest_and_survives_unmeasured_points(self):
+        rows = [row(resurgence_db=-4.0), row(resurgence_db=15.3, iload_a=50e-3),
+                row(resurgence_db=None)]
+        self.assertAlmostEqual(sweep.worst_resurgence_of(rows).resurgence_db, 15.3)
+        self.assertEqual(sweep.worst_resurgence_of(rows).iload_a, 50e-3)
+        self.assertIsNone(sweep.worst_resurgence_of([row(resurgence_db=None)])
+                          .resurgence_db)
+
+
+class TestRowParsing(unittest.TestCase):
+    """The deck writes key=value, and the driver refuses anything else.
+
+    A failed ``meas`` leaves its value empty. With bare positional fields an
+    empty one vanishes into the whitespace and every later field is read as
+    the wrong quantity -- which is exactly what happened to 387 rows of
+    record 20260801-191742-84f67b8, whose f0_rising_hz was recorded as
+    f_180_hz and whose multiple-crossing self-check therefore reported 14
+    points instead of 401.
+    """
+
+    FULL = ("ROW iload_a=0.0001 ceff_f=3.3e-07 esr_ohm=0.5 vout_v=1.7994 "
+            "dcgain_db=147.821 f0_hz=300220 phase_at_f0_deg=-92.307 "
+            "f180_hz=811035 gain_at_f180_db=16.7196 f0_rising_hz=622210 "
+            "resurgence_db=24.4")
+
+    def test_all_fields_present(self):
+        f = sweep.parse_row_fields(self.FULL)
+        self.assertEqual(f["f0_hz"], "300220")
+        self.assertEqual(f["gain_at_f180_db"], "16.7196")
+        self.assertEqual(f["resurgence_db"], "24.4")
+
+    def test_an_empty_middle_field_does_not_shift_the_later_ones(self):
+        line = self.FULL.replace("f180_hz=811035", "f180_hz=").replace(
+            "gain_at_f180_db=16.7196", "gain_at_f180_db=")
+        f = sweep.parse_row_fields(line)
+        self.assertEqual(f["f180_hz"], "")
+        self.assertEqual(f["gain_at_f180_db"], "")
+        # the two fields AFTER the empty ones must still be themselves
+        self.assertEqual(f["f0_rising_hz"], "622210")
+        self.assertEqual(f["resurgence_db"], "24.4")
+
+    def test_a_missing_field_is_an_error_not_a_default(self):
+        line = self.FULL.replace(" resurgence_db=24.4", "")
+        with self.assertRaises(ValueError):
+            sweep.parse_row_fields(line)
+
+    def test_a_positional_field_is_rejected(self):
+        # i.e. an old-format ROW line is refused rather than misread.
+        with self.assertRaises(ValueError):
+            sweep.parse_row_fields(
+                "ROW 0.0001 3.3e-07 0.5 1.7994 147.821 300220 -92.307"
+            )
+
+    def test_the_field_list_matches_the_decks_own_echo(self):
+        text = (REPO_ROOT / "sim" / "loop-stability" / "testbench"
+                / "tb_loop_stability.spice.in").read_text()
+        echo = re.search(r'^\s*echo "ROW (.*)"$', text, re.M).group(1)
+        keys = [tok.split("=")[0] for tok in echo.split()]
+        self.assertEqual(list(sweep.ROW_FIELDS), keys)
 
 
 class TestRatifiedMatrix(unittest.TestCase):

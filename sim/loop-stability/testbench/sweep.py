@@ -78,6 +78,20 @@ SUPPLY_TOL = 0.10
 PM_MIN_DEG = 45.0
 GM_MIN_DB = 10.0
 
+# DR-0008's precondition check (issue #59), reported and failed SEPARATELY
+# from the two DR-0001 bars above. A phase/gain margin read off a Bode plot is
+# only a stability test when T(s) has no right-half-plane poles; the cheapest
+# frequency-domain signature of that precondition failing is |T| climbing back
+# above 0 dB somewhere above its first 0 dB crossing. For a loop that rolls
+# off monotonically through crossover this quantity is negative by
+# construction, so the bar is "<= 0 dB" with no engineering slack in it.
+#
+# This is necessary-but-not-sufficient evidence of an RHP pole pair -- a
+# well-damped but under-margined loop can resurge without one -- so it does
+# NOT replace sim/amp-selfosc/'s time-domain measurement, which stays the
+# load-bearing check per DR-0008.
+RESURGENCE_MAX_DB = 0.0
+
 # Regulation target, and how far a point's DC output may sit from it before the
 # run is treated as void. VOUT_NOM_V is set by the design's own divider and
 # reference (Vref1 = 1.2 V, Rtop = 300k, Rbot = 600k => 1.2 * 900/600 = 1.8 V).
@@ -138,6 +152,7 @@ class Row:
     f180_hz: float | None
     gain_at_f180_db: float | None
     f0_rising_hz: float | None
+    resurgence_db: float | None = None
 
     @property
     def pm_deg(self) -> float | None:
@@ -160,8 +175,26 @@ class Row:
 
     @property
     def passes(self) -> bool:
+        """The DR-0001 verdict, and only that.
+
+        The DR-0008 resurgence bar is deliberately NOT folded in here: it is a
+        different claim (whether a Bode margin is a legitimate reading at all)
+        against a criterion that is not yet ratified, and folding it in would
+        silently restate every historical PM/GM verdict. See ``resurges``.
+        """
         pm = self.pm_deg
         return pm is not None and pm >= PM_MIN_DEG and self.gm_db >= GM_MIN_DB
+
+    @property
+    def resurges(self) -> bool:
+        """Does |T| climb back above 0 dB above its first 0 dB crossing?
+
+        ``None`` -- no first crossing in band, so no region above one -- is
+        not a resurgence. Such a point has no crossover and therefore already
+        fails the phase-margin bar on its own account; it is never a silent
+        pass of anything.
+        """
+        return self.resurgence_db is not None and self.resurgence_db > RESURGENCE_MAX_DB
 
     @property
     def config_id(self) -> str:
@@ -189,6 +222,44 @@ def _f(tok: str) -> float | None:
         return float(tok)
     except ValueError:
         return None
+
+
+ROW_FIELDS = (
+    "iload_a", "ceff_f", "esr_ohm", "vout_v", "dcgain_db", "f0_hz",
+    "phase_at_f0_deg", "f180_hz", "gain_at_f180_db", "f0_rising_hz",
+    "resurgence_db",
+)
+
+
+def parse_row_fields(line: str) -> dict[str, str]:
+    """Parse one ``ROW k=v k=v ...`` line into its fields.
+
+    The deck writes key=value rather than bare positional fields for a
+    load-bearing reason: a failed ``meas`` (no such crossing in band) leaves
+    its value empty, and an empty *positional* field vanishes into the
+    whitespace, so every field after it is read as the wrong quantity. That
+    is not hypothetical -- record ``20260801-191742-84f67b8`` has 387 rows
+    whose ``f0_rising_hz`` was read as ``f180_hz`` for exactly this reason,
+    which is why its multiple-crossing self-check reported 14 points instead
+    of 401. Missing keys are an error rather than a default, so a deck/driver
+    drift can never again be silently absorbed as a plausible number.
+    """
+    fields: dict[str, str] = {}
+    for tok in line.split()[1:]:
+        key, sep, val = tok.partition("=")
+        if not sep:
+            raise ValueError(f"ROW field {tok!r} is not key=value: {line!r}")
+        if key in fields:
+            raise ValueError(f"ROW field {key!r} repeated: {line!r}")
+        fields[key] = val
+    missing = [k for k in ROW_FIELDS if k not in fields]
+    unknown = [k for k in fields if k not in ROW_FIELDS]
+    if missing or unknown:
+        raise ValueError(
+            f"ROW line does not match the deck's field list "
+            f"(missing {missing}, unknown {unknown}): {line!r}"
+        )
+    return fields
 
 
 def nonregulating(rows: list[Row]) -> list[Row]:
@@ -269,25 +340,27 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, workdir: Path, logdir: Path):
     for line in text.splitlines():
         if not line.startswith("ROW "):
             continue
-        # trailing fields may be empty (a failed meas), so pad rather than split
-        parts = line.split()[1:]
-        parts += [""] * (10 - len(parts))
+        try:
+            f = parse_row_fields(line)
+        except ValueError as exc:
+            return pvt, [], f"{exc} (see {log})"
         rows.append(
             Row(
                 corner_id=pvt.corner_id,
                 corner=pvt.corner.name,
                 temp_c=pvt.temp_c,
                 vin_v=pvt.vdd,
-                iload_a=float(parts[0]),
-                ceff_f=float(parts[1]),
-                esr_ohm=float(parts[2]),
-                vout_v=_f(parts[3]) or float("nan"),
-                dcgain_db=_f(parts[4]) or float("nan"),
-                f0_hz=_f(parts[5]),
-                phase_at_f0_deg=_f(parts[6]),
-                f180_hz=_f(parts[7]),
-                gain_at_f180_db=_f(parts[8]),
-                f0_rising_hz=_f(parts[9]),
+                iload_a=float(f["iload_a"]),
+                ceff_f=float(f["ceff_f"]),
+                esr_ohm=float(f["esr_ohm"]),
+                vout_v=_f(f["vout_v"]) or float("nan"),
+                dcgain_db=_f(f["dcgain_db"]) or float("nan"),
+                f0_hz=_f(f["f0_hz"]),
+                phase_at_f0_deg=_f(f["phase_at_f0_deg"]),
+                f180_hz=_f(f["f180_hz"]),
+                gain_at_f180_db=_f(f["gain_at_f180_db"]),
+                f0_rising_hz=_f(f["f0_rising_hz"]),
+                resurgence_db=_f(f["resurgence_db"]),
             )
         )
     expected = len(iloads) * len(ceffs) * len(esrs)
@@ -345,6 +418,11 @@ def pm_str(row: Row) -> str:
     return "n/a" if pm is None else f"{pm:.2f}"
 
 
+def res_str(row: Row) -> str:
+    r = row.resurgence_db
+    return "n/a" if r is None else f"{r:+.2f}"
+
+
 def worst_of(rows: list[Row]) -> Row:
     """The row with the smallest phase margin (GM as tiebreak)."""
 
@@ -358,6 +436,12 @@ def worst_of(rows: list[Row]) -> Row:
     return min(rows, key=key)
 
 
+def worst_resurgence_of(rows: list[Row]) -> Row:
+    """The row with the largest gain resurgence above its first crossing."""
+    return max(rows, key=lambda r: -math.inf if r.resurgence_db is None
+               else r.resurgence_db)
+
+
 def write_matrix_csv(path: Path, rows: list[Row]) -> None:
     with path.open("w", newline="") as fh:
         w = csv.writer(fh)
@@ -367,6 +451,7 @@ def write_matrix_csv(path: Path, rows: list[Row]) -> None:
                 "iload_ma", "ceff_uf", "esr_ohm", "vout_v",
                 "dc_loop_gain_db", "f_crossover_hz", "phase_margin_deg",
                 "f_180_hz", "gain_margin_db", "result",
+                "resurgence_db", "resurgence_result",
             ]
         )
         for r in rows:
@@ -380,6 +465,8 @@ def write_matrix_csv(path: Path, rows: list[Row]) -> None:
                     "" if r.f180_hz is None else f"{r.f180_hz:.6g}",
                     gm_str(r),
                     "PASS" if r.passes else "FAIL",
+                    "" if r.resurgence_db is None else f"{r.resurgence_db:.4g}",
+                    "FAIL" if r.resurges else "PASS",
                 ]
             )
 
@@ -683,7 +770,10 @@ def main() -> int:
     multi_cross = [r for r in rows
                    if r.f0_rising_hz is not None and r.f0_hz is not None
                    and r.f0_rising_hz > r.f0_hz]
-    overall_pass = not failing
+    resurging = [r for r in rows if r.resurges]
+    worst_res = worst_resurgence_of(rows)
+    dr0001_pass = not failing
+    overall_pass = dr0001_pass and not resurging
 
     print()
     print(f"points    : {len(rows)}")
@@ -691,7 +781,12 @@ def main() -> int:
     f0s = "n/a" if worst.f0_hz is None else f"{worst.f0_hz:.4g}"
     print(f"worst     : PM {pm_str(worst)} deg, GM {gm_str(worst)} dB, f0 {f0s} Hz")
     print(f"            at {worst.corner_id} / {worst.config_id}")
-    print(f"OVERALL   : {'PASS' if overall_pass else 'FAIL'} against {DR0001}")
+    print(f"DR-0001   : {'PASS' if dr0001_pass else 'FAIL'} against {DR0001}")
+    print(f"resurging : {len(resurging)} (|T| > {RESURGENCE_MAX_DB:g} dB above the "
+          f"first 0 dB crossing; worst {res_str(worst_res)} dB at "
+          f"{worst_res.corner_id} / {worst_res.config_id})")
+    print(f"OVERALL   : {'PASS' if overall_pass else 'FAIL'} "
+          f"(both the DR-0001 margins and the DR-0008 precondition check)")
 
     if args.no_write:
         print("\n(--no-write: no record, snapshot or corner logs committed)")
@@ -713,8 +808,9 @@ def main() -> int:
 
     md = render_record(
         record_id=record_id, rows=rows, worst=worst, failing=failing,
-        multi_cross=multi_cross, grid=grid, iloads=iloads, ceffs=ceffs, esrs=esrs,
-        pdk=pdk, dirty=dirty, args=args, curve_log=curve_log,
+        multi_cross=multi_cross, resurging=resurging, grid=grid, iloads=iloads,
+        ceffs=ceffs, esrs=esrs, pdk=pdk, dirty=dirty, args=args,
+        curve_log=curve_log,
     )
     (records / f"{record_id}.md").write_text(md)
 
@@ -726,8 +822,8 @@ def main() -> int:
     return 0 if overall_pass else 1
 
 
-def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
-                  iloads, ceffs, esrs, pdk, dirty, args, curve_log) -> str:
+def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
+                  grid, iloads, ceffs, esrs, pdk, dirty, args, curve_log) -> str:
     rel = lambda p: str(Path(p).resolve().relative_to(REPO_ROOT))  # noqa: E731
     overall = "PASS" if not failing else "FAIL"
     by_corner: dict[str, list[Row]] = {}
@@ -761,6 +857,22 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
         cfg_tbl.append(
             f"| {fmt_ma(key[0])} | {fmt_uf(key[1])} | {key[2]:g} ohm | {pm_str(w)} | "
             f"{gm_str(w)} | `{w.corner_id}` | {'PASS' if w.passes else '**FAIL**'} |"
+        )
+
+    # DR-0008's precondition check, per load current: the axis DR-0008's own
+    # 720-point spot check was taken along.
+    by_load_res: dict[float, list[Row]] = {}
+    for r in rows:
+        by_load_res.setdefault(r.iload_a, []).append(r)
+    res_tbl = ["| I_load | points resurging | worst resurgence (dB) | at (C_eff / ESR / PVT corner) |",
+               "|---|---|---|---|"]
+    for key in sorted(by_load_res):
+        bucket = by_load_res[key]
+        w = worst_resurgence_of(bucket)
+        n_res_load = sum(1 for r in bucket if r.resurges)
+        res_tbl.append(
+            f"| {fmt_ma(key)} | {n_res_load}/{len(bucket)} | {res_str(w)} | "
+            f"{fmt_uf(w.ceff_f)} / {w.esr_ohm:g} ohm / `{w.corner_id}` |"
         )
 
     n_pass = len(rows) - len(failing)
@@ -815,6 +927,67 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
             "See the `f0_rising_hz` column of the raw logs.\n"
         )
 
+    # The DR-0008 precondition check (issue #59). Reported as its own verdict,
+    # never folded into the DR-0001 PASS/FAIL above.
+    worst_res = worst_resurgence_of(rows)
+    n_measured_res = sum(1 for r in rows if r.resurgence_db is not None)
+    if resurging:
+        res_verdict = (
+            f"**{len(resurging)}/{len(rows)} points** have `|T|` back above "
+            f"{RESURGENCE_MAX_DB:g} dB somewhere above their first 0 dB crossing, "
+            f"worst **{res_str(worst_res)} dB** at `{worst_res.corner_id}` / "
+            f"{fmt_ma(worst_res.iload_a)} / {fmt_uf(worst_res.ceff_f)} / "
+            f"{worst_res.esr_ohm:g} ohm. Where that happens, the phase margin "
+            f"tabulated above is read at a crossing that is not the last one, "
+            f"and DR-0008's finding is that on this design the crossing sits on "
+            f"the far side of a resonance whose right-half-plane pole pair has "
+            f"already advanced the phase by ~ +180 deg -- so `180 + phase` "
+            f"returns a large positive number for a loop that is oscillating."
+        )
+    else:
+        res_verdict = (
+            f"**No point** in this matrix has `|T|` above "
+            f"{RESURGENCE_MAX_DB:g} dB anywhere above its first 0 dB crossing "
+            f"(worst {res_str(worst_res)} dB, at `{worst_res.corner_id}` / "
+            f"{fmt_ma(worst_res.iload_a)} / {fmt_uf(worst_res.ceff_f)} / "
+            f"{worst_res.esr_ohm:g} ohm), i.e. every point crosses unity once "
+            f"and stays below it. That removes the *necessary* condition for "
+            f"the DR-0008 misreading, it does not by itself prove the loop gain "
+            f"has no right-half-plane poles."
+        )
+    resurgence_md = f"""
+- **Precondition check (DR-0008 / issue #59): gain resurgence above the first
+  0 dB crossing** -- reported and failed **separately** from the two DR-0001
+  bars above, and deliberately not folded into the PASS/FAIL column.
+
+  A Bode phase/gain margin is a stability test only when `T(s)` has no
+  right-half-plane poles. `design/error_amp.sch` closes a local feedback loop
+  inside the amplifier that stays closed when the LDO loop is broken at
+  `ERRAMP_OUT`/`PASS_GATE`, so that precondition is a real question here;
+  `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md` records
+  that it did not hold for the amplifier as committed at `b304bd5`. This row
+  is the cheap frequency-domain signature of that failure: `resurgence_db` is
+  the largest `|T|` in dB anywhere above the first (falling) 0 dB crossing,
+  scanned from one AC-grid step above the crossing so the crossing itself is
+  never reported as its own resurgence. For a loop that rolls off
+  monotonically through crossover the quantity is negative by construction,
+  which is why the bar is **<= {RESURGENCE_MAX_DB:g} dB** with no slack in it.
+
+  {res_verdict}
+
+  This is **necessary-but-not-sufficient** evidence of a right-half-plane pole
+  pair: a well-damped but under-margined loop could in principle resurge
+  without one. It does **not** replace `sim/amp-selfosc/`, which measures the
+  oscillation directly in the time domain and remains the load-bearing check
+  per DR-0008. Measured at {n_measured_res}/{len(rows)} points (a point with
+  no 0 dB crossing at all has no region above one, and already fails the
+  phase-margin bar on its own account).
+
+  By load current:
+
+{chr(10).join(res_tbl)}
+"""
+
     return f"""# Record {record_id}
 
 - **Record ID**: {record_id}
@@ -866,7 +1039,9 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
   claim -- no Monte Carlo).
 - **Result**:
   - **Overall: {overall}** against `{DR0001}`
-    ({n_pass}/{len(rows)} points pass, {len(failing)} fail).
+    ({n_pass}/{len(rows)} points pass, {len(failing)} fail). This verdict is
+    the DR-0001 phase/gain-margin criterion and nothing else; the DR-0008
+    precondition check below is reported as its own, separate verdict.
   - **Worst point**: `{worst.corner_id}` at
     I_load = {fmt_ma(worst.iload_a)}, C_eff = {fmt_uf(worst.ceff_f)},
     ESR = {worst.esr_ohm:g} ohm --
@@ -890,15 +1065,20 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, grid,
   points), which is where the structure of the failure is visible:
 
 {chr(10).join(cfg_tbl)}
-
+{resurgence_md}
 - **Links**:
   - Testbench: `sim/loop-stability/testbench/tb_loop_stability.spice.in`,
     `sim/loop-stability/testbench/sweep.py`,
     `sim/loop-stability/testbench/run.sh`
-  - Testbench self-test (validates the Tian extraction against a circuit with
-    an analytically known loop gain):
+  - Testbench self-test (validates the Tian extraction, the margin extraction
+    and the resurgence extraction against loops with an analytically known
+    loop gain -- one monotonic, one deliberately resurging):
     `sim/loop-stability/testbench/tb_tian_selftest.spice`,
     `sim/loop-stability/testbench/selftest.py`
+  - Precondition the resurgence row is evidence for:
+    `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md`; the
+    load-bearing time-domain measurement of the same precondition is
+    `sim/amp-selfosc/`
   - Netlist snapshot: `sim/loop-stability/netlist-snapshots/{record_id}.spice`
   - Raw logs (one per PVT point, {len(iloads) * len(ceffs) * len(esrs)} `ROW`
     lines each): `sim/loop-stability/corners/{record_id}/`
