@@ -18,8 +18,9 @@ sim/loop-stability/
   testbench/
     tb_loop_stability.spice.in   the Tian dual-injection deck (a template)
     sweep.py                     PVT + load/cap/ESR driver; writes the record
-    tb_tian_selftest.spice       a loop with an analytically known gain
-    selftest.py                  asserts the extraction against that loop
+    tb_tian_selftest.spice       three loops with analytically known gains
+    selftest.py                  asserts the extraction against those loops
+    compare_records.py           point-by-point diff of two matrix records
     run.sh                       selftest, then sweep
   netlist-snapshots/<record-id>.spice
   corners/<record-id>/<corner-id>.log
@@ -32,13 +33,15 @@ sim/loop-stability/
 ./sim/loop-stability/testbench/run.sh --explore   # tt/27 °C/3.3 V, writes nothing
 ./sim/loop-stability/testbench/run.sh             # full matrix, mints a record
 ./sim/loop-stability/testbench/selftest.py        # method check only (no PDK needed)
+./sim/loop-stability/testbench/compare_records.py A B   # diff two records, no sim
 ```
 
 `--explore` is DR-0001's recommended first pass: sweep `I_load × C_eff × ESR`
 at `tt/27 °C/3.3 V` to find the worst triple before committing to the full
 grid. The full run is 63 ngspice invocations covering 4536 loop-gain points
-(the load/cap/ESR axes are swept *inside* each deck) — about 30 minutes at
-`-j 28`, longer at lower `-j`. Use `-j` to match your core count. The process
+(the load/cap/ESR axes are swept *inside* each deck) — see *Sweep resolution*
+below for the measured runtime, which issue #58's `dec 50` → `dec 400` change
+moved. Use `-j` to match your core count. The process
 axis is `tt ff ss fs sf res_ff res_ss`: issue #54 added `res_ff`/`res_ss`
 because `Rz` (`ppolyf_u_1k`, since #51/#56's Type-II gain-shelf
 recompensation) sets both the shelf gain and the shelf corner frequency, so
@@ -52,6 +55,161 @@ of the regulation target: the ideal current-source load admits a second,
 non-regulating DC solution, and a loop margin measured about it would be a
 meaningless number that looks like a meaningful one. See the deck's
 *"removing the non-physical DC branch"* comment.
+
+## Sweep resolution — `AC_DEC`, and why it is 400 (issue #58)
+
+Every record through `20260802-171044-db620a6` ran its AC sweep at `dec 50`
+(≈ 4.7 % frequency steps). That is fine for a smooth, low-Q Bode response and
+blind to a sharp one — and the blindness is not graceful. A resonance narrow
+enough to fall between two grid points is not merely reported inaccurately;
+it can be **invisible**. `resurgence_db` above is computed off this same
+grid, so the DR-0008 detector inherits the blindness of the sample it is
+computed from: a detector built on an under-resolved sweep can under-report
+the very thing it exists to catch.
+
+### The bound
+
+Sampling a resonance of quality factor `Q` on a log grid of `dec` points per
+decade, the worst case is the peak landing exactly midway between two
+samples — a relative detuning of `d = 10^(1/(2·dec)) − 1`. A second-order
+resonance detuned by `d` reads
+
+```
+miss(Q, dec) = 20·log10( sqrt( (2·Q·d)² + 1 ) )      dB below its true peak
+Qmax(E, dec) = sqrt(10^(E/10) − 1) / (2·d)           largest Q held to E dB
+```
+
+| `dec` | step | worst-case miss at Q = 80 | `Qmax` at 1 dB | `Qmax` at 0.1 dB |
+|---|---|---|---|---|
+| 50 | 4.713 % | 11.73 dB | 10.9 | 3.3 |
+| 100 | 2.329 % | 6.47 dB | 22.0 | 6.6 |
+| 200 | 1.158 % | 2.68 dB | 44.1 | 13.2 |
+| **400** | **0.577 %** | **0.84 dB** | **88.3** | **26.5** |
+| 800 | 0.288 % | 0.22 dB | 176.7 | 53.0 |
+
+**Policy: `AC_DEC` = 400** — the smallest ×2 step up from the old default
+that holds the worst-case miss under **1 dB**, a tenth of DR-0001's 10 dB
+gain-margin bar, out to `Q ≈ 88`. `dec 50` held that only out to `Q ≈ 11`.
+
+This is a **stated capability, not a proof of sufficiency**. No finite grid
+resolves an arbitrarily sharp feature, and the honest claim is that there is
+now a bound where before there was none. `--ac-dec` exposes the knob, and
+running *below* the default needs a written `--subset-reason` exactly as a
+narrowed PVT grid does: the resolution is part of the measurement, not a
+performance setting.
+
+### What it changed on this design: nothing, and one thing
+
+[`records/20260802-204343-e912fbd.md`](records/20260802-204343-e912fbd.md) is
+the controlled A/B — same netlist, same grid, same deck, `AC_DEC` the only
+variable — between the last `dec 50` record and the first `dec 400` one.
+
+**No point of 4536 changes verdict**, on the DR-0001 bars or on the DR-0008
+resurgence bar. Phase margin moves by at most 0.040° and crossover by at most
+0.055 % anywhere in the matrix. The loop as compensated today has no feature
+sharp enough for `dec 50` to have mangled — which was not knowable without
+running it.
+
+**One point of 4536 moves a gain margin**, and it is exactly the mechanism
+this issue is about: at `ss_-40c_3.63v` / 0.1 mA / 4.7 µF / 1 mΩ, `dec 400`
+finds a −180° crossing at **871 kHz** that `dec 50` stepped over completely,
+reporting the next one at 2.42 MHz instead (GM 45.68 → 42.38 dB). A `dec 4000`
+re-probe confirms the 871 kHz crossing to the printed digit, so `dec 400` is
+converged and `dec 50` was wrong. Both readings clear the 10 dB bar by more
+than 30 dB, so nothing about the verdict moves — but the mechanism is present
+in this loop, not only in the constructed reference loop, and there is no
+argument that it must always land somewhere this harmless.
+
+One caveat that comparison also surfaced: **`resurgence_db` is not comparable
+across records taken at different `AC_DEC`.** Its scan starts one *grid step*
+above the crossing, so a finer grid samples `|T|` closer to `f_0` and reports
+a larger number for the same loop — it moved positive at all 4536 points,
+worst-in-matrix from −0.075 dB to −0.009 dB, with no physical change
+whatever. The direction is safe (a monotone roll-off can never push it above
+the bar at any resolution) and the finer grid is the better estimator of the
+`sup |T|` it is trying to report, but the value is **not a margin** and must
+not be read as one.
+
+### The self-test that exercises it
+
+`selftest.py`'s third reference loop is a Q = 80 resonance placed at the
+worst-case sampling offset **for `dec 400` itself** (the geometric midpoint
+of two `dec 400` grid points — which is also 87.5 % of worst case for
+`dec 50`). Placing it at the `dec 50` midpoint instead would have landed it
+exactly *on* a `dec 400` grid point and flattered the new policy by testing
+it at its best case.
+
+| | measured |
+|---|---|
+| true continuous peak above the first 0 dB crossing | **+3.90 dB** (a real resurgence — DR-0008 would flag it) |
+| `resurgence_db` reported at `dec 50` | **−0.40 dB** — a clean, confident **false PASS** |
+| `resurgence_db` reported at `dec 400` | **+3.11 dB** — correctly **FAIL** |
+
+The 0.79 dB residual at `dec 400` is the 0.84 dB analytic worst case above,
+measured. The old default is not slightly off on this loop; it is 4.30 dB
+off, on the wrong side of a bar that has no slack in it.
+
+### `cph()`'s phase unwrap is *not* the problem
+
+Issue #58 also asked whether `cph()` picks the wrong 360° branch across an
+under-sampled resonance. The same self-test answers it directly: the
+unwrapped phase far above the resonance reads **−269.97°** against a −270°
+analytic asymptote at **both** `dec 50` and `dec 400`. The reason is
+structural — a minimum-phase pole *pair* has 180° of total phase variation,
+so no sampling of one can produce the > 180° sample-to-sample step `cph()`
+unwraps on. (A pole pair adjacent to a *zero* pair could; that is a different
+shape, and nothing in this loop's measured response has it.)
+
+The design agrees. A mis-unwrap on one grid and not the other would show up
+in `records/20260802-204343-e912fbd.md`'s `dec 50` → `dec 400` comparison as
+a ≈ 360° phase-margin discrepancy; the largest discrepancy over all 4536
+points is **0.040°**, and no point's phase margin lies outside ±180°. The
+resolution-sensitive quantity in this extraction is the **magnitude**, not
+the branch.
+
+### Why not a two-pass coarse-then-refine sweep
+
+Issue #58's other option was to keep `dec 50` for the bulk and re-sweep a
+narrow window around each point's crossover at high resolution. Rejected for
+two reasons, in this order of importance:
+
+1. **It cannot fix this failure mode.** A refine pass re-sweeps a window
+   centred on the coarse pass's *own answer*, so it inherits whatever the
+   coarse pass missed. On the self-test loop above there is nothing to centre
+   on — at `dec 50` the resonance does not appear at all. Two-pass sharpens a
+   feature you have already found; the problem is the one you have not.
+2. **It optimises a cost that is not being paid.** The saving assumes runtime
+   scales with AC point count. It does not — see below.
+
+### Runtime
+
+Measured on this design, one PVT corner (72 load/cap/ESR configurations, so
+144 AC analyses plus 72 DC operating-point solves) at `-j 1`:
+
+| `dec` | AC points per analysis | CPU time | vs `dec 50` |
+|---|---|---|---|
+| 50 | 551 | 72.1 s | 1.00× |
+| 100 | 1101 | 79.5 s | 1.10× |
+| 200 | 2201 | 84.1 s | 1.17× |
+| **400** | **4401** | **92.3 s** | **1.28×** |
+
+**8× the frequency points costs 1.28× the CPU**, because the cost is
+dominated by the 72 DC operating-point solves and the model setup around
+them, not by the AC points swept. That is what makes a global bump the cheap
+option, and it is what makes the two-pass design's premise false.
+
+CPU time rather than wall time because it is the load-independent quantity —
+these measurements were taken on a machine shared with other simulation jobs,
+where the same `dec 50` corner varied between 198 s and 390 s of *wall* time
+for 72 s of CPU.
+
+**The full 4536-point matrix at `dec 400` costs ≈ 87 CPU-minutes**, measured
+twice on `20260802-201346-e912fbd`'s branch: 5224 s and 5337 s of CPU for
+1762 s and 2463 s of wall time respectively at `-j 14`, the wall-time spread
+being other jobs on the same machine. Budget **≈ 30 minutes of wall time at
+`-j 14` on an otherwise idle machine**, against the `~30 minutes at -j 28`
+this README quoted for `dec 50` — i.e. the resolution change costs about a
+factor of two in cores, not a factor of eight.
 
 ## How the loop is measured
 
@@ -105,7 +263,8 @@ So every point of this sweep also reports:
 |---|---|---|
 | `resurgence_db` | the largest `\|T\|` in dB **anywhere above the first (falling) 0 dB crossing** | **≤ 0 dB** |
 
-The scan starts one AC-grid step (`10^(1/50)`) above the crossing, so the
+The scan starts one AC-grid step (`10^(1/AC_DEC)`, see *Sweep resolution*
+above) above the crossing, so the
 crossing itself — where `|T|` is 0 dB by definition — is never reported as its
 own resurgence. For a loop that rolls off monotonically through crossover
 every remaining point is below unity, so the metric is negative *by
@@ -139,11 +298,14 @@ The point of measuring it here is cost: it falls out of the AC sweep this
 bench already runs, on every future compensation iteration, for free, whereas
 `sim/amp-selfosc/` costs ~6 CPU-minutes **per PVT point**.
 
-`selftest.py` validates the extraction against two loops with closed-form
-answers: the monotonic one it has always used (which must **not** flag —
-measured `−3.97 dB`), and a second loop built with a lightly damped resonance
-above its first crossing, whose `+14.04 dB` analytic peak the metric must
-recover within 0.25 dB.
+`selftest.py` validates the extraction against **three** loops with
+closed-form answers: the monotonic one it has always used (which must **not**
+flag — measured `−3.97 dB`); a second loop built with a lightly damped
+Q = 20 resonance above its first crossing, placed *on* a grid point, whose
+`+14.04 dB` analytic peak the metric must recover within 0.25 dB (this checks
+the extraction's **arithmetic**); and a third, Q = 80, placed at the
+worst-case sampling **offset**, which checks the extraction's **resolution** —
+see *Sweep resolution* above.
 
 ## Load and output-network model
 
@@ -254,7 +416,15 @@ change lands and the passing region is larger.
 
 ### The 0.1 mA column closes (issue #53)
 
-`20260802-171044-db620a6` is the head record: the same 4536-point matrix,
+`20260802-171044-db620a6` was the head record when this section was written.
+It is now superseded by **`20260802-201346-e912fbd`**, which re-runs the same
+4536-point matrix against the **same netlist** at `dec 400` (issue #58, see
+*Sweep resolution* above). Every number in this section survives that
+re-measurement unchanged — 1332/4536 overall, the whole 0.1 mA column
+passing, the same worst point — so it is left as written; the per-point
+comparison is `records/20260802-204343-e912fbd.md`.
+
+`20260802-171044-db620a6`: the same 4536-point matrix,
 measured against `design/error_amp.sch` with its Type-II gain shelf widened
 (`Cf1`/`Cf2` 12 × 12 µm → 7 × 7 µm, with `M2P`/`Mbuf`/`Mbufb` gate areas cut
 to keep the local loop's Miller-split pole above the raised shelf corner, and

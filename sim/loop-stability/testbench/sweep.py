@@ -119,7 +119,72 @@ VOUT_TOL_FRAC = 0.10
 # one, is inside the band rather than assumed away.
 F_START = "0.01"
 F_STOP = "1e9"
-AC_DEC = "50"
+#
+# --- AC_DEC: the sweep resolution, and why it is 400 (issue #58) -----------
+#
+# Every record through `20260802-171044-db620a6` was taken at `dec 50` -- 4.7%
+# frequency steps. That is fine for a smooth low-Q Bode response and blind to
+# a sharp one, and the blindness is not graceful: a resonance narrow enough to
+# fall between two grid points is not merely reported inaccurately, it can be
+# invisible. `resurgence_db` (issue #59, DR-0008's precondition check) is
+# computed off this same grid, so the detector inherits the blindness of the
+# sample it is computed from.
+#
+# The bound is closed-form. Sampling a resonance of quality factor Q on a log
+# grid of `dec` points per decade, the worst case is the peak landing exactly
+# midway between two samples, an offset of d = 10^(1/(2*dec)) - 1 in relative
+# frequency. A second-order resonance detuned by d reads
+#
+#     miss(Q, dec) = 20*log10( sqrt( (2*Q*d)^2 + 1 ) )   dB below its peak
+#
+# and the largest Q resolved to within a stated error E is therefore
+#
+#     Qmax(E, dec) = sqrt(10^(E/10) - 1) / (2*d)
+#
+#     dec | step   | miss at Q=80 | Qmax at 1 dB | Qmax at 0.1 dB
+#     ----+--------+--------------+--------------+---------------
+#      50 | 4.713% |    11.73 dB  |       10.9   |       3.3
+#     100 | 2.329% |     6.47 dB  |       22.0   |       6.6
+#     200 | 1.158% |     2.68 dB  |       44.1   |      13.2
+#     400 | 0.577% |     0.84 dB  |       88.3   |      26.5
+#     800 | 0.288% |     0.22 dB  |      176.7   |      53.0
+#
+# `dec 400` is chosen as the smallest power-of-two step from the old default
+# that holds the worst-case miss under 1 dB -- a tenth of DR-0001's 10 dB
+# gain-margin bar -- out to Q ~ 88. `dec 50` held that only out to Q ~ 11.
+# This is a *stated capability*, not a proof of sufficiency: no finite grid
+# resolves an arbitrarily sharp feature, and the honest claim is a bound where
+# previously there was none.
+#
+# selftest.py's third reference loop exercises the bound rather than asserting
+# it: a Q = 80 resonance placed at the worst-case sampling offset for `dec 400`
+# itself. At `dec 50` the extraction reports `resurgence_db = -0.40 dB` -- a
+# clean, confident PASS on the DR-0008 bar -- for a loop whose true continuous
+# peak above its first 0 dB crossing is +3.90 dB. At `dec 400` the same
+# extraction reports +3.11 dB, correctly failing it; the 0.79 dB residual is
+# the analytic 0.84 dB worst-case miss above, measured.
+#
+# The same self-test answers the other question issue #58 raised -- whether
+# `cph()` picks the wrong 360 deg branch across an under-sampled resonance.
+# It does not, at either resolution (-269.97 deg against a -270 deg asymptote
+# both times), and the reason is structural: a minimum-phase pole PAIR has
+# 180 deg of total phase variation, so no sampling of one can produce the
+# >180 deg sample-to-sample step `cph()` unwraps on. The resolution-sensitive
+# quantity is the magnitude, not the branch.
+#
+# WHY NOT A TWO-PASS COARSE-THEN-REFINE SWEEP (the other option #58 offered):
+#   1. It cannot fix this failure mode. A refine pass re-sweeps a window
+#      centred on the coarse pass's own answer, so it inherits whatever the
+#      coarse pass missed. On the self-test loop above there is nothing to
+#      centre on: at `dec 50` the resonance does not appear at all.
+#   2. It optimises a cost that is not being paid. The saving assumes runtime
+#      scales with AC point count. Measured on this design at -j 1, one PVT
+#      corner's 72-configuration sweep costs 72.1 s CPU at `dec 50` and
+#      92.3 s at `dec 400` -- 1.28x for 8x the frequency points, because the
+#      cost is dominated by the 72 DC operating-point solves and the model
+#      setup around them, not by the AC points. See "Sweep resolution" in
+#      sim/loop-stability/README.md.
+AC_DEC = "400"
 
 TOKEN_RE = re.compile(r"@([A-Z0-9_]+)@")
 
@@ -293,7 +358,7 @@ def nonregulating(rows: list[Row]) -> list[Row]:
     ]
 
 
-def render_deck(pvt, pdk, iloads, ceffs, esrs) -> str:
+def render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec) -> str:
     corner = pvt.corner
     mos, res, bjt, diode, moscap, mimcap = corner.sections
     subs = {
@@ -310,7 +375,7 @@ def render_deck(pvt, pdk, iloads, ceffs, esrs) -> str:
         "VIN_V": f"{pvt.vdd:g}",
         "CORNER_ID": pvt.corner_id,
         "CORNER_NAME": corner.name,
-        "AC_DEC": AC_DEC,
+        "AC_DEC": str(ac_dec),
         "F_START": F_START,
         "F_STOP": F_STOP,
         "ILOAD_LIST": " ".join(f"{v:g}" for v in iloads),
@@ -331,9 +396,9 @@ FATAL_RE = re.compile(
 )
 
 
-def run_point(pvt, pdk, iloads, ceffs, esrs, workdir: Path, logdir: Path):
+def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path):
     deck = workdir / f"{pvt.corner_id}.spice"
-    deck.write_text(render_deck(pvt, pdk, iloads, ceffs, esrs))
+    deck.write_text(render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec))
     log = logdir / f"{pvt.corner_id}.log"
     proc = subprocess.run(
         ["ngspice", "-b", str(deck)], capture_output=True, text=True
@@ -399,9 +464,9 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, workdir: Path, logdir: Path):
     return pvt, rows, None
 
 
-def run_curve(pvt, pdk, row: Row, logdir: Path, workdir: Path, suffix: str) -> Path:
+def run_curve(pvt, pdk, row: Row, ac_dec, logdir: Path, workdir: Path, suffix: str) -> Path:
     """Re-run one single config with the whole T(f) curve printed to the log."""
-    text = render_deck(pvt, pdk, [row.iload_a], [row.ceff_f], [row.esr_ohm])
+    text = render_deck(pvt, pdk, [row.iload_a], [row.ceff_f], [row.esr_ohm], ac_dec)
     text = text.replace('      echo "ROW', "      print tdb tph\n" + '      echo "ROW')
     deck = workdir / f"{pvt.corner_id}_{suffix}.spice"
     deck.write_text(text)
@@ -659,6 +724,13 @@ def main() -> int:
     ap.add_argument("--caps-uf", nargs="+", type=float,
                     default=[v * 1e6 for v in CEFFS_F])
     ap.add_argument("--esrs", nargs="+", type=float, default=list(ESRS_OHM))
+    ap.add_argument("--ac-dec", type=int, default=int(AC_DEC),
+                    help=f"AC points per decade (default: {AC_DEC}). The sweep "
+                         "resolution is part of the measurement, not a "
+                         "performance knob -- see the AC_DEC comment above for "
+                         "how the default is derived. Running BELOW the default "
+                         "needs --subset-reason, exactly as a narrowed PVT grid "
+                         "does.")
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--no-write", action="store_true",
                     help="run and report, write no record (debugging)")
@@ -718,6 +790,11 @@ def main() -> int:
         and set(args.loads_ma) >= {v * 1e3 for v in ILOADS_A}
         and set(args.caps_uf) >= {v * 1e6 for v in CEFFS_F}
         and set(args.esrs) >= set(ESRS_OHM)
+        # Resolution is an axis of the measurement too (issue #58): a record
+        # taken below the default AC_DEC is a narrower claim than the ratified
+        # one in exactly the way a missing process corner is, so it needs the
+        # same written reason rather than passing silently.
+        and args.ac_dec >= int(AC_DEC)
     )
     if not args.no_write and not full_matrix and not args.subset_reason:
         print(
@@ -753,7 +830,8 @@ def main() -> int:
     failures: list[str] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         futures = {
-            pool.submit(run_point, pvt, pdk, iloads, ceffs, esrs, workdir, logdir): pvt
+            pool.submit(run_point, pvt, pdk, iloads, ceffs, esrs, args.ac_dec,
+                        workdir, logdir): pvt
             for pvt in grid
         }
         for done in concurrent.futures.as_completed(futures):
@@ -807,7 +885,8 @@ def main() -> int:
     # Full-curve evidence at the worst point, and at the best-margin point of
     # the same PVT corner for contrast.
     worst_pvt = next(p for p in grid if p.corner_id == worst.corner_id)
-    curve_log = run_curve(worst_pvt, pdk, worst, logdir, workdir, "worst-curve")
+    curve_log = run_curve(worst_pvt, pdk, worst, args.ac_dec, logdir, workdir,
+                          "worst-curve")
 
     snap = EXPDIR / "netlist-snapshots" / f"{record_id}.spice"
     snap.parent.mkdir(parents=True, exist_ok=True)
@@ -1112,7 +1191,19 @@ Everything needed to re-run this record:
 - git: `{git('rev-parse', '--short', 'HEAD')}` on `{git('rev-parse', '--abbrev-ref', 'HEAD')}`
   ({'DIRTY' if dirty else 'clean'} at generation time)
 - Command: `./sim/loop-stability/testbench/run.sh`
-- AC sweep: `dec {AC_DEC} {F_START} {F_STOP}` per injection, two injections per point.
+- AC sweep: `dec {args.ac_dec} {F_START} {F_STOP}` per injection, two injections
+  per point{'' if args.ac_dec == int(AC_DEC) else f' (**not** the default `dec {AC_DEC}` -- see Subset reason)'}.
+  The resolution is part of this measurement, not a performance setting
+  (issue #58). Sampling a resonance of quality factor `Q` on a log grid worst
+  case (peak midway between two samples, relative detuning
+  `d = 10^(1/(2*dec)) - 1`) reads `20*log10(sqrt((2*Q*d)^2 + 1))` dB low, so
+  `dec {args.ac_dec}` holds any resonance up to
+  **Q ~ {math.sqrt(10 ** 0.1 - 1) / (2 * (10 ** (1 / (2 * args.ac_dec)) - 1)):.0f}**
+  to within 1 dB -- a tenth of the {GM_MIN_DB:g} dB gain-margin bar. `dec 50`,
+  which every record through `20260802-171044-db620a6` used, held that only to
+  Q ~ 11. This is a stated capability, not a proof of sufficiency: no finite
+  grid resolves an arbitrarily sharp feature. See "Sweep resolution" in
+  `sim/loop-stability/README.md`.
 
 ---
 
