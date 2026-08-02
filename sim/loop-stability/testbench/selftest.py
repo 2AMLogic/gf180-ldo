@@ -57,10 +57,9 @@ CL = 1e-9
 A2 = 100.0
 LL2 = 0.8
 CL2 = 0.2e-12
-# The AC resolution each reference loop is swept at, which is also the step
-# the resurgence scan starts above the crossing. Loop 2 runs at the real
-# deck's dec 50.
-DEC1 = 20
+# The AC resolution the resurging loop is swept at, which is also the step
+# the resurgence scan starts above the crossing. It is the real deck's dec 50
+# (the monotonic loop above keeps its historical dec 20).
 DEC2 = 50
 
 # Tolerances. The extraction is exact arithmetic on exact elements, so these
