@@ -98,6 +98,38 @@ running *below* the default needs a written `--subset-reason` exactly as a
 narrowed PVT grid does: the resolution is part of the measurement, not a
 performance setting.
 
+### What it changed on this design: nothing, and one thing
+
+[`records/20260802-204343-e912fbd.md`](records/20260802-204343-e912fbd.md) is
+the controlled A/B — same netlist, same grid, same deck, `AC_DEC` the only
+variable — between the last `dec 50` record and the first `dec 400` one.
+
+**No point of 4536 changes verdict**, on the DR-0001 bars or on the DR-0008
+resurgence bar. Phase margin moves by at most 0.040° and crossover by at most
+0.055 % anywhere in the matrix. The loop as compensated today has no feature
+sharp enough for `dec 50` to have mangled — which was not knowable without
+running it.
+
+**One point of 4536 moves a gain margin**, and it is exactly the mechanism
+this issue is about: at `ss_-40c_3.63v` / 0.1 mA / 4.7 µF / 1 mΩ, `dec 400`
+finds a −180° crossing at **871 kHz** that `dec 50` stepped over completely,
+reporting the next one at 2.42 MHz instead (GM 45.68 → 42.38 dB). A `dec 4000`
+re-probe confirms the 871 kHz crossing to the printed digit, so `dec 400` is
+converged and `dec 50` was wrong. Both readings clear the 10 dB bar by more
+than 30 dB, so nothing about the verdict moves — but the mechanism is present
+in this loop, not only in the constructed reference loop, and there is no
+argument that it must always land somewhere this harmless.
+
+One caveat that comparison also surfaced: **`resurgence_db` is not comparable
+across records taken at different `AC_DEC`.** Its scan starts one *grid step*
+above the crossing, so a finer grid samples `|T|` closer to `f_0` and reports
+a larger number for the same loop — it moved positive at all 4536 points,
+worst-in-matrix from −0.075 dB to −0.009 dB, with no physical change
+whatever. The direction is safe (a monotone roll-off can never push it above
+the bar at any resolution) and the finer grid is the better estimator of the
+`sup |T|` it is trying to report, but the value is **not a margin** and must
+not be read as one.
+
 ### The self-test that exercises it
 
 `selftest.py`'s third reference loop is a Q = 80 resonance placed at the
@@ -125,9 +157,15 @@ unwrapped phase far above the resonance reads **−269.97°** against a −270°
 analytic asymptote at **both** `dec 50` and `dec 400`. The reason is
 structural — a minimum-phase pole *pair* has 180° of total phase variation,
 so no sampling of one can produce the > 180° sample-to-sample step `cph()`
-unwraps on. The resolution-sensitive quantity here is the **magnitude**, not
-the branch. (A pole pair adjacent to a zero pair could exceed 180° in a step;
-nothing in this loop's measured response does.)
+unwraps on. (A pole pair adjacent to a *zero* pair could; that is a different
+shape, and nothing in this loop's measured response has it.)
+
+The design agrees. A mis-unwrap on one grid and not the other would show up
+in `records/20260802-204343-e912fbd.md`'s `dec 50` → `dec 400` comparison as
+a ≈ 360° phase-margin discrepancy; the largest discrepancy over all 4536
+points is **0.040°**, and no point's phase margin lies outside ±180°. The
+resolution-sensitive quantity in this extraction is the **magnitude**, not
+the branch.
 
 ### Why not a two-pass coarse-then-refine sweep
 
@@ -163,8 +201,15 @@ option, and it is what makes the two-pass design's premise false.
 CPU time rather than wall time because it is the load-independent quantity —
 these measurements were taken on a machine shared with other simulation jobs,
 where the same `dec 50` corner varied between 198 s and 390 s of *wall* time
-for 72 s of CPU. The full 4536-point matrix at `dec 400` took
-**`<FULL_RUN>`**.
+for 72 s of CPU.
+
+**The full 4536-point matrix at `dec 400` costs ≈ 87 CPU-minutes**, measured
+twice on `20260802-201346-e912fbd`'s branch: 5224 s and 5337 s of CPU for
+1762 s and 2463 s of wall time respectively at `-j 14`, the wall-time spread
+being other jobs on the same machine. Budget **≈ 30 minutes of wall time at
+`-j 14` on an otherwise idle machine**, against the `~30 minutes at -j 28`
+this README quoted for `dec 50` — i.e. the resolution change costs about a
+factor of two in cores, not a factor of eight.
 
 ## How the loop is measured
 
@@ -371,7 +416,15 @@ change lands and the passing region is larger.
 
 ### The 0.1 mA column closes (issue #53)
 
-`20260802-171044-db620a6` is the head record: the same 4536-point matrix,
+`20260802-171044-db620a6` was the head record when this section was written.
+It is now superseded by **`20260802-201346-e912fbd`**, which re-runs the same
+4536-point matrix against the **same netlist** at `dec 400` (issue #58, see
+*Sweep resolution* above). Every number in this section survives that
+re-measurement unchanged — 1332/4536 overall, the whole 0.1 mA column
+passing, the same worst point — so it is left as written; the per-point
+comparison is `records/20260802-204343-e912fbd.md`.
+
+`20260802-171044-db620a6`: the same 4536-point matrix,
 measured against `design/error_amp.sch` with its Type-II gain shelf widened
 (`Cf1`/`Cf2` 12 × 12 µm → 7 × 7 µm, with `M2P`/`Mbuf`/`Mbufb` gate areas cut
 to keep the local loop's Miller-split pole above the raised shelf corner, and
