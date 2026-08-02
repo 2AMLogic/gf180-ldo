@@ -213,8 +213,13 @@ CLAMP AUTHORITY AGAINST THE REAL AMPLIFIER (#9)
   instead of a 150 um follower: a WEAKER opponent than the ~5 uA M2N sink this
   block was originally sized against, so the three-orders-of-magnitude margin
   quoted above is restored rather than merely patched. Mclamp_bg is hard off
-  whenever the limit is idle (CLG rests at VIN, as above), so it adds no
-  static current and nothing to the settled small-signal loop.
+  whenever the limit is idle (CLG rests at VIN, as above), so it adds no DC
+  path and no static current -- but it does add its own drain junction to
+  BG, exactly as Mclamp_bg_ss does in ldo_softstart. Measured over the
+  ratified 3240-point loop matrix, the two together move phase margin by a
+  median 1.9 deg and crossover by a median 1.3 %, and drop the DR-0001 pass
+  count 2689 -> 2632
+  (sim/loop-stability/records/20260802-085331-8a1a9e8.md).
 
   It is an ADDITION to Mclamp, not a replacement for it. BG steers the
   follower but cannot SOURCE into PASS_GATE, and error_amp's only pull-up

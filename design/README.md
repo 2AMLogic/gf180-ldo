@@ -158,8 +158,22 @@ different, non-overlapping piece:
   sinks as hard as its Vsg allows and took the node away from them. A small
   PMOS from `VIN` to `BG` in each clamp cell, on the same gate as that cell's
   existing `PASS_GATE` clamp device, removes `Mbuf` from the contest whenever
-  a clamp engages and is off whenever one does not -- so nothing in the
-  settled small-signal loop changes. The clamp devices on `PASS_GATE`
+  a clamp engages and is off whenever one does not. "Off" is a DC statement
+  and only a DC statement: the added device contributes no DC path and no
+  static current (settled `VOUT` is bit-identical at all 3240 loop-stability
+  points, and DC loop gain moves at 12 of them by at most 0.10 dB), but its
+  drain junction loads `BG` whether it conducts or not, and that **does**
+  move the small-signal loop. Measured over the full matrix
+  (`sim/loop-stability/records/20260802-085331-8a1a9e8.md`, comparing
+  `20260801-191742-84f67b8` with `20260802-071154-166834d`): only 203/3240
+  points are bit-identical in phase margin and crossover, the median
+  crossover shift is 1.3 % (p95 1.8 %, p99 3.9 %) and the median phase-margin
+  shift 1.9 deg (p95 6.1 deg), and 14 points shift crossover by more than
+  10 % -- worst `ff_-40c_3.63v` at 1 mA / 4.7 uF / 0.2 ohm, 295 kHz ->
+  1.20 MHz, which that record shows is the extraction switching between two
+  0 dB crossings rather than a 4x change in bandwidth. The DR-0001 pass count
+  over the same matrix falls 2689 -> 2632; the record enumerates all 57 moved
+  points and what they are and are not evidence of. The clamp devices on `PASS_GATE`
   **stay**: `Mbufb`, the only pull-up at `OUT`, is off exactly when the loop
   demands maximum drive, so a clamp on `BG` *alone* has no authority at all
   (measured: the soft-start ramp is bypassed outright). See `error_amp.sch`'s

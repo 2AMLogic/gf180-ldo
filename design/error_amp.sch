@@ -198,8 +198,13 @@ sim/enable-shutdown/records/20260801-200827-84f67b8.md).
 BG is exported so a clamp can RELEASE the follower rather than fight it.
 Each clamp cell adds a small PMOS from VIN to BG on the same gate as its
 existing PASS_GATE clamp device (Mclamp_bg / Mclamp_bg_ss). Both are OFF
-whenever the clamp is idle -- CLG rests at VIN -- so nothing in the
-small-signal loop changes; when a clamp engages, BG is pulled up, Vgs(Mbuf)
+whenever the clamp is idle -- CLG rests at VIN -- so they add no DC path
+and no static current. OFF is a DC statement only: each drain junction
+still loads BG, and measured over the ratified 3240-point loop matrix that
+moves phase margin by a median 1.9 deg and crossover by a median 1.3 %,
+and drops the DR-0001 pass count 2689 -> 2632
+(sim/loop-stability/records/20260802-085331-8a1a9e8.md enumerates every
+moved point). When a clamp engages, BG is pulled up, Vgs(Mbuf)
 goes to zero, and the clamp's PASS_GATE device is left arbitrating against
 Mpgn's ~0.4 uA alone. That is a WEAKER opposition than the pre-#51 4 uA
 stage, i.e. the contract is restored with margin.
