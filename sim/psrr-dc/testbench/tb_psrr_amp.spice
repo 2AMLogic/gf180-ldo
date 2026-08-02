@@ -15,6 +15,14 @@
 * because EN is not a quiet node: it gates a local inverter whose output
 * holds the bias header's gate. Tying EN to a clean, separate source would
 * hide any supply coupling that path contributes.
+*
+* BG (seventh port, appended by issue #55): the class-AB buffer's internal
+* gate node, exported so design/ldo_softstart.sch and design/ldo_ilimit.sch
+* can release the follower while they clamp PASS_GATE. It is driven entirely
+* from inside the cell and is left dangling here (bg1, bg2), so this bench's
+* operating point and both transfers are unchanged by the port addition --
+* which is the point of re-running it: the worst-corner PSRR margin is the
+* tightest in the design and gets re-measured rather than assumed.
 * non-inverting (= FB), INN inverting (= VREF).
 *
 * ---------------------------------------------------------------------------
@@ -67,7 +75,7 @@ Lfb1  vg1   nls1 1T
 Vls1  nls1  nref1 dc {vg_op-vcm}
 Cref1 nref1 0 1
 Cl1   vg1   0 {cgate}
-X1 nfb1 nref1 vg1 vdd1 0 vdd1 error_amp
+X1 nfb1 nref1 vg1 vdd1 0 vdd1 bg1 error_amp
 
 * ==== X2: AC on the feedback input, supply quiet -> A =======================
 Vsup2 vdd2  0 dc {vdd_val}
@@ -76,4 +84,4 @@ Lfb2  vg2   nls2 1T
 Vls2  nls2  nref2 dc {vg_op-vcm}
 Cref2 nref2 0 1
 Cl2   vg2   0 {cgate}
-X2 nfb2 nref2 vg2 vdd2 0 vdd2 error_amp
+X2 nfb2 nref2 vg2 vdd2 0 vdd2 bg2 error_amp

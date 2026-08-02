@@ -188,6 +188,7 @@ C {devices/lab_pin.sym} 100 -450 0 0 {name=l_amp_out sig_type=std_logic lab=ERRA
 C {devices/lab_pin.sym} -100 -440 0 0 {name=l_amp_vdd sig_type=std_logic lab=VIN}
 C {devices/lab_pin.sym} -100 -420 0 0 {name=l_amp_vss sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} -100 -400 0 0 {name=l_amp_en sig_type=std_logic lab=EN}
+C {devices/lab_pin.sym} 100 -430 0 0 {name=l_amp_bg sig_type=std_logic lab=BG}
 C {ldo_ilimit.sym} 0 200 0 0 {name=Xilimit}
 C {devices/lab_pin.sym} -100 150 0 0 {name=l_il_vin sig_type=std_logic lab=VIN}
 C {devices/lab_pin.sym} 100 170 0 0 {name=l_il_vout sig_type=std_logic lab=VOUT}
@@ -195,6 +196,7 @@ C {devices/lab_pin.sym} -100 190 0 0 {name=l_il_pg sig_type=std_logic lab=PASS_G
 C {devices/lab_pin.sym} -100 210 0 0 {name=l_il_en sig_type=std_logic lab=EN}
 C {devices/lab_pin.sym} -100 230 0 0 {name=l_il_vref sig_type=std_logic lab=VREF}
 C {devices/lab_pin.sym} -100 250 0 0 {name=l_il_vss sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} 100 200 0 0 {name=l_il_bg sig_type=std_logic lab=BG}
 C {ldo_softstart.sym} 0 500 0 0 {name=Xsoftstart}
 C {devices/lab_pin.sym} -100 450 0 0 {name=l_ss_vin sig_type=std_logic lab=VIN}
 C {devices/lab_pin.sym} -100 470 0 0 {name=l_ss_fb sig_type=std_logic lab=FB}
@@ -202,3 +204,4 @@ C {devices/lab_pin.sym} -100 490 0 0 {name=l_ss_pg sig_type=std_logic lab=PASS_G
 C {devices/lab_pin.sym} -100 510 0 0 {name=l_ss_en sig_type=std_logic lab=EN}
 C {devices/lab_pin.sym} -100 530 0 0 {name=l_ss_vref sig_type=std_logic lab=VREF}
 C {devices/lab_pin.sym} -100 550 0 0 {name=l_ss_vss sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} 100 500 0 0 {name=l_ss_bg sig_type=std_logic lab=BG}

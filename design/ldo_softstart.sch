@@ -131,6 +131,28 @@ HOW THE CLAMP WORKS
   whatever current the load and the capacitor need in order for VOUT to move
   at the ramp's rate, which is exactly what a soft start is.
 
+  Mclamp_bg_ss (issue #55) is the second half of "the clamp sources into
+  PASS_GATE". The sentence above quietly assumes the clamp can WIN that node,
+  which was true while error_amp's output stage sank ~4 uA into it and stopped
+  being true when #51 put a 150 um/1 um source follower there: the ramp was
+  bypassed outright (VOUT at 1.80 V by 0.3 ms with SSR still at 0.064 V,
+  366 mA of inrush, 63/63 corners over the +2 % overshoot bound --
+  sim/enable-shutdown/records/20260801-200827-84f67b8.md). Mclamp_bg_ss is a
+  10 um/0.5 um PMOS from VIN to error_amp's BG on the SAME gate as
+  Mclamp_ss, so CLG falling pulls the follower's own gate up and takes Mbuf
+  out of the contest; what Mclamp_ss then has to out-source is Mpgn's ~0.4 uA,
+  which is LESS than the pre-#51 stage it was sized against. It is a hard off
+  whenever the clamp is idle (CLG rests at VIN), so it adds nothing to the
+  settled loop but its own drain junction on a ~0.5 pF node.
+
+  It is an ADDITION, not a move. Steering BG alone does not work: Mbufb, the
+  only pull-up at error_amp's OUT, is off in exactly the regime this clamp
+  exists for, so with Mclamp_ss re-pointed at BG there is nothing left to
+  charge PASS_GATE and the clamp loses the node completely (measured at
+  tt/27 C/2.97 V: t_startup 32 us against 3683 us pre-#51, overshoot 2.045 V,
+  the limit clamp saturated and still unable to hold). See design/error_amp.sch's
+  "BG IS A PORT" note.
+
   Cm_ss is the clamp stage's local compensation, and it is deliberately the
   same 60 um x 60 um plate as Css (7.2 pF). It sits gate-to-drain across
   Mclamp_ss, i.e. it is a Miller capacitor around the clamp device: with
@@ -236,6 +258,7 @@ C {devices/iopin.sym} -800 -100 0 0 {name=p_pass_gate lab=PASS_GATE}
 C {devices/ipin.sym} -600 -100 0 0 {name=p_en lab=EN}
 C {devices/ipin.sym} -400 -100 0 0 {name=p_vref lab=VREF}
 C {devices/iopin.sym} -200 -100 0 0 {name=p_vss lab=VSS}
+C {devices/iopin.sym} 0 -100 0 0 {name=p_bg lab=BG}
 C {devices/vsource.sym} 0 -1000 0 0 {name=Vbsense_ss value=0}
 C {devices/lab_pin.sym} 0 -1030 0 0 {name=l_vbsensess_p sig_type=std_logic lab=VREF}
 C {devices/lab_pin.sym} 0 -970 0 0 {name=l_vbsensess_m sig_type=std_logic lab=BT}
@@ -328,6 +351,11 @@ C {devices/lab_pin.sym} 980 -200 0 0 {name=l_minvp_g sig_type=std_logic lab=EN}
 C {devices/lab_pin.sym} 1020 -170 0 0 {name=l_minvp_d sig_type=std_logic lab=ENB}
 C {devices/lab_pin.sym} 1020 -230 0 0 {name=l_minvp_s sig_type=std_logic lab=VIN}
 C {devices/lab_pin.sym} 1020 -200 0 0 {name=l_minvp_b sig_type=std_logic lab=VIN}
+C {symbols/pfet_03v3.sym} 1400 -200 0 0 {name=Mclamp_bg_ss model=pfet_03v3 L=0.5u W=10u nf=1 m=1}
+C {devices/lab_pin.sym} 1380 -200 0 0 {name=l_mclampbgss_g sig_type=std_logic lab=CLG}
+C {devices/lab_pin.sym} 1420 -170 0 0 {name=l_mclampbgss_d sig_type=std_logic lab=BG}
+C {devices/lab_pin.sym} 1420 -230 0 0 {name=l_mclampbgss_s sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 1420 -200 0 0 {name=l_mclampbgss_b sig_type=std_logic lab=VIN}
 C {symbols/nfet_03v3.sym} 1200 -200 0 0 {name=Minv_n model=nfet_03v3 L=0.5u W=2u nf=1 m=1}
 C {devices/lab_pin.sym} 1220 -230 0 0 {name=l_minvn_d sig_type=std_logic lab=ENB}
 C {devices/lab_pin.sym} 1180 -200 0 0 {name=l_minvn_g sig_type=std_logic lab=EN}
