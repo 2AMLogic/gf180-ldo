@@ -182,21 +182,41 @@ Miller loop (around `M2P` and the class-AB gate buffer) closed — so that
 precondition is a property of `design/error_amp.sch`, not something this
 deck can assume.
 
-**Measured, it does not currently hold** (issue #53): the amplifier
-oscillates at ≈ 500 kHz at every PVT corner, and where the resulting
-right-half-plane pole pair rotates the phase by ≈ +180°, this deck's
-`180 + phase` reports a large positive "phase margin" at a crossing that
-sits *above* a resonance where `|T|` had already climbed back over unity.
-The evidence and the argument are
-`sim/amp-selfosc/records/` and
+**It did not hold for records up to and including the design state
+issue #55 (`BG`-steer, PR #62) landed** (issue #53): the amplifier oscillated
+at ≈ 500 kHz at every PVT corner, and where the resulting right-half-plane
+pole pair rotates the phase by ≈ +180°, this deck's `180 + phase` reports a
+large positive "phase margin" at a crossing that sits *above* a resonance
+where `|T|` had already climbed back over unity. The evidence and the
+argument are `sim/amp-selfosc/records/` and
 `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md`.
+
+**It holds from `20260802-095235-c828e73` onward.** `design/error_amp.sch`
+gained `Cf1`/`Cf2`, a Miller cap around `M2P` that splits the local loop's
+two low poles (issue #53, `design/error_amp.md` §6.7). Measured on that
+record: `resurgence_db` is negative at **all 3240 points** (worst −0.17 dB,
+against a large fraction of the matrix resurging before), `sim/amp-openloop/`'s
+`peak_excess_db` passes at 81 of 81, and `sim/amp-selfosc/`'s light rows sit
+at 0.13–0.43 µV pk-pk at 45 of 45 (`sim/amp-selfosc/records/20260802-101239-c828e73.md`
+— note this record required a testbench fix of its own: issue #55 exported
+`error_amp`'s `BG` node as a port, which changed the hierarchical node name
+this bench probes from `xdut.xerramp.bg` to `xdut.bg`; the stale probe was
+silently returning "no such vector" at every corner until
+`sim/amp-selfosc/testbench/tb.json` was updated). `sim/amp-selfosc/`'s
+*heavy* rows still fail — but that is this deck's own 50 mA / 0.33 µF result
+(worst PM −94.6°) showing up in the time domain, i.e. the two experiments
+agree, rather than the amplifier's local loop hiding one from the other.
 
 **So: do not cite a record here as evidence for DR-0001's stability row
 unless the `sim/amp-selfosc/` record taken against the same `design/`
-netlist passes.** Everything in "Where this stands" below is preserved as
-written, but its verdicts are subject to this precondition — including the
-"2160/2160 at 1–50 mA" reading of the head-of-chain record, which DR-0008
-argues is not a stability result.
+netlist shows a quiet loop at the load in question.** Everything in "Where
+this stands" below is preserved as written, but the verdicts of records
+before `20260802-095235-c828e73` are subject to this precondition —
+including the "2160/2160 at 1–50 mA" reading of the pre-#53 head-of-chain
+record, which DR-0008 argues is not a stability result, and which the first
+record taken with the precondition satisfied reads as **293/2160 at 1–50 mA
+(and 492/540 at 0.1 mA), 785/3240 overall**
+(`spec/decision-records/DR-0009-shelf-corner-vs-crossover-frontier.md`).
 
 ### Where this stands
 

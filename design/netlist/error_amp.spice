@@ -17,7 +17,9 @@ XMLD1 ND ND VDD VDD pfet_03v3 L=8u W=8u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' a
 XMLD2 N1 ND VDD VDD pfet_03v3 L=8u W=8u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XRz NZ N1 VSS ppolyf_u_1k r_width=1u r_length=6000u m=1
-XCc NZ OUT cap_mim_2f0_m2m3_noshield c_width=49u c_length=49u m=1
+XCc NZ OUT cap_mim_2f0_m2m3_noshield c_width=48u c_length=48u m=1
+XCf1 N1 NF cap_mim_2f0_m2m3_noshield c_width=12u c_length=12u m=1
+XCf2 NF BG cap_mim_2f0_m2m3_noshield c_width=12u c_length=12u m=1
 XM2P BG N1 VDD VDD pfet_03v3 L=2u W=150u nf=15 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XM2N BG NBIAS VSS VSS nfet_03v3 L=4u W=4u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'

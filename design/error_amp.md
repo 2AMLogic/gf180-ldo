@@ -17,19 +17,25 @@ Evidence for every measured number here:
 Nothing below is a closed-loop claim. Loop stability is #10, the full
 testbench suite is #12, mismatch Monte Carlo is #13.
 
-> **Read §6.6 first (issue #53).** The cell as committed has an unstable
-> *local* feedback loop — the `Rz`/`Cc` Miller network around `M2P` and the
-> class-AB buffer — and oscillates at ≈ 500 kHz at every PVT corner.
-> §6.2–§6.5's stability reasoning, and the `sim/loop-stability/` record it
-> cites, are written as though that loop were stable; §6.6 is the correction
-> and the evidence:
+> **Read §6.6 and §6.7 first (issue #53).** §6.2–§6.5 were written as though
+> the `Rz`/`Cc` network's own *local* feedback loop were stable. DR-0008
+> measured that it was not — the cell oscillated at ≈ 500 kHz at every PVT
+> corner (§6.6) — and §6.7 is what happened when that was fixed and the
+> matrix re-measured. **§6.4's "2689/3240 passing" is superseded twice over:
+> once as not being a stability result at all, and once by the real number,
+> 785/3240.** The verified load range is 0.1 mA (with a residual 48-point
+> phase-margin gap of its own), not 1–50 mA.
 >
-> - `sim/amp-selfosc/records/` — settled, undriven transient: volts of
->   peak-to-peak on the amplifier's own nodes.
-> - `sim/amp-openloop/records/20260802-013956-bb0a991.md` — supersedes
->   `20260801-193812-84f67b8`; identical on every pre-existing row, plus the
->   `peak_excess_db` detector, which is above its bar at **81 of 81** points.
-> - `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md`.
+> - `sim/amp-openloop/records/20260802-095514-c828e73.md` — `peak_excess_db`
+>   now −0.36…−0.13 dB at **81 of 81** points (was +5.4…+12.2 at 81 of 81).
+> - `sim/amp-selfosc/records/20260802-101239-c828e73.md` — settled, undriven
+>   transient at the light operating point: **0.13…0.43 µV** pk-pk on `BG`
+>   (was 476…1420 mV). The heavy rows still ring, and that is now the LDO
+>   loop, not this cell — see §6.7.
+> - `sim/loop-stability/records/20260802-095235-c828e73.md` — 785/3240, and
+>   **0 of 3240** points show gain resurgence above crossover (was 401).
+> - `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md` and
+>   `spec/decision-records/DR-0009-shelf-corner-vs-crossover-frontier.md`.
 
 ---
 
@@ -456,7 +462,7 @@ before. Every remaining failure is at one of the two lightest loads —
 | `I_load` | passing | how the failures fail |
 |---|---|---|
 | 1, 10, 25, 50 mA | **2160/2160** | — |
-| 0.1 mA | 525/540 | 15 points, all at −40 °C / 3.63 V on `ss`/`fs`, all on **gain margin** (PM 67…102°, GM −20.7…+7.9 dB): conditional stability, not a phase collapse — root-caused to the bias branch's 2.5× PVT spread and filed as **#53** (constant-gm bias, not yet attempted; DR-0007 has a first feasibility check) |
+| 0.1 mA | 525/540 | 15 points, all at −40 °C / 3.63 V on `ss`/`fs`, all on **gain margin** (PM 67…102°, GM −20.7…+7.9 dB): conditional stability, not a phase collapse. **§6.6/§6.7 supersede this reading**: the amplifier's own local loop was unstable while this record was taken, so these phase/gain numbers are not a stability result at all — see §6.7 for what the same 0.1 mA column reads once that precondition holds. |
 | 0 mA | 4/540 | phase margin, worst **3.79°** at `ff_125c_2.97v` / 4.7 µF / 1 mΩ |
 
 That split is structural, not a tuning residue. `Rz` and `Cc` are pinned
@@ -503,6 +509,14 @@ need to be constraints in the floorplan rather than discoveries in extraction:
   follow-up.
 - `Cc` at 4.80 pF has ≈ 0 dB of PSRR margin, so any parasitic capacitance
   added to the `NZ`/`OUT` net comes straight off the ratified PSRR row.
+- **(§6.7, issue #53)** `Cf1`/`Cf2` is ≈ 149 fF built as two 12 µm MIM in
+  series, so its mid-node `NF` floats and its bottom-plate parasitic to
+  substrate is *in series with the value*, not a stray to absorb. Extraction
+  must report `Cf` as the two-terminal `N1`→`BG` value, and the layout should
+  put the two devices' bottom plates on the same net so the parasitic adds
+  predictably rather than skewing the series ratio. This is the component
+  that decides whether the cell oscillates at all, so it is the first thing
+  #16's post-layout re-run should check.
 
 ### 6.6 The local loop this compensation closes is unstable (issue #53)
 
@@ -583,6 +597,94 @@ and without spending PSRR — but not while the loop also needs a flat ~43 dB
 shelf out past 1.6 MHz. **Separating the shelf's upper corner from the
 heavy-load crossover is the problem to solve**, and neither `Rz`/`Cc` alone
 nor the bias branch is the lever that separates them.
+
+### 6.7 The local loop is fixed, and the real envelope is 0.1 mA (issue #53)
+
+**The fix.** `Cf1`/`Cf2` — two 12 × 12 µm MIM in **series**, ≈ 149 fF, from
+`N1` to `BG` — is a Miller capacitor around the stage-2 driver `M2P` alone.
+§6.6's local loop failed because two poles sat below its crossover: `BG` at
+≈ 13 kHz (`ro(M2P)‖ro(M2N)` = 24 MΩ against `Cgs(Mbuf)` ≈ 0.5 pF, measured
+op point) and `Rz` against `N1`'s ≈ 0.9 pF at ≈ 30 kHz, under a forward gain
+of `gm(M2P)·R_BG` = 813. A Miller cap across `M2P` splits exactly that pair:
+`N1`'s pole falls by the Miller factor and `BG`'s rises to
+`gm(M2P)/(2π·Cgs(Mbuf))` ≈ 10 MHz, leaving one pole below crossover.
+
+Two implementation notes, both measured rather than assumed:
+
+- **To `BG`, not across `Rz`.** §6.6's second lever (a cap `N1`→`OUT` across
+  `Rz`) works too, but it encloses *two* gain stages instead of one and so
+  needs ≈ 3× more capacitance for the same margin — measured, ≈ 400 fF vs
+  149 fF at the same `peak_excess_db`. That capacitance is subtracted from
+  the amplifier's 1 kHz gain, i.e. from §4's PSRR budget, which is why the
+  cheaper connection matters: `Cc` only had to come down 49 µm → 48 µm to
+  keep the gain floor, and the floor came out *better* than before (worst-
+  corner `psrr_ldo_1k_db` 50.08 dB vs the committed cell's 50.02 dB, against
+  the ratified 50 dB bar).
+- **A series pair, not one small MIM.** ≈ 149 fF as a single square MIM is
+  about 8 µm on a side; two 12 µm devices in series reach it without drawing
+  a MIM below the 5 µm width the `cap_mim_2f0` model's own `c_vcr` branch is
+  cut at. The floating mid-node `NF` is defined by the model's leak
+  resistors. Layout must treat the mid-node's bottom-plate parasitic as part
+  of the value (§6.5).
+
+**What it bought, over the whole PVT grid**, measured against the design
+state issue #55 (`BG`-steer, PR #62) landed just before this fix — the
+correct baseline, since that is what is on `origin/main` today:
+
+| Row | Before (`3668aca`, issue #55's state) | After (this issue) |
+|---|---|---|
+| `sim/amp-openloop/` `peak_excess_db` (bar ≤ 1 dB), 81 points | FAIL at **81/81** | **−0.36 … −0.13 dB, PASS at 81/81** |
+| `sim/amp-selfosc/` light rows (bar ≤ 1 mV pk-pk) | `BG` in the hundreds-of-mV to low-V range, FAIL | **0.13 … 0.43 µV, PASS at 45/45** |
+| `sim/loop-stability/` gain resurgence above crossover, 3240 points | resurging at a large fraction of the matrix | **0 resurging**, worst −0.17 dB |
+| PSRR, worst-corner `psrr_ldo_1k_db` (bar ≥ 50 dB) | 50.02 dB | **50.08 dB** |
+| Amp Iq | 8.6 … 21.4 µA (whole-regulator) | **unchanged** — no device current moved |
+
+**What it did not buy.** With DR-0001's Bode criterion finally applicable,
+`sim/loop-stability/records/20260802-095235-c828e73.md` reads **785/3240**,
+and the passing points are the *light* loads, not the heavy ones:
+
+| `I_load` | 0.33 µF | 1 µF | 4.7 µF |
+|---|---|---|---|
+| 0.1 mA | 136/180 | **180/180** | 176/180 |
+| 1 mA | 0/180 | 56/180 | **180/180** |
+| 10 mA | 0/180 | 0/180 | 51/180 |
+| 25 mA | 0/180 | 0/180 | 6/180 |
+| 50 mA | 0/180 | 0/180 | 0/180 |
+
+The mechanism is §6.4's frontier with the artifact removed. The local loop's
+crossover **is** the shelf's upper corner `f_2` ≈ 180 kHz, and the LDO's
+crossover `f_c = β·A_plat·gm_pass/(2π·C_eff)` reaches into the low-MHz range
+at 50 mA / 0.33 µF (`gm_pass` rises with load current; `A_plat` does not).
+`f_2` is set by `gm(Mbuf)/C_gate` and `gm(M2P)/Cgs(Mbuf)`, i.e. by Iq, and it
+does not scale: tripling both currents (amp Iq 8.6 → 16.4 µA, already past
+the 15 µA row) moves `f_2` only 131 → 393 kHz. `A_plat` cannot come down to
+meet it either, because §4's PSRR budget pins `gm(MIN)/Cc` and that forces
+`A_plat` ≥ ≈ 98. The full argument, the three levers, and what this does to
+DR-0007's proposed envelope are
+`spec/decision-records/DR-0009-shelf-corner-vs-crossover-frontier.md`.
+
+**On issue #53's own terms**: the 15 residual **gain-margin** failures at
+0.1 mA are cleared — **0 of 540** points at 0.1 mA fail on gain margin now.
+**48** fail on **phase** margin instead, 44 of them at 0.33 µF and cold
+(worst 32.4° at `ss`/−40 °C/3.63 V, crossover 144 kHz) and 4 at 4.7 µF at
+`ff`/125 °C/2.97 V (worst 42.5°, crossover 6.9 kHz) — the column is pinched
+from both ends of the same axis, `f_c` running into `f_2` from below at
+0.33 µF and falling back toward `f_z` from above at 4.7 µF.
+
+**Regression check, against the design state on `origin/main` before this
+fix.** `Cf1`/`Cf2` adds no device current, so the DC rows cannot move and
+were re-measured to confirm it:
+`sim/quiescent-current/records/20260802-095514-c828e73.md` (PASS, 45/45,
+bit-identical to 5 significant figures),
+`sim/dropout-vs-load/records/20260802-100041-c828e73.md` (same pre-existing
+300.5–301.0 mV marginal FAIL at 2.10 V, unrelated to this issue and
+unchanged to the mV),
+`sim/enable-shutdown/records/20260802-095233-c828e73.md` (the four ratified
+DC rows unchanged; the large-signal 50 mA startup transient shifts at cold
+corners — evidence *for* this section's diagnosis, since the shift tracks
+the same 0.6–0.9 MHz resonance this fix damps, not a new defect — with
+`sim/startup/` and `sim/current-limit/` spot-checked and unmoved), and
+`sim/current-limit/records/20260802-105338-c828e73.md` (bit-identical).
 
 ## 7. Handoffs
 

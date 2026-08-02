@@ -44,6 +44,13 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      continuing to fall. That shelf is what makes the loop
                      roll off at -20 dB/dec (not -40) where it crosses
                      unity, which is the whole point: see COMPENSATION.
+           Cf1,Cf2   Inner Miller cap N1 -> BG across the stage-2 driver
+                     M2P (issue #53). Two 12x12 um MIM in SERIES, i.e.
+                     ~149 fF: what this device has to be is SMALL, and a
+                     series pair reaches it without drawing a MIM below
+                     the 5 um the model's own width branch is cut at.
+                     Without it the Rz/Cc network's own loop has RHP poles
+                     and the cell oscillates -- see LOCAL LOOP below.
   Bias     MB1,Rbias Supply-referenced self-bias, fed through the EN header
                      Mbias_h (see ENABLE): Iref = (VDD - Vgs)/Rbias
                      through the diode-connected NMOS MB1, whose gate NBIAS
@@ -82,24 +89,45 @@ sim/amp-openloop/records/):
   pass-gate bandwidth per microamp in the buffer than it did in a
   9 MOhm-output common-source stage.
 
-CAUTION (issue #53): THE COMPENSATION BELOW IS NOT VERIFIED AND THE CELL
-OSCILLATES. Rz/Cc is not only the LDO loop's compensation -- it is a
-feedback loop in its own right, from N1 around M2P and the class-AB buffer
-back to OUT, and it stays closed when the LDO loop is broken at
-ERRAMP_OUT/PASS_GATE. Above f_z that loop is closed RESISTIVELY (through
-Rz), which removes its own Miller compensation across the whole band the LDO
-loop uses, and it is unstable: measured 21-58 dB of gain peaking at
-420-750 kHz with a +180 deg phase ADVANCE (a right-half-plane pole pair) at
-every corner tried, and 3.31 V pk-pk on BG / 2.14 V pk-pk on the pass gate /
-372 mV pk-pk on VOUT in a settled, undriven transient at tt/27C/3.30V and
-50 mA (sim/amp-selfosc/records/). Because the LDO loop gain then has RHP
-poles, DR-0001's Bode PM/GM criterion does not apply to it and the
-"2689/3240 passing" reading of sim/loop-stability/records/ is not a
-stability result -- see design/error_amp.md S6.6 and
-spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md. The
-COMPENSATION and BUFFER sections below are kept as #51 wrote them because
-they are still the correct account of what the devices are FOR; they are not
-a correct account of what the cell does.
+LOCAL LOOP -- what Cf1/Cf2 fix, and why the cell needs them (issue #53)
+Rz/Cc is not only the LDO loop's compensation -- it is a feedback loop in
+its own right, from N1 around M2P and the class-AB buffer back to OUT, and
+it stays closed when the LDO loop is broken at ERRAMP_OUT/PASS_GATE, which
+is exactly the condition sim/loop-stability/ measures in. Above f_z that
+loop is closed RESISTIVELY (through Rz), which takes away its own Miller
+compensation across the whole band the LDO loop uses. As committed at
+b304bd5 it was UNSTABLE: two poles (BG at ~13 kHz, and Rz against N1's
+~0.9 pF at ~30 kHz) below a 813x forward gain, so it crossed unity near
+500 kHz with no phase left. Measured 21-58 dB of gain peaking at
+420-750 kHz with a +180 deg phase ADVANCE (an RHP pole pair) at every
+corner, and 3.31 V pk-pk on BG / 2.14 V pk-pk on the pass gate / 372 mV
+pk-pk on VOUT in a settled, undriven transient at tt/27C/3.30V and 50 mA
+(sim/amp-selfosc/records/, and DR-0008).
+
+Cf1/Cf2 (149 fF in series, N1 -> BG) is a Miller cap around M2P ALONE. It
+splits that pair: N1's pole goes down by the Miller factor and BG's goes up
+to gm(M2P)/(2*pi*Cgs(Mbuf)) ~ 10 MHz, so the local loop has ONE pole below
+its crossover instead of two. Measured after: peak_excess_db -0.36...-0.13
+dB at 81 of 81 PVT points (sim/amp-openloop/records/) against a +1 dB bar,
+i.e. the amplifier's gain now falls monotonically through the whole
+200 kHz - 5 MHz window, and sim/amp-selfosc/ is quiet.
+
+  WHY N1 -> BG AND NOT N1 -> OUT (across Rz). Both stabilise the local loop.
+  Taking it to BG encloses one gain stage instead of two, so it needs 3x
+  LESS capacitance for the same margin (149 fF vs ~400 fF measured at the
+  same peak_excess), which costs 3x less of the amplifier's 1 kHz gain --
+  and that gain is the ratified PSRR row (see COMPENSATION). Cc is trimmed
+  49u -> 48u so the 1 kHz gain floor keeps its margin: measured 53.60 dB
+  worst corner against the 53.5 dB budget line, vs 53.5 dB before.
+
+  WHAT THIS DOES NOT FIX. The local loop's crossover is also the upper
+  corner of the gain shelf, f_2 ~ 180 kHz here, and the LDO loop needs the
+  shelf to reach its own crossover, which at 50 mA / 0.33 uF is ~6 MHz.
+  Both are set by the buffer's gm and stage 2's gm, i.e. by Iq: MEASURED,
+  tripling both currents (8.6 -> 16.4 uA, already over the 15 uA amp row)
+  moves f_2 only 131 -> 393 kHz. So this cell is stable but its verified
+  load range is NARROW -- see design/error_amp.md S6.7 and
+  spec/decision-records/DR-0009.
 
 COMPENSATION -- why the Miller network is a gain SHELF (issue #51)
 #10's stability record measured the pre-#51 loop as a textbook two-pole
@@ -324,9 +352,17 @@ C {devices/lab_pin.sym} 200 -430 0 0 {name=l_rz_p sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 200 -370 0 0 {name=l_rz_m sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 180 -400 0 0 {name=l_rz_b sig_type=std_logic lab=VSS}
 
-C {symbols/cap_mim_2f0fF.sym} 400 -400 0 0 {name=Cc model=cap_mim_2f0_m2m3_noshield W=49u L=49u m=1}
+C {symbols/cap_mim_2f0fF.sym} 400 -400 0 0 {name=Cc model=cap_mim_2f0_m2m3_noshield W=48u L=48u m=1}
 C {devices/lab_pin.sym} 400 -430 0 0 {name=l_cc_g sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 400 -370 0 0 {name=l_cc_b sig_type=std_logic lab=OUT}
+
+C {symbols/cap_mim_2f0fF.sym} 250 -250 0 0 {name=Cf1 model=cap_mim_2f0_m2m3_noshield W=12u L=12u m=1}
+C {devices/lab_pin.sym} 250 -280 0 0 {name=l_cf1_g sig_type=std_logic lab=N1}
+C {devices/lab_pin.sym} 250 -220 0 0 {name=l_cf1_b sig_type=std_logic lab=NF}
+
+C {symbols/cap_mim_2f0fF.sym} 400 -250 0 0 {name=Cf2 model=cap_mim_2f0_m2m3_noshield W=12u L=12u m=1}
+C {devices/lab_pin.sym} 400 -280 0 0 {name=l_cf2_g sig_type=std_logic lab=NF}
+C {devices/lab_pin.sym} 400 -220 0 0 {name=l_cf2_b sig_type=std_logic lab=BG}
 
 C {symbols/pfet_03v3.sym} 700 -600 0 0 {name=M2P model=pfet_03v3 L=2u W=150u nf=15 m=1}
 C {devices/lab_pin.sym} 680 -600 0 0 {name=l_m2p_g sig_type=std_logic lab=N1}
