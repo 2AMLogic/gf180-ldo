@@ -252,6 +252,46 @@ caveat that this null result is conditional on the current 24%-passing
 baseline and should be re-checked once the DR-0009-recommended architecture
 change lands and the passing region is larger.
 
+### The 0.1 mA column closes (issue #53)
+
+`20260802-171044-db620a6` is the head record: the same 4536-point matrix,
+measured against `design/error_amp.sch` with its Type-II gain shelf widened
+(`Cf1`/`Cf2` 12 × 12 µm → 7 × 7 µm, with `M2P`/`Mbuf`/`Mbufb` gate areas cut
+to keep the local loop's Miller-split pole above the raised shelf corner, and
+`MTAIL` 6 µm → 6.6 µm). The shelf's upper corner turns out to be
+`f_2 = 1/(2π·Rz·Cf)`, the same form as its lower corner
+`f_z = 1/(2π·Rz·Cc)`, so the shelf is `Cc/Cf` wide and independent of every
+bias current in the cell — which is what DR-0009's "`f_2` is set by Iq"
+subsection got wrong, and what
+`spec/decision-records/DR-0012-shelf-width-is-cc-over-cf.md` corrects.
+
+| `I_load` | 0.33 µF | 1 µF | 4.7 µF | row | `…-2a08fce` |
+|---|---|---|---|---|---|
+| 0 mA | 13/252 | 0/252 | 0/252 | 13/756 | 0/756 |
+| **0.1 mA** | **252/252** | **252/252** | **252/252** | **756/756** | 686/756 |
+| 1 mA | 0/252 | 158/252 | 249/252 | 407/756 | 331/756 |
+| 10 mA | 0/252 | 0/252 | 87/252 | 87/756 | 74/756 |
+| 25 mA | 0/252 | 0/252 | 57/252 | 57/756 | 8/756 |
+| 50 mA | 0/252 | 0/252 | 12/252 | 12/756 | 0/756 |
+| **total** | | | | **1332/4536** | 1099/4536 |
+
+The whole 0.1 mA column now clears both DR-0001 bars at all seven process
+corners, worst PM 45.98° and worst GM 13.27 dB. The matrix as a whole is still
+a **FAIL** (1332/4536) — 1–50 mA needs roughly another factor of nine in
+`Cc/Cf`, which neither `Cf` (bounded below by the local loop's own
+non-dominant pole) nor `Cc` (bounded above by the ratified PSRR row) can
+supply, so that remains DR-0009's architecture change. Read the record's
+*"Issue #53: the 0.1 mA column closes, and what it traded to close"* section
+before reading the totals: 77 points outside the 0.1 mA column trade
+PASS → FAIL against 310 the other way, 63 of them on gain margin alone, which
+is the direct consequence of holding `|T|` up over a wider band.
+
+Note that #54's null result on the resistor-corner axis was explicitly
+recorded as *conditional on the then-current 24 %-passing baseline*. It
+survives this record: the 0.1 mA column passes at `res_ff` and `res_ss` as
+well as at the five MOS corners, and the matrix's worst point is still
+`res_ss_27c_2.97v` at 50 mA / 0.33 µF / 1 mΩ.
+
 ### Where this stands
 
 The current record is **`20260801-140530-d6d47f5`**, a **FAIL** against

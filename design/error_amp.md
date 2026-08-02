@@ -17,32 +17,45 @@ Evidence for every measured number here:
 Nothing below is a closed-loop claim. Loop stability is #10, the full
 testbench suite is #12, mismatch Monte Carlo is #13.
 
-> **Read §6.6 and §6.7 first (issue #53).** §6.2–§6.5 were written as though
-> the `Rz`/`Cc` network's own *local* feedback loop were stable. DR-0008
+> **Read §6.6, §6.7 and §6.10 first (issue #53).** §6.2–§6.5 were written as
+> though the `Rz`/`Cc` network's own *local* feedback loop were stable. DR-0008
 > measured that it was not — the cell oscillated at ≈ 500 kHz at every PVT
 > corner (§6.6) — and §6.7 is what happened when that was fixed and the
 > matrix re-measured. **§6.4's "2689/3240 passing" is superseded twice over:
 > once as not being a stability result at all, and once by the real number,
-> 785/3240.** The verified load range is 0.1 mA (with a residual 48-point
-> phase-margin gap of its own), not 1–50 mA. **§6.8 and §6.9** record two rounds
-> of negative results against the first candidate DR-0009 named to close
-> that gap — read them before re-trying a super-source-follower sense
-> device around `Mbuf` in any form. **DR-0009's Candidate 2 (adaptive
-> biasing from a pass-device sense replica) is the recommended next attempt
-> as of DR-0011.**
+> 785/3240.** §6.8 and §6.9 record two rounds of negative results against the
+> first candidate DR-0009 named to close the 48-point residue that left at
+> 0.1 mA — read them before re-trying a super-source-follower sense device
+> around `Mbuf` in any form. **§6.10 is what closed it**, and it is neither of
+> DR-0009's candidates: the shelf's upper corner is `f_2 = 1/(2π·Rz·Cf)`, so
+> the shelf is `Cc/Cf` wide and *`Cf`*, not Iq, is the lever. The 0.1 mA
+> column now passes **756/756**; 1–50 mA does not, and remains DR-0009
+> Candidate 2's brief.
 >
-> - `sim/amp-openloop/records/20260802-095514-c828e73.md` — `peak_excess_db`
->   now −0.36…−0.13 dB at **81 of 81** points (was +5.4…+12.2 at 81 of 81).
-> - `sim/amp-selfosc/records/20260802-101239-c828e73.md` — settled, undriven
->   transient at the light operating point: **0.13…0.43 µV** pk-pk on `BG`
->   (was 476…1420 mV). The heavy rows still ring, and that is now the LDO
->   loop, not this cell — see §6.7.
-> - `sim/loop-stability/records/20260802-095235-c828e73.md` — 785/3240, and
->   **0 of 3240** points show gain resurgence above crossover (was 401).
+> - `sim/loop-stability/records/20260802-171044-db620a6.md` — **1332/4536** on
+>   the ratified matrix at its current size (issue #54's `res_ff`/`res_ss`
+>   corners included), of which **756/756 at 0.1 mA** (was 686/756), and
+>   **0 of 4536** points show gain resurgence above crossover. 77 points
+>   outside the 0.1 mA column trade PASS → FAIL against 310 the other way;
+>   see §6.10.
+> - `sim/enable-shutdown/records/20260802-172454-b90b2ba.md` — all four
+>   ratified clauses PASS at **63 of 63** corners; enabled Iq 24.81 µA at the
+>   binding corner against the ratified < 30 µA (was 23.58).
+> - `sim/amp-openloop/records/20260802-163812-deb3dbd.md` — `peak_excess_db`
+>   −0.10…+0.17 dB at **81 of 81** points (was +5.4…+12.2 before DR-0008's
+>   fix, −0.36…−0.13 after it), and `gain_1k_db` 54.57 dB worst corner
+>   against a 53.5 dB budget line that had 0.04 dB of margin.
+> - `sim/amp-selfosc/records/20260802-164210-7c2ff06.md` — settled, undriven
+>   transient at the light operating point: **0.028…0.44 µV** pk-pk on `BG`
+>   (was 476…1420 mV before DR-0008's fix). The heavy rows still ring, and
+>   that is the LDO loop, not this cell — see §6.7.
+> - `sim/psrr-dc/records/20260802-164053-c999cb4.md` — `psrr_ldo_1k_db`
+>   **51.04 dB** worst corner against the ratified 50 dB row (was 50.08).
 > - `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md`,
->   `spec/decision-records/DR-0009-shelf-corner-vs-crossover-frontier.md`,
->   `spec/decision-records/DR-0010-buffer-sense-device-negative-result.md` and
->   `spec/decision-records/DR-0011-isolated-sense-bias-negative-result.md`.
+>   `DR-0009-shelf-corner-vs-crossover-frontier.md`,
+>   `DR-0010-buffer-sense-device-negative-result.md`,
+>   `DR-0011-isolated-sense-bias-negative-result.md` and
+>   `DR-0012-shelf-width-is-cc-over-cf.md`.
 
 ---
 
@@ -86,6 +99,12 @@ output, i.e. candidate 3 *and* candidate 2's low-impedance gate driver.
 | Stage 1 | `MIN1`/`MIN2` (`nfet_03v3` 60 µm/6 µm), `MLD1`/`MLD2` (`pfet_03v3` 8 µm/8 µm), `MTAIL` | 2.43 µA |
 | Stage 2 | `M2P` (`pfet_03v3` 150 µm/2 µm), `M2N` (`nfet_03v3` 10 µm/4 µm) | 4.18 µA |
 | Comp | `Cc` (`cap_mim_2f0`, 39 µm × 39 µm ≈ 3.06 pF), `Rz` (`ppolyf_u`, 1 µm × 109 µm ≈ 40 kΩ) | — |
+
+> The device sizes in this table are issue #9's, kept for the historical
+> record. #51 rebuilt the compensation and added the buffer, and **§6.10
+> (issue #53) resized `M2P` to 60 µm/1 µm, `Mbuf` to 60 µm/0.5 µm, `Mbufb`
+> to 100 µm/1 µm, `Cf1`/`Cf2` to 7 × 7 µm and `MTAIL` to 6.6 µm/4 µm**.
+> `design/error_amp.sch` is always the authority on sizes.
 
 **Why two-stage Miller and not folded-cascode** (the survey shortlisted both).
 The PSRR row needs 53.5 dB of amplifier gain at 1 kHz (§4), which at a single
@@ -276,11 +295,20 @@ bandwidth rather than on the pass-device topology.
 `|1 − G|` forced to 1 (i.e. the pessimistic "gate pinned while VIN moves"
 case). Supply tracking is then pure unbudgeted margin:
 
-| Budget line | Requirement | Measured (81 points, #9) | Re-measured (81 points, #51) | Verdict |
-|---|---|---|---|---|
-| Amp gain at 1 kHz, `A(1k)` | ≥ 50 − 20·log₁₀(2/3) = **53.5 dB** | **57.3 … 66.5 dB** | **53.5 … 62.7 dB** | PASS — but the margin is now **0.04 dB** at the worst corner |
-| Same, light-load operating point (README note 1 binds PSRR at light load) | ≥ 53.5 dB | **57.2 … 66.5 dB** | **53.5 … 62.6 dB** | PASS |
-| **Budgeted PSRR = A·β** | ≥ **50 dB** | **53.7 … 63.0 dB** (mean 58.4) | **50.0 … 59.1 dB** (mean 54.6) | **PASS at all 81 points**, 0.02 dB at the worst |
+| Budget line | Requirement | Measured (81 points, #9) | Re-measured (81 points, #51) | Re-measured (81 points, #53 §6.10) | Verdict |
+|---|---|---|---|---|---|
+| Amp gain at 1 kHz, `A(1k)` | ≥ 50 − 20·log₁₀(2/3) = **53.5 dB** | **57.3 … 66.5 dB** | **53.5 … 62.7 dB** | **54.57 … 63.68 dB** | PASS — the margin was 0.04 dB at the worst corner and is now **1.07 dB** |
+| Same, light-load operating point (README note 1 binds PSRR at light load) | ≥ 53.5 dB | **57.2 … 66.5 dB** | **53.5 … 62.6 dB** | **54.56 … 63.66 dB** | PASS |
+| **Budgeted PSRR = A·β** | ≥ **50 dB** | **53.7 … 63.0 dB** (mean 58.4) | **50.0 … 59.1 dB** (mean 54.6) | **51.04 … 60.16 dB** (mean 55.6) | **PASS at all 81 points**, 1.04 dB at the worst |
+
+**#53 amendment.** §6.10's +10 % input-pair tail current raises `gm(MIN)`,
+and `A(1k) = gm(MIN)/(2π·Cc·1 kHz)` is this whole budget — so the row that
+had 0.04 dB of margin now has 1.07 dB, and the closed-loop
+`psrr_ldo_1k_db` measurement moves 50.08 → **51.04 dB** against the ratified
+50 dB (`sim/psrr-dc/records/20260802-164053-c999cb4.md`). The sentence below
+about `Cc` still stands, with one change: `Cc` now has ≈ 13 % of headroom
+before it re-spends that margin, which DR-0012 counts as ≈ 10 % more gain
+shelf and explicitly not as a solution to the 1–50 mA columns.
 
 **Why the margin was spent.** `A(1k)` is `gm(MIN)/(2π·Cc·1 kHz)`, so it is set
 by `Cc` — the same component #51's compensation needs *large* to keep light
@@ -335,6 +363,19 @@ the block allocations: 14.2 µA at tt/27 °C/3.3 V and **22.4 µA at the binding
 ff/125 °C/3.63 V corner** with a 50 mA load, i.e. the ratified < 30 µA row is
 met with 25 % margin including the current-limit block — and 0.20 µA disabled
 (`sim/enable-shutdown/records/`).
+
+**#53 re-measurement (§6.10).** The shelf-widening change spends +10 % of the
+input-pair tail and +25 % of the buffer bias, and nothing else: the assembled
+regulator measures **9.12–22.00 µA** at the same binding corner
+(`sim/quiescent-current/records/20260802-164119-56dae34.md`), i.e. +0.6 µA,
+leaving 26 % margin under the ratified < 30 µA row. `sim/enable-shutdown/`
+measures the same row on its own 63-corner grid at **24.81 µA** at that
+corner, with disabled current unchanged at 0.20 µA and Vin→Vout leakage
+unchanged at 0.214 µA
+(`sim/enable-shutdown/records/20260802-172454-b90b2ba.md`). The amplifier's
+own `iq_ua` reaches 14.98 µA at
+`ff`/125 °C/3.63 V against the 15 µA soft block allocation — that allocation,
+not the ratified row, is now what bounds this lever.
 
 **#51 re-measurement.** The class-AB gate buffer does **not** cost Iq: the
 assembled regulator now measures **8.6–21.4 µA** over the same grid
@@ -445,14 +486,14 @@ stay; the `BG` devices are additions.
 
 ### 6.3 Measured amplifier properties (81 PVT points, `sim/amp-openloop/`)
 
-| Property | Before (#9) | After (#51) |
-|---|---|---|
-| DC gain `A0` | 110.1 … 114.7 dB | 109.0 … 115.7 dB |
-| Gain at 1 kHz | 57.3 … 66.5 dB | **53.5 … 62.7 dB** (floor: 53.5 dB) |
-| Unity-gain bandwidth | 0.65 … 2.16 MHz | 1.82 … 4.31 MHz |
-| Systematic offset | 282 … 611 µV | 335 … 764 µV |
-| Amplifier Iq | 5.8 … 14.3 µA | **5.4 … 13.7 µA** |
-| Gate drive, low | ≤ 3.8 µV above VSS | ≤ 30 µV above VSS |
+| Property | Before (#9) | After (#51) | After (#53 §6.10) |
+|---|---|---|---|
+| DC gain `A0` | 110.1 … 114.7 dB | 109.0 … 115.7 dB | 105.9 … 113.1 dB |
+| Gain at 1 kHz | 57.3 … 66.5 dB | **53.5 … 62.7 dB** (floor: 53.5 dB) | **54.6 … 63.7 dB** |
+| Unity-gain bandwidth | 0.65 … 2.16 MHz | 1.82 … 4.31 MHz | 3.07 … 7.80 MHz |
+| Systematic offset | 282 … 611 µV | 335 … 764 µV | 332 … 771 µV |
+| Amplifier Iq | 5.8 … 14.3 µA | **5.4 … 13.7 µA** | **5.9 … 15.0 µA** |
+| Gate drive, low | ≤ 3.8 µV above VSS | ≤ 30 µV above VSS | ≤ 49 µV above VSS |
 
 Whole-regulator numbers moved the same way: Iq **8.6 … 21.4 µA** against the
 ratified < 30 µA row (the pre-#51 design measured 22.4 µA — the buffer is
@@ -516,14 +557,20 @@ need to be constraints in the floorplan rather than discoveries in extraction:
   follow-up.
 - `Cc` at 4.80 pF has ≈ 0 dB of PSRR margin, so any parasitic capacitance
   added to the `NZ`/`OUT` net comes straight off the ratified PSRR row.
-- **(§6.7, issue #53)** `Cf1`/`Cf2` is ≈ 149 fF built as two 12 µm MIM in
+- **(§6.7/§6.10, issue #53)** `Cf1`/`Cf2` is ≈ 49 fF built as two 7 µm MIM in
   series, so its mid-node `NF` floats and its bottom-plate parasitic to
   substrate is *in series with the value*, not a stray to absorb. Extraction
   must report `Cf` as the two-terminal `N1`→`BG` value, and the layout should
   put the two devices' bottom plates on the same net so the parasitic adds
-  predictably rather than skewing the series ratio. This is the component
-  that decides whether the cell oscillates at all, so it is the first thing
-  #16's post-layout re-run should check.
+  predictably rather than skewing the series ratio. **This is now the most
+  layout-sensitive component in the cell**: §6.10 makes `Cf` the component
+  that sets the shelf's upper corner `f_2 = 1/(2π·Rz·Cf)` *and* the one that
+  decides whether the cell oscillates at all, and at 49 fF the parasitic is a
+  larger fraction of the value than it was at 149 fF. It is the first thing
+  #16's post-layout re-run should check. Note the sign of the risk is
+  two-sided: extra parasitic in series *reduces* `Cf`, which raises `f_2`
+  (good for the shelf) and lowers the local loop's own non-dominant pole
+  (bad — `peak_excess_db` has +0.83 dB of headroom, not more).
 
 ### 6.6 The local loop this compensation closes is unstable (issue #53)
 
@@ -658,6 +705,12 @@ and the passing points are the *light* loads, not the heavy ones:
 | 25 mA | 0/180 | 0/180 | 6/180 |
 | 50 mA | 0/180 | 0/180 | 0/180 |
 
+> **Corrected by §6.10.** The next paragraph is right that the local loop's
+> crossover is the shelf's upper corner, and right that its *ceiling* is set
+> by Iq. It is wrong that `f_2` itself is: `f_2 = 1/(2π·Rz·Cf)`, and the cell
+> was sitting a factor of three below its own ceiling. Read §6.10 before
+> acting on the sentence "`f_2` … is set by Iq, and it does not scale".
+
 The mechanism is §6.4's frontier with the artifact removed. The local loop's
 crossover **is** the shelf's upper corner `f_2` ≈ 180 kHz, and the LDO's
 crossover `f_c = β·A_plat·gm_pass/(2π·C_eff)` reaches into the low-MHz range
@@ -771,6 +824,126 @@ pass-device sense replica) instead:
 `design/` netlist changed for this section; the circuit was built, measured
 with `--no-write` sweeps, and reverted.
 
+### 6.10 The shelf is `Cc/Cf` wide, and that closes the 0.1 mA column (issue #53)
+
+**The correction.** §6.7 and DR-0009 identified the shelf's upper corner
+`f_2` as the local loop's own crossover, and DR-0009 then treated it as an Iq
+quantity ("`f_2` is set by Iq, and it does not scale"). It is not. Above `f_z`
+the local loop's gain is `1/(s·Rz·Cf)` — the forward gain `gm(M2P)·Z_BG`
+cancels between the Miller impedance at `N1` and the feedback path through
+`Rz` — so
+
+```
+f_2 = 1/(2*pi*Rz*Cf)        exactly the form of      f_z = 1/(2*pi*Rz*Cc)
+shelf width = f_2/f_z = Cc/Cf
+```
+
+with no bias current and no `Rz` in it. At §6.7's values (`Cc` = 4.80 pF,
+`Cf` = 149 fF) that is a **32×** shelf — 5.4 kHz to 178 kHz — against a
+0.1 mA column whose measured crossover spans 6.9 kHz (4.7 µF, hot) to
+190 kHz (0.33 µF, cold), a **27× span**. The 48 residual failures were that
+27× poking out of both ends of a 32× shelf, and the fix is to widen the
+shelf.
+
+**What changed.** Five devices, no new devices, no port change:
+
+| device | before | after | what it does |
+|---|---|---|---|
+| `Cf1`/`Cf2` | 12 × 12 µm MIM, 149 fF | **7 × 7 µm, 49 fF** | `f_2` 178 → 541 kHz; shelf 32× → 98× |
+| `M2P` | 150 µm/2 µm | **60 µm/1 µm** | ⅕ the gate area on `N1` |
+| `Mbuf` | 150 µm/1 µm | **60 µm/0.5 µm** | ⅕ the gate area on `BG` |
+| `Mbufb` | 200 µm/2 µm | **100 µm/1 µm** | keeps tracking `M2P`, at 1.67× (was 1.33×) |
+| `MTAIL` | 6 µm/4 µm | **6.6 µm/4 µm** | +10 % tail: `A_plat`, and the 1 kHz gain |
+
+The two gate-area changes are what make the smaller `Cf` usable. Shrinking
+`Cf` raises `f_2` but lowers the local loop's own non-dominant pole, because
+that pole is `M2P`'s Miller split, `p2 ≈ gm(M2P)·Cf/(C_N1·C_BG)` — the two
+converge and the loop rings, which is DR-0008's defect returning. `C_N1` is
+dominated by `Cgs(M2P)` and `C_BG` by `Cgg(Mbuf)`, and both devices sit in
+weak inversion (22 nA and 12 nA per square respectively), so their areas can
+be cut several-fold with `gm` unchanged. Measured at `Cf` = 36 fF, at the
+worst 0.1 mA point (`ss`/−40 °C/3.63 V / 0.33 µF / 1 mΩ): **37.09° / 8.26 dB
+with the old gates, 43.50° / 9.84 dB with the new ones** — +6.4° of phase
+margin *and* +1.6 dB of gain margin for zero microamps.
+
+The +10 % tail is the only current that moves. It is what reaches the
+4.7 µF/hot end of the column, where the crossover was falling back into `f_z`
+and `Cf` has no authority at all (measured: 42.48° → 44.12° across a 4×
+change in `Cf`, never reaching the bar). It is a two-sided knob — every
+microamp helps that end and hurts the 0.33 µF/cold end — and 6.6 µm is the
+measured balance point that also keeps `iq_ua` inside its 15 µA allocation.
+
+**`Mpgn` was NOT trimmed, and that is a measurement.** Cutting it 2 µm →
+1.2 µm recovers ≈ 0.16 µA and passes every AC bench, then voids a full-matrix
+run: at `sf`/−40 °C/3.63 V, 9 of 72 points settle on the non-regulating DC
+branch (`VOUT` = −0.70 V) instead of the regulating one. `Mpgn` is the only
+thing arbitrating for the regulating branch against `ldo_ilimit`'s clamp, and
+the schematic's own note that it "makes the node non-floating for the
+operating-point solve" is load-bearing.
+
+**The result** (`sim/loop-stability/records/20260802-171044-db620a6.md`,
+supersedes `20260802-151515-2a08fce`; the ratified matrix is 4536 points since
+issue #54 added the `res_ff`/`res_ss` resistor corners in PR #66, and this is
+a clean-tree run of it in full):
+
+| `I_load` | 0.33 µF | 1 µF | 4.7 µF | row | was |
+|---|---|---|---|---|---|
+| 0 mA | 13/252 | 0/252 | 0/252 | 13/756 | 0/756 |
+| **0.1 mA** | **252/252** | **252/252** | **252/252** | **756/756** | 686/756 |
+| 1 mA | 0/252 | 158/252 | 249/252 | 407/756 | 331/756 |
+| 10 mA | 0/252 | 0/252 | 87/252 | 87/756 | 74/756 |
+| 25 mA | 0/252 | 0/252 | 57/252 | 57/756 | 8/756 |
+| 50 mA | 0/252 | 0/252 | 12/252 | 12/756 | 0/756 |
+| **total** | | | | **1332/4536** | 1099/4536 |
+
+Worst 0.1 mA point: PM **45.98°** (`ff`/125 °C/2.97 V, 4.7 µF, 1 mΩ) and GM
+**13.27 dB** (`res_ss`/−40 °C/2.97 V, 0.33 µF, 1 mΩ), against DR-0001's 45° /
+10 dB — 0.98° and 3.27 dB of margin, i.e. the shelf is *just* wide enough for
+this column. **0 of 4536** points resurge above crossover, worst −0.07 dB, so
+DR-0008's precondition still holds.
+
+Every column improves on net, and none of the others closes — but the net is
+not uniform, and the non-uniformity is the shelf's own trade. Against the
+superseded record 310 points turn FAIL → PASS and **77 turn PASS → FAIL**
+(53 at 10 mA/4.7 µF/200 mΩ, 18 at 1 mA/1 µF/500 mΩ, 3 at 1 mA/4.7 µF/500 mΩ,
+3 at 25 mA/4.7 µF/200 mΩ), none of them in the 0.1 mA column and **63 of the
+77 failing on gain margin alone with the phase bar still cleared**. A wider
+shelf holds `|T|` up over a wider band, so `|T|` at the −180° crossing rises;
+that is the same phase-margin-versus-gain-margin trade DR-0012 §1 tabulates at
+a probe point, showing up here on the full matrix.
+
+**What it cost, measured on the full grids** — the one row that got worse is
+`a0_db`, and it is the only one:
+
+| row | bar | before | after |
+|---|---|---|---|
+| `gain_1k_db` (`sim/amp-openloop/`) | ≥ 53.5 dB | 53.50 | **54.57** |
+| `psrr_ldo_1k_db` (`sim/psrr-dc/`) | ≥ 50 dB, ratified | 50.08 | **51.04** |
+| `iq_ua`, amplifier (`sim/amp-openloop/`) | ≤ 15 µA (soft) | 5.4–13.7 | 5.88–14.98 |
+| `iq_en_ua`, regulator (`sim/quiescent-current/`) | < 30 µA, ratified | 8.60–21.44 | 9.12–22.00 |
+| `peak_excess_db` (`sim/amp-openloop/`) | ≤ 1 dB | −0.36…−0.13 | −0.10…**+0.17** |
+| `bg_pp_light_mv` (`sim/amp-selfosc/`) | ≤ 1 mV | 0.16–0.30 µV | 0.028–0.44 µV |
+| `vdrop_mv` (`sim/dropout-vs-load/`) | ≤ 300 mV (pre-existing miss) | 300.48–300.98 | 300.48–301.01 |
+| `a0_db` (`sim/amp-openloop/`) | ≥ 60 dB | 109.0–115.7 | **105.9–113.1** |
+
+`a0_db` falls ≈ 2 dB because `M2P`'s channel length halves, halving the
+stage-2 output resistance. At 105.9 dB it is 46 dB clear of its floor and no
+DC row moves.
+
+**What is still not fixed, and what it would take.** 50 mA / 0.33 µF needs
+`f_c` ≈ 1.2–1.7 MHz inside the shelf, i.e. `Cc/Cf` ≳ 900 against the 98 this
+lands. `Cf` cannot fall below ≈ 45 fF at these gate areas without
+`peak_excess_db` going positive (measured: +0.17 dB at 49 fF, +0.40 dB at
+43.6 fF, +2.30 dB at 36 fF), and the gate-area lever that would let it is one
+step wide and has been taken. `Cc` can now grow ≈ 13 % on the PSRR margin
+this change created, which is ≈ 10 % more shelf, not a factor of 9. So the
+1–50 mA columns still need the architecture change DR-0009 named — and
+DR-0009's Candidate 2 (adaptive biasing from a pass-device sense replica) is
+now precisely scoped to them, because it is a load-proportional lever and
+both of the 0.1 mA column's failure clusters were at the *same* load. Full
+argument, every sweep, and the proposed DR-0007 amendment:
+`spec/decision-records/DR-0012-shelf-width-is-cc-over-cf.md`.
+
 ## 7. Handoffs
 
 | Issue | What to take |
@@ -794,6 +967,12 @@ device):
 | `Rbufb` (1 µm × 5000 µm, `ppolyf_u_1k`, 5 MΩ) | ≈ 5000 µm² |
 | Transistor gate area (all 13 devices) | ≈ 1990 µm² |
 | **Total** | **≈ 16 400 µm² ≈ 0.0164 mm²** — 16 % of the core budget |
+
+**#53 §6.10 shrinks this row, it does not grow it.** `Cf1`/`Cf2` go
+2 × 144 µm² → 2 × 49 µm², and `M2P` (300 → 60 µm²), `Mbufb` (400 → 100 µm²)
+and `Mbuf` (150 → 30 µm²) give up ≈ 660 µm² of gate area between them, against
+≈ 2.4 µm² added by `MTAIL`. Nothing in the cell grew. `Cc`, `Rz`, `Rbias` and
+`Rbufb` — the four items that dominate the total — are untouched.
 
 #51 moved `Rz` from `ppolyf_u` to `ppolyf_u_1k`. At 6 MΩ the `ppolyf_u`
 flavour (369 Ω/sq, 2.69 µm² per square) would be ≈ 43 700 µm² — 44 % of the
