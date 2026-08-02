@@ -24,9 +24,12 @@ testbench suite is #12, mismatch Monte Carlo is #13.
 > matrix re-measured. **§6.4's "2689/3240 passing" is superseded twice over:
 > once as not being a stability result at all, and once by the real number,
 > 785/3240.** The verified load range is 0.1 mA (with a residual 48-point
-> phase-margin gap of its own), not 1–50 mA. **§6.8** records a negative
-> result against the first candidate DR-0009 named to close that gap — read
-> it before re-trying a super-source-follower sense device around `Mbuf`.
+> phase-margin gap of its own), not 1–50 mA. **§6.8 and §6.9** record two rounds
+> of negative results against the first candidate DR-0009 named to close
+> that gap — read them before re-trying a super-source-follower sense
+> device around `Mbuf` in any form. **DR-0009's Candidate 2 (adaptive
+> biasing from a pass-device sense replica) is the recommended next attempt
+> as of DR-0011.**
 >
 > - `sim/amp-openloop/records/20260802-095514-c828e73.md` — `peak_excess_db`
 >   now −0.36…−0.13 dB at **81 of 81** points (was +5.4…+12.2 at 81 of 81).
@@ -37,8 +40,9 @@ testbench suite is #12, mismatch Monte Carlo is #13.
 > - `sim/loop-stability/records/20260802-095235-c828e73.md` — 785/3240, and
 >   **0 of 3240** points show gain resurgence above crossover (was 401).
 > - `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md`,
->   `spec/decision-records/DR-0009-shelf-corner-vs-crossover-frontier.md` and
->   `spec/decision-records/DR-0010-buffer-sense-device-negative-result.md`.
+>   `spec/decision-records/DR-0009-shelf-corner-vs-crossover-frontier.md`,
+>   `spec/decision-records/DR-0010-buffer-sense-device-negative-result.md` and
+>   `spec/decision-records/DR-0011-isolated-sense-bias-negative-result.md`.
 
 ---
 
@@ -724,6 +728,48 @@ Candidate 2 — adaptive biasing from a pass-device sense replica — instead):
 `spec/decision-records/DR-0010-buffer-sense-device-negative-result.md`. No
 `design/` netlist changed for this section; both variants were built,
 measured with `--no-write` sweeps, and reverted.
+
+### 6.9 An isolated, dedicated bias reference for the sense device — also negative, and worse (issue #53)
+
+DR-0010's own recommendation for the next attempt was the one bias scheme it
+had not tried: a dedicated, diode-connected reference for `Msfb`'s gate,
+isolated from every other node's small-signal path. It was built —
+`Mref`/`Rref` (a small self-biased diode-connected NMOS, its own branch, not
+mirrored or resistor-tapped off `NBIAS`), `Rsfg`/`Csfb` (the same series-MIM
+AC-coupling idiom `Cf1`/`Cf2` use), `Msfb` unchanged in connectivity (gate to
+the new isolated node, drain `BG`, source `VSS`, parallel with `M2N`), and
+`Msfg_pd` (a disable-state pulldown so the new branch does not fight
+`Mbg_pu` when `EN=0`) — and it does not work either, for a third and
+different reason than either of §6.8's variants:
+
+- It does not blow up Iq (**9.29–12.35 µA**, `ss`/−40 °C, against the
+  5.4–13.7 µA baseline band) or reopen DR-0008's local-loop instability
+  (`peak_excess_db` **−0.664…−0.659 dB**, well inside the ≤ 1 dB bar) — the
+  isolation DR-0010 asked for is genuinely achieved.
+- It still collapses the LDO loop's phase/gain margin at the worst-corner
+  family far past either §6.8 variant: at `ss`/−40 °C/3.63 V/0.1 mA/0.33 µF,
+  **−1.13° PM / −0.58 dB GM** (baseline 32.37°/12.13 dB; §6.8's better
+  variant reached +37.09°). Three of the six points checked in this corner
+  family go negative on both bars.
+- A control with `Msfb`'s drain moved from `BG` to `VSS` (present and
+  biased, but disconnected from the signal path) recovers the baseline to
+  within 0.5° — isolating the cause to `Msfb`'s connection to `BG` itself,
+  not the bias branch. `peak_excess_db` staying clean shows the *local*
+  `M2P`/`Mbuf`/`Rz`/`Cc` loop is unaffected; the second local loop `Msfb`
+  opens around the same node degrades the *enclosing* LDO loop's margin
+  without registering on either single-loop metric this cell's other
+  benches check.
+
+**With this record, the super-source-follower family (DR-0009's Candidate 1)
+has now been tried with all three bias schemes ever proposed for it — direct
+`OUT` reference, shared-`NBIAS` reference, and an isolated dedicated
+reference — and none clears DR-0001's bar.** Full numbers, the failed
+naive-mirror attempt that preceded the diode-connected version, and the
+recommendation to move to DR-0009's Candidate 2 (adaptive biasing from a
+pass-device sense replica) instead:
+`spec/decision-records/DR-0011-isolated-sense-bias-negative-result.md`. No
+`design/` netlist changed for this section; the circuit was built, measured
+with `--no-write` sweeps, and reverted.
 
 ## 7. Handoffs
 
