@@ -120,15 +120,19 @@ than 30 dB, so nothing about the verdict moves — but the mechanism is present
 in this loop, not only in the constructed reference loop, and there is no
 argument that it must always land somewhere this harmless.
 
-One caveat that comparison also surfaced: **`resurgence_db` is not comparable
-across records taken at different `AC_DEC`.** Its scan starts one *grid step*
-above the crossing, so a finer grid samples `|T|` closer to `f_0` and reports
-a larger number for the same loop — it moved positive at all 4536 points,
-worst-in-matrix from −0.075 dB to −0.009 dB, with no physical change
-whatever. The direction is safe (a monotone roll-off can never push it above
-the bar at any resolution) and the finer grid is the better estimator of the
-`sup |T|` it is trying to report, but the value is **not a margin** and must
-not be read as one.
+One caveat that comparison also surfaced (**since fixed, issue #69 — see
+*`resurgence_db`* below**): as originally defined, `resurgence_db` was not
+comparable across records taken at different `AC_DEC`. Its scan started one
+*grid step* above the crossing, so a finer grid sampled `|T|` closer to `f_0`
+and reported a larger number for the same loop — it moved positive at all
+4536 points, worst-in-matrix from −0.075 dB to −0.009 dB, with no physical
+change whatever. The direction was safe (a monotone roll-off can never push
+it above the bar at any resolution) and the finer grid was the better
+estimator of the `sup |T|` it is trying to report, but the value was **not a
+margin** and could not be read as one. This record and
+`records/20260802-204343-e912fbd.md` §4 are left as written — they document
+real, measured evidence of the bug the fix below removes — but the scan-start
+definition they describe is no longer what the deck runs.
 
 ### The self-test that exercises it
 
@@ -142,11 +146,16 @@ it at its best case.
 | | measured |
 |---|---|
 | true continuous peak above the first 0 dB crossing | **+3.90 dB** (a real resurgence — DR-0008 would flag it) |
-| `resurgence_db` reported at `dec 50` | **−0.40 dB** — a clean, confident **false PASS** |
+| `resurgence_db` reported at `dec 50` | **−0.79 dB** — a clean, confident **false PASS** |
 | `resurgence_db` reported at `dec 400` | **+3.11 dB** — correctly **FAIL** |
 
+(Figures measured with the fixed-5%-offset scan start, issue #69; the
+resonance sits far enough above crossover that the offset's exact value does
+not change which grid point dominates the max, so these numbers are within
+noise of what the old grid-tied offset also reported here.)
+
 The 0.79 dB residual at `dec 400` is the 0.84 dB analytic worst case above,
-measured. The old default is not slightly off on this loop; it is 4.30 dB
+measured. The old default is not slightly off on this loop; it is 4.69 dB
 off, on the wrong side of a bar that has no slack in it.
 
 ### `cph()`'s phase unwrap is *not* the problem
@@ -263,15 +272,69 @@ So every point of this sweep also reports:
 |---|---|---|
 | `resurgence_db` | the largest `\|T\|` in dB **anywhere above the first (falling) 0 dB crossing** | **≤ 0 dB** |
 
-The scan starts one AC-grid step (`10^(1/AC_DEC)`, see *Sweep resolution*
-above) above the crossing, so the
-crossing itself — where `|T|` is 0 dB by definition — is never reported as its
-own resurgence. For a loop that rolls off monotonically through crossover
-every remaining point is below unity, so the metric is negative *by
-construction*; that is why the bar is `≤ 0 dB` with no engineering slack in
-it, and why a value above it means the gain genuinely climbed back over unity
-after having crossed down. Where that happens, the phase margin above is read
-at a crossing that is not the last one.
+The scan starts a **fixed 5 % above the crossing** (`f_0 × 1.05`) rather than
+one AC-grid step above it, so the crossing itself — where `|T|` is 0 dB by
+definition — is never reported as its own resurgence. For a loop that rolls
+off monotonically through crossover every remaining point is below unity, so
+the metric is negative *by construction*; that is why the bar is `≤ 0 dB`
+with no engineering slack in it, and why a value above it means the gain
+genuinely climbed back over unity after having crossed down. Where that
+happens, the phase margin above is read at a crossing that is not the last
+one.
+
+### Comparability across `AC_DEC` (issue #69)
+
+The scan-start offset used to be one AC-grid step (`10^(1/AC_DEC)`), which
+tied `resurgence_db`'s *value* to the sweep resolution even though the
+quantity it reports — `sup |T|` over `(f_0, F_STOP]` — does not depend on
+resolution at all: the *Sweep resolution* section's `dec 50` → `dec 400` A/B
+moved `resurgence_db` at all 4536 matrix points by **+0.061…+2.362 dB**, with
+phase margin and crossover essentially unmoved. The fixed 5 % offset above
+removes that dependency: the threshold no longer moves with `AC_DEC`, only
+which already-sampled grid point happens to sit just above it does. **5 %**
+is chosen because it is close to the *old* `dec 50` grid step (`10^(1/50) ≈
+4.71 %`, the resolution every historical record through
+`20260802-171044-db620a6` was taken at — so this redefinition does not
+retroactively widen or narrow the scan those records represent) and
+comfortably above the *current* `dec 400` grid step (`10^(1/400) ≈ 0.577 %`),
+so neither resolution this deck runs at today changes which points the scan
+considers.
+
+This does **not** make `resurgence_db` exactly resolution-independent — no
+discrete sample of a continuous quantity can be — but it replaces a
+*systematic* bias that scales with `AC_DEC` (the old formula) with a
+*quantization* residual bounded by the grid step near a fixed threshold.
+Measured on the real design (`tt`/27 °C/3.3 V, the full load × cap × ESR
+axis, 72 points, `dec 50` vs `dec 400`, same netlist): **median 0.21 dB, max
+0.95 dB** residual, `dec 400` reading less negative (closer to the bar) than
+`dec 50` at every point compared, same direction as before but now bounded by
+grid quantization rather than by `AC_DEC` itself — down from the old
+formula's measured **+0.061…+2.362 dB**, a range taken over the full
+4536-point matrix rather than this 72-point subset, but the same order of
+magnitude smaller than that range's maximum. `selftest.py`'s monotonic
+reference loop exercises the property directly: measured at both `dec 20` and
+`dec 400`, `resurgence_db` must agree within a stated 1.75 dB budget (a
+loop-specific number derived from that loop's own analytic near-crossing
+slope, printed alongside the check).
+
+**The DR-0008 verdict for the head record does not change.** The redefinition
+moves the scan's start offset *later* on every point currently in a record at
+`dec 400` (`10^(1/400) ≈ 0.577 %` → a fixed `5 %`), which can only make
+`resurgence_db` more negative for a loop whose gain is still decaying in that
+excluded band — the case for every point measured on this design so far
+(worst-case phase margin there is ≈ 140°, decades from a resonance). The
+single point closest to the bar in the current head record
+(`20260802-201346-e912fbd`, `ff_125c_3.30v` / 1 mA / 4.7 µF / 0.5 Ω, the exact
+point issue #69's "measured, not hypothetical" evidence cites) was
+re-measured directly against this redefinition: `resurgence_db` moves from
+`−0.0086 dB` to `−0.0712 dB` — still comfortably `≤ 0 dB`, with *more*
+margin than before, not less. The head record's DR-0008 verdict was already
+0 FAIL / 4536 (every point PASS on that bar); it stays 0 FAIL / 4536 under
+the redefinition, and the mechanism above rules out any point flipping
+PASS → FAIL for the same reason it does not flip at the worst one. A full
+4536-point re-run under the new definition is future work for whoever next
+runs the sweep (`resurgence_db` is a free byproduct of every sweep, same as
+before) rather than a prerequisite of this fix.
 
 This bar is reported and failed **separately** from the DR-0001 PM/GM
 verdict — it appears as its own `resurgence_db` / `resurgence_result` column
@@ -305,7 +368,10 @@ Q = 20 resonance above its first crossing, placed *on* a grid point, whose
 `+14.04 dB` analytic peak the metric must recover within 0.25 dB (this checks
 the extraction's **arithmetic**); and a third, Q = 80, placed at the
 worst-case sampling **offset**, which checks the extraction's **resolution** —
-see *Sweep resolution* above.
+see *Sweep resolution* above. The monotonic loop is also re-measured at a
+**second** `AC_DEC` (400, alongside its historical dec 20) and the two
+`resurgence_db` readings are asserted to agree within the stated tolerance —
+the direct check of *Comparability across `AC_DEC`* above.
 
 ## Load and output-network model
 

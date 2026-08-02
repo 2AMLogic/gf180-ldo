@@ -76,9 +76,12 @@
 * through), though on its own it is NOT sufficient to prove RHP poles.
 * sim/amp-selfosc/ remains the load-bearing time-domain measurement.
 *
-* The scan starts one AC-grid step above f0 rather than at f0 itself, so the
-* crossing point (|T| = 0 dB by definition) cannot be reported as its own
-* resurgence.
+* The scan starts a FIXED 5% above f0 (issue #69) rather than at f0 itself,
+* so the crossing point (|T| = 0 dB by definition) cannot be reported as its
+* own resurgence. That offset is a stated constant, not a function of the AC
+* sweep resolution (AC_DEC) -- see the "gain resurgence" measurement below
+* for why, and sim/loop-stability/README.md's "resurgence_db" section for
+* the record of the comparability bug this replaces.
 *
 * ---------------------------------------------------------------------------
 * Load / output-network model
@@ -234,15 +237,31 @@ foreach il @ILOAD_LIST@
 
       * ---- gain resurgence above the first 0 dB crossing (#59, DR-0008) ---
       * The largest |T| in dB anywhere above the first (falling) 0 dB
-      * crossing. The scan starts one AC-grid step above f0 -- 10^(1/AC_DEC)
-      * -- so the crossing itself, where |T| is 0 dB by definition, is not
-      * reported as its own resurgence; every remaining point of a
-      * monotonically falling |T| is strictly below 0 dB, so the metric is
-      * negative unless the gain genuinely climbs back over unity.
-      * If f0 does not exist (no 0 dB crossing in band) this meas fails the
-      * same way f180/gmx do above and the field comes out empty, which
-      * sweep.py reads as "no crossing, so no region above one".
-      let fres = f0*10^(1/@AC_DEC@)
+      * crossing. The scan starts a FIXED 5% above f0 -- f0*1.05, a constant
+      * independent of AC_DEC -- so the crossing itself, where |T| is 0 dB
+      * by definition, is not reported as its own resurgence; every
+      * remaining point of a monotonically falling |T| is strictly below
+      * 0 dB, so the metric is negative unless the gain genuinely climbs
+      * back over unity.
+      *
+      * Issue #69: this offset used to be one AC-grid step (10^(1/AC_DEC)),
+      * which ties the metric's VALUE to the sweep resolution even though
+      * the quantity it reports -- sup|T| over (f0, F_STOP] -- does not
+      * depend on resolution at all. Measured on a byte-identical netlist,
+      * AC_DEC 50 -> 400 alone moved resurgence_db at all 4536 matrix
+      * points by +0.061...+2.362 dB with phase margin and crossover
+      * essentially unmoved (records/20260802-204343-e912fbd.md section 4). A
+      * fixed 5% is chosen because it is close to the OLD dec-50 grid step
+      * (10^(1/50) ~ 4.71%, the resolution every historical record through
+      * 20260802-171044-db620a6 was taken at) -- so this redefinition does
+      * not retroactively widen or narrow the scan those records represent
+      * -- and it is comfortably above the CURRENT dec-400 grid step
+      * (10^(1/400) ~ 0.577%), so no AC_DEC this deck runs at today changes
+      * which points the scan considers. selftest.py exercises the
+      * resulting invariance directly: the same reference loop measured at
+      * two different AC_DEC values must agree to a small, stated
+      * tolerance.
+      let fres = f0*1.05
       meas ac tres max tdb from=$&fres to=@F_STOP@
 
       echo "ROW iload_a=$il ceff_f=$ce esr_ohm=$es vout_v=$vout_str dcgain_db=$&dcg f0_hz=$&f0 phase_at_f0_deg=$&phx f180_hz=$&f180 gain_at_f180_db=$&gmx f0_rising_hz=$&f0r resurgence_db=$&tres"

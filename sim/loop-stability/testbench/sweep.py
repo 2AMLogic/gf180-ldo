@@ -158,11 +158,13 @@ F_STOP = "1e9"
 #
 # selftest.py's third reference loop exercises the bound rather than asserting
 # it: a Q = 80 resonance placed at the worst-case sampling offset for `dec 400`
-# itself. At `dec 50` the extraction reports `resurgence_db = -0.40 dB` -- a
+# itself. At `dec 50` the extraction reports `resurgence_db = -0.79 dB` -- a
 # clean, confident PASS on the DR-0008 bar -- for a loop whose true continuous
 # peak above its first 0 dB crossing is +3.90 dB. At `dec 400` the same
 # extraction reports +3.11 dB, correctly failing it; the 0.79 dB residual is
-# the analytic 0.84 dB worst-case miss above, measured.
+# the analytic 0.84 dB worst-case miss above, measured. (Figures measured
+# with the fixed-5%-offset scan start, issue #69; this resonance sits far
+# enough above crossover that the offset's exact value barely changes them.)
 #
 # The same self-test answers the other question issue #58 raised -- whether
 # `cph()` picks the wrong 360 deg branch across an under-sampled resonance.
@@ -1059,10 +1061,12 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
   that it did not hold for the amplifier as committed at `b304bd5`. This row
   is the cheap frequency-domain signature of that failure: `resurgence_db` is
   the largest `|T|` in dB anywhere above the first (falling) 0 dB crossing,
-  scanned from one AC-grid step above the crossing so the crossing itself is
-  never reported as its own resurgence. For a loop that rolls off
-  monotonically through crossover the quantity is negative by construction,
-  which is why the bar is **<= {RESURGENCE_MAX_DB:g} dB** with no slack in it.
+  scanned from a fixed 5% above the crossing (issue #69 -- a constant
+  independent of `AC_DEC`, so the value is comparable across records taken at
+  different resolutions) so the crossing itself is never reported as its own
+  resurgence. For a loop that rolls off monotonically through crossover the
+  quantity is negative by construction, which is why the bar is
+  **<= {RESURGENCE_MAX_DB:g} dB** with no slack in it.
 
   {res_verdict}
 

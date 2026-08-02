@@ -19,6 +19,20 @@ on one side only are reported and excluded from the deltas rather than
 silently dropped: two records taken over different matrices are a fact worth
 seeing, not an error to paper over.
 
+``resurgence_db`` comparability across ``AC_DEC`` (issue #69): as of
+``tb_loop_stability.spice.in``'s fixed-5%-above-crossing scan start, this
+column IS comparable across two records taken at different ``AC_DEC`` on the
+same netlist, to a stated grid-quantization tolerance (see
+``sim/loop-stability/README.md``'s *Comparability across AC_DEC* section) --
+this script prints that tolerance alongside the movement it reports so a
+reader is not left guessing whether a given delta is real. That guarantee
+holds only when BOTH records were minted with the fixed-offset deck; a record
+minted before issue #69 landed used a scan start tied to ``AC_DEC`` itself
+(``f0*10^(1/AC_DEC)``), and comparing it against a post-#69 record will show
+inflated movement on this column that is a definition artifact, not a design
+change -- see ``records/20260802-204343-e912fbd.md`` section 4 for the
+measured scale of that artifact.
+
 Exit codes: 0 the comparison ran (whatever it found), 1 the two records do
 not share a common matrix, 3 a usage/environment problem.
 """
@@ -36,6 +50,14 @@ EXPDIR = HERE.parent
 RECORDS = EXPDIR / "records"
 
 KEY_FIELDS = ("corner_id", "iload_ma", "ceff_uf", "esr_ohm")
+
+# resurgence_db's AC_DEC-invariance tolerance (issue #69) -- must match
+# selftest.py's MAX_INVARIANCE_ERR_DB, which is where this budget is derived
+# and exercised. A per-point movement inside this budget is expected grid
+# quantization near the metric's fixed scan-start offset; a movement beyond
+# it is a signal worth investigating (different AC_DEC on a pre-#69 record,
+# or a genuine change in the loop).
+RESURGENCE_AC_DEC_TOLERANCE_DB = 1.75
 
 
 def _num(tok: str) -> float | None:
@@ -203,6 +225,22 @@ def main() -> int:
     spread("d_gm", "|delta gain margin| ", "dB")
     spread("d_f0_pct", "|delta crossover|   ", "%")
     spread("d_res", "|delta resurgence|  ", "dB")
+
+    res_deltas = [abs(r["d_res"]) for r in rows if r["d_res"] is not None]
+    if res_deltas:
+        worst_res_delta = max(res_deltas)
+        res_comparable = worst_res_delta <= RESURGENCE_AC_DEC_TOLERANCE_DB
+        print(
+            f"  resurgence_db comparability (issue #69): "
+            f"{'COMPARABLE' if res_comparable else 'NOT COMPARABLE'} -- worst "
+            f"movement {worst_res_delta:.3f} dB is "
+            f"{'within' if res_comparable else 'beyond'} the "
+            f"{RESURGENCE_AC_DEC_TOLERANCE_DB:g} dB AC_DEC-invariance "
+            "tolerance (selftest.py's MAX_INVARIANCE_ERR_DB)."
+            + ("" if res_comparable else " Check whether both records were "
+               "minted with the fixed-scan-start deck (post issue #69) and "
+               "at what AC_DEC, before trusting this column's movement.")
+        )
     print()
 
     big = sorted(

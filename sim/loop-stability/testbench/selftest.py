@@ -2,7 +2,7 @@
 """Prove the loop-gain extraction before trusting anything it reports.
 
 Runs ``tb_tian_selftest.spice`` -- a loop built entirely from ideal elements,
-whose loop gain is known in closed form -- and checks five things:
+whose loop gain is known in closed form -- and checks six things:
 
 1. **The dual-injection arithmetic is right.** The extracted
    ``T = (Tv*Ti - 1)/(Tv + Ti + 2)`` must match the analytic
@@ -18,10 +18,10 @@ whose loop gain is known in closed form -- and checks five things:
    the real deck uses to pull out crossover frequency and phase margin must
    agree with the analytic crossover of the same reference loop.
 4. **The gain-resurgence extraction is right** (issue #59, DR-0008). The
-   ``meas ac ... max tdb from=f0*10^(1/dec)`` idiom that reports how far
-   ``|T|`` climbs back above 0 dB after its first 0 dB crossing is checked
-   twice: it must stay **negative** on the monotonic loop above (no false
-   positive -- that loop never returns above unity), and it must recover the
+   ``meas ac ... max tdb from=f0*1.05`` idiom that reports how far ``|T|``
+   climbs back above 0 dB after its first 0 dB crossing is checked twice: it
+   must stay **negative** on the monotonic loop above (no false positive --
+   that loop never returns above unity), and it must recover the
    analytically known peak of a **second** reference loop, built with a
    lightly damped resonance above its first crossing precisely so it does.
 5. **The sweep RESOLUTION policy resolves a high-Q feature** (issue #58).
@@ -42,6 +42,18 @@ whose loop gain is known in closed form -- and checks five things:
    resonance onto the correct 360 deg branch at BOTH resolutions, which is
    the other half of issue #58's question and turns out to be a non-issue
    for a minimum-phase pole pair.
+6. **``resurgence_db`` is comparable across ``AC_DEC``** (issue #69). The
+   scan's start offset used to be one AC-grid step above the crossing
+   (``f0*10^(1/AC_DEC)``), which tied the metric's *value* to the sweep
+   resolution even though the quantity it reports -- ``sup|T|`` over
+   ``(f0, F_STOP]`` -- does not depend on resolution at all: raising the real
+   deck's ``AC_DEC`` from 50 to 400 alone moved ``resurgence_db`` at all 4536
+   matrix points by +0.061...+2.362 dB, with phase margin and crossover
+   essentially unmoved. Now that the offset is a FIXED 5% of f0, the
+   monotonic reference loop above is re-measured at a second ``AC_DEC``
+   (400, the real deck's current default) and its ``resurgence_db`` must
+   agree with the dec-20 value from check 4 to a small, stated,
+   grid-quantization-only tolerance -- the property the old idiom lacked.
 
 No PDK and no design netlist are involved, so this test is a pure statement
 about the *method*. Run it before (or after) ``sweep.py``; it writes nothing.
@@ -71,17 +83,26 @@ WP = 1.0 / (RP * CP)
 RS = 1e5
 RL = 10.0
 CL = 1e-9
+# The fixed fraction above f0 the resurgence scan starts at (issue #69),
+# replacing the old `f0*10^(1/AC_DEC)` grid-tied offset. Must match the
+# literal `let fres... = f0*1.05` idiom in tb_loop_stability.spice.in and
+# tb_tian_selftest.spice. Chosen close to the historical dec-50 grid step
+# (10^(1/50) ~ 4.71%, the resolution every record through
+# 20260802-171044-db620a6 was taken at) and comfortably above the current
+# dec-400 grid step (10^(1/400) ~ 0.577%) -- see tb_loop_stability.spice.in's
+# "gain resurgence" comment for the full derivation.
+RES_START_FRAC = 1.05
 # ... and the second, deliberately resurging reference loop.
 A2 = 100.0
 LL2 = 0.8
 CL2 = 0.2e-12
-# The AC resolution the resurging loop is swept at, which is also the step
-# the resurgence scan starts above the crossing. Deliberately left at the
+# The AC resolution the resurging loop is swept at. Deliberately left at the
 # HISTORICAL dec 50 even though the real deck now runs dec 400 (issue #58):
 # this loop's resonance is placed on a dec-50 grid point so that the sampled
 # and continuous peaks agree, which makes it a check of the extraction's
 # arithmetic. Resolution is loop 3's job, below. (The monotonic loop above
-# keeps its own historical dec 20.)
+# keeps its own historical dec 20, plus a second measurement at dec 400 for
+# the AC_DEC-invariance check, issue #69.)
 DEC2 = 50
 # ... and the third, high-Q grid-blind-spot reference loop (issue #58).
 A3 = 8.0
@@ -135,6 +156,18 @@ MIN_GRIDBLIND_MISS_DB = 3.0
 # bounded by ~0.84 dB (20*log10(sqrt((2*eps*Q)^2+1)), eps = sqrt(10^(1/400))-1);
 # the budget below is set comfortably above that bound.
 MAX_GRIDBLIND_ERR_DB = 1.5
+# resurgence_db, SAME netlist, dec 20 vs dec 400 (issue #69's invariance
+# check). Loop 1's gain falls off steeply right after its crossing (its pole
+# sits close to f0), so even with the scan's start FIXED at a constant
+# fraction of f0, which grid point each resolution happens to land on just
+# above that threshold still matters some: analytically, this loop's
+# dec-20-sampled and dec-400-sampled resurgence (both measured from
+# f0*RES_START_FRAC) differ by ~1.1 dB here. That is grid QUANTIZATION near a
+# fixed threshold -- present at any resolution and bounded by it -- not the
+# AC_DEC-proportional SYSTEMATIC bias the old `f0*10^(1/AC_DEC)` idiom had
+# (which does not shrink as AC_DEC grows; it is the offset itself moving).
+# The budget below is set comfortably above the analytic residual.
+MAX_INVARIANCE_ERR_DB = 1.75
 
 
 def analytic_t(f: float) -> complex:
@@ -166,6 +199,24 @@ def analytic_margins() -> tuple[float, float]:
     if ph > 0:
         ph -= 360.0
     return f0, 180.0 + ph
+
+
+def analytic_invariance() -> tuple[float, float, float]:
+    """(f0, dec-20-sampled resurgence, dec-400-sampled resurgence) of the
+    monotonic reference loop, using the SAME fixed scan-start offset the real
+    deck now uses (issue #69). The two sampled values are expected to agree
+    to a small, grid-quantization-only tolerance -- MAX_INVARIANCE_ERR_DB --
+    unlike the old `f0*10^(1/AC_DEC)` idiom, whose start offset itself moved
+    with AC_DEC.
+    """
+    f0_ref, _pm_ref = analytic_margins()
+
+    def sampled(dec: int) -> float:
+        start = f0_ref * RES_START_FRAC
+        grid = [10 ** (k / float(dec)) for k in range(0, dec * 9 + 1)]
+        return max(20 * math.log10(abs(analytic_t(f))) for f in grid if f >= start)
+
+    return f0_ref, sampled(20), sampled(400)
 
 
 def analytic_t2(f: float) -> complex:
@@ -208,7 +259,8 @@ def analytic_resurgence() -> tuple[float, float, float]:
             hi = mid
     f0 = math.sqrt(lo * hi)
 
-    start = f0 * 10 ** (1.0 / DEC2)
+    # The FIXED scan-start offset (issue #69), not a function of DEC2.
+    start = f0 * RES_START_FRAC
     fine = [10 ** (k / 5000.0) for k in range(0, 5000 * 9 + 1)]
     peak = max(_db2(f) for f in fine if f >= start)
     grid = [10 ** (k / float(DEC2)) for k in range(0, DEC2 * 9 + 1)]
@@ -261,8 +313,11 @@ def analytic_gridblind() -> tuple[float, float, float, float]:
     fine = [10 ** (k / 5000.0) for k in range(0, 5000 * 9 + 1)]
     peak = max(_db3(f) for f in fine if f >= f0 * 10 ** (1.0 / 5000.0))
 
+    # The FIXED scan-start offset (issue #69): the SAME threshold regardless
+    # of which grid ("dec") is sampling it. Only the grid points that fall
+    # at or above that fixed threshold change with `dec`.
     def sampled_peak(dec: int) -> float:
-        start = f0 * 10 ** (1.0 / dec)
+        start = f0 * RES_START_FRAC
         grid = [10 ** (k / float(dec)) for k in range(0, dec * 9 + 1)]
         return max(_db3(f) for f in grid if f >= start)
 
@@ -313,7 +368,9 @@ def parse(text: str):
     gridblind_new = (
         (float(n.group(1)), float(n.group(2)), float(n.group(3))) if n else None
     )
-    return rows, margins, resurging, gridblind_coarse, gridblind_new
+    i = re.search(r"INVARIANCE ac_dec=\S+ f0_hz=(\S+) resurgence_db=(\S+)", text)
+    invariance = (float(i.group(1)), float(i.group(2))) if i else None
+    return rows, margins, resurging, gridblind_coarse, gridblind_new, invariance
 
 
 def main() -> int:
@@ -326,7 +383,7 @@ def main() -> int:
         print("FATAL: selftest deck did not complete:\n" + text[-2000:], file=sys.stderr)
         return 3
 
-    rows, margins, resurging, gridblind_coarse, gridblind_new = parse(text)
+    rows, margins, resurging, gridblind_coarse, gridblind_new, invariance = parse(text)
     max_err_db = max(abs(r[1]) for r in rows)
     max_err_deg = max(abs(r[2]) for r in rows)
     max_naive = max(abs(r[3]) for r in rows)
@@ -383,6 +440,36 @@ def main() -> int:
             "the 0 dB bar (this loop rolls off monotonically, so every point "
             "above its crossing is below unity by construction)",
         )
+
+        _f0_inv_ref, res20_ref, res400_ref = analytic_invariance()
+        if invariance is None:
+            check("resurgence_db AC_DEC invariance (issue #69)", False,
+                  "no INVARIANCE line in the ngspice output")
+        else:
+            f0_400_m, res400_m = invariance
+            check(
+                "meas-extracted resurgence_db at dec 400 matches its own "
+                "analytic dec-400-sampled value (monotonic loop)",
+                abs(res400_m - res400_ref) <= MAX_RESURGENCE_ERR_DB,
+                f"{res400_m:+.4f} dB vs analytic {res400_ref:+.4f} dB "
+                f"({abs(res400_m - res400_ref):.4f} dB error, budget "
+                f"{MAX_RESURGENCE_ERR_DB:g} dB)",
+            )
+            check(
+                "resurgence_db is invariant (to a stated tolerance) across "
+                "AC_DEC on the SAME netlist (issue #69)",
+                abs(res_m - res400_m) <= MAX_INVARIANCE_ERR_DB,
+                f"dec 20 = {res_m:+.4f} dB, dec 400 = {res400_m:+.4f} dB "
+                f"({abs(res_m - res400_m):.4f} dB apart, budget "
+                f"{MAX_INVARIANCE_ERR_DB:g} dB) -- analytically the two "
+                f"grids' own nearest-sample reads differ by "
+                f"{abs(res20_ref - res400_ref):.4f} dB here (GRID "
+                "QUANTIZATION near the fixed threshold, present at any "
+                "resolution and bounded by it), not the AC_DEC-proportional "
+                "SYSTEMATIC bias the old `f0*10^(1/AC_DEC)` idiom had (which "
+                "moved the real deck's resurgence_db at all 4536 matrix "
+                "points, +0.061...+2.362 dB, for the SAME reason)",
+            )
 
     f0_res_ref, peak_ref, peak_grid_ref = analytic_resurgence()
     print(f"\nresurging reference loop: A2={A2:g}, fp={WP / (2 * math.pi):g} Hz, "

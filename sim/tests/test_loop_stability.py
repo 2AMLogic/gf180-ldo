@@ -257,11 +257,12 @@ class TestDeckTemplate(unittest.TestCase):
         self.assertIn("foreach il 0 0.05", deck)
         self.assertIn("foreach es 0.001 0.5", deck)
         # The AC resolution is threaded through, not hard-coded in the deck:
-        # issue #58 made it a parameter of the measurement, and the resurgence
-        # scan's start offset (10^(1/AC_DEC)) has to track it or the metric
-        # silently changes meaning.
+        # issue #58 made it a parameter of the measurement. The resurgence
+        # scan's start offset is deliberately NOT a function of AC_DEC
+        # (issue #69, so resurgence_db stays comparable across records taken
+        # at different resolutions) -- a fixed fraction of f0 instead.
         self.assertIn(f"ac dec {sweep.AC_DEC} 0.01 1e9", deck)
-        self.assertIn(f"let fres = f0*10^(1/{sweep.AC_DEC})", deck)
+        self.assertIn("let fres = f0*1.05", deck)
 
     def test_ac_resolution_resolves_the_q_the_policy_claims(self):
         """`AC_DEC` must deliver the bound issue #58's policy states.
