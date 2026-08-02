@@ -10,21 +10,33 @@ Runs the Tian dual-injection loop-gain testbench
     ESR    in {0.001, 0.05, 0.2, 0.5} ohm
     T      in {-40, 27, 125} degC
     Vin    in {2.97, 3.3, 3.63} V
-    process in {tt, ff, ss, fs, sf}
-    = 3240 loop-gain points
+    process in {tt, ff, ss, fs, sf, res_ff, res_ss}
+    = 4536 loop-gain points
+
+    ``res_ff``/``res_ss`` were added by issue #54: since #51/#56 recompensated
+    the loop as a Type-II gain shelf, ``Rz`` (a ``ppolyf_u_1k`` resistor) sets
+    both the shelf gain and the shelf corner frequency, so it is a first-order
+    compensation parameter rather than a second-order one -- and
+    `sim/devchar/CONCLUSIONS.md` section 2 puts `ppolyf_u_1k`'s process
+    (ff/ss) spread at ~40%, close to the ~17% margin the measured pass/fail
+    boundary in `Rz` leaves. These two corners follow
+    `sim/enable-shutdown/testbench/run.sh`'s existing
+    ``CORNERS="tt ff ss fs sf res_ff res_ss"`` pattern; ``bjt_ff``/``bjt_ss``
+    are omitted here for the same reason enable-shutdown omits them -- this
+    design has no bipolar devices in the loop.
 
 The load x cap x ESR axes are swept *inside* one ngspice deck per PVT point
-(a ``foreach`` loop with ``alter``), so the whole matrix is 45 ngspice
-invocations, not 3240. One raw log per PVT point lands under
+(a ``foreach`` loop with ``alter``), so the whole matrix is 63 ngspice
+invocations, not 4536. One raw log per PVT point lands under
 ``corners/<record-id>/<corner-id>.log`` -- the naming ratified in
 ``sim/README.md`` -- with one ``ROW`` line per (load, cap, ESR) config.
 
 Output, per ``sim/README.md``:
 
     netlist-snapshots/<record-id>.spice        frozen DUT netlist
-    corners/<record-id>/<corner-id>.log        raw ngspice output (45 files)
+    corners/<record-id>/<corner-id>.log        raw ngspice output (63 files)
     corners/<record-id>/<worst>_curve.log      full T(f) curve at the worst point
-    records/<record-id>-matrix.csv             all 3240 points, machine-readable
+    records/<record-id>-matrix.csv             all 4536 points, machine-readable
     records/<record-id>.md                     the append-only summary record
 
 Nothing under ``records/``, ``corners/`` or ``netlist-snapshots/`` is ever
@@ -69,7 +81,7 @@ DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
 ILOADS_A = (0.0, 0.1e-3, 1e-3, 10e-3, 25e-3, 50e-3)
 CEFFS_F = (0.33e-6, 1.0e-6, 4.7e-6)
 ESRS_OHM = (0.001, 0.05, 0.2, 0.5)
-PROCESS_CORNERS = ("tt", "ff", "ss", "fs", "sf")
+PROCESS_CORNERS = ("tt", "ff", "ss", "fs", "sf", "res_ff", "res_ss")
 TEMPS_C = (-40.0, 27.0, 125.0)
 NOMINAL_SUPPLY_V = 3.3
 SUPPLY_TOL = 0.10
@@ -1013,7 +1025,9 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
   - Temperature: {temps_seen} degC
   - Supply: {supplies_seen} V
   - {len(grid)} PVT points x {len(iloads)} load x {len(ceffs)} cap x {len(esrs)} ESR
-    = **{len(rows)} loop-gain points** (the full 3240-point grid DR-0001
+    = **{len(rows)} loop-gain points** (the full
+    {len(PROCESS_CORNERS) * len(TEMPS_C) * 3 * len(ILOADS_A) * len(CEFFS_F) * len(ESRS_OHM)}-point
+    grid DR-0001 (plus issue #54's `res_ff`/`res_ss` process corners)
     enumerates, when run with the defaults).{subset_md}
 - **Operating conditions**:
   - Load current: {', '.join(fmt_ma(v) for v in iloads)}, modelled as an ideal DC

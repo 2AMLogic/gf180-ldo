@@ -206,15 +206,22 @@ class TestRatifiedMatrix(unittest.TestCase):
         self.assertEqual(sweep.ILOADS_A, (0.0, 0.1e-3, 1e-3, 10e-3, 25e-3, 50e-3))
         self.assertEqual(sweep.CEFFS_F, (0.33e-6, 1.0e-6, 4.7e-6))
         self.assertEqual(sweep.ESRS_OHM, (0.001, 0.05, 0.2, 0.5))
-        self.assertEqual(sweep.PROCESS_CORNERS, ("tt", "ff", "ss", "fs", "sf"))
+        # tt/ff/ss/fs/sf is DR-0001's original MOS-only process axis; issue #54
+        # added res_ff/res_ss because #51/#56's Type-II gain-shelf compensation
+        # made Rz (a ppolyf_u_1k resistor) a first-order parameter of the
+        # result, not a second-order one.
+        self.assertEqual(
+            sweep.PROCESS_CORNERS,
+            ("tt", "ff", "ss", "fs", "sf", "res_ff", "res_ss"),
+        )
         self.assertEqual(sweep.TEMPS_C, (-40.0, 27.0, 125.0))
 
-    def test_default_grid_is_the_3240_points_dr0001_enumerates(self):
+    def test_default_grid_is_the_4536_points_dr0001_plus_issue54_enumerates(self):
         n = (
             len(sweep.PROCESS_CORNERS) * len(sweep.TEMPS_C) * 3  # 3 supply points
             * len(sweep.ILOADS_A) * len(sweep.CEFFS_F) * len(sweep.ESRS_OHM)
         )
-        self.assertEqual(n, 3240)
+        self.assertEqual(n, 4536)
 
     def test_the_zero_esr_stand_in_is_present(self):
         # DR-0001 makes the "ESR -> 0" point required, not optional: it is
