@@ -24,7 +24,9 @@ testbench suite is #12, mismatch Monte Carlo is #13.
 > matrix re-measured. **§6.4's "2689/3240 passing" is superseded twice over:
 > once as not being a stability result at all, and once by the real number,
 > 785/3240.** The verified load range is 0.1 mA (with a residual 48-point
-> phase-margin gap of its own), not 1–50 mA.
+> phase-margin gap of its own), not 1–50 mA. **§6.8** records a negative
+> result against the first candidate DR-0009 named to close that gap — read
+> it before re-trying a super-source-follower sense device around `Mbuf`.
 >
 > - `sim/amp-openloop/records/20260802-095514-c828e73.md` — `peak_excess_db`
 >   now −0.36…−0.13 dB at **81 of 81** points (was +5.4…+12.2 at 81 of 81).
@@ -34,8 +36,9 @@ testbench suite is #12, mismatch Monte Carlo is #13.
 >   loop, not this cell — see §6.7.
 > - `sim/loop-stability/records/20260802-095235-c828e73.md` — 785/3240, and
 >   **0 of 3240** points show gain resurgence above crossover (was 401).
-> - `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md` and
->   `spec/decision-records/DR-0009-shelf-corner-vs-crossover-frontier.md`.
+> - `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md`,
+>   `spec/decision-records/DR-0009-shelf-corner-vs-crossover-frontier.md` and
+>   `spec/decision-records/DR-0010-buffer-sense-device-negative-result.md`.
 
 ---
 
@@ -685,6 +688,42 @@ corners — evidence *for* this section's diagnosis, since the shift tracks
 the same 0.6–0.9 MHz resonance this fix damps, not a new defect — with
 `sim/startup/` and `sim/current-limit/` spot-checked and unmoved), and
 `sim/current-limit/records/20260802-105338-c828e73.md` (bit-identical).
+
+### 6.8 A direct super-source-follower sense device around `Mbuf` — negative result (issue #53)
+
+DR-0009 named a super source follower around `Mbuf` — local feedback that
+buys `gm·ro` of output impedance for roughly one extra bias branch — as the
+first candidate to try for §6.7's gap. It was tried, twice, against `design/`
+as committed here, and neither variant is in this schematic:
+
+- **Sense gate tied to `OUT` directly** (`Msfb`: NMOS, gate `OUT`, source
+  `VSS`, drain `BG`, in parallel with `M2N`) gives real but small phase-
+  margin improvement (32.37° → 37.09–37.55° at the worst target point,
+  `ss`/−40 °C/3.63 V/0.1 mA/0.33 µF) that **plateaus** — doubling the sense
+  device's current past a point buys under 2° more, because `OUT`'s fixed
+  ≈1.8 V DC level pins the sense device's `Vov` and therefore its `gm`/`Id`
+  efficiency, so more gm can only be bought at the same rate a plain
+  follower burns it. It also **measurably spends the PSRR budget's last
+  margin**: the full 81-point `sim/amp-openloop/` grid (not just the
+  worst-corner spot check used while sizing it) shows `gain_1k_db` — the
+  1 kHz amp gain §4's PSRR row rides on — dropping to 53.13 dB at
+  `ss`/125 °C/2.97 V against the 53.5 dB floor, a corner outside the cold/
+  light-load cluster this lever targets.
+- **Sense gate AC-coupled from `OUT`, DC-referenced off `NBIAS`** (to avoid
+  the first variant's DC-gain interaction) preserves `a0_db` exactly but
+  makes phase margin **worse than the unmodified baseline** — 12.64° against
+  32.37° — because the DC reference resistor leaks the sensed `OUT` signal
+  back into `NBIAS`, the shared bias node every other device in the cell
+  (`MTAIL`, `M2N`, `Mpgn`, `MB1`) mirrors from, corrupting the whole
+  amplifier's small-signal behaviour rather than adding a local loop around
+  `Mbuf` alone.
+
+Full numbers, sizes, and what the next attempt should do differently (a
+dedicated, non-shared bias reference for the sense device, or DR-0009's
+Candidate 2 — adaptive biasing from a pass-device sense replica — instead):
+`spec/decision-records/DR-0010-buffer-sense-device-negative-result.md`. No
+`design/` netlist changed for this section; both variants were built,
+measured with `--no-write` sweeps, and reverted.
 
 ## 7. Handoffs
 
