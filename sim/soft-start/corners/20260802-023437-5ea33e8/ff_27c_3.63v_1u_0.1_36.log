@@ -1,0 +1,499 @@
+Warning: m=xx on .subckt line will override multiplier m hierarchy!
+
+
+Note: Compatibility modes selected: hs a
+
+
+Circuit: * soft-start -- controlled output ramp at enable, for ldo_core with
+
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+Initial Transient Solution
+--------------------------
+
+Node                                   Voltage
+----                                   -------
+vin                                       3.63
+en                                           0
+vout                               3.72288e-08
+pg                                        3.63
+xdut.fb                            2.48192e-08
+xdut.vref                                  1.2
+xdut.xerramp.nbias                 2.06212e-09
+xdut.xerramp.xrbias.11             2.92188e-09
+xdut.xerramp.xrbias.21             8.16499e-06
+xdut.xerramp.rbt                   8.16585e-06
+xdut.xerramp.tail                     0.875866
+xdut.xerramp.nd                           3.63
+xdut.xerramp.n1                           3.63
+xdut.xerramp.nz                           3.63
+xdut.xerramp.xrz.11                       3.63
+xdut.xerramp.xrz.21                       3.63
+eout                                      3.63
+xdut.bg                                   3.63
+xdut.xerramp.nbp                          3.63
+xdut.xerramp.xrbufb.11                    3.63
+xdut.xerramp.xrbufb.21                    3.63
+xdut.xerramp.enb                          3.63
+xdut.xilimit.isns                  3.85248e-08
+xdut.xilimit.xrsns.11              3.72633e-08
+xdut.xilimit.xrsns.21              3.84903e-08
+xdut.xilimit.pb                        3.42168
+xdut.xilimit.vth                   6.82098e-07
+xdut.xilimit.xrref.11               3.7542e-08
+xdut.xilimit.xrref.21              6.81785e-07
+xdut.xilimit.bt                            1.2
+xdut.xilimit.bb                            1.2
+xdut.xilimit.xrbias.11                     1.2
+xdut.xilimit.xrbias.21                     1.2
+xdut.xilimit.cn                      0.0614215
+xdut.xilimit.tail                        0.993
+xdut.xilimit.co                    8.05003e-10
+xdut.xilimit.xrtail.11                   0.993
+xdut.xilimit.xrtail.21                0.993001
+xdut.xilimit.tailp                    0.993001
+xdut.xilimit.enb                          3.63
+xdut.xilimit.clg                          3.63
+xdut.xilimit.xrl2.11                      3.63
+xdut.xilimit.xrl2.21                      3.63
+xdut.xsoftstart.bt                         1.2
+xdut.xsoftstart.bb                     1.19999
+xdut.xsoftstart.xrss_bias.11           1.19999
+xdut.xsoftstart.xrss_bias.21               1.2
+xdut.xsoftstart.ssr                1.31979e-08
+xdut.xsoftstart.enb                       3.63
+xdut.xsoftstart.tailp                 0.993037
+xdut.xsoftstart.tail                  0.993033
+xdut.xsoftstart.xrtail_ss.11          0.993033
+xdut.xsoftstart.xrtail_ss.21          0.993037
+xdut.xsoftstart.cn                   0.0614446
+xdut.xsoftstart.co                   0.0614448
+xdut.xsoftstart.lp                 3.18327e-05
+xdut.xsoftstart.clg                1.41391e-09
+xdut.xsoftstart.xrl2_ss.11         1.64746e-09
+xdut.xsoftstart.xrl2_ss.21         3.18324e-05
+n_esr                              3.72288e-08
+n_cap                                        0
+ln                                           0
+v.xdut.xsoftstart.vbsense_ss#branch     3.68346e-12
+v.xdut.xilimit.vbsense#branch      3.68347e-12
+vlmeas#branch                      1.03413e-09
+vcmeas#branch                                0
+vloop#branch                       5.36634e-11
+v.xdut.vref1#branch               -7.36693e-12
+ven#branch                                   0
+vin#branch                        -1.17336e-09
+
+ Reference value :  0.00000e+00 Reference value :  3.62394e-04 Reference value :  8.88394e-04 Reference value :  1.34739e-03 Reference value :  1.82339e-03 Reference value :  2.30839e-03 Reference value :  2.78039e-03 Reference value :  2.87520e-03 Reference value :  2.89463e-03 Reference value :  2.91716e-03 Reference value :  2.93570e-03 Reference value :  2.96091e-03 Reference value :  2.97899e-03 Reference value :  2.99486e-03 Reference value :  3.00954e-03 Reference value :  3.02715e-03 Reference value :  3.04728e-03 Reference value :  3.06085e-03 Reference value :  3.07614e-03 Reference value :  3.09882e-03 Reference value :  3.12240e-03 Reference value :  3.14683e-03 Reference value :  3.16311e-03 Reference value :  3.17962e-03 Reference value :  3.19504e-03 Reference value :  3.20646e-03 Reference value :  3.21882e-03 Reference value :  3.23243e-03 Reference value :  3.24549e-03 Reference value :  3.26026e-03 Reference value :  3.27269e-03 Reference value :  3.29078e-03 Reference value :  3.30668e-03 Reference value :  3.32414e-03 Reference value :  3.33928e-03 Reference value :  3.35252e-03 Reference value :  3.36568e-03 Reference value :  3.37749e-03 Reference value :  3.39010e-03 Reference value :  3.40356e-03 Reference value :  3.41615e-03 Reference value :  3.42808e-03 Reference value :  3.44010e-03 Reference value :  3.45393e-03 Reference value :  3.46712e-03 Reference value :  3.47966e-03 Reference value :  3.49585e-03 Reference value :  3.50746e-03 Reference value :  3.52214e-03 Reference value :  3.53334e-03 Reference value :  3.54659e-03 Reference value :  3.56061e-03 Reference value :  3.57206e-03 Reference value :  3.58466e-03 Reference value :  3.59633e-03 Reference value :  3.61096e-03 Reference value :  3.62456e-03 Reference value :  3.63981e-03 Reference value :  3.65492e-03 Reference value :  3.67054e-03 Reference value :  3.68307e-03 Reference value :  3.69650e-03 Reference value :  3.70904e-03 Reference value :  3.72386e-03 Reference value :  3.73806e-03 Reference value :  3.75093e-03 Reference value :  3.76447e-03 Reference value :  3.77671e-03 Reference value :  3.78893e-03 Reference value :  3.79986e-03 Reference value :  3.80944e-03 Reference value :  3.82202e-03 Reference value :  3.83132e-03 Reference value :  3.84231e-03 Reference value :  3.85526e-03 Reference value :  3.86876e-03 Reference value :  3.87988e-03 Reference value :  3.89102e-03 Reference value :  3.90700e-03 Reference value :  3.91915e-03 Reference value :  3.93519e-03 Reference value :  3.94848e-03 Reference value :  3.96404e-03 Reference value :  3.97966e-03 Reference value :  3.99719e-03 Reference value :  4.01104e-03 Reference value :  4.02634e-03 Reference value :  4.03640e-03 Reference value :  4.04720e-03 Reference value :  4.05839e-03 Reference value :  4.07355e-03 Reference value :  4.08602e-03 Reference value :  4.09868e-03 Reference value :  4.11168e-03 Reference value :  4.12382e-03 Reference value :  4.13657e-03 Reference value :  4.15040e-03 Reference value :  4.16715e-03 Reference value :  4.18251e-03 Reference value :  4.19646e-03 Reference value :  4.20946e-03 Reference value :  4.22299e-03 Reference value :  4.23719e-03 Reference value :  4.25157e-03 Reference value :  4.26367e-03 Reference value :  4.27582e-03 Reference value :  4.28797e-03 Reference value :  4.29982e-03 Reference value :  4.31636e-03 Reference value :  4.32878e-03 Reference value :  4.34205e-03 Reference value :  4.35368e-03 Reference value :  4.36641e-03 Reference value :  4.37739e-03 Reference value :  4.38898e-03 Reference value :  4.40103e-03 Reference value :  4.41232e-03 Reference value :  4.42347e-03 Reference value :  4.43624e-03 Reference value :  4.44914e-03 Reference value :  4.46393e-03 Reference value :  4.47801e-03 Reference value :  4.49485e-03 Reference value :  4.50819e-03 Reference value :  4.52127e-03 Reference value :  4.53550e-03 Reference value :  4.55234e-03 Reference value :  4.56731e-03 Reference value :  4.58120e-03 Reference value :  4.59559e-03 Reference value :  4.61270e-03 Reference value :  4.62470e-03 Reference value :  4.63847e-03 Reference value :  4.65042e-03 Reference value :  4.66451e-03 Reference value :  4.67933e-03 Reference value :  4.69109e-03 Reference value :  4.70682e-03 Reference value :  4.71801e-03 Reference value :  4.73032e-03 Reference value :  4.74235e-03 Reference value :  4.75683e-03 Reference value :  4.76879e-03 Reference value :  4.77861e-03 Reference value :  4.79133e-03 Reference value :  4.80233e-03 Reference value :  4.81567e-03 Reference value :  4.82886e-03 Reference value :  4.84266e-03 Reference value :  4.85825e-03 Reference value :  4.87308e-03 Reference value :  4.88678e-03 Reference value :  4.89967e-03 Reference value :  4.91355e-03 Reference value :  4.92917e-03 Reference value :  4.94307e-03 Reference value :  4.95437e-03 Reference value :  4.96796e-03 Reference value :  4.98160e-03 Reference value :  4.99335e-03 Reference value :  5.01052e-03 Reference value :  5.02306e-03 Reference value :  5.03689e-03 Reference value :  5.05117e-03 Reference value :  5.06529e-03 Reference value :  5.07845e-03 Reference value :  5.09244e-03 Reference value :  5.10371e-03 Reference value :  5.11925e-03 Reference value :  5.13514e-03 Reference value :  5.14853e-03 Reference value :  5.16268e-03 Reference value :  5.17783e-03 Reference value :  5.19190e-03 Reference value :  5.20716e-03 Reference value :  5.22332e-03 Reference value :  5.23886e-03 Reference value :  5.25465e-03 Reference value :  5.26948e-03 Reference value :  5.28441e-03 Reference value :  5.29670e-03 Reference value :  5.31420e-03 Reference value :  5.32896e-03 Reference value :  5.34067e-03 Reference value :  5.35445e-03 Reference value :  5.36681e-03 Reference value :  5.37983e-03 Reference value :  5.39150e-03 Reference value :  5.40664e-03 Reference value :  5.42038e-03 Reference value :  5.43580e-03 Reference value :  5.44903e-03 Reference value :  5.46087e-03 Reference value :  5.47229e-03 Reference value :  5.48413e-03 Reference value :  5.49889e-03 Reference value :  5.51016e-03 Reference value :  5.52122e-03 Reference value :  5.53611e-03 Reference value :  5.54997e-03 Reference value :  5.55981e-03 Reference value :  5.57344e-03 Reference value :  5.58469e-03 Reference value :  5.59652e-03 Reference value :  5.61152e-03 Reference value :  5.62684e-03 Reference value :  5.63753e-03 Reference value :  5.64950e-03 Reference value :  5.66387e-03 Reference value :  5.67836e-03 Reference value :  5.69151e-03 Reference value :  5.70452e-03 Reference value :  5.71566e-03 Reference value :  5.73156e-03 Reference value :  5.74517e-03 Reference value :  5.75973e-03 Reference value :  5.77610e-03 Reference value :  5.79165e-03 Reference value :  5.80961e-03 Reference value :  5.82484e-03 Reference value :  5.83953e-03 Reference value :  5.85635e-03 Reference value :  5.87244e-03 Reference value :  5.88744e-03 Reference value :  5.90240e-03 Reference value :  5.92300e-03 Reference value :  5.94266e-03 Reference value :  5.96146e-03 Reference value :  5.97675e-03 Reference value :  5.99350e-03 Reference value :  6.00872e-03 Reference value :  6.02455e-03 Reference value :  6.04009e-03 Reference value :  6.05534e-03 Reference value :  6.07002e-03 Reference value :  6.08499e-03 Reference value :  6.10075e-03 Reference value :  6.11515e-03 Reference value :  6.12964e-03 Reference value :  6.14042e-03 Reference value :  6.15436e-03 Reference value :  6.16440e-03 Reference value :  6.17863e-03 Reference value :  6.19303e-03 Reference value :  6.20688e-03 Reference value :  6.21759e-03 Reference value :  6.22862e-03 Reference value :  6.23887e-03 Reference value :  6.25026e-03 Reference value :  6.26077e-03 Reference value :  6.27491e-03 Reference value :  6.29073e-03 Reference value :  6.30717e-03 Reference value :  6.32422e-03 Reference value :  6.33813e-03 Reference value :  6.35312e-03 Reference value :  6.36444e-03 Reference value :  6.37748e-03 Reference value :  6.38980e-03 Reference value :  6.40141e-03 Reference value :  6.41447e-03 Reference value :  6.42442e-03 Reference value :  6.43959e-03 Reference value :  6.45082e-03 Reference value :  6.46870e-03 Reference value :  6.48418e-03 Reference value :  6.49948e-03 Reference value :  6.51394e-03 Reference value :  6.52686e-03 Reference value :  6.53926e-03 Reference value :  6.55331e-03 Reference value :  6.56739e-03 Reference value :  6.58009e-03 Reference value :  6.59307e-03 Reference value :  6.61071e-03 Reference value :  6.62566e-03 Reference value :  6.64003e-03 Reference value :  6.65705e-03 Reference value :  6.67104e-03 Reference value :  6.68542e-03 Reference value :  6.70246e-03 Reference value :  6.71815e-03 Reference value :  6.73129e-03 Reference value :  6.74604e-03 Reference value :  6.76255e-03 Reference value :  6.77816e-03 Reference value :  6.79457e-03 Reference value :  6.80958e-03 Reference value :  6.81982e-03 Reference value :  6.83604e-03 Reference value :  6.84892e-03 Reference value :  6.86451e-03 Reference value :  6.87844e-03 Reference value :  6.89287e-03 Reference value :  6.91814e-03 Reference value :  6.94441e-03 Reference value :  6.96180e-03 Reference value :  6.97905e-03 Reference value :  6.99658e-03 Reference value :  7.01511e-03 Reference value :  7.02868e-03 Reference value :  7.04265e-03 Reference value :  7.05740e-03 Reference value :  7.07117e-03 Reference value :  7.08501e-03 Reference value :  7.09547e-03 Reference value :  7.10745e-03 Reference value :  7.11972e-03 Reference value :  7.13246e-03 Reference value :  7.14838e-03 Reference value :  7.16079e-03 Reference value :  7.17218e-03 Reference value :  7.18739e-03 Reference value :  7.20183e-03 Reference value :  7.21642e-03 Reference value :  7.23221e-03 Reference value :  7.24858e-03 Reference value :  7.26251e-03 Reference value :  7.27736e-03 Reference value :  7.29078e-03 Reference value :  7.30413e-03 Reference value :  7.32087e-03 Reference value :  7.33885e-03 Reference value :  7.35173e-03 Reference value :  7.36375e-03 Reference value :  7.37526e-03 Reference value :  7.39018e-03 Reference value :  7.40469e-03 Reference value :  7.41561e-03 Reference value :  7.43017e-03 Reference value :  7.44347e-03 Reference value :  7.45781e-03 Reference value :  7.46936e-03 Reference value :  7.48779e-03 Reference value :  7.49773e-03 Reference value :  7.50964e-03 Reference value :  7.52210e-03 Reference value :  7.53999e-03 Reference value :  7.55451e-03 Reference value :  7.57125e-03 Reference value :  7.58886e-03 Reference value :  7.60424e-03 Reference value :  7.61944e-03 Reference value :  7.63120e-03 Reference value :  7.64603e-03 Reference value :  7.65907e-03 Reference value :  7.67614e-03 Reference value :  7.69077e-03 Reference value :  7.70496e-03 Reference value :  7.72203e-03 Reference value :  7.73727e-03 Reference value :  7.75329e-03 Reference value :  7.76312e-03 Reference value :  7.77577e-03 Reference value :  7.79257e-03 Reference value :  7.80750e-03 Reference value :  7.82214e-03 Reference value :  7.83717e-03 Reference value :  7.85169e-03 Reference value :  7.86851e-03 Reference value :  7.88663e-03 Reference value :  7.90366e-03 Reference value :  7.92016e-03 Reference value :  7.93640e-03 Reference value :  7.95006e-03 Reference value :  7.96451e-03 Reference value :  7.97908e-03 Reference value :  7.99623e-03 Reference value :  8.27346e-03 Reference value :  8.79446e-03ft_polyfit @ 10870 failed
+ft_polyfit @ 11602 failed
+ft_polyfit @ 12727 failed
+ft_polyfit @ 14369 failed
+ft_polyfit @ 14370 failed
+ft_polyfit @ 14371 failed
+ft_polyfit @ 14372 failed
+ft_polyfit @ 14908 failed
+ft_polyfit @ 15884 failed
+ft_polyfit @ 18957 failed
+ft_polyfit @ 18959 failed
+ft_polyfit @ 21070 failed
+ft_polyfit @ 21090 failed
+ft_polyfit @ 21214 failed
+ft_polyfit @ 21646 failed
+ft_polyfit @ 21815 failed
+ft_polyfit @ 21816 failed
+ft_polyfit @ 23067 failed
+ft_polyfit @ 25098 failed
+ft_polyfit @ 25103 failed
+ft_polyfit @ 25441 failed
+ft_polyfit @ 26107 failed
+ft_polyfit @ 26533 failed
+ft_polyfit @ 26918 failed
+ft_polyfit @ 27030 failed
+ft_polyfit @ 27032 failed
+ft_polyfit @ 27034 failed
+ft_polyfit @ 27036 failed
+ft_polyfit @ 27125 failed
+ft_polyfit @ 27126 failed
+ft_polyfit @ 27321 failed
+ft_polyfit @ 27607 failed
+ft_polyfit @ 27770 failed
+ft_polyfit @ 27771 failed
+ft_polyfit @ 27773 failed
+ft_polyfit @ 27789 failed
+ft_polyfit @ 27791 failed
+ft_polyfit @ 27946 failed
+ft_polyfit @ 28173 failed
+ft_polyfit @ 28260 failed
+ft_polyfit @ 28261 failed
+ft_polyfit @ 28294 failed
+ft_polyfit @ 28399 failed
+ft_polyfit @ 28407 failed
+ft_polyfit @ 28408 failed
+ft_polyfit @ 29285 failed
+ft_polyfit @ 29287 failed
+ft_polyfit @ 29492 failed
+ft_polyfit @ 29594 failed
+ft_polyfit @ 29731 failed
+ft_polyfit @ 29744 failed
+ft_polyfit @ 29868 failed
+ft_polyfit @ 29873 failed
+ft_polyfit @ 29875 failed
+ft_polyfit @ 29938 failed
+ft_polyfit @ 30021 failed
+ft_polyfit @ 30022 failed
+ft_polyfit @ 30024 failed
+ft_polyfit @ 30251 failed
+ft_polyfit @ 30313 failed
+ft_polyfit @ 30895 failed
+ft_polyfit @ 30897 failed
+ft_polyfit @ 31141 failed
+ft_polyfit @ 31143 failed
+ft_polyfit @ 31558 failed
+ft_polyfit @ 32255 failed
+ft_polyfit @ 32256 failed
+ft_polyfit @ 32260 failed
+ft_polyfit @ 32267 failed
+ft_polyfit @ 32287 failed
+ft_polyfit @ 32540 failed
+ft_polyfit @ 32547 failed
+ft_polyfit @ 32639 failed
+ft_polyfit @ 32974 failed
+ft_polyfit @ 32976 failed
+ft_polyfit @ 32978 failed
+ft_polyfit @ 32979 failed
+ft_polyfit @ 33011 failed
+ft_polyfit @ 33123 failed
+ft_polyfit @ 33169 failed
+ft_polyfit @ 33170 failed
+ft_polyfit @ 33181 failed
+ft_polyfit @ 33378 failed
+ft_polyfit @ 33389 failed
+ft_polyfit @ 33583 failed
+ft_polyfit @ 33586 failed
+ft_polyfit @ 33596 failed
+ft_polyfit @ 33603 failed
+ft_polyfit @ 33605 failed
+ft_polyfit @ 33993 failed
+ft_polyfit @ 34069 failed
+ft_polyfit @ 34190 failed
+ft_polyfit @ 34191 failed
+ft_polyfit @ 34199 failed
+ft_polyfit @ 34200 failed
+ft_polyfit @ 34331 failed
+ft_polyfit @ 34341 failed
+ft_polyfit @ 34342 failed
+ft_polyfit @ 34416 failed
+ft_polyfit @ 34464 failed
+ft_polyfit @ 34829 failed
+ft_polyfit @ 34836 failed
+ft_polyfit @ 35001 failed
+ft_polyfit @ 35003 failed
+ft_polyfit @ 35042 failed
+ft_polyfit @ 35096 failed
+ft_polyfit @ 35168 failed
+ft_polyfit @ 35169 failed
+ft_polyfit @ 35207 failed
+ft_polyfit @ 35290 failed
+ft_polyfit @ 35331 failed
+ft_polyfit @ 35332 failed
+ft_polyfit @ 35336 failed
+ft_polyfit @ 35421 failed
+ft_polyfit @ 36063 failed
+ft_polyfit @ 36983 failed
+ft_polyfit @ 36985 failed
+ft_polyfit @ 37010 failed
+ft_polyfit @ 37038 failed
+ft_polyfit @ 37199 failed
+ft_polyfit @ 37244 failed
+ft_polyfit @ 37245 failed
+ft_polyfit @ 37246 failed
+ft_polyfit @ 37247 failed
+ft_polyfit @ 37248 failed
+ft_polyfit @ 37249 failed
+ft_polyfit @ 37255 failed
+ft_polyfit @ 37256 failed
+ft_polyfit @ 37274 failed
+ft_polyfit @ 37275 failed
+ft_polyfit @ 37276 failed
+ft_polyfit @ 37278 failed
+ft_polyfit @ 37279 failed
+ft_polyfit @ 37414 failed
+ft_polyfit @ 37627 failed
+ft_polyfit @ 37821 failed
+ft_polyfit @ 38022 failed
+ft_polyfit @ 38030 failed
+ft_polyfit @ 38032 failed
+ft_polyfit @ 38033 failed
+ft_polyfit @ 38431 failed
+ft_polyfit @ 38486 failed
+ft_polyfit @ 38488 failed
+ft_polyfit @ 38538 failed
+ft_polyfit @ 38540 failed
+ft_polyfit @ 38541 failed
+ft_polyfit @ 38549 failed
+ft_polyfit @ 38551 failed
+ft_polyfit @ 38557 failed
+ft_polyfit @ 38559 failed
+ft_polyfit @ 38560 failed
+ft_polyfit @ 38616 failed
+ft_polyfit @ 38618 failed
+ft_polyfit @ 38676 failed
+ft_polyfit @ 38682 failed
+ft_polyfit @ 38713 failed
+ft_polyfit @ 38717 failed
+ft_polyfit @ 38719 failed
+ft_polyfit @ 38721 failed
+ft_polyfit @ 38839 failed
+ft_polyfit @ 38920 failed
+ft_polyfit @ 38924 failed
+ft_polyfit @ 39070 failed
+ft_polyfit @ 39072 failed
+ft_polyfit @ 39074 failed
+ft_polyfit @ 39088 failed
+ft_polyfit @ 39089 failed
+ft_polyfit @ 39090 failed
+ft_polyfit @ 39125 failed
+ft_polyfit @ 39127 failed
+ft_polyfit @ 39237 failed
+ft_polyfit @ 39271 failed
+ft_polyfit @ 39307 failed
+ft_polyfit @ 39456 failed
+ft_polyfit @ 39457 failed
+ft_polyfit @ 39463 failed
+ft_polyfit @ 39493 failed
+ft_polyfit @ 39495 failed
+ft_polyfit @ 39510 failed
+ft_polyfit @ 39527 failed
+ft_polyfit @ 39528 failed
+ft_polyfit @ 39588 failed
+ft_polyfit @ 39589 failed
+ft_polyfit @ 39710 failed
+ft_polyfit @ 39715 failed
+ft_polyfit @ 39717 failed
+ft_polyfit @ 39724 failed
+ft_polyfit @ 40193 failed
+ft_polyfit @ 40422 failed
+ft_polyfit @ 40592 failed
+ft_polyfit @ 40628 failed
+ft_polyfit @ 40638 failed
+ft_polyfit @ 40639 failed
+ft_polyfit @ 40747 failed
+ft_polyfit @ 40748 failed
+ft_polyfit @ 40812 failed
+ft_polyfit @ 40898 failed
+ft_polyfit @ 41010 failed
+ft_polyfit @ 41154 failed
+ft_polyfit @ 41156 failed
+ft_polyfit @ 41157 failed
+ft_polyfit @ 41237 failed
+ft_polyfit @ 41271 failed
+ft_polyfit @ 41272 failed
+ft_polyfit @ 41273 failed
+ft_polyfit @ 41274 failed
+ft_polyfit @ 41275 failed
+ft_polyfit @ 41280 failed
+ft_polyfit @ 41286 failed
+ft_polyfit @ 41290 failed
+ft_polyfit @ 41292 failed
+ft_polyfit @ 41309 failed
+ft_polyfit @ 41335 failed
+ft_polyfit @ 41366 failed
+ft_polyfit @ 41402 failed
+ft_polyfit @ 41403 failed
+ft_polyfit @ 41469 failed
+ft_polyfit @ 41471 failed
+ft_polyfit @ 41472 failed
+ft_polyfit @ 41486 failed
+ft_polyfit @ 41521 failed
+ft_polyfit @ 41592 failed
+ft_polyfit @ 41596 failed
+ft_polyfit @ 41598 failed
+ft_polyfit @ 41604 failed
+ft_polyfit @ 41635 failed
+ft_polyfit @ 41637 failed
+ft_polyfit @ 41675 failed
+ft_polyfit @ 41677 failed
+ft_polyfit @ 41679 failed
+ft_polyfit @ 41737 failed
+ft_polyfit @ 41951 failed
+ft_polyfit @ 42002 failed
+ft_polyfit @ 42003 failed
+ft_polyfit @ 42004 failed
+ft_polyfit @ 42041 failed
+ft_polyfit @ 42093 failed
+ft_polyfit @ 42094 failed
+ft_polyfit @ 42095 failed
+ft_polyfit @ 42128 failed
+ft_polyfit @ 42130 failed
+ft_polyfit @ 42131 failed
+ft_polyfit @ 42159 failed
+ft_polyfit @ 42161 failed
+ft_polyfit @ 42210 failed
+ft_polyfit @ 42466 failed
+ft_polyfit @ 42481 failed
+ft_polyfit @ 42513 failed
+ft_polyfit @ 42514 failed
+ft_polyfit @ 42520 failed
+ft_polyfit @ 42521 failed
+ft_polyfit @ 42522 failed
+ft_polyfit @ 42570 failed
+ft_polyfit @ 42814 failed
+ft_polyfit @ 42816 failed
+ft_polyfit @ 43032 failed
+ft_polyfit @ 43294 failed
+ft_polyfit @ 43415 failed
+ft_polyfit @ 43495 failed
+ft_polyfit @ 43741 failed
+ft_polyfit @ 43827 failed
+ft_polyfit @ 43833 failed
+ft_polyfit @ 43855 failed
+ft_polyfit @ 43856 failed
+ft_polyfit @ 43860 failed
+ft_polyfit @ 43862 failed
+ft_polyfit @ 44188 failed
+ft_polyfit @ 44192 failed
+ft_polyfit @ 44193 failed
+ft_polyfit @ 44232 failed
+ft_polyfit @ 44233 failed
+ft_polyfit @ 44235 failed
+ft_polyfit @ 44251 failed
+ft_polyfit @ 44284 failed
+ft_polyfit @ 44286 failed
+ft_polyfit @ 44340 failed
+ft_polyfit @ 44341 failed
+ft_polyfit @ 44343 failed
+ft_polyfit @ 44350 failed
+ft_polyfit @ 44358 failed
+ft_polyfit @ 44361 failed
+ft_polyfit @ 44598 failed
+ft_polyfit @ 44606 failed
+ft_polyfit @ 44607 failed
+ft_polyfit @ 44793 failed
+ft_polyfit @ 44794 failed
+ft_polyfit @ 44802 failed
+ft_polyfit @ 44807 failed
+ft_polyfit @ 44831 failed
+ft_polyfit @ 44832 failed
+ft_polyfit @ 44891 failed
+ft_polyfit @ 44893 failed
+ft_polyfit @ 45049 failed
+ft_polyfit @ 45051 failed
+ft_polyfit @ 45055 failed
+ft_polyfit @ 45056 failed
+ft_polyfit @ 45058 failed
+ft_polyfit @ 45062 failed
+ft_polyfit @ 45064 failed
+ft_polyfit @ 45074 failed
+ft_polyfit @ 45076 failed
+ft_polyfit @ 45190 failed
+ft_polyfit @ 45228 failed
+ft_polyfit @ 45230 failed
+ft_polyfit @ 45231 failed
+ft_polyfit @ 45232 failed
+ft_polyfit @ 45238 failed
+ft_polyfit @ 45239 failed
+ft_polyfit @ 45241 failed
+ft_polyfit @ 45243 failed
+ft_polyfit @ 45244 failed
+ft_polyfit @ 45267 failed
+ft_polyfit @ 45270 failed
+ft_polyfit @ 45293 failed
+ft_polyfit @ 45297 failed
+ft_polyfit @ 45744 failed
+ft_polyfit @ 45855 failed
+ft_polyfit @ 45944 failed
+ft_polyfit @ 46308 failed
+ft_polyfit @ 46362 failed
+ft_polyfit @ 46543 failed
+ft_polyfit @ 46645 failed
+ft_polyfit @ 46725 failed
+ft_polyfit @ 46795 failed
+ft_polyfit @ 46944 failed
+ft_polyfit @ 46946 failed
+ft_polyfit @ 46948 failed
+ft_polyfit @ 46995 failed
+ft_polyfit @ 46996 failed
+ft_polyfit @ 46997 failed
+ft_polyfit @ 47125 failed
+ft_polyfit @ 47205 failed
+ft_polyfit @ 47206 failed
+ft_polyfit @ 47253 failed
+ft_polyfit @ 47323 failed
+ft_polyfit @ 47326 failed
+ft_polyfit @ 47453 failed
+ft_polyfit @ 47454 failed
+ft_polyfit @ 47470 failed
+ft_polyfit @ 47471 failed
+ft_polyfit @ 47472 failed
+ft_polyfit @ 47473 failed
+ft_polyfit @ 47474 failed
+ft_polyfit @ 47475 failed
+ft_polyfit @ 47476 failed
+ft_polyfit @ 47496 failed
+ft_polyfit @ 47560 failed
+ft_polyfit @ 47596 failed
+ft_polyfit @ 47897 failed
+ft_polyfit @ 47907 failed
+ft_polyfit @ 47933 failed
+ft_polyfit @ 48020 failed
+ft_polyfit @ 48054 failed
+ft_polyfit @ 48057 failed
+ft_polyfit @ 48060 failed
+ft_polyfit @ 48095 failed
+ft_polyfit @ 48096 failed
+ft_polyfit @ 48097 failed
+ft_polyfit @ 48187 failed
+ft_polyfit @ 48188 failed
+ft_polyfit @ 48193 failed
+ft_polyfit @ 48194 failed
+ft_polyfit @ 48220 failed
+ft_polyfit @ 48226 failed
+ft_polyfit @ 48251 failed
+ft_polyfit @ 48261 failed
+ft_polyfit @ 48263 failed
+ft_polyfit @ 48293 failed
+ft_polyfit @ 48307 failed
+ft_polyfit @ 48309 failed
+ft_polyfit @ 48310 failed
+ft_polyfit @ 48370 failed
+ft_polyfit @ 48372 failed
+ft_polyfit @ 48373 failed
+ft_polyfit @ 48488 failed
+ft_polyfit @ 48492 failed
+ft_polyfit @ 48494 failed
+ft_polyfit @ 48737 failed
+ft_polyfit @ 49141 failed
+ft_polyfit @ 49143 failed
+ft_polyfit @ 49144 failed
+ft_polyfit @ 49158 failed
+ft_polyfit @ 49167 failed
+ft_polyfit @ 49168 failed
+ft_polyfit @ 49169 failed
+ft_polyfit @ 49173 failed
+ft_polyfit @ 49203 failed
+ft_polyfit @ 49205 failed
+ft_polyfit @ 49207 failed
+ft_polyfit @ 49304 failed
+ft_polyfit @ 49306 failed
+ft_polyfit @ 49736 failed
+
+No. of Data Rows : 50771
+m_t_v04             =  8.30803e-04
+m_t_v14             =  2.21016e-03
+m_t_startup         =  2.60898e-03 targ=  2.70937e-03 trig=  1.00386e-04
+m_vout_max_en       =  1.86268e+00 at=  6.65931e-03
+m_vout_settled      =  1.80067e+00
+m_icap_peak_ma      =  1.25046e+02 at=  6.34974e-03
+m_isup_peak_ma      =  1.74911e+02 at=  6.34974e-03
+m_dvout_max         =  2.59995e+02 at=  7.69845e-03
+m_dvout_min         =  -2.55468e+02 at=  4.20834e-03
+m_ssr_end           =  2.24155e+00
+m_clg_end           =  2.95620e+00
+m_vout_pp_late      =  1.21468e-01 from=  7.50000e-03 to=  7.90000e-03
+m_vout_off_tran     =  3.66941e-08
+m_pg_off_tran       =  3.63000e+00
+m_ssr_off_tran      =  1.27027e-08
+m_clg_off_tran      =  2.96199e-06
+Note: Simulation executed from .control section 
