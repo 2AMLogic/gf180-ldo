@@ -212,13 +212,45 @@ meas ac phx find tph when tdb=0 fall=1
 * ---- resurgence, byte-for-byte the idiom the real deck uses --------------
 * Negative control: this loop's |T| falls monotonically through crossover, so
 * every point above the crossing is below unity and the metric MUST come out
-* negative. (The grid here is dec 20, so the offset is one dec-20 step.)
-let fres = f0*10^(1/20)
+* negative. The scan starts a FIXED 5% above f0 (issue #69), independent of
+* the grid this loop happens to be swept at (dec 20).
+let fres = f0*1.05
 meas ac tres max tdb from=$&fres to=1e9
 echo "MARGINS f0_hz=$&f0 phase_at_f0_deg=$&phx resurgence_db=$&tres"
 
 echo "* columns: freq_hz t_db t_ph_deg tref_db tref_ph_deg err_db err_ph_deg naive_err_db"
 print frequency db(t) 180*cph(t)/pi db(tref) 180*cph(tref)/pi e_db e_ph naive_db
+
+* ---- invariance check: SAME loop 1, a SECOND AC_DEC (issue #69) ----------
+* resurgence_db is meant to report sup|T| over (f0, F_STOP] -- a quantity
+* that does not depend on the sweep's frequency resolution. Now that the
+* scan starts a FIXED fraction of f0 rather than one AC-grid step above it,
+* re-measuring the SAME netlist at a different AC_DEC must agree to a small,
+* grid-quantization-only tolerance -- exactly the property the old
+* `f0*10^(1/AC_DEC)` idiom lacked (issue #69's measured evidence: raising
+* the real deck's AC_DEC from 50 to 400 alone moved resurgence_db at all
+* 4536 matrix points by +0.061...+2.362 dB, with phase margin and crossover
+* essentially unmoved). Re-measure loop 1 at dec 400 -- the real deck's
+* current default -- and selftest.py compares it against the dec 20 value
+* already measured above.
+alter @Vinj[acmag] = 1
+alter @Iinj[acmag] = 0
+ac dec 400 1 1e9
+let tvI = -v(ainj)/v(binj)
+set vplotI = $curplot
+
+alter @Vinj[acmag] = 0
+alter @Iinj[acmag] = 1
+ac dec 400 1 1e9
+let tiI = -i(vinj)/(i(vinj)+1)
+let tvvI = {$vplotI}.tvI
+
+let tI = (tvvI*tiI - 1)/(tvvI + tiI + 2)
+let tdbI = db(tI)
+meas ac f0I when tdbI=0 fall=1
+let fresI = f0I*1.05
+meas ac tresI max tdbI from=$&fresI to=1e9
+echo "INVARIANCE ac_dec=400 f0_hz=$&f0I resurgence_db=$&tresI"
 
 * ---- second reference loop: the resurgence POSITIVE control -------------
 * Same extraction, same idiom, on a loop whose gain deliberately climbs back
@@ -241,7 +273,7 @@ let tvv2 = {$vplot2}.tv2
 let t2 = (tvv2*ti2 - 1)/(tvv2 + ti2 + 2)
 let tdb2 = db(t2)
 meas ac f02 when tdb2=0 fall=1
-let fres2 = f02*10^(1/50)
+let fres2 = f02*1.05
 meas ac tres2 max tdb2 from=$&fres2 to=1e9
 echo "RESURGING ac_dec=50 f0_hz=$&f02 resurgence_db=$&tres2"
 
@@ -267,7 +299,7 @@ let t3 = (tvv3*ti3 - 1)/(tvv3 + ti3 + 2)
 let tdb3 = db(t3)
 let tph3 = 180*cph(t3)/pi
 meas ac f03 when tdb3=0 fall=1
-let fres3 = f03*10^(1/50)
+let fres3 = f03*1.05
 meas ac tres3_coarse max tdb3 from=$&fres3 to=1e9
 * The terminal UNWRAPPED phase, far above the resonance, is the direct test
 * of whether cph() picked the right 360 deg branch on the way through it --
@@ -299,7 +331,7 @@ let t3n = (tvv3n*ti3n - 1)/(tvv3n + ti3n + 2)
 let tdb3n = db(t3n)
 let tph3n = 180*cph(t3n)/pi
 meas ac f03n when tdb3n=0 fall=1
-let fres3n = f03n*10^(1/400)
+let fres3n = f03n*1.05
 meas ac tres3_new max tdb3n from=$&fres3n to=1e9
 meas ac ph3hi_new find tph3n at=1e8
 echo "GRIDBLIND new ac_dec=400 f0_hz=$&f03n resurgence_new_db=$&tres3_new phase_1e8_deg=$&ph3hi_new"
