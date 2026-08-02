@@ -199,6 +199,29 @@ CLAMP AUTHORITY AGAINST THE REAL AMPLIFIER (#9)
   pull-DOWN device (a class-AB or push-pull stage) would change this and
   must re-run that bench.
 
+  That last sentence came true. Issue #51 put exactly such a stage on
+  PASS_GATE -- Mbuf, a 150 um / 1 um PMOS source follower whose sink is not a
+  current source at all -- and the clamp lost the node: with the output
+  SETTLED at the rated 50 mA, CLG was pulled below VIN - 0.2 V at 54 of 63
+  corners, i.e. the limit was engaging inside the rated load range it is
+  specified never to touch (sim/enable-shutdown/records/20260801-200827-84f67b8.md).
+
+  Mclamp_bg (issue #55) restores the arbitration. It is a 10 um / 0.5 um PMOS
+  from VIN to error_amp's BG -- the follower's own gate, exported as a port
+  for this purpose -- on the SAME gate as Mclamp. When CLG falls, BG is pulled
+  up, Vgs(Mbuf) collapses, and Mclamp is left out-sourcing Mpgn's ~0.4 uA
+  instead of a 150 um follower: a WEAKER opponent than the ~5 uA M2N sink this
+  block was originally sized against, so the three-orders-of-magnitude margin
+  quoted above is restored rather than merely patched. Mclamp_bg is hard off
+  whenever the limit is idle (CLG rests at VIN, as above), so it adds no
+  static current and nothing to the settled small-signal loop.
+
+  It is an ADDITION to Mclamp, not a replacement for it. BG steers the
+  follower but cannot SOURCE into PASS_GATE, and error_amp's only pull-up
+  there (Mbufb) is off precisely when the loop demands maximum drive -- which
+  is every overload. A clamp on BG alone therefore has no authority at all;
+  see design/error_amp.sch's "BG IS A PORT" note for the measurement.
+
 HANDOFF TO LAYOUT / ANY RE-SIZING OF Mpass
 
   N = 40 is the RATIO of Mpass's width to Msense's width, at equal L and
@@ -214,6 +237,7 @@ C {devices/iopin.sym} -800 -100 0 0 {name=p_pass_gate lab=PASS_GATE}
 C {devices/ipin.sym} -600 -100 0 0 {name=p_en lab=EN}
 C {devices/ipin.sym} -400 -100 0 0 {name=p_vref lab=VREF}
 C {devices/iopin.sym} -200 -100 0 0 {name=p_vss lab=VSS}
+C {devices/iopin.sym} 0 -100 0 0 {name=p_bg lab=BG}
 C {symbols/pfet_03v3.sym} 0 -1000 0 0 {name=Msense model=pfet_03v3 L=0.28u W=50u nf=1 m=1}
 C {devices/lab_pin.sym} -20 -1000 0 0 {name=l_msense_g sig_type=std_logic lab=PASS_GATE}
 C {devices/lab_pin.sym} 20 -970 0 0 {name=l_msense_d sig_type=std_logic lab=ISNS}
@@ -303,6 +327,11 @@ C {devices/lab_pin.sym} 1980 -600 0 0 {name=l_mclamp_g sig_type=std_logic lab=CL
 C {devices/lab_pin.sym} 2020 -570 0 0 {name=l_mclamp_d sig_type=std_logic lab=PASS_GATE}
 C {devices/lab_pin.sym} 2020 -630 0 0 {name=l_mclamp_s sig_type=std_logic lab=VIN}
 C {devices/lab_pin.sym} 2020 -600 0 0 {name=l_mclamp_b sig_type=std_logic lab=VIN}
+C {symbols/pfet_03v3.sym} 2200 -600 0 0 {name=Mclamp_bg model=pfet_03v3 L=0.5u W=10u nf=1 m=1}
+C {devices/lab_pin.sym} 2180 -600 0 0 {name=l_mclampbg_g sig_type=std_logic lab=CLG}
+C {devices/lab_pin.sym} 2220 -570 0 0 {name=l_mclampbg_d sig_type=std_logic lab=BG}
+C {devices/lab_pin.sym} 2220 -630 0 0 {name=l_mclampbg_s sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 2220 -600 0 0 {name=l_mclampbg_b sig_type=std_logic lab=VIN}
 C {symbols/pfet_03v3.sym} 0 -200 0 0 {name=Minv_p model=pfet_03v3 L=0.5u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} -20 -200 0 0 {name=l_minvp_g sig_type=std_logic lab=EN}
 C {devices/lab_pin.sym} 20 -170 0 0 {name=l_minvp_d sig_type=std_logic lab=ENB}

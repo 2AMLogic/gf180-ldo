@@ -183,6 +183,39 @@ with everything else identical: worst PM -92 deg at 50 mA / 0.33 uF.
          pole near 30 kHz, decades below the heavy-load crossover, so the
          device is a DC-tracking current source and nothing more.
 
+BG IS A PORT (issue #55) -- the clamp-arbitration contract
+
+Before #51 this cell drove PASS_GATE from a class-A stage whose SINK was a
+~4 uA current source, and design/ldo_softstart.sch and design/ldo_ilimit.sch
+were both sized against exactly that: each pulls PASS_GATE up through a
+PMOS and only has to out-source a few microamps to win the node. #51's Mbuf
+broke that contract silently -- a 150 um/1 um follower sinks as hard as its
+Vsg allows, so both clamps lost the node (MEASURED: startup overshoot
+63/63 corners over the +2 % bound, peak inrush 366 mA, the limit clamp
+engaging at 54/63 corners while settled at 50 mA --
+sim/enable-shutdown/records/20260801-200827-84f67b8.md).
+
+BG is exported so a clamp can RELEASE the follower rather than fight it.
+Each clamp cell adds a small PMOS from VIN to BG on the same gate as its
+existing PASS_GATE clamp device (Mclamp_bg / Mclamp_bg_ss). Both are OFF
+whenever the clamp is idle -- CLG rests at VIN -- so nothing in the
+small-signal loop changes; when a clamp engages, BG is pulled up, Vgs(Mbuf)
+goes to zero, and the clamp's PASS_GATE device is left arbitrating against
+Mpgn's ~0.4 uA alone. That is a WEAKER opposition than the pre-#51 4 uA
+stage, i.e. the contract is restored with margin.
+
+Polarity contract, and why the clamps must not simply MOVE to BG: BG is the
+follower's gate, so BG up = OUT up, and a clamp on BG alone reads like a
+complete replacement for a clamp on PASS_GATE. It is not. Mbufb, the only
+pull-UP at OUT, is off in exactly the regime the clamps exist for (the loop
+demanding maximum drive during startup or an overload), so with the clamp
+moved to BG there is nothing left to charge OUT and the clamp has no
+authority at all. MEASURED on that variant at tt/27 C/2.97 V: the soft-start
+ramp is bypassed entirely (t_startup 32 us against 3683 us pre-#51),
+overshoot 2.045 V, the limit clamp saturates at CLG = 2.9 mV and still
+cannot hold the node, and the output never settles (vout_pp_late 0.583 V).
+The clamp devices on PASS_GATE stay; the BG devices are ADDED alongside.
+
 ENABLE (issue #11 -- the interface decision #9 deferred)
 Issue #9 shipped this cell with no EN pin and measured the consequence:
 9.24 uA of supply current with the pass device already off
@@ -238,6 +271,7 @@ C {devices/opin.sym} 900 -400 0 0 {name=p_out lab=OUT}
 C {devices/iopin.sym} -900 -460 0 0 {name=p_vdd lab=VDD}
 C {devices/iopin.sym} -900 -280 0 0 {name=p_vss lab=VSS}
 C {devices/ipin.sym} -900 -220 0 0 {name=p_en lab=EN}
+C {devices/iopin.sym} 900 -340 0 0 {name=p_bg lab=BG}
 
 C {symbols/ppolyf_u_1k.sym} -600 -600 0 0 {name=Rbias model=ppolyf_u_1k W=1u L=1000u m=1}
 C {devices/lab_pin.sym} -600 -630 0 0 {name=l_rb_p sig_type=std_logic lab=RBT}

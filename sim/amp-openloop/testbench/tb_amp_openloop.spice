@@ -9,7 +9,13 @@
 *
 * Amp pinout is #8's ratified swap-in contract: INP INN OUT VDD VSS, with
 * INP the NON-inverting input (wired to FB in ldo_core) and INN the
-* inverting input (wired to VREF).
+* inverting input (wired to VREF). Two pins have since been APPENDED to that
+* contract without disturbing the first five: EN (#11) and BG (#55). BG is
+* the class-AB buffer's internal gate node, exported so the soft-start and
+* current-limit clamps can release the follower instead of fighting it; it is
+* driven entirely from inside the cell, so each instance below simply gives it
+* its own dangling node (bg1..bg5) and nothing about this bench's measurements
+* changes.
 *
 * ---------------------------------------------------------------------------
 * How the amplifier is broken open
@@ -81,7 +87,7 @@ Lfb1  vg1   nls1 1T
 Vls1  nls1  nref1 dc {vg_op-vcm}
 Cref1 nref1 0 1
 Cl1   vg1   0 {cgate}
-X1 nfb nref1 vg1 vdd1 0 vdd1 error_amp
+X1 nfb nref1 vg1 vdd1 0 vdd1 bg1 error_amp
 
 * ==== X2: servo'd to OUT = vdd_val - 0.4 (light-load operating point) =======
 Vsup2 vdd2  0 dc {vdd_val}
@@ -89,7 +95,7 @@ Lfb2  vg2   nls2 1T
 Vls2  nls2  nref2 dc {vdd_val-0.4-vcm}
 Cref2 nref2 0 1
 Cl2   vg2   0 {cgate}
-X2 nfb nref2 vg2 vdd2 0 vdd2 error_amp
+X2 nfb nref2 vg2 vdd2 0 vdd2 bg2 error_amp
 
 * ==== X3: dropout test point (VDD = 2.10 V), servo'd to OUT = vg_drop =======
 Vsup3 vdd3  0 dc {vdrop}
@@ -97,18 +103,18 @@ Lfb3  vg3   nls3 1T
 Vls3  nls3  nref3 dc {vg_drop-vcm}
 Cref3 nref3 0 1
 Cl3   vg3   0 {cgate}
-X3 nfb nref3 vg3 vdd3 0 vdd3 error_amp
+X3 nfb nref3 vg3 vdd3 0 vdd3 bg3 error_amp
 
 * ==== X4: dropout test point, driven to pull the pass gate DOWN ============
 Vsup4 vdd4  0 dc {vdrop}
 Vref4 nref4 0 dc {vcm}
 Vfb4  nfb4  0 dc {vcm-0.25}
 Cl4   vg4   0 {cgate}
-X4 nfb4 nref4 vg4 vdd4 0 vdd4 error_amp
+X4 nfb4 nref4 vg4 vdd4 0 vdd4 bg4 error_amp
 
 * ==== X5: driven to pull the pass gate UP (pass device off) ================
 Vsup5 vdd5  0 dc {vdd_val}
 Vref5 nref5 0 dc {vcm}
 Vfb5  nfb5  0 dc {vcm+0.25}
 Cl5   vg5   0 {cgate}
-X5 nfb5 nref5 vg5 vdd5 0 vdd5 error_amp
+X5 nfb5 nref5 vg5 vdd5 0 vdd5 bg5 error_amp

@@ -398,6 +398,38 @@ source rather than a feedforward path around the compensation (measured
 without it: worst PM −167°). Full device-by-device rationale is in
 `design/error_amp.sch`'s `BUFFER` section.
 
+### 6.2.1 The interface the buffer broke, and `BG` (#55)
+
+The buffer replaced a class-A output stage whose **sink** was a ~4 µA current
+source. Two other cells were sized against exactly that number:
+`design/ldo_softstart.sch` and `design/ldo_ilimit.sch` both act on the
+regulator by *pulling `PASS_GATE` up*, and both only ever had to out-source a
+few microamps to win the node. `Mbuf` is not a current source — it is a
+150 µm/1 µm follower that sinks as hard as its Vsg allows — so both clamps
+lost the node. Measured, on the same DUT and bench as §6.3:
+
+| | pre-#51 | post-#51 |
+|---|---|---|
+| enable → 1.764 V | 2289 … 5764 µs | 27.3 … 2015 µs (ramp bypassed) |
+| peak supply current, 50 mA startup | 53.2 … 138.9 mA | 141.1 … 366.0 mA |
+| corners with startup overshoot > 1.836 V | 9 / 63 | 63 / 63 |
+| corners where the limit clamp engages while settled at 50 mA | 6 / 63 | 54 / 63 |
+
+`BG` — the follower's own gate, stage 2's output — is therefore a **port**
+(#55). Each clamp cell adds one small PMOS from `VIN` to `BG`, on the same
+gate as its existing `PASS_GATE` clamp device, so engaging a clamp *steers*
+the buffer instead of fighting it and leaves that clamp arbitrating against
+`Mpgn`'s ~0.4 µA — a weaker opponent than the pre-#51 stage. Both added
+devices are hard off whenever their clamp is idle, so §6.3's amplifier
+properties and the loop result are untouched by construction.
+
+Steering `BG` is **not** a substitute for sourcing into `PASS_GATE`. `Mbufb`
+is off in exactly the regime the clamps exist for, so a clamp moved to `BG`
+has nothing left to charge the pass gate with and no authority at all
+(measured: soft-start ramp bypassed outright, overshoot 2.045 V, limit clamp
+saturated and still unable to hold the node). The `PASS_GATE` clamp devices
+stay; the `BG` devices are additions.
+
 ### 6.3 Measured amplifier properties (81 PVT points, `sim/amp-openloop/`)
 
 | Property | Before (#9) | After (#51) |

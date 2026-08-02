@@ -11,16 +11,16 @@ Rtop VOUT FB 300k m=1
 XCff VOUT FB cap_mim_2f0_m2m3_noshield c_width=87u c_length=87u m=1
 Rbot FB VSS 600k m=1
 Vref1 VREF VSS 1.2
-Xerramp FB VREF ERRAMP_OUT VIN VSS EN error_amp
-Xilimit VIN VOUT PASS_GATE EN VREF VSS ldo_ilimit
-Xsoftstart VIN FB PASS_GATE EN VREF VSS ldo_softstart
+Xerramp FB VREF ERRAMP_OUT VIN VSS EN BG error_amp
+Xilimit VIN VOUT PASS_GATE EN VREF VSS BG ldo_ilimit
+Xsoftstart VIN FB PASS_GATE EN VREF VSS BG ldo_softstart
 .ends
 
-* expanding   symbol:  error_amp.sym # of pins=6
+* expanding   symbol:  error_amp.sym # of pins=7
 ** sym_path: design/error_amp.sym
 ** sch_path: design/error_amp.sch
-.subckt error_amp INP INN OUT VDD VSS EN
-*.PININFO INP:I INN:I OUT:O VDD:B VSS:B EN:I
+.subckt error_amp INP INN OUT VDD VSS EN BG
+*.PININFO INP:I INN:I OUT:O VDD:B VSS:B EN:I BG:B
 XRbias NBIAS RBT VSS ppolyf_u_1k r_width=1u r_length=1000u m=1
 XMB1 NBIAS NBIAS VSS VSS nfet_03v3 L=4u W=6u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
@@ -64,11 +64,11 @@ XMnd_pu ND EN VDD VDD pfet_03v3 L=0.5u W=4u nf=1 ad='int((nf+1)/2) * W/nf * 0.18
 .ends
 
 
-* expanding   symbol:  ldo_ilimit.sym # of pins=6
+* expanding   symbol:  ldo_ilimit.sym # of pins=7
 ** sym_path: design/ldo_ilimit.sym
 ** sch_path: design/ldo_ilimit.sch
-.subckt ldo_ilimit VIN VOUT PASS_GATE EN VREF VSS
-*.PININFO VIN:B VOUT:B PASS_GATE:B EN:I VREF:I VSS:B
+.subckt ldo_ilimit VIN VOUT PASS_GATE EN VREF VSS BG
+*.PININFO VIN:B VOUT:B PASS_GATE:B EN:I VREF:I VSS:B BG:B
 XMsense ISNS PASS_GATE VIN VIN pfet_03v3 L=0.28u W=50u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XRsns VOUT ISNS VSS ppolyf_u r_width=5u r_length=7.6u m=10
@@ -101,6 +101,8 @@ XMcoff CLG EN VIN VIN pfet_03v3 L=0.5u W=10u nf=1 ad='int((nf+1)/2) * W/nf * 0.1
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XMclamp PASS_GATE CLG VIN VIN pfet_03v3 L=0.5u W=50u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
+XMclamp_bg BG CLG VIN VIN pfet_03v3 L=0.5u W=10u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
++ ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XMinv_p ENB EN VIN VIN pfet_03v3 L=0.5u W=4u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XMinv_n ENB EN VSS VSS nfet_03v3 L=0.5u W=2u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
@@ -110,11 +112,11 @@ XMen_t TAILP ENB VIN VIN pfet_03v3 L=0.5u W=10u nf=1 ad='int((nf+1)/2) * W/nf * 
 .ends
 
 
-* expanding   symbol:  ldo_softstart.sym # of pins=6
+* expanding   symbol:  ldo_softstart.sym # of pins=7
 ** sym_path: design/ldo_softstart.sym
 ** sch_path: design/ldo_softstart.sch
-.subckt ldo_softstart VIN FB PASS_GATE EN VREF VSS
-*.PININFO VIN:B FB:I PASS_GATE:B EN:I VREF:I VSS:B
+.subckt ldo_softstart VIN FB PASS_GATE EN VREF VSS BG
+*.PININFO VIN:B FB:I PASS_GATE:B EN:I VREF:I VSS:B BG:B
 Vbsense_ss VREF BT 0
 XRss_bias BB BT VSS ppolyf_u_3k r_width=1u r_length=1000u m=1
 XMben_ss BB EN VSS VSS nfet_03v3 L=0.5u W=20u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
@@ -148,6 +150,8 @@ XMclamp_ss PASS_GATE CLG VIN VIN pfet_03v3 L=0.5u W=20u nf=1 ad='int((nf+1)/2) *
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XCm_ss CLG PASS_GATE cap_mim_2f0_m2m3_noshield c_width=60u c_length=60u m=1
 XMinv_p ENB EN VIN VIN pfet_03v3 L=0.5u W=4u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
++ ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
+XMclamp_bg_ss BG CLG VIN VIN pfet_03v3 L=0.5u W=10u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XMinv_n ENB EN VSS VSS nfet_03v3 L=0.5u W=2u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1

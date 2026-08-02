@@ -143,12 +143,27 @@ different, non-overlapping piece:
 
 ## Error amplifier (`error_amp`)
 
-- Pinout: `INP INN OUT VDD VSS EN`. The first five are unchanged from the
+- Pinout: `INP INN OUT VDD VSS EN BG`. The first five are unchanged from the
   placeholder this cell replaced (`error_amp.sym` reuses the placeholder's
   pin coordinates), so #9's swap was a symbol-name change with no rewiring;
-  `EN` was **appended** by #11 so the first five keep both their order and
-  their coordinates. Positional instantiations need the extra node --
-  ngspice errors on the node count rather than mis-wiring silently.
+  `EN` was **appended** by #11 and `BG` by #55, so the original five keep both
+  their order and their coordinates in every case. Positional instantiations
+  need the extra nodes -- ngspice errors on the node count rather than
+  mis-wiring silently.
+- **`BG` is an output, not an input** (issue #55). It is the class-AB gate
+  buffer's own gate node -- the follower `Mbuf`'s gate, driven by stage 2 --
+  exported so `ldo_softstart` and `ldo_ilimit` can *steer* the buffer while
+  they clamp `PASS_GATE` instead of fighting it. Both clamps were sized
+  against the ~4 uA class-A sink this cell had before #51; #51's follower
+  sinks as hard as its Vsg allows and took the node away from them. A small
+  PMOS from `VIN` to `BG` in each clamp cell, on the same gate as that cell's
+  existing `PASS_GATE` clamp device, removes `Mbuf` from the contest whenever
+  a clamp engages and is off whenever one does not -- so nothing in the
+  settled small-signal loop changes. The clamp devices on `PASS_GATE`
+  **stay**: `Mbufb`, the only pull-up at `OUT`, is off exactly when the loop
+  demands maximum drive, so a clamp on `BG` *alone* has no authority at all
+  (measured: the soft-start ramp is bypassed outright). See `error_amp.sch`'s
+  "BG IS A PORT" note.
 - Topology: two-stage Miller-compensated OTA -- NMOS input pair with a PMOS
   mirror load, PMOS common-source second stage into an NMOS current sink,
   Miller cap plus nulling resistor, self-biased from `VDD`. ~9 uA nominal.
@@ -191,14 +206,18 @@ Monte Carlo study).
 
 ## Current limit (`ldo_ilimit`)
 
-- Pinout: `VIN VOUT PASS_GATE EN VREF VSS`. No new `ldo_core` port.
+- Pinout: `VIN VOUT PASS_GATE EN VREF VSS BG`. No new `ldo_core` port -- `BG`
+  (appended by #55) is `error_amp`'s buffer-input node, an existing internal
+  net of `ldo_core`.
 - Topology: a 1/40 replica sense FET off `PASS_GATE` returning its current to
   `VOUT` through `Rsns`; a `VREF`/`Rbias`-derived reference current through
   `Rref`, also returned to `VOUT`, so both comparator inputs ride on the
   output and the comparison stays differential all the way down to a dead
   short; a PMOS comparator pair with a resistor tail (headroom, not
   elegance -- see the schematic notes) driving a PMOS clamp that sources
-  current into `PASS_GATE`.
+  current into `PASS_GATE`, plus (since #55) a second, small PMOS on the same
+  gate that pulls `error_amp`'s `BG` up so the class-AB follower stops
+  fighting the clamp while it is engaged.
 - **Constant-current (brickwall), not foldback.** Ratified: note 5 of the
   spec table makes foldback a superseding decision record rather than an
   implementation choice, because a folded-back limit can prevent startup
@@ -214,13 +233,16 @@ Monte Carlo study).
 
 ## Soft start (`ldo_softstart`)
 
-- Pinout: `VIN FB PASS_GATE EN VREF VSS`. No new `ldo_core` port, and — like
-  `ldo_ilimit` — it only attaches to nets that already existed.
+- Pinout: `VIN FB PASS_GATE EN VREF VSS BG`. No new `ldo_core` port, and —
+  like `ldo_ilimit` — it only attaches to nets that already existed (`BG`,
+  appended by #55, is `error_amp`'s buffer-input node).
 - Topology: a linear voltage ramp (`Css` charged by a scaled copy of the same
   `VREF`/`Rbias` current `ldo_ilimit` uses, with a `VREF`-referenced ceiling
   device above it) compared against `FB` by a **PMOS**-input pair with a
   resistor tail, driving a common-source stage and a PMOS clamp that sources
-  current into `PASS_GATE`. Structurally the same clamp idiom as
+  current into `PASS_GATE` (plus, since #55, a second small PMOS on the same
+  gate that pulls `error_amp`'s `BG` up to release the class-AB follower for
+  the duration of the clamp). Structurally the same clamp idiom as
   `ldo_ilimit`; electrically it holds `VOUT` at `1.5 × ramp` until the ramp
   passes `VREF`, then disengages and hands the pass gate back to `error_amp`.
 - **The ramp is NOT applied to `error_amp`'s reference**, which is the obvious
