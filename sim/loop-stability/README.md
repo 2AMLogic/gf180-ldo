@@ -222,6 +222,36 @@ record taken with the precondition satisfied reads as **293/2160 at 1–50 mA
 (and 492/540 at 0.1 mA), 785/3240 overall**
 (`spec/decision-records/DR-0009-shelf-corner-vs-crossover-frontier.md`).
 
+### `res_ff`/`res_ss` — the resistor-corner axis (issue #54)
+
+Every record through `20260802-095235-c828e73` held the `res_*` `.lib`
+sections at typical throughout, varying only the MOS skew
+(`tt`/`ff`/`ss`/`fs`/`sf`). That was a reasonable scope when the compensation
+was a MIM cap and a nulling resistor whose absolute value barely entered the
+result, but #51/#56's Type-II gain-shelf compensation made `Rz` — a
+`ppolyf_u_1k` resistor — set both the shelf gain `A_plat = gm(MIN)·Rz` and the
+shelf corner `f_z = 1/(2π·Rz·Cc)`, i.e. a first-order parameter of the
+result. `sim/devchar/CONCLUSIONS.md` §2 puts `ppolyf_u_1k` process spread at
+~40%, so leaving it at typical left that spread unverified.
+
+`20260802-151515-2a08fce` closes that gap: `res_ff`/`res_ss` added to the
+process axis (5 → 7 corners, 3240 → 4536 points), the same
+`CORNERS="tt ff ss fs sf res_ff res_ss"` pattern
+`sim/enable-shutdown/testbench/run.sh` already used. **Measured: the
+resistor-corner axis introduces zero new failures** — grouped by the 648
+non-process operating points, the 136 that pass at all 5 MOS corners also
+pass at both `res_ff` and `res_ss`, and the MOS-only vs. resistor-corner pass
+rates are identical to 4 significant figures (785/3240 = 314/1296 =
+24.2284%). `res_ff`/`res_ss` do widen the matrix's already-failing tail
+modestly (the single worst point in the matrix moves from a MOS corner,
+`sf_-40c_2.97v` at PM −94.57°, to a resistor corner, `res_ss_-40c_2.97v` at
+PM −97.29°, same 50 mA/0.33 µF/0.001 Ω configuration that fails regardless of
+process corner) — see the record's *"Issue #54: does the resistor-corner axis
+introduce a new failure?"* section for the full comparison, including the
+caveat that this null result is conditional on the current 24%-passing
+baseline and should be re-checked once the DR-0009-recommended architecture
+change lands and the passing region is larger.
+
 ### Where this stands
 
 The current record is **`20260801-140530-d6d47f5`**, a **FAIL** against
