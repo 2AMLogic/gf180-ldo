@@ -17,6 +17,20 @@ Evidence for every measured number here:
 Nothing below is a closed-loop claim. Loop stability is #10, the full
 testbench suite is #12, mismatch Monte Carlo is #13.
 
+> **Read §6.6 first (issue #53).** The cell as committed has an unstable
+> *local* feedback loop — the `Rz`/`Cc` Miller network around `M2P` and the
+> class-AB buffer — and oscillates at ≈ 500 kHz at every PVT corner.
+> §6.2–§6.5's stability reasoning, and the `sim/loop-stability/` record it
+> cites, are written as though that loop were stable; §6.6 is the correction
+> and the evidence:
+>
+> - `sim/amp-selfosc/records/` — settled, undriven transient: volts of
+>   peak-to-peak on the amplifier's own nodes.
+> - `sim/amp-openloop/records/20260802-013956-bb0a991.md` — supersedes
+>   `20260801-193812-84f67b8`; identical on every pre-existing row, plus the
+>   `peak_excess_db` detector, which is above its bar at **81 of 81** points.
+> - `spec/decision-records/DR-0008-loop-gain-rhp-pole-precondition.md`.
+
 ---
 
 > **Issue #51 amendment (2026-08-01).** This document was written for the

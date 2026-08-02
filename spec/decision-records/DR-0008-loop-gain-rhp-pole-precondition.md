@@ -35,6 +35,7 @@ committed at `b304bd5` (the amplifier PR #56 landed), with the *unmodified*
 | `T(f)` at `ss`/−40 °C/3.63 V, 0.1 mA, 0.33 µF, 1 mΩ — one of the 15 points #53 was opened about | crossover 276 kHz, then `|T|` climbs to **+24.4 dB** at 640 kHz |
 | `|T|` above its first 0 dB crossing, 720 points at 1 and 50 mA (5 MOS corners × −40/125 °C × 3 supplies × 3 caps × 4 ESRs) | **684 of 720 climb back above 0 dB**, worst **+52.5 dB** |
 | Amplifier alone, `sim/amp-openloop/`'s own servo structure, 6.14 pF load | a gain peak of **20.7…58.7 dB** at 420…750 kHz at every corner tried, with the phase **advancing** ≈ +150° through it |
+| The same, as the new `peak_excess_db` row of `sim/amp-openloop/` over its full 81-point grid (`records/20260802-013956-bb0a991.md`, superseding `20260801-193812-84f67b8`) | above its 1 dB bar at **81 of 81 points**, 5.4…12.2 dB. Every pre-existing row in that record is identical to the superseded one, digit for digit — nothing about the design changed, only what is measured |
 
 A resonant peak with a **+180° phase advance** is the signature of a
 right-half-plane complex pole pair. The time domain confirms it directly,
