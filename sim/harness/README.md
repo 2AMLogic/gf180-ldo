@@ -50,7 +50,7 @@ bash sim/selftest.sh                       # prove the harness works (writes not
 | `xschem` | schematic capture (optional for simulation) | `brew install xschem` / distro package |
 | python3 ≥ 3.9 | the harness | stdlib only, no packages |
 
-See [`docs/environment-setup.md`](../docs/environment-setup.md) for the full
+See [`docs/environment-setup.md`](../../docs/environment-setup.md) for the full
 bootstrap (xschem build-from-source, the pinned gf180mcu hash, and the
 `PDK_ROOT`/`PDK` shell convention).
 

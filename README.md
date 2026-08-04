@@ -8,10 +8,15 @@ for layout, DRC, and LVS.
 
 **Status: early. Nothing here has been fabricated.** As of today the repo
 holds a ratified specification, an architecture survey, device characterization
-data extracted from the PDK models, decision records, and a reproducible PVT
-corner-running simulation harness. There is no schematic, no layout, and no
-silicon. Read every number here as a simulation result against an open PDK's
-models, with the corner and testbench that produced it recorded alongside it.
+data extracted from the PDK models, decision records, a reproducible PVT
+corner-running simulation harness, four xschem schematics covering the full
+LDO hierarchy (core, error amplifier, current limit, soft start) with
+corner-swept simulation evidence behind them, and a DRC/LVS-clean physical
+verification flow proven end to end on a one-transistor test cell (see
+[`layout/README.md`](layout/README.md)) — but no layout of the LDO block
+itself yet, and no silicon. Read every number here as a simulation result
+against an open PDK's models, with the corner and testbench that produced it
+recorded alongside it.
 
 ## Built by agents
 
