@@ -1,10 +1,17 @@
 # DR-0008: DR-0001's phase/gain margin is only a stability test when the loop gain has no right-half-plane poles
 
-- **Status**: proposed — ratification is the operator's, the same process
-  DR-0001 and DR-0007 went through. **Nothing in this record is in force
-  until an operator ratifies it.** What is *not* conditional on
-  ratification is the measurement it rests on: that is recorded in
-  `sim/amp-selfosc/records/` and stands on its own.
+- **Status**: **ratified 2026-08-06** by Robb Walters (operator), issue #1 —
+  ratification comment
+  [2026-08-06](https://github.com/2AMLogic/gf180-ldo/issues/1#issuecomment-5199954200).
+  This record is now in force: DR-0001's PM/GM criterion carries the
+  no-RHP-pole precondition below, `sim/amp-selfosc/` is the experiment that
+  substantiates it, and `sim/loop-stability/records/20260801-191742-84f67b8`
+  may not be cited as a stability result at any load.
+
+  Ratified ahead of DR-0007 deliberately, and DR-0007 is **held** on the
+  strength of this record — it rests on the very matrix run this record rules
+  inadmissible. See the Consequences section below, which called that ordering
+  correctly before either was ratified.
 - **Date**: 2026-08-01
 - **Decided by**: Builder agent, issue #53 (recommendation only)
 

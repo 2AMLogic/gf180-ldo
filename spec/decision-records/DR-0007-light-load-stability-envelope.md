@@ -1,6 +1,24 @@
 # DR-0007: The 0 mA / no-external-load point of DR-0001's stability matrix
 
-- **Status**: proposed — ratification is the operator's (issue #1's process,
+- **Status**: **proposed — HELD as of 2026-08-06.** Ratification was
+  considered and deliberately deferred by the operator (issue #1,
+  [ratification comment](https://github.com/2AMLogic/gf180-ldo/issues/1#issuecomment-5199954200)),
+  because DR-0008 — ratified the same day — rules this record's supporting
+  evidence inadmissible: `sim/loop-stability/records/20260801-191742-84f67b8`
+  may no longer be cited as a stability result at any load, and this record's
+  2160/2160 pass count at 1–50 mA comes from exactly that run.
+
+  **This is a hold on the evidence, not a rejection of the conclusion.** Moving
+  the 0 mA column out of the verified envelope may still be right, and DR-0001
+  pre-authorised that response. What is required first is a stability result
+  that satisfies DR-0008's precondition: an `amp-selfosc` pass against the
+  current `design/` netlist, then a `loop-stability` run that may legitimately
+  be cited. On that evidence this record can be ratified, amended, or
+  superseded.
+
+  Original status line follows.
+
+- **Status (original)**: proposed — ratification is the operator's (issue #1's process,
   the same one DR-0001 itself went through: "Decided by: Builder agent …
   recommendation only"). Still `proposed`, and **nothing in this record is in
   force until an operator ratifies it** — the "Coverage check" subsection
