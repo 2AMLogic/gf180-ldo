@@ -1,4 +1,4 @@
-# DR-0013: `f_2`'s ceiling is the compensation network's return node, not an Iq budget — and adaptive *bias* cannot be the lever
+# DR-0014: `f_2`'s ceiling is the compensation network's return node, not an Iq budget — and adaptive *bias* cannot be the lever
 
 - **Status**: proposed — ratification is the operator's, the same process
   DR-0001, DR-0004 and DR-0008 went through. **Nothing in this record is in

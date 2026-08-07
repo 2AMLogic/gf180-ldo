@@ -1,4 +1,4 @@
-# DR-0014: The gain shelf can be made to track the load — a triode replica across `Rz`, gated by the pass device's own drive
+# DR-0015: The gain shelf can be made to track the load — a triode replica across `Rz`, gated by the pass device's own drive
 
 - **Status**: proposed — ratification is the operator's, the same process
   DR-0001, DR-0007 and DR-0008 went through. **Nothing in this record is in
@@ -13,11 +13,27 @@
 - **Builds on**: DR-0012 (the shelf's width is `Cc/Cf`), DR-0009 (the
   frontier equations and the naming of Candidate 2), DR-0008 (the RHP-pole
   precondition, ratified 2026-08-06). It does not supersede any of them.
-- **Sibling, and agrees with it**: **DR-0013** (`f_2`'s ceiling is the
+- **Corrects, on one measured point**: **DR-0013** (the shelf must move, not
+  widen — and moving it hits the same `p2` ceiling), merged to `main` in
+  PR #77. DR-0013 builds the same `Rz²` lever this record builds, measures it
+  failing `sim/amp-openloop`'s `peak_excess_db` at 72 of 81 corners (worst
+  **+19.05 dB** against a 1 dB bar), and concludes that holding that bar needs
+  `Rz ≳ 5.8 MΩ`, i.e. "no useful adaptation at all", and that "no compensation
+  change closes 1–50 mA at this bias". Its §1, §2 and §4 stand. Its §3a
+  ceiling does **not** generalise: this record's shunt is floored at
+  `Rz‖Rza` = 545 kΩ — an order of magnitude below DR-0013's stated 5.8 MΩ
+  limit — and measures `peak_excess_db` **≤ +0.408 dB, PASS at 81 of 81**
+  (`sim/amp-openloop/records/20260807-105147-64249c6.md`), with
+  `sim/amp-selfosc/` clean at 45/45 and 0/4536 loop resurgence. §3b and §3c of
+  DR-0013 do not arise here at all: this record has no `Mbufa` (no pull-up
+  referenced to `OUT`, so no `vg_pulldown_mv` regression) and no bias branch
+  (so `iq_ua` is unchanged to the digit). "What separates the two", below, is
+  the difference, and it is one net.
+- **Sibling, and agrees with it**: **DR-0014** (`f_2`'s ceiling is the
   compensation network's return node, not an Iq budget — and adaptive *bias*
   cannot be the lever), written independently against the same issue. The two
   reach the same conclusion by different routes and neither contradicts the
-  other: DR-0013 measures DR-0009's *literal* Candidate 2 — steering a bias
+  other: DR-0014 measures DR-0009's *literal* Candidate 2 — steering a bias
   current from a pass-device sense — and rules it unbuildable, because the
   only place the load can be sensed is the pass gate, which is the
   amplifier's own output, so the sense closes a minor loop in positive
@@ -26,8 +42,8 @@
   are the ones carrying **no DC current**: `Rz` and the compensation caps" —
   is exactly the device this record builds, and it is why `Mrza` sits at
   `Vds` = 0 with `gm` identically zero rather than steering a current. Read
-  DR-0013 first for why *bias* is out; read this one for what to adapt
-  instead. DR-0013's own next-increment recommendation (`Cc` → `BG`) is
+  DR-0014 first for why *bias* is out; read this one for what to adapt
+  instead. DR-0014's own next-increment recommendation (`Cc` → `BG`) is
   carried forward in "The three ways out" below, where the numbers here say
   what it is worth.
 
@@ -227,6 +243,61 @@ because it slides the pass band rather than widening it: 0.1 mA/0.33 µF goes
 "What is still not reached" section below, and this is its most direct
 measurement.
 
+## What separates this from DR-0013's negative result: one net
+
+DR-0013 and this record schedule the same resistor by the same physics, and
+land on opposite sides of DR-0008's precondition. The difference is not the
+value of `Rz_eff` — this record floors it *lower* (545 kΩ against DR-0013's
+1.0 MΩ) and still passes — so it is not the `p2` ceiling that DR-0013 §3a
+attributes it to. It is **where the shunt device's gate is connected, and how
+big that gate is**:
+
+| | DR-0013's `Mrz` | this record's `Mrza` |
+|---|---|---|
+| gate node | `NRZ`, a level-shifted copy of `OUT`, reached **through `Rsg` = 2 MΩ with `Csg` = 2.05 pF to ground** (a deliberate 39 kHz pole, "so the schedule is slower than the loop it schedules") | **`BG`, directly**, no series resistor, no shunt cap |
+| gate area | 1 µm × 18 µm = 18 µm² | 12 µm × 9 µm = **108 µm²** |
+| body | `VDD` | `N1`, its own source |
+| series floor | `Rmin` = 1.2 MΩ → `Rz_eff` ≥ 1.0 MΩ | `Rza` = 600 kΩ → `Rz_eff` ≥ 545 kΩ |
+| also built | `Mbufa`, an adaptive pull-up from `VDD` to `OUT` | nothing else |
+| `peak_excess_db` (bar ≤ 1) | **+19.05 dB**, 72/81 FAIL | **+0.408 dB**, 81/81 PASS |
+
+The gate is not a bystander. `Cgg(Mrza)` is a capacitance between `BG` and
+`N1` — the same two nodes `Cf1`/`Cf2` bridge — so it **adds to `Cf`**, and
+only when the channel exists, i.e. only at heavy load, which is exactly when a
+falling `Rz` needs it (the local loop's margin goes as `Rz·Cf²`, DR-0012 §2).
+`Rsg`/`Csg` removes precisely that coupling; a small gate never supplies much
+of it. This record measured that directly, before DR-0013 existed and without
+knowing of it — the isolation experiment in "What was built" §3 above: adding
+a 2 MΩ resistor in `Mrza`'s gate, **changing nothing else**, takes the same
+design from 37–38/48 PASS with **0** resurging points to 23–29/48 with
+**6–19**. That is DR-0013's §3a failure, reproduced here as a controlled
+one-variable A/B, and the variable is the isolation.
+
+So the two records agree on the mechanism and disagree only on whether it is a
+ceiling: `f_2 = 1/(2π·Rz·Cf)` and `p2` do bound how far `Rz` can fall **for a
+given `Cf`** — and the shunt device's own gate is a `Cf` that arrives with the
+`Rz` reduction, in the right amount, at the right load, for free. DR-0013's
+"no compensation change closes 1–50 mA at this bias" should be read as
+"no compensation change *whose sense is isolated from the compensation node*",
+which is a narrower and, on this evidence, correct statement.
+
+Two things this does **not** overturn, both of which this record adopts:
+
+- **DR-0013 §3a's methodological point stands and is load-bearing here.**
+  `sim/loop-stability/`'s resurgence detector can miss a local-loop resonance
+  at 3–5 MHz, because `|T_LDO|` is already tens of dB below 0 dB there and the
+  detector only sees excursions back above 0 dB. `peak_excess_db` in
+  `sim/amp-openloop/` is the check that catches it. This record therefore does
+  not rest on 0/4536 loop resurgence: `peak_excess_db` at 81/81 and
+  `sim/amp-selfosc/` at 45/45 are quoted alongside it, and `peak_excess_db` is
+  what rejected `Rza` = 450 kΩ (+1.034 dB) in favour of 600 kΩ (+0.408 dB)
+  even though 450 kΩ scored better on PM/GM. DR-0013 is the reason that
+  comparison was made on the right bench.
+- **DR-0013 §3b stands unqualified.** An adaptive pull-up referenced to `OUT`
+  has the wrong sign for the dropout row by construction. This record does not
+  build one, and should not be read as reopening the buffer half of
+  Candidate 2 in that form.
+
 ## Result
 
 `sim/loop-stability/records/20260807-103351-64249c6.md` — the full ratified
@@ -393,17 +464,17 @@ for no net gain. Same wall, same number.
 
 ## The ways out, in the order this record would take them
 
-0. **Take DR-0013's return-node move first, because it is free and it
+0. **Take DR-0014's return-node move first, because it is free and it
    un-binds the knob this record had to leave on the table.** `Rza` is not set
    here by phase margin — 450 kΩ scores 837/1296 on the screen against
    600 kΩ's 828 and takes the matrix's worst phase margin positive — it is set
    by `peak_excess_db`, the amplifier's *own* local-loop resonance, which
-   450 kΩ pushes to +1.034 against a bar of 1.0. DR-0013 measures exactly that
+   450 kΩ pushes to +1.034 against a bar of 1.0. DR-0014 measures exactly that
    bar being relieved: returning `Cc` to `BG` takes the class-AB buffer and
    the 6.14 pF pass gate out of the local loop and passes 81/81 at `Rz` =
    0.75 MΩ where `Cc` → `OUT` fails 78 of 162 points at 3 MΩ — ≥ 8× of
    headroom for one net and zero microamps. It should be worth `Rza` below
-   450 kΩ, and DR-0013's own caveat (the move alone costs the 0.1 mA column
+   450 kΩ, and DR-0014's own caveat (the move alone costs the 0.1 mA column
    0.3° at `ss`/−40 °C/3.63 V, 44.73° against 45°) is a caveat about a design
    *without* this record's adaptive `Rz`, which is the thing that pays that
    column back. Measuring the two together is one experiment, and it is the
@@ -413,8 +484,8 @@ for no net gain. Same wall, same number.
    loop they sit in. So it improves the residual and does not close the cap
    window, which is item 1.
 1. **Buy `f_hi`** — the buffer-bandwidth half of Candidate 2, which this
-   record's `Rz` lever deliberately did not attempt and which DR-0013's
-   negative result does **not** rule out (DR-0013 rules out *steering a bias
+   record's `Rz` lever deliberately did not attempt and which DR-0014's
+   negative result does **not** rule out (DR-0014 rules out *steering a bias
    from a sense*; raising the buffer's standing current steers nothing). The
    ratified Iq row leaves 30 − 24.81 = **5.19 µA** at full load, against a
    buffer that runs at ≈ 2 µA, so a 3× is not obviously out of reach — but it

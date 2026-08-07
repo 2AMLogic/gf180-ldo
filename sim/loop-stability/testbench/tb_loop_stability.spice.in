@@ -156,13 +156,13 @@ Cout NESR 0 1e-6
 * There is a second one that does not run away at all: `ldo_softstart` and
 * `ldo_ilimit` both clamp PASS_GATE to VIN through their `CLG` gates while
 * the feedback node is below the reference, and "FB low, so clamp on, so FB
-* stays low" is self-consistent at a perfectly finite VOUT. On the DR-0014
+* stays low" is self-consistent at a perfectly finite VOUT. On the DR-0015
 * netlist that solution is what sf / -40 degC / 3.63 V / 0.1 mA lands on, at
 * VOUT ~ +0.52 V -- above the diode's -0.7 V floor, so the diode never
 * conducts and never sees it. It voided 11 of that corner's 72 points; the
 * other 62 PVT corners were clean.
 *
-* Note what it is NOT: it is not a property of DR-0014's two added devices.
+* Note what it is NOT: it is not a property of DR-0015's two added devices.
 * `Mrza` sits in the `Rz`/`Cc` branch, which carries no DC current in ANY
 * solution, so those devices cannot change the DC solution SET -- only which
 * solution Newton walks to from a given start. The branch was always there.
