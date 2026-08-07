@@ -944,6 +944,77 @@ both of the 0.1 mA column's failure clusters were at the *same* load. Full
 argument, every sweep, and the proposed DR-0007 amendment:
 `spec/decision-records/DR-0012-shelf-width-is-cc-over-cf.md`.
 
+### 6.11 The shelf does not have to be fixed — `Mrza`/`Rza` (issue #51, DR-0013)
+
+**The lever moves from bias to `Rz`.** DR-0009 named Candidate 2 as *adaptive
+biasing of the buffer from a pass-device sense replica*, because it believed
+`f_2` was a bias-current quantity. §6.10 proved it is not — `f_2 =
+1/(2π·Rz·Cf)`, and bias current sets only its *ceiling*. So a load-tracking
+bias raises the ceiling and moves nothing else, while a load-tracking `Rz`
+moves all three of the compensation's numbers at once:
+
+```
+A_plat = gm(MIN)·Rz        f_z = 1/(2π·Rz·Cc)        f_2 = 1/(2π·Rz·Cf)
+```
+
+Scale `Rz` by `1/a`: `f_z`, `f_2` and the loop's −180° crossing all move up by
+`a`, and `f_c = β·A_plat·gm_pass/(2π·C_eff)` moves *down* by `a`. Both help at
+heavy load, and — because every frequency in the amplifier's own response
+scales by the same `a` — the Bode **shape** translates instead of deforming.
+With `Rz ∝ 1/sqrt(gm_pass)` the two motions cancel exactly and the phase
+margin becomes load-invariant.
+
+That the loop is only mis-*placed* rather than mis-*shaped* at heavy load is
+measured, not assumed: at `tt`/27 °C/3.30 V/0.33 µF the 0.1 mA and 50 mA
+`T(f)` curves are the same curve offset by 36 dB above ≈ 30 kHz (phase −90.3°
+vs −91.0° at 42 kHz, −115.4° vs −114.5° at 178 kHz, −165.5° vs −167.0° at
+562 kHz). And the predicted law is measured too — the best *fixed* `Rz` per
+load column, from a sweep over 6 MΩ … 250 kΩ:
+
+| `I_load` | 0.1 mA | 1 mA | 10 mA | 50 mA |
+|---|---|---|---|---|
+| best fixed `Rz` | 6 MΩ | 1–2 MΩ | 0.6–0.8 MΩ | 0.25–0.5 MΩ |
+| worst PM there | 64.8–77° | 62–77° | 54–70° | 62–67° |
+| worst PM at `Rz` = 6 MΩ | 64.8–77° | −4.3° | −65.5° | −90.7° |
+
+A 24× `Rz` range against a 500× load range, i.e. `Rz ∝ I_load^−1/2`.
+
+**What was added.** Two devices, no port change, **no quiescent current**:
+
+| device | value | what it is |
+|---|---|---|
+| `Mrza` | `pfet_03v3` 8 µm/6 µm, S = `N1`, D = `NRZA`, B = `N1`, G = `BG` | triode replica in parallel with `Rz` |
+| `Rza` | `ppolyf_u_1k` 1 µm × 600 µm (600 kΩ), `NRZA` → `NZ` | series floor that flattens the law |
+
+- **It is a resistor and nothing else.** The `Rz`/`Cc` branch carries no DC
+  current (measured: `V(N1) = V(NZ) = 2.551086 V` to every printed digit), so
+  `Mrza` sits at `Vds = 0`, where `gm = dId/dVgs` is identically zero. Its
+  gate injects no signal current — unlike `Mbufb`, which needs `Rbufb`'s 5 MΩ
+  precisely because it *does* carry current.
+- **`BG` is the replica sense, and it is free.** `BG` is the buffer's gate,
+  i.e. the pass gate one `Vsg(Mbuf)` up. Measured `V(N1) − V(BG)` at
+  `tt`/27 °C/3.30 V: 0.415 V (0 mA), 0.607 V (0.1 mA), 0.724 V (1 mA),
+  0.924 V (10 mA), 1.086 V (25 mA), 1.285 V (50 mA), against `|Vtp|` ≈ 0.72 V.
+  No sense device, no sense resistor, no bias branch — which is what makes it
+  affordable against a `< 30 µA` row that is specified **at full load too**
+  and already measures 24.81 µA at its binding corner.
+- **`Mrza`'s gate capacitance is an adaptive `Cf`.** `Cgg(Mrza)` bridges `BG`
+  to `N1`, the same two nodes as `Cf1`/`Cf2`, and only exists when the channel
+  does — i.e. at heavy load, which is when the local loop needs it (its margin
+  goes as `Rz·Cf²`, §6.10). Measured on the 48-point `tt` screen, inserting a
+  2 MΩ isolation resistor in `Mrza`'s gate — removing that coupling and
+  nothing else — takes the design from 37–38/48 PASS with **0** resurging
+  points to 23–29/48 with **6–19**. The adaptive resistor and the adaptive
+  `Cf` are the same channel.
+- **`Rza` shapes the law.** A square-law `1/(Vgs−Vt)` is far sharper than the
+  12× the loop wants across 500× of load; the series floor saturates `Rz_eff`
+  at `Rz‖Rza`. Measured (48-point `tt` screen, `Mrza` 8 µm/6 µm): 200 kΩ →
+  36/48, 300 kΩ → 37, 400 kΩ → 37, 500 kΩ → 38, **600 kΩ → 38**, 800 kΩ → 37,
+  1.0 MΩ → 36, 1.4 MΩ → 35 — against **19/48** for the committed design.
+  Zero resurging points at every one of them.
+
+<!-- RESULT-611 -->
+
 ## 7. Handoffs
 
 | Issue | What to take |
