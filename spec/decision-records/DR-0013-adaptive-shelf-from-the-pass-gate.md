@@ -92,8 +92,8 @@ Two devices in `design/error_amp.sch`. No port change, no new bias branch,
 
 | device | value | what it is |
 |---|---|---|
-| `Mrza` | `pfet_03v3`, 8 µm/6 µm, S = `N1`, D = `NRZA`, B = `N1`, **G = `BG`** | a triode replica in parallel with `Rz` |
-| `Rza` | `ppolyf_u_1k`, 1 µm × 600 µm (600 kΩ), `NRZA` → `NZ` | the series floor that shapes the law |
+| `Mrza` | `pfet_03v3`, 12 µm/9 µm, S = `N1`, D = `NRZA`, B = `N1`, **G = `BG`** | a triode replica in parallel with `Rz` |
+| `Rza` | `ppolyf_u_1k`, 1 µm × 1000 µm (1 MΩ), `NRZA` → `NZ` | the series floor that shapes the law |
 
 Three things make this cheap, and each is a measured property rather than an
 assertion:

@@ -479,13 +479,13 @@ C {symbols/cap_mim_2f0fF.sym} 400 -400 0 0 {name=Cc model=cap_mim_2f0_m2m3_noshi
 C {devices/lab_pin.sym} 400 -430 0 0 {name=l_cc_g sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 400 -370 0 0 {name=l_cc_b sig_type=std_logic lab=OUT}
 
-C {symbols/pfet_03v3.sym} 550 -250 0 0 {name=Mrza model=pfet_03v3 L=12u W=16u nf=1 m=1}
+C {symbols/pfet_03v3.sym} 550 -250 0 0 {name=Mrza model=pfet_03v3 L=9u W=12u nf=1 m=1}
 C {devices/lab_pin.sym} 530 -250 0 0 {name=l_rza_g sig_type=std_logic lab=BG}
 C {devices/lab_pin.sym} 570 -280 0 0 {name=l_rza_d sig_type=std_logic lab=NRZA}
 C {devices/lab_pin.sym} 570 -220 0 0 {name=l_rza_s sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 570 -250 0 0 {name=l_rza_b sig_type=std_logic lab=N1}
 
-C {symbols/ppolyf_u_1k.sym} 700 -250 0 0 {name=Rza model=ppolyf_u_1k W=1u L=600u m=1}
+C {symbols/ppolyf_u_1k.sym} 700 -250 0 0 {name=Rza model=ppolyf_u_1k W=1u L=1000u m=1}
 C {devices/lab_pin.sym} 700 -280 0 0 {name=l_rza_rp sig_type=std_logic lab=NRZA}
 C {devices/lab_pin.sym} 700 -220 0 0 {name=l_rza_rm sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 680 -250 0 0 {name=l_rza_rb sig_type=std_logic lab=VSS}
