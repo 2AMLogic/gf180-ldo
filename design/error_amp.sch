@@ -57,14 +57,6 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      and Cf is the component that decides how much of
                      DR-0001's load x cap box the shelf can cover. See
                      SHELF WIDTH below.
-  Adapt    Mrz,Rmin  Load-scheduled shunt across Rz (issue #51). Rz sets
-           Mlvl,     BOTH shelf corners and A_plat, so shrinking it at heavy
-           Mlvlb,    load moves the shelf UP and the LDO crossover DOWN at
-           Rsg,Csg,  once -- k of Rz buys k^2 of load range. Mrz carries no
-           Mbufa,    DC current (Vds = 0), so the shunt costs no Iq; Mbufa
-           Mrz_pu    is the pass-gate buffer's adaptive pull-up. Sensed from
-                     OUT, which is the pass device's own gate. See ADAPTIVE
-                     SHELF below.
   Bias     MB1,Rbias Supply-referenced self-bias, fed through the EN header
                      Mbias_h (see ENABLE): Iref = (VDD - Vgs)/Rbias
                      through the diode-connected NMOS MB1, whose gate NBIAS
@@ -285,96 +277,6 @@ overshoot 2.045 V, the limit clamp saturates at CLG = 2.9 mV and still
 cannot hold the node, and the output never settles (vout_pp_late 0.583 V).
 The clamp devices on PASS_GATE stay; the BG devices are ADDED alongside.
 
-ADAPTIVE SHELF -- Rz moves with the load (issue #51, DR-0009 Candidate 2)
-DR-0012 measured that the shelf spans f_z = 1/(2*pi*Rz*Cc) to
-f_2 = 1/(2*pi*Rz*Cf) and is Cc/Cf = 98 wide, and that DR-0001's whole
-I_load x C_eff box needs the LDO crossover f_c to land inside it. It then
-concluded the shelf had to get ~9x WIDER (Cc/Cf >~ 900), and showed both
-ends of that are blocked -- Cf by the local loop's own p2 ceiling, Cc by
-the ratified PSRR row.
-
-That conclusion holds only if the shelf has to sit still. It does not.
-Both corners scale as 1/Rz, and A_plat = gm(MIN)*Rz scales the crossover
-itself, so LOWERING Rz moves the shelf UP and pulls f_c DOWN at the same
-time:
-
-    f_c / f_2  proportional to  Rz^2 * gm_pass / C_eff
-    f_c / f_z  proportional to  Rz^2 * gm_pass / C_eff   (same power)
-
-A factor k of Rz reduction is therefore worth k^2 of load range -- which
-is why this lever is not equivalent to widening the shelf, and why the
-Cc/Cf >~ 900 bound is not the binding one. MEASURED at res_ss/27C/3.30V,
-50 mA / 0.33 uF / 1 mOhm, Rz swept as a FIXED resistor:
-
-    Rz = 6.0 MOhm (committed)   PM  -95.4 deg   GM  -21.2 dB
-    Rz = 1.5 MOhm               PM  -87.5 deg   GM   -9.0 dB
-    Rz = 0.5 MOhm               PM  +56.1 deg   GM   -3.6 dB
-
-and at 4.7 uF the same Rz = 1.5 MOhm takes 50 mA from PM +9.3 deg to
-+77.9 deg. Rz cannot simply BE 0.5 MOhm: at 0.1 mA / 4.7 uF the crossover
-then falls below f_z, the loop is back on the integrator's -40 dB/dec, and
-that column (which DR-0012 closed at 756/756) breaks -- MEASURED PM
-+22.2 deg at Rz = 1.5 MOhm against a +68.5 deg baseline. Rz has to be a
-function of the load. That is DR-0009's Candidate 2, and the sense it needs
-already exists: OUT is the pass device's own gate, so V(N1) - V(OUT) IS
-Vsg(Mpass) - Vsg(M2P), a load-proportional signal with one pfet threshold
-already differenced out of it.
-
-  Mlvl    PMOS diode, source OUT, biased by Mlvlb (~0.15 uA off NBIAS).
-          Level-shifts the pass gate down by one Vsg so that
-          Vsg(Mrz) = Vsg(Mpass) - Vsg(M2P) + Vsg(Mlvl), i.e. the sense is
-          referenced through pfet gate-source voltages that move together
-          over process rather than through an absolute threshold.
-  Rsg,Csg 2 MOhm / 2.05 pF single pole at ~39 kHz on the sense. Mrz's gate
-          carries no AC signal into the compensation branch (see below), so
-          this pole does not exist for the small-signal loop at all -- it
-          is there so the adaptation is slower than the loop it schedules,
-          in large-signal operation.
-  Mrz     PMOS shunt across Rz, source NRM, drain NZ, gate NRZ, body VDD.
-          Its Vds is ZERO at every operating point -- Cc blocks DC, so no
-          current flows in the Rz branch -- which makes it a pure
-          gate-controlled CONDUCTANCE with gm = 0. It therefore costs no
-          quiescent current at any load, and it injects no signal: an
-          AC analysis linearised about Vds = 0 sees only g_ds.
-  Rmin    1.2 MOhm in SERIES with Mrz, so the shunt branch is
-          Rmin + R(Mrz) and the adapted resistance is floored at
-          6 MOhm || 1.2 MOhm = 1.0 MOhm however hard Mrz turns on. This is
-          the device that makes an exponential MOS conductance shippable:
-          process and temperature move WHERE the transition happens, not
-          how far it goes. It is also what keeps DR-0008's precondition --
-          MEASURED, Rz driven to 0.56 MOhm at ff/125C the local Rz/Cc loop
-          resurges +13.1 dB above the first 0 dB crossing, and at 0.6 MOhm
-          at res_ss/27C it resurges +2.7 dB, while 0.8 MOhm and above is
-          clean at every point probed.
-  Mbufa   PMOS pull-up in parallel with Mbufb, gate on the same sensed node
-          NRZ: the "adaptive biasing of the pass-gate buffer" half of
-          Candidate 2. Its current -- and so gm(Mbuf), and so the pass-gate
-          pole -- rises with load, and it is nearly off at light load, so
-          the cost lands only where the bandwidth is needed. It is also
-          smallest at ff/125C, the corner that binds the ratified < 30 uA
-          row, and largest at ss/-40C, where that row has ~18 uA of slack.
-  Mrz_pu  pulls NRZ0 (and through Rsg, NRZ) to VDD when EN = 0, so Mrz and
-          Mbufa are both definitively off and neither node floats for the
-          operating-point solve -- the same job Mbg_pu/Mn1_pu do.
-
-WHAT THIS DOES NOT REACH, and why. The buffer boost is bounded by the
-ratified Iq row, and the gain margin at 0.33 uF is bounded by the buffer
-boost. MEASURED at res_ss/27C/3.30V, 50 mA / 0.33 uF / 1 mOhm with Rz held
-at 0.5 MOhm, sweeping the stage-2 sink and the buffer pull-up as FIXED
-devices (i.e. the unaffordable static version of the same change):
-
-    M2N 4u  / Mbufb 100u (committed)  GM  -3.6 dB   Iq(ff/125C) 22.7 uA
-    M2N 4u  / Mbufb 200u              GM  +3.1 dB   Iq(ff/125C) 27.0 uA
-    M2N 8u  / Mbufb 130u              GM  +8.8 dB   Iq(ff/125C) ~31   uA
-    M2N 12u / Mbufb 200u              GM +13.4 dB   Iq(ff/125C) 49.6 uA
-
-i.e. about 20 dB of gain margin per decade of buffer current, against a
-< 30 uA row that has ~5-7 uA of headroom at its binding corner. That
-exchange rate, not the shelf width, is what now bounds the 0.33 uF column
-at 10-50 mA. Full accounting in
-spec/decision-records/DR-0013-adaptive-shelf-position.md.
-
-
 ENABLE (issue #11 -- the interface decision #9 deferred)
 Issue #9 shipped this cell with no EN pin and measured the consequence:
 9.24 uA of supply current with the pass device already off
@@ -566,47 +468,3 @@ C {devices/lab_pin.sym} -270 -600 0 0 {name=l_ndpu_g sig_type=std_logic lab=EN}
 C {devices/lab_pin.sym} -230 -570 0 0 {name=l_ndpu_d sig_type=std_logic lab=ND}
 C {devices/lab_pin.sym} -230 -630 0 0 {name=l_ndpu_s sig_type=std_logic lab=VDD}
 C {devices/lab_pin.sym} -230 -600 0 0 {name=l_ndpu_b sig_type=std_logic lab=VDD}
-
-C {symbols/pfet_03v3.sym} 1250 -600 0 0 {name=Mlvl model=pfet_03v3 L=1u W=1u nf=1 m=1}
-C {devices/lab_pin.sym} 1230 -600 0 0 {name=l_lvl_g sig_type=std_logic lab=NRZ0}
-C {devices/lab_pin.sym} 1270 -570 0 0 {name=l_lvl_d sig_type=std_logic lab=NRZ0}
-C {devices/lab_pin.sym} 1270 -630 0 0 {name=l_lvl_s sig_type=std_logic lab=OUT}
-C {devices/lab_pin.sym} 1270 -600 0 0 {name=l_lvl_b sig_type=std_logic lab=OUT}
-
-C {symbols/nfet_03v3.sym} 1250 -350 0 0 {name=Mlvlb model=nfet_03v3 L=8u W=0.8u nf=1 m=1}
-C {devices/lab_pin.sym} 1270 -380 0 0 {name=l_lvlb_d sig_type=std_logic lab=NRZ0}
-C {devices/lab_pin.sym} 1230 -350 0 0 {name=l_lvlb_g sig_type=std_logic lab=NBIAS}
-C {devices/lab_pin.sym} 1270 -320 0 0 {name=l_lvlb_s sig_type=std_logic lab=VSS}
-C {devices/lab_pin.sym} 1270 -350 0 0 {name=l_lvlb_b sig_type=std_logic lab=VSS}
-
-C {symbols/pfet_03v3.sym} 1250 -150 0 0 {name=Mrz_pu model=pfet_03v3 L=0.5u W=4u nf=1 m=1}
-C {devices/lab_pin.sym} 1230 -150 0 0 {name=l_rzpu_g sig_type=std_logic lab=EN}
-C {devices/lab_pin.sym} 1270 -120 0 0 {name=l_rzpu_d sig_type=std_logic lab=NRZ0}
-C {devices/lab_pin.sym} 1270 -180 0 0 {name=l_rzpu_s sig_type=std_logic lab=VDD}
-C {devices/lab_pin.sym} 1270 -150 0 0 {name=l_rzpu_b sig_type=std_logic lab=VDD}
-
-C {symbols/ppolyf_u_1k.sym} 1400 -600 0 0 {name=Rsg model=ppolyf_u_1k W=1u L=2000u m=1}
-C {devices/lab_pin.sym} 1400 -630 0 0 {name=l_rsg_p sig_type=std_logic lab=NRZ0}
-C {devices/lab_pin.sym} 1400 -570 0 0 {name=l_rsg_m sig_type=std_logic lab=NRZ}
-C {devices/lab_pin.sym} 1380 -600 0 0 {name=l_rsg_b sig_type=std_logic lab=VSS}
-
-C {symbols/cap_mim_2f0fF.sym} 1400 -400 0 0 {name=Csg model=cap_mim_2f0_m2m3_noshield W=32u L=32u m=1}
-C {devices/lab_pin.sym} 1400 -430 0 0 {name=l_csg_g sig_type=std_logic lab=NRZ}
-C {devices/lab_pin.sym} 1400 -370 0 0 {name=l_csg_b sig_type=std_logic lab=VDD}
-
-C {symbols/ppolyf_u_1k.sym} 1550 -600 0 0 {name=Rmin model=ppolyf_u_1k W=1u L=1200u m=1}
-C {devices/lab_pin.sym} 1550 -630 0 0 {name=l_rmin_p sig_type=std_logic lab=N1}
-C {devices/lab_pin.sym} 1550 -570 0 0 {name=l_rmin_m sig_type=std_logic lab=NRM}
-C {devices/lab_pin.sym} 1530 -600 0 0 {name=l_rmin_b sig_type=std_logic lab=VSS}
-
-C {symbols/pfet_03v3.sym} 1550 -350 0 0 {name=Mrz model=pfet_03v3 L=1u W=18u nf=1 m=1}
-C {devices/lab_pin.sym} 1530 -350 0 0 {name=l_mrz_g sig_type=std_logic lab=NRZ}
-C {devices/lab_pin.sym} 1570 -320 0 0 {name=l_mrz_d sig_type=std_logic lab=NZ}
-C {devices/lab_pin.sym} 1570 -380 0 0 {name=l_mrz_s sig_type=std_logic lab=NRM}
-C {devices/lab_pin.sym} 1570 -350 0 0 {name=l_mrz_b sig_type=std_logic lab=VDD}
-
-C {symbols/pfet_03v3.sym} 1700 -600 0 0 {name=Mbufa model=pfet_03v3 L=1u W=0.22u nf=1 m=1}
-C {devices/lab_pin.sym} 1680 -600 0 0 {name=l_bufa_g sig_type=std_logic lab=NRZ}
-C {devices/lab_pin.sym} 1720 -570 0 0 {name=l_bufa_d sig_type=std_logic lab=OUT}
-C {devices/lab_pin.sym} 1720 -630 0 0 {name=l_bufa_s sig_type=std_logic lab=VDD}
-C {devices/lab_pin.sym} 1720 -600 0 0 {name=l_bufa_b sig_type=std_logic lab=VDD}

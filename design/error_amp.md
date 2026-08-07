@@ -944,6 +944,92 @@ both of the 0.1 mA column's failure clusters were at the *same* load. Full
 argument, every sweep, and the proposed DR-0007 amendment:
 `spec/decision-records/DR-0012-shelf-width-is-cc-over-cf.md`.
 
+### 6.11 Scheduling `Rz` on the load — the shelf moves, and hits the same ceiling. Negative result (issue #51)
+
+§6.10 asks how much *wider* the shelf must get, measuring it against a `Rz`
+held still. But `Rz` sets **both** shelf corners *and* `A_plat`, so
+
+```
+f_c/f_2  =  beta*gm(MIN)*Cf*Rz^2*gm_pass/C_eff
+f_c/f_z  =  beta*gm(MIN)*Cc*Rz^2*gm_pass/C_eff
+```
+
+— both go as **`Rz²`**. Cutting `Rz` by `k` raises the shelf by `k` and pulls
+the crossover down by `k`, so it buys `k²` of load range where widening by `k`
+buys `k`. §6.10's missing factor of 9 is a factor of **3 in `Rz`**, and
+neither of §6.10's two bounds blocks it. Measured with `Rz` as a plain fixed
+resistor, everything else as committed at `c628c15`, `res_ss`/27 °C/3.30 V,
+1 mΩ ESR (`--no-write` exploration):
+
+| `Rz` | 50 mA / 0.33 µF | 50 mA / 4.7 µF | 1 mA / 0.33 µF | 0.1 mA / 4.7 µF |
+|---|---|---|---|---|
+| 6.0 MΩ | PM −95.4° / GM −21.2 dB | +9.3° / +2.0 dB | −11.0° / −2.4 dB | +68.5° / +45.5 dB |
+| 1.5 MΩ | −87.5° / −9.0 dB | **+77.9° / +14.2 dB** | **+69.4° / +10.0 dB** | **+22.2°** / +44.0 dB |
+| 0.5 MΩ | +56.1° / −3.6 dB | — | +67.9° / +15.7 dB | — |
+
+`Rz` cannot simply *be* small — 0.1 mA / 4.7 µF then crosses below `f_z` and
+loses the column §6.10 closed — so it was **scheduled on the load**, which is
+DR-0009's Candidate 2 arriving at the compensation network rather than at the
+buffer. The sense is free: `OUT` *is* the pass device's gate, so
+`V(N1) − V(OUT)` is `Vsg(Mpass) − Vsg(M2P)`, 674 mV of load-proportional
+signal over 0.1 → 50 mA with one pfet threshold already differenced out.
+Seven devices were built (`Mlvl`/`Mlvlb` level shift, `Rsg`/`Csg` 39 kHz
+filter, `Mrz` shunt across `Rz` at `Vds` = 0 — a pure conductance with
+`gm` = 0, so no Iq and no injected signal — `Rmin` 1.2 MΩ flooring it,
+`Mbufa` adaptive buffer pull-up, `Mrz_pu` for the disabled state), and in
+closed-loop Bode terms the result is dramatic: at `res_ss`/27 °C/3.30 V,
+1 mΩ, 10/25/50 mA at 1 µF go from PM −27/−43/−54° to **+76/+75/+74°** and at
+4.7 µF from +35/+20/+9° to **+59/+63/+67°**, with the 0.1 mA column untouched.
+
+**None of that is admissible, and the circuit is not in this schematic.**
+`sim/amp-openloop/records/20260807-074343-225aba8.md` (full 81-point grid,
+clean tree) is **FAIL at 81 of 81 corners** on three rows:
+
+| row | bar | committed (`20260802-163812-deb3dbd`) | scheduled-`Rz` circuit |
+|---|---|---|---|
+| `peak_excess_db` | ≤ 1 dB | −0.10 … +0.17 | **−0.12 … +19.05**, 72/81 corners |
+| `peak_excess_lightload_db` | ≤ 1 dB | ≤ 0 | **−0.11 … +9.37**, 6/81 |
+| `vg_pulldown_mv` | ≤ 50 mV | pass 81/81 | **522 … 968 mV**, 81/81 |
+| `iq_ua` (amp) | ≤ 15 µA | 5.88 … 14.98 | **9.51 … 25.84**, 44/81 |
+
+- **`peak_excess_db` is DR-0008's precondition** (that row's own definition
+  says so), and DR-0008 was ratified 2026-08-06. `f_2 = 1/(2π·Rz·Cf)` does not
+  care which factor moved: `p2` does not scale with `Rz`, so scheduling `Rz`
+  down drives `f_2` into exactly the ceiling `Cf` hits in §6.10. Holding the
+  bar needs `f_2` ≲ 600 kHz, i.e. `Rz` ≳ 5.8 MΩ — no useful adaptation exists.
+  Note `sim/loop-stability/`'s own resurgence detector read **clean** on the
+  same circuit: it only looks above the LDO loop's first 0 dB crossing, and
+  this resonance sits at 3–5 MHz where `|T_LDO|` is already far below 0 dB.
+  **The two detectors are not interchangeable.**
+- **`vg_pulldown_mv` is the dropout row**, and `Mbufa` breaks it structurally.
+  Its gate is `NRZ ≈ OUT − Vsg(Mlvl)`, so when the loop drives `OUT` toward
+  `VSS` the device's `Vsg = VDD − NRZ` *grows* and it turns harder on exactly
+  when the gate must reach ground. This is the failure §6.2's `Mbufb` exists
+  to avoid, re-created: any pass-gate pull-up referenced to `OUT` has the
+  wrong sign, which is what "adaptive biasing from a load sensed at the pass
+  gate" means by construction. Not a sizing problem.
+
+**What the gap now costs, measured.** Because the ceiling is `p2` and `p2` is
+a bias current, the wall has a price. At `res_ss`/27 °C/3.30 V, 50 mA /
+0.33 µF / 1 mΩ with `Rz` pinned at 0.5 MΩ and `M2N`/`Mbufb` swept as **fixed**
+devices (no `Mbufa`, so the dropout objection does not arise):
+
+| `M2N` / `Mbufb` | buffer current | PM | GM | loop resurgence | `isup` at `ff`/125 °C, 50 mA |
+|---|---|---|---|---|---|
+| 4 µm / 100 µm (committed) | 2.3 µA | +56.1° | −3.6 dB | **+6.29 dB** | 22.60 µA |
+| 4 µm / 200 µm | 4.9 µA | +59.3° | +3.1 dB | clean | 26.86 µA |
+| 8 µm / 130 µm | 6.5 µA | +61.4° | +8.8 dB | clean | ≈ 31 µA |
+| 12 µm / 200 µm | 15.6 µA | +62.5° | **+13.4 dB** | clean | 49.36 µA |
+
+≈ 20 dB of gain margin per decade of buffer current, against a ratified
+`Iq < 30 µA` at **no load and at full load** whose binding corner already
+reads 24.81 µA. Clearing DR-0001 at 50 mA / 0.33 µF costs **≈ 9 µA there**,
+against ≈ 5 µA of headroom. **The residual 1–50 mA gap is a quiescent-current
+statement, not a compensation-topology statement** — the topology that closes
+those columns is small and already in the cell. Full accounting, and the three
+routes to that 9 µA (all of them operator decisions):
+`spec/decision-records/DR-0013-adaptive-shelf-position.md`.
+
 ## 7. Handoffs
 
 | Issue | What to take |
