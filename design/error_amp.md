@@ -563,8 +563,11 @@ need to be constraints in the floorplan rather than discoveries in extraction:
   amplifier bench bar in *both* directions from it (too small → `peak_excess_db`
   positive, too large → `gain_1k_db` under the PSRR budget line). Its n-well
   must be tied to `N1`, its own source, not to `VDD` — the body effect would
-  move the load current at which it turns on. `Rza` is 1 MΩ of `ppolyf_u_1k`
-  in the same compensation path as `Rz` and inherits the same note.
+  move the load current at which it turns on. `Rza` is 600 kΩ of `ppolyf_u_1k`
+  in the same compensation path as `Rz` and inherits the same note; it is the
+  device that sets `Rz_eff`'s heavy-load floor, so a layout that lands it high
+  gives back the 1–50 mA columns and one that lands it low re-opens the
+  amplifier's own local-loop resonance (§6.11).
 - **(§6.7/§6.10, issue #53)** `Cf1`/`Cf2` is ≈ 49 fF built as two 7 µm MIM in
   series, so its mid-node `NF` floats and its bottom-plate parasitic to
   substrate is *in series with the value*, not a stray to absorb. Extraction
@@ -991,7 +994,7 @@ A 24× `Rz` range against a 500× load range, i.e. `Rz ∝ I_load^−1/2`.
 
 | device | value | what it is |
 |---|---|---|
-| `Mrza` | `pfet_03v3` 8 µm/6 µm, S = `N1`, D = `NRZA`, B = `N1`, G = `BG` | triode replica in parallel with `Rz` |
+| `Mrza` | `pfet_03v3` 12 µm/9 µm, S = `N1`, D = `NRZA`, B = `N1`, G = `BG` | triode replica in parallel with `Rz` |
 | `Rza` | `ppolyf_u_1k` 1 µm × 600 µm (600 kΩ), `NRZA` → `NZ` | series floor that flattens the law |
 
 - **It is a resistor and nothing else.** The `Rz`/`Cc` branch carries no DC
@@ -1014,14 +1017,105 @@ A 24× `Rz` range against a 500× load range, i.e. `Rz ∝ I_load^−1/2`.
   nothing else — takes the design from 37–38/48 PASS with **0** resurging
   points to 23–29/48 with **6–19**. The adaptive resistor and the adaptive
   `Cf` are the same channel.
-- **`Rza` shapes the law.** A square-law `1/(Vgs−Vt)` is far sharper than the
-  12× the loop wants across 500× of load; the series floor saturates `Rz_eff`
-  at `Rz‖Rza`. Measured (48-point `tt` screen, `Mrza` 8 µm/6 µm): 200 kΩ →
-  36/48, 300 kΩ → 37, 400 kΩ → 37, 500 kΩ → 38, **600 kΩ → 38**, 800 kΩ → 37,
-  1.0 MΩ → 36, 1.4 MΩ → 35 — against **19/48** for the committed design.
-  Zero resurging points at every one of them.
+- **`Rza` shapes the law, and it is the one knob with a two-sided bound.** A
+  square-law `1/(Vgs−Vt)` is far sharper than the 12× the loop wants across
+  500× of load; the series floor saturates `Rz_eff` at `Rz‖Rza`. Below the
+  floor the heavy-load 0.33 µF rows gain crossover headroom and the 4.7 µF
+  rows lose it, and — the binding side — the amplifier's own local loop starts
+  to ring, which DR-0008 rules out before any PM/GM number is admissible.
+  Measured on the 1296-point `tt`+`res_ss` × 3 temps × 3 supplies loop screen
+  and on the full 81-point `sim/amp-openloop/` grid, at `Mrza` = 12 µm/9 µm:
 
-<!-- RESULT-611 -->
+  | `Rza` | loop screen | `peak_excess_db` (bar ≤ 1) | `gain_1k_db` (line ≥ 53.5) |
+  |---|---|---|---|
+  | 450 kΩ | 837/1296 | **+1.034 FAIL** | 53.7727 |
+  | **600 kΩ** | **828/1296** | **+0.408** | **53.7736** |
+  | 800 kΩ | 767/1296 | +0.031 | 53.7751 |
+  | 1.0 MΩ | 720/1296 | −0.019 | 53.7767 |
+  | 1.6 MΩ | 644/1296 | — | — |
+
+  600 kΩ is the best loop result that still clears DR-0008's bar at the amp
+  level. Note which column does **not** move: `gain_1k_db` changes by 0.003 dB
+  across a 2.2× range of `Rza`, so `Rza` does not spend the PSRR budget at all
+  — `Mrza`'s **gate area** does, and 12 µm/9 µm is what puts `gain_1k_db` at
+  53.78 dB (16 µm/12 µm lands 53.36 dB, under the line).
+- **The base `Rz` stays at 6 MΩ, and that is measured too.** With `Mrza`
+  clamping the heavy-load end, `Rz` is nearly free at the amplifier level
+  (`gain_1k_db` 53.770–53.777 dB and `peak_excess_db` 0.39–0.46 across
+  6/12/18/24 MΩ, all PASS), and raising it does open the 0 mA column — 0 mA /
+  0.33 µF goes 0/72 → 72/72 at 18 MΩ and 0 mA / 1 µF → 68/72 at 24 MΩ. It buys
+  nothing net, because it slides the same window rather than widening it: the
+  0.1 mA / 0.33 µF cell goes 71/72 → 20/72 → 0/72 over the same range, and the
+  screen total falls 828 → 814 (12 MΩ) → 791 (18 MΩ) → 779 (24 MΩ). §6.11's
+  closing subsection is the closed form of why.
+
+**The result, on the full ratified matrix.**
+`sim/loop-stability/records/20260807-103351-64249c6.md`, 4536 points at
+`dec 400`, superseding `20260802-204343-e912fbd`:
+
+| | before | **after** |
+|---|---|---|
+| DR-0001 points passing | 1332/4536 (29.4 %) | **2930/4536 (64.6 %)** |
+| worst PM / GM | −98.86° / −21.15 dB | **−6.81° / −1.47 dB** |
+| DR-0008 resurgence points | 0/4536 | **0/4536** |
+| 1–50 mA columns | 1319/3780 | **2930/3780** |
+
+Free everywhere else, re-measured rather than argued:
+`sim/amp-openloop/records/20260807-105147-64249c6.md` PASS 81/81
+(`gain_1k_db` ≥ 53.7736 dB, `peak_excess_db` ≤ +0.408),
+`sim/psrr-dc/records/20260807-105159-64249c6.md` PASS 81/81
+(`psrr_ldo_1k_db` ≥ 50.2518 dB),
+`sim/quiescent-current/records/20260807-105203-64249c6.md` PASS 45/45
+(`iq_full_ua` ≤ 22.60 µA),
+`sim/amp-selfosc/records/20260807-105211-64249c6.md` PASS 45/45, and
+`sim/enable-shutdown/records/20260807-105239-64249c6.md` PASS 63/63 with every
+DC row identical to the superseded record **to all printed digits** — the
+measurement of the `Vds` = 0 argument above.
+
+That last bench also gives the large-signal reading, which moved further than
+the small-signal one: over its 63 corners the settled output's peak-to-peak
+went from **197.6 mV to 4.07 nV**, the supply-current peak on a 50 mA load
+from **279.6 mA to 50.92 mA**, and `ldo_ilimit`'s clamp gate from a volt below
+`VIN` while settled to within 0.1 mV of it. The pre-#51 design was ringing;
+this one is not.
+
+**What is still not reached, in one number.** At `tt`/27 °C/3.30 V/1 mΩ the
+DR-0001 verdict is decided by crossover frequency alone: all twelve
+(load × cap) cells with **8.0 kHz ≤ `f_c` ≤ 309 kHz** pass and all six outside
+fail. The lower edge is the compensation zero (`PM ≈ atan(f_c/f_z)`, so 45°
+needs `f_c ≳ 1.45·f_z`, and `1.45/(2π·6 MΩ·4.8 pF)` = 8.0 kHz against 8.02 kHz
+measured); the upper edge `f_hi` = 309 kHz is where the output stage's own
+poles have taken the rest of the phase. The pass band is therefore
+
+```
+W = f_hi / (1.45·f_z) = 2π·f_hi·Rz_eff·Cc / 1.45 = 38.6 : 1
+```
+
+and DR-0001's matrix asks `f_c` to cover 693 Hz … 712 kHz, **1029 : 1**.
+Adaptation takes the load axis out of that span; it cannot take the cap axis
+out, because at one load `Rz_eff` is one number. At 50 mA that is a
+contradiction with no free variable in it —
+
+```
+fit the 14.2x cap window:   Rz_eff >= 14.2*1.45/(2*pi*f_hi*Cc) = 2.21 MOhm
+stay under the cliff:       Rz_eff <= 545k * (309 kHz/712 kHz) =  236 kOhm
+```
+
+— 9.4× apart. Both bounds move with `f_hi`, in opposite directions, so the gap
+closes as `f_hi²`: **`f_hi` ≥ 0.95 MHz** is needed against the 0.31 MHz
+measured, or ≥ 0.76 MHz if the 1.55× of `gm(MIN)/Cc` the design holds over the
+ratified PSRR floor is spent as well. Scaling `Cc` alone does not help: §4's
+row pins `gm(MIN) ≥ K·Cc`, and the two bounds then move together.
+
+The 1606 remaining failures are that one number, three times: 756 in the 0 mA
+column (below the band — the replica cannot act there, `V(N1) − V(BG)` being
+0.415 V at 0 mA and 0.607 V at 0.1 mA against `|Vtp|` ≈ 0.72 V), 681 at
+0.33 µF and ≥ 1 mA (above it), and 169 at the same two edges over PVT.
+`spec/decision-records/DR-0013-adaptive-shelf-from-the-pass-gate.md` carries
+the derivation and the three ways out — buy `f_hi` with the 5.19 µA the Iq row
+has left (DR-0009's *literal* Candidate 2, still untried), re-cut §4's PSRR
+budget against the closed-loop measurement, or narrow DR-0001's box at the
+0.33 µF end of the cap window and at no load.
 
 ## 7. Handoffs
 
@@ -1047,9 +1141,9 @@ device):
 | Transistor gate area (all 13 devices) | ≈ 1990 µm² |
 | **Total** | **≈ 16 400 µm² ≈ 0.0164 mm²** — 16 % of the core budget |
 
-**#51 §6.11 adds two items**, both small: `Rza` (1 µm × 1000 µm `ppolyf_u_1k`)
-≈ 1000 µm², and `Mrza` (12 µm × 9 µm) 108 µm² of gate — ≈ 1100 µm² together,
-taking the total to ≈ 17 500 µm² (≈ 17.5 % of the core budget). `Mrza`'s
+**#51 §6.11 adds two items**, both small: `Rza` (1 µm × 600 µm `ppolyf_u_1k`)
+≈ 600 µm², and `Mrza` (12 µm × 9 µm) 108 µm² of gate — ≈ 700 µm² together,
+taking the total to ≈ 17 100 µm² (≈ 17 % of the core budget). `Mrza`'s
 gate area is a *compensation* value, not a layout convenience: it is the
 adaptive `Cf` of §6.11, and §6.11's own table shows the design failing a
 bench bar in both directions from it. It must be laid out to its drawn

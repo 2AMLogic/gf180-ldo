@@ -360,7 +360,34 @@ def nonregulating(rows: list[Row]) -> list[Row]:
     ]
 
 
-def render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec) -> str:
+def dc_seed_lines(pvt) -> str:
+    """`.nodeset` cards that start Newton on the REGULATING DC branch.
+
+    ``ldo_softstart`` and ``ldo_ilimit`` both clamp ``PASS_GATE`` to ``VIN``
+    through their ``CLG`` gates while the feedback node sits below the
+    reference, and "FB low, so clamp on, so FB stays low" is a self-consistent
+    DC solution at a finite, positive VOUT -- one the deck's ``Dclamp`` (which
+    only denies VOUT the escape below -0.7 V) cannot see. Every AC analysis in
+    the deck cold-starts its own operating-point solve, so each one is an
+    independent chance to land on it; issue #51 hit that at exactly one of the
+    63 PVT corners.
+
+    Every value here is a constant of the design or of the corner -- the
+    ratified 1.8 V output target, the 1.2 V feedback node its divider defines,
+    and the two clamp gates parked at VIN, i.e. off -- so this carries no
+    per-corner tuning. A ``.nodeset`` is a first-guess constraint that ngspice
+    releases after the first solve pass: it selects which solution Newton
+    converges to, it does not create one, and the caller re-checks every row's
+    VOUT afterwards exactly as it does without the seed.
+    """
+    return "\n".join([
+        f".nodeset v(VOUT)={VOUT_NOM_V:g} v(XDUT.FB)={VOUT_NOM_V * 2 / 3:g}",
+        f".nodeset v(XDUT.Xilimit.CLG)={pvt.vdd:g} "
+        f"v(XDUT.Xsoftstart.CLG)={pvt.vdd:g}",
+    ])
+
+
+def render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec, dc_seed="") -> str:
     corner = pvt.corner
     mos, res, bjt, diode, moscap, mimcap = corner.sections
     subs = {
@@ -383,6 +410,7 @@ def render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec) -> str:
         "ILOAD_LIST": " ".join(f"{v:g}" for v in iloads),
         "CEFF_LIST": " ".join(f"{v:g}" for v in ceffs),
         "ESR_LIST": " ".join(f"{v:g}" for v in esrs),
+        "DC_SEED": dc_seed,
     }
     text = TEMPLATE.read_text()
     missing = {m for m in TOKEN_RE.findall(text) if m not in subs}
@@ -398,10 +426,12 @@ FATAL_RE = re.compile(
 )
 
 
-def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path):
-    deck = workdir / f"{pvt.corner_id}.spice"
-    deck.write_text(render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec))
-    log = logdir / f"{pvt.corner_id}.log"
+def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path,
+              dc_seed: str = ""):
+    suffix = "_dcseed" if dc_seed else ""
+    deck = workdir / f"{pvt.corner_id}{suffix}.spice"
+    deck.write_text(render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec, dc_seed))
+    log = logdir / f"{pvt.corner_id}{suffix}.log"
     proc = subprocess.run(
         ["ngspice", "-b", str(deck)], capture_output=True, text=True
     )
@@ -830,15 +860,30 @@ def main() -> int:
 
     rows: list[Row] = []
     failures: list[str] = []
+    seeded: list[str] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         futures = {
             pool.submit(run_point, pvt, pdk, iloads, ceffs, esrs, args.ac_dec,
                         workdir, logdir): pvt
             for pvt in grid
         }
+        retries = []
         for done in concurrent.futures.as_completed(futures):
             pvt, pt_rows, err = done.result()
             if err:
+                # A corner that misses the regulating DC branch gets ONE
+                # retry, with the `.nodeset` seed that starts Newton on it
+                # (see dc_seed_lines()). The retry is checked by exactly the
+                # same VOUT test as the first attempt -- the seed buys a
+                # starting point, never a verdict -- and any corner that
+                # needs it is named in the record, so the default, unseeded
+                # path stays comparable with every record taken before this
+                # one at every corner that does not.
+                if "regulating DC solution" in err:
+                    retries.append(pvt)
+                    print(f"  {pvt.corner_id:<22} DC branch miss, retrying "
+                          f"with the regulating-branch seed")
+                    continue
                 failures.append(f"{pvt.corner_id}: {err}")
                 print(f"  {pvt.corner_id:<22} SIM ERROR  {err}")
                 continue
@@ -846,6 +891,26 @@ def main() -> int:
             w = worst_of(pt_rows)
             print(f"  {pvt.corner_id:<22} worst PM {pm_str(w):>7} deg  "
                   f"GM {gm_str(w):>7} dB  at {w.config_id}")
+
+    if retries:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            futures = {
+                pool.submit(run_point, pvt, pdk, iloads, ceffs, esrs, args.ac_dec,
+                            workdir, logdir, dc_seed_lines(pvt)): pvt
+                for pvt in retries
+            }
+            for done in concurrent.futures.as_completed(futures):
+                pvt, pt_rows, err = done.result()
+                if err:
+                    failures.append(f"{pvt.corner_id} (with DC seed): {err}")
+                    print(f"  {pvt.corner_id:<22} SIM ERROR  {err}")
+                    continue
+                seeded.append(pvt.corner_id)
+                rows.extend(pt_rows)
+                w = worst_of(pt_rows)
+                print(f"  {pvt.corner_id:<22} worst PM {pm_str(w):>7} deg  "
+                      f"GM {gm_str(w):>7} dB  at {w.config_id}  "
+                      f"[regulating-branch DC seed]")
 
     if failures:
         print("\nFATAL: simulation failures:", file=sys.stderr)
@@ -903,7 +968,7 @@ def main() -> int:
         record_id=record_id, rows=rows, worst=worst, failing=failing,
         multi_cross=multi_cross, resurging=resurging, grid=grid, iloads=iloads,
         ceffs=ceffs, esrs=esrs, pdk=pdk, dirty=dirty, args=args,
-        curve_log=curve_log,
+        curve_log=curve_log, seeded=seeded,
     )
     (records / f"{record_id}.md").write_text(md)
 
@@ -916,7 +981,8 @@ def main() -> int:
 
 
 def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
-                  grid, iloads, ceffs, esrs, pdk, dirty, args, curve_log) -> str:
+                  grid, iloads, ceffs, esrs, pdk, dirty, args, curve_log,
+                  seeded=()) -> str:
     rel = lambda p: str(Path(p).resolve().relative_to(REPO_ROOT))  # noqa: E731
     overall = "PASS" if not failing else "FAIL"
     by_corner: dict[str, list[Row]] = {}
@@ -1012,6 +1078,25 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
 
     subset = args.subset_reason.strip()
     subset_md = (f"\n  - **Subset reason**: {subset}\n" if subset else "")
+    if seeded:
+        seeded_md = (
+            "\n  - **DC branch seed used at "
+            f"{len(seeded)}/{len(grid)} PVT corner(s)**: "
+            + ", ".join(f"`{c}`" for c in sorted(seeded))
+            + ". Those corners first missed the regulating DC solution and\n"
+            "    were re-run once with `.nodeset` cards that start Newton with\n"
+            "    `ldo_softstart`/`ldo_ilimit`'s `PASS_GATE` clamps released --\n"
+            "    see `dc_seed_lines()` in `sweep.py` and the \"removing the\n"
+            "    non-physical DC branch\" comment in the deck. The seed selects\n"
+            "    which of the circuit's DC solutions Newton converges to and is\n"
+            "    released after the first solve pass; the retry is held to the\n"
+            "    same VOUT check as the first attempt, and the raw log for it is\n"
+            "    `<corner-id>_dcseed.log`. Every other corner ran unseeded, so\n"
+            "    its numbers are directly comparable with earlier records.\n"
+        )
+    else:
+        seeded_md = ""
+    subset_md = subset_md + seeded_md
     multi_md = ""
     if multi_cross:
         multi_md = (
