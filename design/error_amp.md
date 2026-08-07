@@ -557,6 +557,14 @@ need to be constraints in the floorplan rather than discoveries in extraction:
   follow-up.
 - `Cc` at 4.80 pF has ≈ 0 dB of PSRR margin, so any parasitic capacitance
   added to the `NZ`/`OUT` net comes straight off the ratified PSRR row.
+- **(§6.11, issue #51)** `Mrza` is a 12 µm/9 µm pfet whose **gate area is a
+  compensation value**, not a sizing convenience: its gate-to-channel
+  capacitance is the adaptive `Cf` §6.11 depends on, and the design fails an
+  amplifier bench bar in *both* directions from it (too small → `peak_excess_db`
+  positive, too large → `gain_1k_db` under the PSRR budget line). Its n-well
+  must be tied to `N1`, its own source, not to `VDD` — the body effect would
+  move the load current at which it turns on. `Rza` is 1 MΩ of `ppolyf_u_1k`
+  in the same compensation path as `Rz` and inherits the same note.
 - **(§6.7/§6.10, issue #53)** `Cf1`/`Cf2` is ≈ 49 fF built as two 7 µm MIM in
   series, so its mid-node `NF` floats and its bottom-plate parasitic to
   substrate is *in series with the value*, not a stray to absorb. Extraction
@@ -1038,6 +1046,15 @@ device):
 | `Rbufb` (1 µm × 5000 µm, `ppolyf_u_1k`, 5 MΩ) | ≈ 5000 µm² |
 | Transistor gate area (all 13 devices) | ≈ 1990 µm² |
 | **Total** | **≈ 16 400 µm² ≈ 0.0164 mm²** — 16 % of the core budget |
+
+**#51 §6.11 adds two items**, both small: `Rza` (1 µm × 1000 µm `ppolyf_u_1k`)
+≈ 1000 µm², and `Mrza` (12 µm × 9 µm) 108 µm² of gate — ≈ 1100 µm² together,
+taking the total to ≈ 17 500 µm² (≈ 17.5 % of the core budget). `Mrza`'s
+gate area is a *compensation* value, not a layout convenience: it is the
+adaptive `Cf` of §6.11, and §6.11's own table shows the design failing a
+bench bar in both directions from it. It must be laid out to its drawn
+dimensions, next to `Cf1`/`Cf2`, and its n-well tied to `N1` (its own source)
+rather than to `VDD`.
 
 **#53 §6.10 shrinks this row, it does not grow it.** `Cf1`/`Cf2` go
 2 × 144 µm² → 2 × 49 µm², and `M2P` (300 → 60 µm²), `Mbufb` (400 → 100 µm²)

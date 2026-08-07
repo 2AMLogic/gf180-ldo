@@ -196,7 +196,7 @@ lever rather than another fixed-network iteration. MEASURED, the per-load
 best fixed Rz is 6 MOhm at 0.1 mA, ~1-2 MOhm at 1 mA, ~0.7 MOhm at 10 mA
 and ~0.5 MOhm at 50 mA -- a 1/sqrt(I_load) law, as predicted.
 
-  Mrza  pfet_03v3, 8u/6u, SOURCE N1, DRAIN through Rza to NZ, BODY tied to
+  Mrza  pfet_03v3, 12u/9u, SOURCE N1, DRAIN through Rza to NZ, BODY tied to
         its own source (no body effect), GATE on BG. It is in parallel with
         Rz, and it is a resistor and nothing else: the Rz/Cc branch carries
         no DC current, so Mrza's Vds is exactly 0 V, and a MOS at Vds = 0
@@ -219,6 +219,24 @@ and ~0.5 MOhm at 50 mA -- a 1/sqrt(I_load) law, as predicted.
         Rza + Ron(Mrza) and the heavy-load end saturates at Rz||Rza rather
         than running away. MEASURED without it, Mrza alone over-corrects at
         50 mA and under-corrects at 1 mA.
+        Rza is the ONE knob that trades the two ends of DR-0001's cap
+        window against each other at heavy load, and 600 kOhm is where the
+        two bench bars leave it. MEASURED on the 1296-point tt+res_ss x
+        3 temps x 3 supplies screen, and on the 81-point sim/amp-openloop
+        grid:
+          Rza    loop screen   amp-openloop peak_excess_db (bar <= 1)
+          450k   837/1296      +1.034  FAIL  (DR-0008 local-loop ringing)
+          600k   828/1296      +0.408  PASS
+          800k   767/1296      +0.031  PASS
+          1.0M   720/1296      -0.019  PASS
+          1.6M   644/1296      --
+        Below 600k the amplifier's OWN local loop starts to ring, which
+        DR-0008 rules out before any PM/GM number is admissible; above it
+        the heavy-load 0.33 uF rows lose crossover headroom faster than
+        the 4.7 uF rows gain it. gain_1k_db is NOT the binding side here
+        (53.7736 dB at 600k vs 53.7767 dB at 1.0 MOhm -- 0.003 dB, i.e.
+        Rza does not move the PSRR budget line at all); Mrza's GATE AREA
+        is what moves gain_1k_db, and 12u/9u is what sets it at 53.78 dB.
   Cgg   Mrza's own gate-to-channel capacitance is load-bearing and is why
         the gate is tied DIRECTLY to BG. It is a capacitance from BG to N1,
         i.e. it ADDS TO Cf -- and only when the channel exists, i.e. only
@@ -485,7 +503,7 @@ C {devices/lab_pin.sym} 570 -280 0 0 {name=l_rza_d sig_type=std_logic lab=NRZA}
 C {devices/lab_pin.sym} 570 -220 0 0 {name=l_rza_s sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 570 -250 0 0 {name=l_rza_b sig_type=std_logic lab=N1}
 
-C {symbols/ppolyf_u_1k.sym} 700 -250 0 0 {name=Rza model=ppolyf_u_1k W=1u L=1000u m=1}
+C {symbols/ppolyf_u_1k.sym} 700 -250 0 0 {name=Rza model=ppolyf_u_1k W=1u L=600u m=1}
 C {devices/lab_pin.sym} 700 -280 0 0 {name=l_rza_rp sig_type=std_logic lab=NRZA}
 C {devices/lab_pin.sym} 700 -220 0 0 {name=l_rza_rm sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 680 -250 0 0 {name=l_rza_rb sig_type=std_logic lab=VSS}
