@@ -955,7 +955,73 @@ both of the 0.1 mA column's failure clusters were at the *same* load. Full
 argument, every sweep, and the proposed DR-0007 amendment:
 `spec/decision-records/DR-0012-shelf-width-is-cc-over-cf.md`.
 
-### 6.11 The shelf does not have to be fixed — `Mrza`/`Rza` (issue #51, DR-0013)
+### 6.11 `f_2`'s ceiling is `Cc`'s return node, and adaptive bias cannot be the lever (issue #51)
+
+§6.10 hands the 1–50 mA columns to DR-0009's Candidate 2. Issue #51 built it,
+measured it, and the answer is no — for a reason that also locates the
+constraint that *does* move. Nothing in this subsection changed the schematic;
+the full argument, every sweep and the reproduction commands are in
+`spec/decision-records/DR-0013-compensation-return-node.md`.
+
+**The frontier, restated in the one free variable.** `f_c/f_z ∝ Rz²` and
+`f_2/f_c ∝ 1/Rz²`, so `Rz` slides the LDO's crossover through the shelf
+quadratically and the shelf width `Cc/Cf` is the whole budget it has to slide
+inside. Measured (`sim/loop-stability/`, `--no-write`, tt/27 °C/3.30 V/1 mΩ,
+sweeping only `Rz`), the range of `Rz` that clears both DR-0001 bars at all
+three `C_eff` values is `3.8 MΩ … ∞` at 0.1 mA, `1.3 … 1.75 MΩ` at 1 mA, and
+**empty at 10, 25 and 50 mA** — the 0.33 µF *gain*-margin ceiling
+(≤ 0.30 MΩ) and the 4.7 µF *phase*-margin floor (≥ 0.37–0.45 MΩ) cross by
+1.2–1.5×. The load axis on its own is coverable (0.1 mA wants ≥ 3.8 MΩ, 50 mA
+wants ≈ 0.25 MΩ) *if* `Rz` can move with load.
+
+**Adaptive `gm(MIN)` works, and cannot be built here.** Scaling `MTAIL`'s
+`W/L` 6.6/4 → 0.22/16 by hand (≈ 120× less tail) and changing nothing else
+takes 10 mA to 70.43°/23.57 dB, 77.65°/34.16 dB, 48.82°/46.22 dB and 50 mA to
+54.45°/17.66 dB, 78.62°/27.69 dB, 62.98°/46.78 dB across 0.33/1/4.7 µF — both
+columns passing both bars. But load can only be observed at the pass gate,
+which is **this amplifier's own output**, so any scheme that steers a *bias
+current* closes `OUT → sense → tail → V_os → OUT` with gain `A_DC·dV_os/dV_OUT`
+— `A_DC` is 106–113 dB, and a loop gain below 1 would need `V_os` to move by
+< a few µV over the ≈ 300 mV `Vsg(Mpass)` swings. Measured on a built
+three-segment adaptive-tail cell: the Tian extraction's DC loop gain went from
++143.3 dB at phase −0.27° (positive real, as a negative-feedback loop must be)
+to phase ≈ ±180° at DC, `dcgain_db` 143.3 → 100.7 dB — a minor loop in positive
+feedback with gain > 1, i.e. DR-0008's precondition broken by construction. The
+only elements that can be adapted without closing that loop are the ones
+carrying **no DC current**: `Rz` and the compensation caps.
+
+**And `f_2`'s ceiling is not Iq — it is where `Cc` returns to.** With `Cc` on
+`OUT`, the local loop the shelf rides on is
+`N1 → M2P → BG → Mbuf → OUT → Cc/Rz → N1`, so it contains the class-AB buffer
+and the 6.14 pF pass gate, and its crossover *is* `f_2`. Changing only `Rz`:
+
+| variant | `Rz` | `f_2` | measurement | verdict |
+|---|---|---|---|---|
+| `Cc` → `OUT` (committed) | 6 MΩ | 541 kHz | `peak_excess_db` −0.13 dB, 81/81 | PASS |
+| `Cc` → `OUT` | 3 MΩ | 1.08 MHz | `sim/amp-openloop`, 81 points: **78 CHECK FAILs**, worst **+3.41 dB** | FAIL |
+| `Cc` → `OUT` | 0.6 MΩ | 5.4 MHz | DR-0008 resurgence **+1.31 dB** (25 mA) / **+3.74 dB** (50 mA), 0.33 µF | FAIL |
+| **`Cc` → `BG`** | **0.75 MΩ** | **4.3 MHz** | `sim/amp-openloop`, 81 points: **PASS 81/81**, `peak_excess_db` −0.077 … −0.030 dB | **PASS** |
+
+Returning `Cc` to `BG` puts it around `M2P` alone — the nodes `Cf1`/`Cf2`
+already span — so the buffer and pass gate leave the local loop while
+`A_amp = gm(MIN)/(1/(Rz + 1/sCc) + sCf)`, and therefore `f_z`, `f_2`, `A_plat`
+and `Cc/Cf`, are algebraically unchanged. **≥ 8× more `f_2` headroom for one
+net and zero microamps**, against DR-0009's measured 1.9× of the whole
+amplifier Iq for 3×. The same 81-point run leaves `iq_ua` at 5.88–14.98 µA
+(unchanged worst corner) and `gain_1k_db` at 54.31–63.57 dB (0.26 dB of the
+1.07 dB PSRR-proxy margin spent).
+
+**Why the schematic is unchanged.** An adaptive-`Rz` ladder built on top of
+that reaches 10 of 15 tt load × cap points against the committed 5 of 15 with
+resurgence clean, but the return-node move alone costs the 0.1 mA column its
+margin at the binding corner — `ss`/−40 °C/3.63 V, 0.1 mA/0.33 µF/1 mΩ:
+48.64°/13.64 dB committed, 44.73°/10.79 dB with `Cc` → `BG`, below DR-0001's
+45°. §6.10 closed that column and #51 is not entitled to spend it. The next
+increment is therefore, in order: `Cc` → `BG`, then **re-measure `Cf`'s floor**
+(DR-0012 §2's ≈ 45 fF was set by the race this change removes; the residual is
+1.5–2× of `Cc/Cf`, one step of `Cf`), then the adaptive-`Rz` ladder.
+
+### 6.12 The shelf does not have to be fixed — `Mrza`/`Rza` (issue #51, DR-0014)
 
 **The lever moves from bias to `Rz`.** DR-0009 named Candidate 2 as *adaptive
 biasing of the buffer from a pass-device sense replica*, because it believed
@@ -1111,11 +1177,21 @@ The 1606 remaining failures are that one number, three times: 756 in the 0 mA
 column (below the band — the replica cannot act there, `V(N1) − V(BG)` being
 0.415 V at 0 mA and 0.607 V at 0.1 mA against `|Vtp|` ≈ 0.72 V), 681 at
 0.33 µF and ≥ 1 mA (above it), and 169 at the same two edges over PVT.
-`spec/decision-records/DR-0013-adaptive-shelf-from-the-pass-gate.md` carries
-the derivation and the three ways out — buy `f_hi` with the 5.19 µA the Iq row
-has left (DR-0009's *literal* Candidate 2, still untried), re-cut §4's PSRR
-budget against the closed-loop measurement, or narrow DR-0001's box at the
-0.33 µF end of the cap window and at no load.
+`spec/decision-records/DR-0014-adaptive-shelf-from-the-pass-gate.md` carries
+the derivation and the ways out. In order: **take §6.11's `Cc` → `BG` return
+node first**, because `Rza` here is not set by phase margin (450 kΩ scores
+837/1296 on the screen against 600 kΩ's 828, and takes the matrix's worst
+phase margin positive) but by `peak_excess_db`, which 450 kΩ pushes to +1.034
+against a bar of 1.0 — and §6.11 measures exactly that bar being relieved by
+≥ 8×, for one net and no microamps. §6.11's caveat that the move alone costs
+the 0.1 mA column 0.3° is a caveat about a design without §6.12's adaptive
+`Rz`, which is what pays that column back; measuring the two together is one
+experiment. Then buy `f_hi` with the 5.19 µA the Iq row has left (the
+buffer-bandwidth half of Candidate 2, which §6.11's negative result does not
+rule out — it rules out *steering a bias from a sense*, not raising a standing
+current). Then re-cut §4's PSRR budget against the closed-loop measurement.
+Only then narrow DR-0001's box, at the 0.33 µF end of the cap window and at no
+load, which is a product decision and not a Builder's.
 
 ## 7. Handoffs
 

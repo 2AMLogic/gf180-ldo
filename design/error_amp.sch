@@ -57,7 +57,7 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      and Cf is the component that decides how much of
                      DR-0001's load x cap box the shelf can cover. See
                      SHELF WIDTH below.
-           Mrza,Rza  ADAPTIVE shunt across Rz (issue #51, DR-0013): a
+           Mrza,Rza  ADAPTIVE shunt across Rz (issue #51, DR-0014): a
                      pfet in TRIODE from N1 through Rza to NZ, gated by
                      BG -- i.e. by the pass device's own gate drive, one
                      Vsg(Mbuf) up. It carries no DC current, so its Vds
@@ -169,7 +169,7 @@ not f_2 itself.
   and spec/decision-records/DR-0012. What the shelf does NOT have to be is
   FIXED -- see ADAPTIVE SHELF.
 
-ADAPTIVE SHELF -- Mrza/Rza, the pass-device-replica lever (issue #51, DR-0013)
+ADAPTIVE SHELF -- Mrza/Rza, the pass-device-replica lever (issue #51, DR-0014)
 The reason a fixed shelf cannot cover 0.1-50 mA is that the LDO's crossover
 
     f_c = beta * A_plat * gm_pass / (2*pi*C_eff)
@@ -268,7 +268,7 @@ and ~0.5 MOhm at 50 mA -- a 1/sqrt(I_load) law, as predicted.
   either a wider Cc/Cf (i.e. the PSRR budget re-cut against a closed-loop
   measurement, DR-0009's own "worth doing on its own merits") or the
   buffer-bandwidth boost that would let f_2 rise further -- which costs Iq
-  at full load, where the < 30 uA row has ~5 uA left. See DR-0013.
+  at full load, where the < 30 uA row has ~5 uA left. See DR-0014.
 
 COMPENSATION -- why the Miller network is a gain SHELF (issue #51)
 #10's stability record measured the pre-#51 loop as a textbook two-pole

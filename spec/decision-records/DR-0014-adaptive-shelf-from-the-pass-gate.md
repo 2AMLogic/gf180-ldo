@@ -1,4 +1,4 @@
-# DR-0013: The gain shelf can be made to track the load — a triode replica across `Rz`, gated by the pass device's own drive
+# DR-0014: The gain shelf can be made to track the load — a triode replica across `Rz`, gated by the pass device's own drive
 
 - **Status**: proposed — ratification is the operator's, the same process
   DR-0001, DR-0007 and DR-0008 went through. **Nothing in this record is in
@@ -13,6 +13,23 @@
 - **Builds on**: DR-0012 (the shelf's width is `Cc/Cf`), DR-0009 (the
   frontier equations and the naming of Candidate 2), DR-0008 (the RHP-pole
   precondition, ratified 2026-08-06). It does not supersede any of them.
+- **Sibling, and agrees with it**: **DR-0013** (`f_2`'s ceiling is the
+  compensation network's return node, not an Iq budget — and adaptive *bias*
+  cannot be the lever), written independently against the same issue. The two
+  reach the same conclusion by different routes and neither contradicts the
+  other: DR-0013 measures DR-0009's *literal* Candidate 2 — steering a bias
+  current from a pass-device sense — and rules it unbuildable, because the
+  only place the load can be sensed is the pass gate, which is the
+  amplifier's own output, so the sense closes a minor loop in positive
+  feedback (measured: `T(DC)` phase goes from −0.27° to ≈ 180°). Its closing
+  sentence — "the only elements that can be adapted without closing that loop
+  are the ones carrying **no DC current**: `Rz` and the compensation caps" —
+  is exactly the device this record builds, and it is why `Mrza` sits at
+  `Vds` = 0 with `gm` identically zero rather than steering a current. Read
+  DR-0013 first for why *bias* is out; read this one for what to adapt
+  instead. DR-0013's own next-increment recommendation (`Cc` → `BG`) is
+  carried forward in "The three ways out" below, where the numbers here say
+  what it is worth.
 
 ## Context
 
@@ -374,10 +391,31 @@ then `f_c` at 0.1 mA/0.33 µF is 94.5 kHz × 21/6 = **332 kHz**, back over the
 in "What was built": the 0 mA column opens and the 0.1 mA/0.33 µF cell closes,
 for no net gain. Same wall, same number.
 
-## The three ways out, in the order this record would take them
+## The ways out, in the order this record would take them
 
-1. **Buy `f_hi`** — DR-0009's *literal* Candidate 2, the buffer-bandwidth
-   boost, which this record's `Rz` lever deliberately did not attempt. The
+0. **Take DR-0013's return-node move first, because it is free and it
+   un-binds the knob this record had to leave on the table.** `Rza` is not set
+   here by phase margin — 450 kΩ scores 837/1296 on the screen against
+   600 kΩ's 828 and takes the matrix's worst phase margin positive — it is set
+   by `peak_excess_db`, the amplifier's *own* local-loop resonance, which
+   450 kΩ pushes to +1.034 against a bar of 1.0. DR-0013 measures exactly that
+   bar being relieved: returning `Cc` to `BG` takes the class-AB buffer and
+   the 6.14 pF pass gate out of the local loop and passes 81/81 at `Rz` =
+   0.75 MΩ where `Cc` → `OUT` fails 78 of 162 points at 3 MΩ — ≥ 8× of
+   headroom for one net and zero microamps. It should be worth `Rza` below
+   450 kΩ, and DR-0013's own caveat (the move alone costs the 0.1 mA column
+   0.3° at `ss`/−40 °C/3.63 V, 44.73° against 45°) is a caveat about a design
+   *without* this record's adaptive `Rz`, which is the thing that pays that
+   column back. Measuring the two together is one experiment, and it is the
+   first one to run.
+   It does **not** move `f_hi`: `f_hi` is the *forward* path's phase cliff and
+   the return node does not move the buffer or pass-gate poles, only which
+   loop they sit in. So it improves the residual and does not close the cap
+   window, which is item 1.
+1. **Buy `f_hi`** — the buffer-bandwidth half of Candidate 2, which this
+   record's `Rz` lever deliberately did not attempt and which DR-0013's
+   negative result does **not** rule out (DR-0013 rules out *steering a bias
+   from a sense*; raising the buffer's standing current steers nothing). The
    ratified Iq row leaves 30 − 24.81 = **5.19 µA** at full load, against a
    buffer that runs at ≈ 2 µA, so a 3× is not obviously out of reach — but it
    is a different change to a different part of the amplifier, with its own
