@@ -57,6 +57,17 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      and Cf is the component that decides how much of
                      DR-0001's load x cap box the shelf can cover. See
                      SHELF WIDTH below.
+           Mrza,Rza  ADAPTIVE shunt across Rz (issue #51, DR-0015): a
+                     pfet in TRIODE from N1 through Rza to NZ, gated by
+                     BG -- i.e. by the pass device's own gate drive, one
+                     Vsg(Mbuf) up. It carries no DC current, so its Vds
+                     is exactly 0 and its gm is exactly 0: it is a pure
+                     voltage-controlled resistor and injects no signal.
+                     Its conductance rises with load current, so the
+                     WHOLE gain shelf (A_plat, f_z and f_2 together)
+                     translates up in frequency with the LDO's own
+                     crossover instead of standing still. See ADAPTIVE
+                     SHELF below.
   Bias     MB1,Rbias Supply-referenced self-bias, fed through the EN header
                      Mbias_h (see ENABLE): Iref = (VDD - Vgs)/Rbias
                      through the diode-connected NMOS MB1, whose gate NBIAS
@@ -150,12 +161,114 @@ not f_2 itself.
   with M2P 60u/1u and Mbuf 60u/0.5u it drops by ~0.7 dB, and at the
   committed Cf = 49 fF it is -0.10...+0.09 dB at 81 of 81 points.
 
-  WHAT IS STILL NOT FIXED. The shelf now covers the whole 0.1 mA column
-  (540/540, DR-0001 both bars) with 1-13 deg of margin, but 1-50 mA needs
+  WHAT A FIXED SHELF CANNOT DO. The shelf covers the whole 0.1 mA column
+  (756/756, DR-0001 both bars) with 1-13 deg of margin, but 1-50 mA needs
   the shelf to reach ~6 MHz at 50 mA / 0.33 uF, which is another ~10x of
   Cc/Cf. Cf cannot go there against the p2 ceiling and Cc cannot grow into
   it without spending the ratified PSRR row. See design/error_amp.md S6.10
-  and spec/decision-records/DR-0012.
+  and spec/decision-records/DR-0012. What the shelf does NOT have to be is
+  FIXED -- see ADAPTIVE SHELF.
+
+ADAPTIVE SHELF -- Mrza/Rza, the pass-device-replica lever (issue #51, DR-0015)
+The reason a fixed shelf cannot cover 0.1-50 mA is that the LDO's crossover
+
+    f_c = beta * A_plat * gm_pass / (2*pi*C_eff)
+
+is proportional to gm_pass, which moves 63x across DR-0001's load axis
+(MEASURED at tt/27C/3.30V/0.33uF: f_c = 161 kHz at 0.1 mA and 1.87 MHz at
+50 mA), while f_z, f_2 and the -180 deg crossing stand still. The whole
+Bode SHAPE above ~30 kHz is load-independent -- MEASURED, the 0.1 mA and
+50 mA curves are the same curve offset by 36 dB -- so what fails at heavy
+load is only that f_c has walked past the fixed phase cliff at ~685 kHz.
+
+Rz is the one component that moves ALL of them, and in the right directions
+at once:
+
+    A_plat = gm(MIN)*Rz     f_z = 1/(2*pi*Rz*Cc)     f_2 = 1/(2*pi*Rz*Cf)
+
+so scaling Rz by 1/a scales f_z, f_2 (and the phase cliff with them) UP by
+a, and scales f_c DOWN by a. Both effects help at heavy load, and every
+frequency in the amplifier's own transfer function scales by the same a --
+the shelf TRANSLATES rather than deforming. With Rz proportional to
+1/sqrt(gm_pass) the two motions cancel exactly (f_c/f_z and f_c/f_2 are
+both load-invariant), which is what makes a load-tracking Rz the right
+lever rather than another fixed-network iteration. MEASURED, the per-load
+best fixed Rz is 6 MOhm at 0.1 mA, ~1-2 MOhm at 1 mA, ~0.7 MOhm at 10 mA
+and ~0.5 MOhm at 50 mA -- a 1/sqrt(I_load) law, as predicted.
+
+  Mrza  pfet_03v3, 12u/9u, SOURCE N1, DRAIN through Rza to NZ, BODY tied to
+        its own source (no body effect), GATE on BG. It is in parallel with
+        Rz, and it is a resistor and nothing else: the Rz/Cc branch carries
+        no DC current, so Mrza's Vds is exactly 0 V, and a MOS at Vds = 0
+        has gm = dId/dVgs = beta*Vds = 0 EXACTLY. The gate injects no
+        signal current into the compensation node -- there is no
+        feedforward path to isolate, and no isolation resistor is needed.
+  BG    is the sense. It is the buffer's gate, i.e. the pass device's own
+        gate drive one Vsg(Mbuf) up, so it IS a pass-device replica bias in
+        the sense DR-0009's candidate 2 asks for -- and it is the free one:
+        no replica device, no sense resistor, no extra bias branch, and NO
+        Iq AT ALL, which is what makes this affordable inside a < 30 uA row
+        that is already at 24.8 uA worst corner at full load. MEASURED at
+        tt/27C/3.30V, V(N1) - V(BG): 0.415 V at 0 mA, 0.607 V at 0.1 mA,
+        0.724 V at 1 mA, 0.924 V at 10 mA, 1.285 V at 50 mA -- against a
+        |Vtp| near 0.72 V, so Mrza is off below ~1 mA and in progressively
+        deeper triode above it.
+  Rza   600 kOhm in SERIES with Mrza. A square-law device's 1/(Vgs-Vt) is
+        far too sharp for the gentle 12x law the loop wants across a 500x
+        load range; Rza is the floor that flattens it, so the branch is
+        Rza + Ron(Mrza) and the heavy-load end saturates at Rz||Rza rather
+        than running away. MEASURED without it, Mrza alone over-corrects at
+        50 mA and under-corrects at 1 mA.
+        Rza is the ONE knob that trades the two ends of DR-0001's cap
+        window against each other at heavy load, and 600 kOhm is where the
+        two bench bars leave it. MEASURED on the 1296-point tt+res_ss x
+        3 temps x 3 supplies screen, and on the 81-point sim/amp-openloop
+        grid:
+          Rza    loop screen   amp-openloop peak_excess_db (bar <= 1)
+          450k   837/1296      +1.034  FAIL  (DR-0008 local-loop ringing)
+          600k   828/1296      +0.408  PASS
+          800k   767/1296      +0.031  PASS
+          1.0M   720/1296      -0.019  PASS
+          1.6M   644/1296      --
+        Below 600k the amplifier's OWN local loop starts to ring, which
+        DR-0008 rules out before any PM/GM number is admissible; above it
+        the heavy-load 0.33 uF rows lose crossover headroom faster than
+        the 4.7 uF rows gain it. gain_1k_db is NOT the binding side here
+        (53.7736 dB at 600k vs 53.7767 dB at 1.0 MOhm -- 0.003 dB, i.e.
+        Rza does not move the PSRR budget line at all); Mrza's GATE AREA
+        is what moves gain_1k_db, and 12u/9u is what sets it at 53.78 dB.
+  Cgg   Mrza's own gate-to-channel capacitance is load-bearing and is why
+        the gate is tied DIRECTLY to BG. It is a capacitance from BG to N1,
+        i.e. it ADDS TO Cf -- and only when the channel exists, i.e. only
+        at heavy load, which is exactly when the local loop needs it (the
+        local-loop margin goes as Rz*Cf^2, so a falling Rz must be paid for
+        with a rising Cf or DR-0008's precondition breaks). MEASURED: with
+        a 2 MOhm isolation resistor in Mrza's gate -- which removes that
+        coupling and nothing else -- the same design goes from 0 resurging
+        points to 6-19 of 48 on the tt screen. The adaptive resistor and
+        the adaptive Cf are the same device.
+
+  WHAT IS STILL NOT FIXED, and the closed form of it. Two ratified rows
+  now bound the result from opposite sides at 50 mA:
+    the ESR = 0.5 Ohm rows need   A_plat < 1/(beta*gm_pass*ESR)
+      (above 1/(2*pi*ESR*C_eff) the output impedance is flat at ESR, so
+       |T| plateaus at beta*A_plat*gm_pass*ESR; if that plateau is above
+       0 dB the crossover is pushed past f_2 and the DR-0008 resurgence
+       check fires -- MEASURED, this is what limits how little adaptation
+       is usable);
+    the 4.7 uF rows need          f_c/f_z >~ 1.6,
+      and f_c/f_z = beta*A_plat^2*Cc*gm_pass/(gm(MIN)*C_eff), while the
+      ratified PSRR row pins gm(MIN)/Cc >= 2*pi*1kHz*316.
+  Eliminating A_plat and Cc between them gives a ceiling that contains no
+  free design variable at all:
+      f_c/f_z  <=  1 / (beta * gm_pass * ESR^2 * K * C_eff),  K = 1.99e6
+  which at 50 mA / 4.7 uF / 0.5 Ohm evaluates to 3.3 against the ~1.6 the
+  same corner needs -- a factor of 2, before PVT. That is the size of the
+  remaining margin, and it is spent by process spread. Closing it needs
+  either a wider Cc/Cf (i.e. the PSRR budget re-cut against a closed-loop
+  measurement, DR-0009's own "worth doing on its own merits") or the
+  buffer-bandwidth boost that would let f_2 rise further -- which costs Iq
+  at full load, where the < 30 uA row has ~5 uA left. See DR-0015.
 
 COMPENSATION -- why the Miller network is a gain SHELF (issue #51)
 #10's stability record measured the pre-#51 loop as a textbook two-pole
@@ -383,6 +496,17 @@ C {devices/lab_pin.sym} 180 -400 0 0 {name=l_rz_b sig_type=std_logic lab=VSS}
 C {symbols/cap_mim_2f0fF.sym} 400 -400 0 0 {name=Cc model=cap_mim_2f0_m2m3_noshield W=48u L=48u m=1}
 C {devices/lab_pin.sym} 400 -430 0 0 {name=l_cc_g sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 400 -370 0 0 {name=l_cc_b sig_type=std_logic lab=OUT}
+
+C {symbols/pfet_03v3.sym} 550 -250 0 0 {name=Mrza model=pfet_03v3 L=9u W=12u nf=1 m=1}
+C {devices/lab_pin.sym} 530 -250 0 0 {name=l_rza_g sig_type=std_logic lab=BG}
+C {devices/lab_pin.sym} 570 -280 0 0 {name=l_rza_d sig_type=std_logic lab=NRZA}
+C {devices/lab_pin.sym} 570 -220 0 0 {name=l_rza_s sig_type=std_logic lab=N1}
+C {devices/lab_pin.sym} 570 -250 0 0 {name=l_rza_b sig_type=std_logic lab=N1}
+
+C {symbols/ppolyf_u_1k.sym} 700 -250 0 0 {name=Rza model=ppolyf_u_1k W=1u L=600u m=1}
+C {devices/lab_pin.sym} 700 -280 0 0 {name=l_rza_rp sig_type=std_logic lab=NRZA}
+C {devices/lab_pin.sym} 700 -220 0 0 {name=l_rza_rm sig_type=std_logic lab=NZ}
+C {devices/lab_pin.sym} 680 -250 0 0 {name=l_rza_rb sig_type=std_logic lab=VSS}
 
 C {symbols/cap_mim_2f0fF.sym} 250 -250 0 0 {name=Cf1 model=cap_mim_2f0_m2m3_noshield W=7u L=7u m=1}
 C {devices/lab_pin.sym} 250 -280 0 0 {name=l_cf1_g sig_type=std_logic lab=N1}

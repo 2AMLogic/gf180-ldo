@@ -151,6 +151,46 @@ Cout NESR 0 1e-6
 * branch is denying it its escape: a diode from ground to VOUT, which does
 * nothing until VOUT tries to go below about -0.7 V.
 *
+* THE DIODE IS NECESSARY AND NOT, ON ITS OWN, SUFFICIENT (issue #51).
+* The wrong branch does not always run away far enough to reach the diode.
+* There is a second one that does not run away at all: `ldo_softstart` and
+* `ldo_ilimit` both clamp PASS_GATE to VIN through their `CLG` gates while
+* the feedback node is below the reference, and "FB low, so clamp on, so FB
+* stays low" is self-consistent at a perfectly finite VOUT. On the DR-0015
+* netlist that solution is what sf / -40 degC / 3.63 V / 0.1 mA lands on, at
+* VOUT ~ +0.52 V -- above the diode's -0.7 V floor, so the diode never
+* conducts and never sees it. It voided 11 of that corner's 72 points; the
+* other 62 PVT corners were clean.
+*
+* Note what it is NOT: it is not a property of DR-0015's two added devices.
+* `Mrza` sits in the `Rz`/`Cc` branch, which carries no DC current in ANY
+* solution, so those devices cannot change the DC solution SET -- only which
+* solution Newton walks to from a given start. The branch was always there.
+*
+* And note WHICH solve finds it. The explicit `op` below lands on the
+* regulating branch and prints it (VOUT = 1.79933 V at that corner); the
+* number that comes out wrong is the AC one, because ngspice's `ac` runs its
+* own operating-point solve and cold-starts it (MODEINITJCT). Every one of
+* this deck's AC analyses is therefore an independent cold start, and at that
+* one corner the cold start goes to the clamped branch. Re-ordering the
+* .control block so the `op` immediately precedes the `ac` does not help for
+* that reason, and neither does any perturbation that merely re-rolls the
+* dice: a plain `.nodeset v(VOUT)=1.8` fixes the corner or does not depending
+* on which LINE OF THE DECK it is written on, which is a coin flip and not a
+* fix.
+*
+* What does work is seeding the nodes that DECIDE the branch, so that the
+* cold start begins with the clamps released rather than engaged -- see
+* the DC branch seed below, and sweep.py's `dc_seed_lines()`. Every value in it
+* is a constant of the design or of the corner (VOUT's ratified 1.8 V target,
+* its divider's 1.2 V feedback node, and the two clamp gates parked at VIN =
+* off), so it carries no per-corner tuning, and a .nodeset is a first-guess
+* constraint that ngspice releases after the first solve pass -- it selects a
+* solution, it does not create one. sweep.py applies it only to a corner that
+* has already failed the VOUT check without it, and records which corners
+* needed it, so the default path -- and therefore comparability with every
+* record taken before this one -- is untouched at every corner that does not.
+*
 * It is inert at the operating point, by construction and by measurement:
 *   - reverse-biased by 1.8 V, so its conductance is
 *     (IS/n*Vt)*exp(-1.8/n*Vt) ~ 1e-43 S against a 900 kOhm divider;
@@ -172,6 +212,10 @@ Cout NESR 0 1e-6
 * working.
 .model dclamp d(is=1e-14 cjo=0 tt=0 n=1 rs=0)
 Dclamp 0 VOUT dclamp
+
+* DC branch seed, empty unless sweep.py is retrying this corner -- see
+* "removing the non-physical DC branch" above.
+@DC_SEED@
 
 .control
 set noaskquit
