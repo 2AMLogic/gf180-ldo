@@ -238,16 +238,6 @@ def cmd_print_env() -> int:
     return EXIT_OK
 
 
-def _fmt(value) -> str:
-    if value is None:
-        return "n/a"
-    if isinstance(value, float):
-        if value != 0 and (abs(value) < 1e-3 or abs(value) >= 1e5):
-            return f"{value:.6e}"
-        return f"{value:.6g}"
-    return str(value)
-
-
 def run(args: argparse.Namespace) -> int:
     tb_path = _resolve_tb_path(args.testbench)
     tb = tb_mod.load(tb_path)
@@ -320,9 +310,9 @@ def run(args: argparse.Namespace) -> int:
         print(f"pdk       : {pdk.variant} @ {pdk.version}  ({pdk.path})")
         print(f"ngspice   : {ngspice}")
         print(f"corners   : {', '.join(c.name for c in corner_list)}")
-        print(f"temps (C) : {', '.join(_fmt(t) for t in temperatures)}")
-        print(f"supply (V): {', '.join(_fmt(v) for v in supplies)} "
-              f"(nominal {_fmt(nominal)} +/-{tolerance * 100:g}%)")
+        print(f"temps (C) : {', '.join(report._fmt(t) for t in temperatures)}")
+        print(f"supply (V): {', '.join(report._fmt(v) for v in supplies)} "
+              f"(nominal {report._fmt(nominal)} +/-{tolerance * 100:g}%)")
         print(f"points    : {len(points)}  (jobs={jobs})")
         print(f"record id : {record_id}")
         print()
@@ -338,7 +328,7 @@ def run(args: argparse.Namespace) -> int:
         detail = ""
         if result.status == "ok":
             detail = "  ".join(
-                f"{name}={_fmt(result.measurements[name])}" for name in tb.measure
+                f"{name}={report._fmt(result.measurements[name])}" for name in tb.measure
                 if name in result.measurements
             )
         else:
@@ -389,14 +379,14 @@ def run(args: argparse.Namespace) -> int:
             print(f"  {name:<16}{'no data':>16}")
             continue
         print(
-            f"  {name:<16}{_fmt(stats['min']):>16}{_fmt(stats['max']):>16}"
-            f"{_fmt(stats['mean']):>16}{_fmt(stats['spread_pct']):>12}"
+            f"  {name:<16}{report._fmt(stats['min']):>16}{report._fmt(stats['max']):>16}"
+            f"{report._fmt(stats['mean']):>16}{report._fmt(stats['spread_pct']):>12}"
         )
 
     for failure in record["checks"]["failures"]:
         print(
-            f"  CHECK FAIL {failure['measurement']} {failure['kind']}={_fmt(failure['limit'])} "
-            f"got {_fmt(failure['value'])} at {failure['at']}"
+            f"  CHECK FAIL {failure['measurement']} {failure['kind']}={report._fmt(failure['limit'])} "
+            f"got {report._fmt(failure['value'])} at {failure['at']}"
         )
 
     if not args.no_write:
