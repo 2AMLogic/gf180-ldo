@@ -75,6 +75,7 @@ LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.runner import ngspice_version  # noqa: E402
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
 DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
@@ -198,12 +199,6 @@ def resolve_pdk():
     from harness.pdk import find_pdk  # noqa: WPS433 -- deferred, needs sys.path
 
     return find_pdk()
-
-
-def ngspice_version() -> str:
-    out = subprocess.run(["ngspice", "-v"], capture_output=True, text=True).stdout
-    m = re.search(r"(ngspice-[0-9.]+)", out)
-    return m.group(1) if m else "unknown"
 
 
 def git(*args: str) -> str:
