@@ -74,7 +74,7 @@ TEMPLATE = HERE / "tb_loop_stability.spice.in"
 LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
-from harness.corners import CORNERS, build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
 DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
