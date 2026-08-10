@@ -321,12 +321,117 @@ dead one.
 
 If no PRs have the `loom:review-requested` label, the Judge can proactively evaluate unlabeled PRs to maximize utilization and catch issues early.
 
+**Incident this section guards against (#80)**: PR #76 in this repo
+(`chore(loom): resync installed surfaces to current defaults`) carries no
+`loom:` labels, so it fell into this fallback path — and nothing in the
+fallback path remembered "already evaluated, nothing changed." It
+accumulated 93+ fallback-mode Judge comments over 3.5 days (one every ~54
+minutes) with zero state progress. `judge-fallback-guard.sh` (bot-author
+exclusion, a per-PR-lifetime marker cap, SHA dedup, and a velocity alert)
+closes that gap by moving the skip/evaluate decision out of prompt-embedded
+bash into a real, testable script — correctness no longer depends on the
+model re-deriving multi-step bash from prose each pass.
+
 **Fallback search**:
 ```bash
 # Find PRs without any loom: labels
 gh pr list --state=open --json number,title,labels \
   --jq '.[] | select(([.labels[].name | select(startswith("loom:"))] | length) == 0) | "#\(.number) \(.title)"'
 ```
+
+**Guard availability check (REQUIRED before invoking the guard)**: a
+missing or non-executable `judge-fallback-guard.sh` is a bash-level "command
+not found" (exit 127), which is NOT one of the script's own documented exit
+codes below. Never let that fall through into an ordinary, ungated
+evaluation — explicitly test for it first:
+
+```bash
+if [ -x ./.loom/scripts/judge-fallback-guard.sh ]; then
+  GUARD_AVAILABLE=true
+else
+  GUARD_AVAILABLE=false
+  echo "WARNING: .loom/scripts/judge-fallback-guard.sh is missing or not executable." >&2
+  echo "Falling back to degraded mode (see 'Guard-unavailable degraded mode' below) — NOT an ungated evaluation." >&2
+fi
+```
+
+**Per-PR gate — `judge-fallback-guard.sh`**: when `$GUARD_AVAILABLE` is
+`true`, for each candidate PR number from the search above, run:
+
+```bash
+./.loom/scripts/judge-fallback-guard.sh <PR>
+```
+
+It prints `KEY=VALUE` lines and exits with a code that names the decision:
+
+| Exit | `DECISION` | Meaning |
+|------|------------|---------|
+| `0`  | `EVALUATE` | No skip condition matched — proceed with fallback-mode review |
+| `10` | `SKIP` | PR author is a bot (`is_bot: true` — Dependabot, Renovate, `github-actions[bot]`, …). Outside the Loom label workflow by construction: the fallback path never labels it, so it can never leave this query's result set through any Loom-side action. Skipped **permanently**, checked **before** the cap. |
+| `11` | `SKIP` | **Lifetime cap reached** — `MARKER_COUNT` (total `loom:fallback-evaluated` markers across the PR's *entire* comment history, **not scoped to the current head SHA**) has reached `--cap` (default 20). See "Why the cap is per-PR-lifetime, not per-SHA" below. |
+| `12` | `SKIP` | SHA dedup — the most recent marker's SHA already equals the current head SHA; nothing changed since the last evaluation. |
+| `1`  | — | Environment/`gh` error — treat exactly like any other fallback-queue `gh` failure (see the Pre-Iteration Environment Check above); **never** interpret this as "no work available". |
+
+Also read `VELOCITY_ALERT` from the output — **independent of the exit
+code/`DECISION`**: if `VELOCITY_ALERT=1` (the PR's marker-comment count
+within the trailing `--velocity-window-hours`, default 4h, meets or exceeds
+`--velocity-threshold`, default 8), surface it loudly regardless of whether
+the PR was evaluated or skipped — e.g. `.loom/scripts/fleet-send.sh --type
+handoff` (see "Fleet-Comms Etiquette") or a one-line note in your own turn's
+output naming the PR and `VELOCITY_COUNT`. This is a backstop distinct from
+the cap: it exists so a regression in the cap/dedup logic itself is loud,
+not discovered after dozens of comments.
+
+**Why the cap is per-PR-lifetime, not per-SHA**: a per-SHA-only cap does not
+bound a PR that repeatedly force-pushes trivial commits, each reset
+resetting a per-SHA counter back to zero. `judge-fallback-guard.sh` counts
+markers across the PR's *entire* comment history regardless of how many
+times the head SHA has changed, so the lifetime total only ever goes up. The
+SHA-based dedup (exit `12`) still runs on top of the lifetime cap for its
+original purpose (skip re-evaluation of an unchanged PR between ticks) — it
+no longer has to be the *only* bound.
+
+**Guard-unavailable degraded mode**: when `$GUARD_AVAILABLE` is `false`
+(the script is missing or not executable — e.g. a checkout of a branch that
+predates this fix, or a corrupted worktree), do NOT silently proceed with an
+ordinary fallback evaluation as if nothing were wrong. Instead, for each
+unlabeled candidate PR:
+
+1. Log the degraded condition loudly (the `echo ... >&2` above; also worth a
+   `.loom/scripts/fleet-send.sh --type handoff` note if reachable — a
+   missing dependency is itself worth a human/Doctor knowing about).
+2. Check whether a **degraded-mode marker**,
+   `<!-- loom:fallback-evaluated-degraded sha=... -->`, already exists on
+   the PR at its *current* head SHA — this needs only `gh`/`jq`, not the
+   missing script:
+   ```bash
+   HEAD_SHA=$(gh pr view "$CANDIDATE" --json headRefOid --jq '.headRefOid')
+   LAST_DEGRADED_SHA=$(gh api "repos/{owner}/{repo}/issues/$CANDIDATE/comments" --paginate \
+     --jq '[.[] | select(.body != null and (.body | test("<!-- loom:fallback-evaluated-degraded sha=[0-9a-f]+ -->")))
+            | (.body | capture("<!-- loom:fallback-evaluated-degraded sha=(?<sha>[0-9a-f]+) -->").sha)] | last // empty')
+   if [ -n "$HEAD_SHA" ] && [ "$LAST_DEGRADED_SHA" = "$HEAD_SHA" ]; then
+     echo "Skipping PR #$CANDIDATE: already degraded-evaluated at current head SHA (guard script still unavailable)" >&2
+     continue  # try the next candidate
+   fi
+   ```
+3. Otherwise evaluate the PR exactly as in guarded mode, but the posted
+   comment MUST end with the distinct
+   `<!-- loom:fallback-evaluated-degraded sha=$HEAD_SHA -->` marker instead
+   of the normal `<!-- loom:fallback-evaluated sha=... -->` one (see the
+   example workflow below). This is deliberately a different literal
+   string: `judge-fallback-guard.sh`'s own marker regex does not match it,
+   so degraded-mode markers do not silently inflate the lifetime cap once
+   the real guard is restored — but they DO bound repeated degraded
+   evaluation of an unchanged PR via the same-SHA check in step 2 above, and
+   they remain durable and `grep`-able (`grep -l
+   'loom:fallback-evaluated-degraded'`) so a human or a later guarded pass
+   can find every PR evaluated without cap/velocity protection. Skipping the
+   PR outright (never evaluating it) is also an acceptable degraded-mode
+   choice if you'd rather not evaluate at all while the dependency is
+   missing — either choice satisfies the "no silent, unmarked, ungated
+   evaluation" requirement; this repo's convention is the marker-based
+   single-shot approach above so fallback utilization is not fully lost
+   during a transient guard outage.
 
 **Decision tree**:
 ```
@@ -350,8 +455,25 @@ Pre-Iteration Environment Check (gh repo view)
                     ↓
                 Search for unlabeled open PRs
                     ↓
-                    ├─→ Found? → Evaluate but leave labels unchanged
-                    │              (external/manual PR, no workflow labels)
+                    ├─→ Found? → Check guard script: [ -x judge-fallback-guard.sh ]?
+                    │     │
+                    │     ├─→ Available → Walk candidates; for each run
+                    │     │        judge-fallback-guard.sh <PR>
+                    │     │     ├─→ exit 10/11/12 (SKIP)? → try the next candidate
+                    │     │     │        (exit iteration if none remain)
+                    │     │     ├─→ exit 1 (gh/env error)? → Exit with error, same as
+                    │     │     │        any other fallback-queue gh failure
+                    │     │     └─→ exit 0 (EVALUATE)? → Evaluate and post comment
+                    │     │              with `<!-- loom:fallback-evaluated sha=... -->`;
+                    │     │              also act on VELOCITY_ALERT=1 if present
+                    │     │
+                    │     └─→ Missing/not executable → DEGRADED MODE: walk
+                    │              candidates; for each, check for an existing
+                    │              `loom:fallback-evaluated-degraded` marker at the
+                    │              current head SHA (skip if found), else evaluate
+                    │              and post comment with
+                    │              `<!-- loom:fallback-evaluated-degraded sha=... -->`
+                    │              — never an ungated, unmarked evaluation
                     │
                     └─→ None found → No work available, exit iteration
 ```
@@ -382,13 +504,76 @@ if [ "$LABELED_PRS" -gt 0 ]; then
 else
   echo "No loom:review-requested PRs found, checking unlabeled PRs..."
 
-  # 2. Check fallback queue
-  UNLABELED_PR=$(gh pr list --state=open --json number,labels \
-    --jq '.[] | select(([.labels[].name | select(startswith("loom:"))] | length) == 0) | .number' \
-    | head -n 1)
+  # 2. Check fallback queue. Keep the WHOLE candidate list, not just the head
+  #    of it: a PR that gets SKIPPED by the guard (or by the degraded-mode
+  #    dedup check) is not the end of the walk — move on to the next one.
+  UNLABELED_PRS=$(gh pr list --state=open --json number,labels \
+    --jq '.[] | select(([.labels[].name | select(startswith("loom:"))] | length) == 0) | .number')
+
+  # 3. Explicit guard-availability check — see "Guard-unavailable degraded
+  #    mode" above. A missing/non-executable script must NEVER silently fall
+  #    through into an ungated, unmarked evaluation.
+  if [ -x ./.loom/scripts/judge-fallback-guard.sh ]; then
+    GUARD_AVAILABLE=true
+  else
+    GUARD_AVAILABLE=false
+    echo "WARNING: judge-fallback-guard.sh missing/not executable — degraded mode" >&2
+  fi
+
+  UNLABELED_PR=""
+  CURRENT_HEAD_SHA=""
+  DEGRADED=false
+  for CANDIDATE in $UNLABELED_PRS; do
+    if [ "$GUARD_AVAILABLE" = "true" ]; then
+      GUARD_OUT=$(./.loom/scripts/judge-fallback-guard.sh "$CANDIDATE")
+      GUARD_RC=$?
+
+      if [ "$GUARD_RC" -eq 1 ]; then
+        echo "judge-fallback-guard.sh failed for PR #$CANDIDATE — treating as a gh/environment failure, not 'no work'" >&2
+        exit 1
+      fi
+
+      # Surface a velocity alert regardless of the decision (independent signal).
+      if echo "$GUARD_OUT" | grep -q '^VELOCITY_ALERT=1$'; then
+        VELOCITY_COUNT=$(echo "$GUARD_OUT" | grep '^VELOCITY_COUNT=' | cut -d= -f2)
+        echo "Fallback-comment velocity alert on PR #$CANDIDATE: $VELOCITY_COUNT markers in the trailing window" >&2
+        .loom/scripts/fleet-send.sh --task-id "$(gh repo view --json name --jq '.name')_$CANDIDATE" \
+          --type handoff --body "Fallback-queue velocity alert on PR #$CANDIDATE ($VELOCITY_COUNT recent fallback comments) — see judge-fallback-guard.sh output" || true
+      fi
+
+      if [ "$GUARD_RC" -ne 0 ]; then
+        REASON=$(echo "$GUARD_OUT" | grep '^REASON=' | cut -d= -f2-)
+        echo "Skipping unlabeled PR #$CANDIDATE: $REASON — trying the next unlabeled PR"
+        continue
+      fi
+
+      UNLABELED_PR="$CANDIDATE"
+      CURRENT_HEAD_SHA=$(echo "$GUARD_OUT" | grep '^HEAD_SHA=' | cut -d= -f2)
+      DEGRADED=false
+      break
+    else
+      # Degraded mode: no guard script. Bound repeats via a same-SHA check
+      # against the distinct degraded-mode marker (see "Guard-unavailable
+      # degraded mode" above) rather than evaluating unconditionally.
+      HEAD_SHA=$(gh pr view "$CANDIDATE" --json headRefOid --jq '.headRefOid')
+      LAST_DEGRADED_SHA=$(gh api "repos/{owner}/{repo}/issues/$CANDIDATE/comments" --paginate \
+        --jq '[.[] | select(.body != null and (.body | test("<!-- loom:fallback-evaluated-degraded sha=[0-9a-f]+ -->")))
+               | (.body | capture("<!-- loom:fallback-evaluated-degraded sha=(?<sha>[0-9a-f]+) -->").sha)] | last // empty' 2>/dev/null)
+
+      if [ -n "$HEAD_SHA" ] && [ "$LAST_DEGRADED_SHA" = "$HEAD_SHA" ]; then
+        echo "Skipping unlabeled PR #$CANDIDATE: already degraded-evaluated at current head SHA — trying the next unlabeled PR"
+        continue
+      fi
+
+      UNLABELED_PR="$CANDIDATE"
+      CURRENT_HEAD_SHA="$HEAD_SHA"
+      DEGRADED=true
+      break
+    fi
+  done
 
   if [ -n "$UNLABELED_PR" ]; then
-    echo "Evaluating unlabeled PR #$UNLABELED_PR (fallback mode)"
+    echo "Evaluating unlabeled PR #$UNLABELED_PR (fallback mode$([ "$DEGRADED" = "true" ] && echo ", DEGRADED — guard script unavailable"))"
 
     # Check out and evaluate the PR (worktree-aware)
     ISSUE_NUM=$(gh pr view $UNLABELED_PR --json headRefName --jq '.headRefName' | sed 's/feature\/issue-//')
@@ -399,16 +584,37 @@ else
     fi
     # ... run checks, evaluate code ...
 
-    # Provide feedback but DO NOT add workflow labels
-    gh pr comment $UNLABELED_PR --body "$(cat <<'EOF'
+    # Provide feedback but DO NOT add workflow labels.
+    # NOTE: this heredoc is deliberately UNQUOTED (`<<EOF`, not `<<'EOF'`) so
+    # $CURRENT_HEAD_SHA and $MARKER expand. With a quoted delimiter the
+    # marker would post the literal string "sha=$CURRENT_HEAD_SHA", which can
+    # never equal a real head SHA — dedup would then match nothing and every
+    # pass would re-evaluate. Keep any other `$` or backticks out of this
+    # body, or escape them.
+    if [ "$DEGRADED" = "true" ]; then
+      MARKER="<!-- loom:fallback-evaluated-degraded sha=$CURRENT_HEAD_SHA -->"
+    else
+      MARKER="<!-- loom:fallback-evaluated sha=$CURRENT_HEAD_SHA -->"
+    fi
+
+    gh pr comment $UNLABELED_PR --body "$(cat <<EOF
 Code evaluation feedback...
 
 Note: This PR was evaluated in fallback mode (no loom:review-requested label).
 Consider adding loom:review-requested if you want it in the evaluation queue.
+$([ "$DEGRADED" = "true" ] && echo "
+DEGRADED MODE: judge-fallback-guard.sh was unavailable during this pass, so
+this evaluation ran without the lifetime-cap/velocity protections. A later
+pass with the guard script restored will resume normal gating.")
+
+$MARKER
 EOF
 )"
   else
-    echo "No work available - both queues empty"
+    # Reached either because the fallback queue was empty, or because every
+    # unlabeled PR in it was SKIPPED (guarded mode: bot author, lifetime cap,
+    # or SHA dedup; degraded mode: already degraded-evaluated at this SHA).
+    echo "No work available - both queues empty (every unlabeled PR, if any, was skipped)"
     exit 0
   fi
 fi
@@ -419,6 +625,12 @@ fi
 - Provides proactive code evaluation on external contributor PRs
 - Catches issues before they accumulate
 - Respects external PRs by not adding workflow labels
+- Bounded: a bot-authored PR (e.g. Dependabot) is excluded structurally, and
+  any other PR the queue cannot advance is bounded by a per-PR-lifetime cap
+  rather than re-evaluated indefinitely
+- A missing/unreachable `judge-fallback-guard.sh` degrades safely (a
+  distinctly-marked, SHA-bounded single-shot evaluation) rather than
+  silently reverting to the old ungated, unmarked behavior
 
 ## Worktree-Aware Code Access
 
