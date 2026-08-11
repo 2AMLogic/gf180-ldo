@@ -75,6 +75,7 @@ LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.report import git_provenance  # noqa: E402
 from harness.runner import ngspice_version  # noqa: E402
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
@@ -199,12 +200,6 @@ def resolve_pdk():
     from harness.pdk import find_pdk  # noqa: WPS433 -- deferred, needs sys.path
 
     return find_pdk()
-
-
-def git(*args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(REPO_ROOT), *args], capture_output=True, text=True
-    ).stdout.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -832,8 +827,9 @@ def main() -> int:
         )
         return 3
 
-    record_id = f"{_dt.datetime.now(_dt.timezone.utc).strftime('%Y%m%d-%H%M%S')}-{git('rev-parse', '--short', 'HEAD')}"
-    dirty = bool(git("status", "--porcelain"))
+    prov = git_provenance(REPO_ROOT)
+    record_id = f"{_dt.datetime.now(_dt.timezone.utc).strftime('%Y%m%d-%H%M%S')}-{prov['short']}"
+    dirty = prov["dirty"]
     logdir = EXPDIR / "corners" / record_id
     workdir = REPO_ROOT / "sim" / ".work" / "loop-stability" / record_id
     workdir.mkdir(parents=True, exist_ok=True)
@@ -963,7 +959,7 @@ def main() -> int:
         record_id=record_id, rows=rows, worst=worst, failing=failing,
         multi_cross=multi_cross, resurging=resurging, grid=grid, iloads=iloads,
         ceffs=ceffs, esrs=esrs, pdk=pdk, dirty=dirty, args=args,
-        curve_log=curve_log, seeded=seeded,
+        curve_log=curve_log, seeded=seeded, prov=prov,
     )
     (records / f"{record_id}.md").write_text(md)
 
@@ -977,7 +973,7 @@ def main() -> int:
 
 def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
                   grid, iloads, ceffs, esrs, pdk, dirty, args, curve_log,
-                  seeded=()) -> str:
+                  prov, seeded=()) -> str:
     rel = lambda p: str(Path(p).resolve().relative_to(REPO_ROOT))  # noqa: E731
     overall = "PASS" if not failing else "FAIL"
     by_corner: dict[str, list[Row]] = {}
@@ -1272,7 +1268,7 @@ Everything needed to re-run this record:
 
 - PDK: {pdk.variant} @ {pdk.version}
 - ngspice: {ngspice_version()}
-- git: `{git('rev-parse', '--short', 'HEAD')}` on `{git('rev-parse', '--abbrev-ref', 'HEAD')}`
+- git: `{prov['short']}` on `{prov['branch']}`
   ({'DIRTY' if dirty else 'clean'} at generation time)
 - Command: `./sim/loop-stability/testbench/run.sh`
 - AC sweep: `dec {args.ac_dec} {F_START} {F_STOP}` per injection, two injections
