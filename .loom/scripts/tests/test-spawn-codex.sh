@@ -25,6 +25,10 @@
 #      exit-code passthrough
 #   9. LOOM_RUNTIME=codex resolution through spawn-worker.sh
 #  10. classify-error.sh `codex` provider vectors (+ `claude` unchanged)
+#  11. managed `pre_tool_use` hook readiness/trust preflight (#4495): mutable
+#      roles exit 78 before the CLI starts on any not-ready state; read-only
+#      roles keep the conservative fallback with an explicit warning; the
+#      capability manifest stays evidence-gated at `partial`
 #
 # Usage:
 #   ./.loom/scripts/tests/test-spawn-codex.sh
@@ -313,9 +317,188 @@ assert_contains "-c model_reasoning_effort=high" "$out" \
 out="$(run_argv -- -p x)"
 assert_not_contains "model_reasoning_effort" "$out" \
     "no LOOM_EFFORT emits no reasoning-effort override"
+out="$(run_argv -- -p daemon --effort xhigh --dangerously-skip-permissions --use-wrapper)"
+assert_contains "-c model_reasoning_effort=xhigh" "$out" \
+    "daemon --effort maps to Codex reasoning config"
+assert_contains "-s workspace-write" "$out" \
+    "daemon unattended permissions map to workspace-write"
+assert_not_contains "--effort" "$out" \
+    "Claude-only --effort never reaches codex exec"
+assert_not_contains "--use-wrapper" "$out" \
+    "generic retry convention never reaches codex exec"
 out="$(run_argv LOOM_EFFORT=high -- -p x -c model_reasoning_effort=low)"
 assert_not_contains "model_reasoning_effort=high" "$out" \
     "an explicit -c model_reasoning_effort= wins over LOOM_EFFORT"
+
+# ============================================================
+# Section 3b: Claude-shaped model refusal (issue #5028)
+# ============================================================
+
+echo ""
+echo "Testing spawn-codex.sh Claude-shaped model refusal..."
+
+run_refusal() {
+    # usage: run_refusal [VAR=val ...] -- <args...>
+    local -a envs=()
+    while [[ $# -gt 0 && "$1" != "--" ]]; do envs+=("$1"); shift; done
+    shift || true
+    set +e
+    out="$(env -u CODEX_HOME -u LOOM_CODEX_HOME -u LOOM_CODEX_PROFILE \
+        -u LOOM_CODEX_SANDBOX -u LOOM_CODEX_NETWORK -u LOOM_MODEL \
+        -u LOOM_EFFORT -u LOOM_CODEX_MODEL \
+        LOOM_SWEEP_NICE=0 LOOM_SPAWN_NO_EXPORT=1 \
+        ${envs[@]+"${envs[@]}"} \
+        bash "$SPAWN_CODEX" "$@" 2>&1)"
+    REFUSAL_RC=$?
+    set -e
+    REFUSAL_OUT="$out"
+}
+
+for claude_model in opus opusplan sonnet haiku fable claude-opus-5 OPUS "sonnet@xhigh"; do
+    run_refusal -- -p x -m "$claude_model"
+    assert_eq "78" "$REFUSAL_RC" "explicit -m $claude_model exits 78 (EX_CONFIG)"
+    assert_contains "refusing Claude-shaped model" "$REFUSAL_OUT" \
+        "the refusal message names the problem for -m $claude_model"
+    assert_contains "autonomous.roleRunner.roleModels" "$REFUSAL_OUT" \
+        "the refusal names the config key to fix for -m $claude_model"
+done
+
+# The refusal fires identically via LOOM_MODEL and LOOM_CODEX_MODEL, not just -m.
+run_refusal LOOM_MODEL=sonnet -- -p x
+assert_eq "78" "$REFUSAL_RC" "LOOM_MODEL=sonnet exits 78"
+run_refusal LOOM_CODEX_MODEL=opus -- -p x
+assert_eq "78" "$REFUSAL_RC" "LOOM_CODEX_MODEL=opus exits 78"
+
+# No argv is ever assembled for a refused launch.
+run_refusal -- -p x -m sonnet
+assert_not_contains "would-exec" "$REFUSAL_OUT" \
+    "a refused launch never reaches argv assembly/dispatch"
+
+# Fail-open: Codex-valid and unrecognized model names are never refused.
+for ok_model in gpt-5-codex o3-mini gpt-4.1 mystery-model-9000; do
+    out="$(run_argv -- -p x -m "$ok_model")"
+    assert_contains "-m $ok_model" "$out" "a Codex/unrecognized model '$ok_model' is never refused"
+done
+
+# Escape hatch: with LOOM_CODEX_NO_EXEC=1 (argv-only mode), the refusal check
+# is bypassed entirely and the run proceeds to normal argv assembly.
+out="$(run_argv LOOM_CODEX_MODEL_CHECK=0 -- -p x -m sonnet)"
+assert_contains "-m sonnet" "$out" "LOOM_CODEX_MODEL_CHECK=0 disables the refusal"
+
+# ============================================================
+# Section 3c: ChatGPT-plan auth-mode guard for a pinned model (issue #5499)
+# ============================================================
+#
+# A ChatGPT-plan Codex profile only accepts its account's own default model —
+# even a Codex-family model (e.g. `gpt-5-codex`), which the Claude-shaped
+# refusal above never touches, still 400s on the wire. Verified against a fake
+# `codex` on PATH whose `login status` subcommand answers with the CLI's own
+# real wording (confirmed live against codex-cli 0.46.0: `codex login status`
+# prints exactly "Logged in using ChatGPT" / an API-key profile prints
+# "Logged in using an API key").
+
+echo ""
+echo "Testing spawn-codex.sh ChatGPT-plan auth-mode guard..."
+
+AUTHMODE_BIN="$TMPROOT/authmode-bin"
+mkdir -p "$AUTHMODE_BIN"
+AUTHMODE_ARGV_FILE="$TMPROOT/authmode-argv.txt"
+
+# mk_authmode_codex <login-status-line> — a fake codex that answers `login
+# status` with the given line, and otherwise behaves like the Section 8 mock
+# (records argv, emits a session id, exits 0).
+mk_authmode_codex() {
+    local status_line="$1"
+    cat > "$AUTHMODE_BIN/codex" <<MOCK
+#!/usr/bin/env bash
+if [[ "\$1" == "login" && "\$2" == "status" ]]; then
+    echo "$status_line"
+    exit 0
+fi
+printf '%s\n' "\$*" > "$AUTHMODE_ARGV_FILE"
+{
+  echo "session id: 00000000-0000-0000-0000-000000000000"
+  echo "tokens used"
+  echo "1"
+} >&2
+echo "AUTHMODE-FINAL"
+exit 0
+MOCK
+    chmod +x "$AUTHMODE_BIN/codex"
+}
+
+run_authmode() {
+    # usage: run_authmode [VAR=val ...] -- <args...>
+    local -a envs=()
+    while [[ $# -gt 0 && "$1" != "--" ]]; do envs+=("$1"); shift; done
+    shift || true
+    : > "$AUTHMODE_ARGV_FILE"
+    env -u LOOM_ROLE -u CODEX_HOME -u LOOM_CODEX_HOME -u LOOM_CODEX_PROFILE \
+        LOOM_SWEEP_NICE=0 LOOM_SPAWN_NO_EXPORT=1 PATH="$AUTHMODE_BIN:$PATH" \
+        ${envs[@]+"${envs[@]}"} \
+        bash "$SPAWN_CODEX" "$@" 2>&1
+}
+
+# (1) A ChatGPT-plan profile: the pinned Codex-family model is DROPPED with a
+# warning, and the CLI still runs successfully on its own default.
+mk_authmode_codex "Logged in using ChatGPT"
+out="$(run_authmode -- -p x -m gpt-5-codex)"
+assert_contains "authenticated via a ChatGPT plan" "$out" \
+    "a ChatGPT-plan profile with a pinned model warns about the auth-mode conflict"
+assert_contains "dropping the pinned model 'gpt-5-codex'" "$out" \
+    "the warning names the dropped model"
+assert_not_contains "-m gpt-5-codex" "$(cat "$AUTHMODE_ARGV_FILE")" \
+    "the pinned model is NOT forwarded to the ChatGPT-plan profile's codex invocation"
+assert_contains "AUTHMODE-FINAL" "$out" \
+    "the invocation still runs (on the account's own default) rather than being refused outright"
+
+# (2) An API-key profile: no conflict, the pinned model passes through
+# unchanged.
+mk_authmode_codex "Logged in using an API key"
+out="$(run_authmode -- -p x -m gpt-5-codex)"
+assert_not_contains "authenticated via a ChatGPT plan" "$out" \
+    "an API-key profile is never warned about the auth-mode conflict"
+assert_contains "-m gpt-5-codex" "$(cat "$AUTHMODE_ARGV_FILE")" \
+    "the pinned model IS forwarded to an API-key profile's codex invocation"
+
+# (3) No model pinned at all: the guard has nothing to check and never shells
+# out to `codex login status` (the mocked codex still errors if it did, since
+# only login status/argv-recording are implemented — passing here already
+# proves it wasn't invoked in an unexpected shape).
+mk_authmode_codex "Logged in using ChatGPT"
+out="$(run_authmode -- -p x)"
+assert_not_contains "authenticated via a ChatGPT plan" "$out" \
+    "no pinned model means nothing to drop — the guard is a no-op"
+
+# (4) Escape hatch: LOOM_CODEX_AUTH_MODE_CHECK=0 keeps the pin even against a
+# ChatGPT-plan profile.
+mk_authmode_codex "Logged in using ChatGPT"
+out="$(run_authmode LOOM_CODEX_AUTH_MODE_CHECK=0 -- -p x -m gpt-5-codex)"
+assert_not_contains "authenticated via a ChatGPT plan" "$out" \
+    "LOOM_CODEX_AUTH_MODE_CHECK=0 disables the guard"
+assert_contains "-m gpt-5-codex" "$(cat "$AUTHMODE_ARGV_FILE")" \
+    "the pinned model survives with the guard disabled"
+
+# (5) LOOM_CODEX_NO_EXEC=1 (argv-preview mode) never shells out to the real
+# CLI at all — the guard is skipped and the previewed argv still shows the
+# pin, consistent with the mode's "never touch the real CLI" contract.
+mk_authmode_codex "Logged in using ChatGPT"
+out="$(env -u LOOM_ROLE -u CODEX_HOME -u LOOM_CODEX_HOME -u LOOM_CODEX_PROFILE \
+    LOOM_SWEEP_NICE=0 LOOM_CODEX_NO_EXEC=1 LOOM_SPAWN_NO_EXPORT=1 \
+    PATH="$AUTHMODE_BIN:$PATH" bash "$SPAWN_CODEX" -p x -m gpt-5-codex 2>&1)"
+assert_contains "-m gpt-5-codex" "$out" \
+    "LOOM_CODEX_NO_EXEC=1 previews the pin unchanged (the guard never shells out under NO_EXEC)"
+
+# (6) The `-m=value` / `--model` / `--model=value` forms are all stripped too,
+# and every OTHER passthrough arg survives the filter.
+mk_authmode_codex "Logged in using ChatGPT"
+out="$(run_authmode -- -p x --model gpt-5-codex --effort high -s workspace-write)"
+assert_not_contains "gpt-5-codex" "$(cat "$AUTHMODE_ARGV_FILE")" \
+    "--model <value> (long form) is stripped too"
+assert_contains "model_reasoning_effort=high" "$(cat "$AUTHMODE_ARGV_FILE")" \
+    "a sibling passthrough arg (--effort) survives the model filter"
+assert_contains "workspace-write" "$(cat "$AUTHMODE_ARGV_FILE")" \
+    "a sibling passthrough arg (-s) survives the model filter"
 
 # ============================================================
 # Section 4: git-repo trust check (live-CLI behavior)
@@ -370,6 +553,22 @@ noval_rc=$?
 set -e
 assert_eq "78" "$noval_rc" "-p with no value exits 78 (EX_CONFIG)"
 assert_contains "requires a value" "$noval_out" "-p with no value says so"
+
+set +e
+noval_model_out="$(env LOOM_SWEEP_NICE=0 LOOM_CODEX_NO_EXEC=1 LOOM_SPAWN_NO_EXPORT=1 \
+    bash "$SPAWN_CODEX" -p x -m 2>&1)"
+noval_model_rc=$?
+set -e
+assert_eq "78" "$noval_model_rc" "-m with no value exits 78 (EX_CONFIG)"
+assert_contains "requires a value" "$noval_model_out" "-m with no value says so"
+
+set +e
+noval_sandbox_out="$(env LOOM_SWEEP_NICE=0 LOOM_CODEX_NO_EXEC=1 LOOM_SPAWN_NO_EXPORT=1 \
+    bash "$SPAWN_CODEX" -p x -s 2>&1)"
+noval_sandbox_rc=$?
+set -e
+assert_eq "78" "$noval_sandbox_rc" "-s with no value exits 78 (EX_CONFIG)"
+assert_contains "requires a value" "$noval_sandbox_out" "-s with no value says so"
 
 # ============================================================
 # Section 6: CODEX_HOME profile selection (auth)
@@ -505,6 +704,7 @@ if [[ -n "\$_stdin" ]]; then echo "MOCK-SAW-STDIN:\$_stdin" >&2; fi
   echo "--------"
   echo "tokens used"
   echo "2,502"
+  [[ -n "\${MOCK_ERROR:-}" ]] && echo "\$MOCK_ERROR"
 } >&2
 echo "MOCK-FINAL-MESSAGE"
 exit "\${MOCK_RC:-0}"
@@ -538,6 +738,10 @@ assert_contains "spawn-codex: session=$MOCK_SESSION" "$mock_stderr" \
     "the 'session id:' line is parsed and reported as the transcript join key"
 assert_contains "spawn-codex: tokens_used=2502" "$mock_stderr" \
     "'tokens used' is parsed (comma-stripped) and reported"
+assert_contains \
+    "# LOOM_TERMINAL_RESULT v=1 provider=codex account=unknown category=SUCCESS exit_code=0" \
+    "$mock_stderr" \
+    "a successful child emits one strict structured terminal record"
 assert_not_contains "MOCK-SAW-STDIN" "$mock_stderr" \
     "the child's stdin is /dev/null (no <stdin> append, no hang)"
 
@@ -556,6 +760,21 @@ run_mock MOCK_RC=42 -- -p "hi" >/dev/null 2>&1
 mock_rc=$?
 set -e
 assert_eq "42" "$mock_rc" "the codex exit code is passed through (PIPESTATUS)"
+
+set +e
+classified_stderr="$({ run_mock MOCK_RC=42 LOOM_ACCOUNT_NAME=profile-a \
+    MOCK_ERROR="Not signed in. recognizable-secret" -- -p "hi" >/dev/null; } 2>&1)"
+classified_rc=$?
+set -e
+assert_eq "42" "$classified_rc" \
+    "structured classification preserves the original child exit code"
+terminal_record="$(printf '%s\n' "$classified_stderr" | grep '^# LOOM_TERMINAL_RESULT ' || true)"
+assert_eq \
+    "# LOOM_TERMINAL_RESULT v=1 provider=codex account=profile-a category=TOKEN_EXPIRED exit_code=42" \
+    "$terminal_record" \
+    "the structured record matches the direct Codex classifier and carries account identity"
+assert_not_contains "recognizable-secret" "$terminal_record" \
+    "the structured record never copies raw child output"
 
 set +e
 run_mock MOCK_RC=0 -- -p "hi" >/dev/null 2>&1
@@ -691,6 +910,16 @@ assert_classify "FATAL" \
 assert_classify "FATAL" "landlock_sandbox_executable_not_provided" 1 codex \
     "an unconstructable sandbox is FATAL (never silently retried unsandboxed)"
 
+# A ChatGPT-plan seat rejecting a pinned model is FATAL, not RECOVERABLE
+# (issue #5499) — retrying the identical invocation can never succeed; the
+# fault is the model/auth-mode pairing, not the transport.
+assert_classify "FATAL" \
+    "{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account.\"}}" \
+    1 codex "a ChatGPT-account model-unsupported 400 is FATAL, not RECOVERABLE (#5499)"
+assert_classify "FATAL" \
+    "The 'sonnet' model is not supported when using Codex with a ChatGPT account." \
+    1 codex "the same wording for a different pinned model is also FATAL (#5499)"
+
 # --- TOKEN_EXPIRED: 401 / login / refresh-token failures ---
 assert_classify "TOKEN_EXPIRED" \
     "ERROR codex_api: failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.com/v1/responses" \
@@ -774,6 +1003,9 @@ assert_classify "SUCCESS" "500 rate limit" 0 claude \
 assert_classify "RECOVERABLE" \
     "Not inside a trusted directory and --skip-git-repo-check was not specified." \
     1 claude "the codex FATAL patterns do NOT leak into the claude table"
+assert_classify "RECOVERABLE" \
+    "The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account." \
+    1 claude "the #5499 ChatGPT-account FATAL pattern does NOT leak into the claude table"
 
 # Two-arg calls (claude-wrapper.sh) and unknown providers are unaffected.
 assert_eq "TOKEN_EXHAUSTED" "$(classify_error "You've hit your weekly limit" 1)" \
@@ -785,6 +1017,259 @@ assert_classify "RECOVERABLE" "Not inside a trusted directory" 1 amp \
 assert_eq "FATAL" \
     "$(LOOM_RUNTIME=codex classify_error "Not inside a trusted directory" 1)" \
     "LOOM_RUNTIME=codex selects the codex table for a two-arg call"
+
+# ============================================================
+# Managed Codex hook readiness / trust preflight (issue #4495)
+#
+# Hermetic: only temporary CODEX_HOME profiles and the repo's own bridge file.
+# The real Codex CLI is never invoked (LOOM_CODEX_NO_EXEC=1 short-circuits
+# before any exec, and the preflight runs BEFORE that hook anyway).
+# ============================================================
+echo ""
+echo "Testing managed Codex hook readiness preflight (#4495)..."
+
+PROVISION_SCRIPT="$SCRIPTS_DIR/provision-codex-hooks.sh"
+BRIDGE_SCRIPT="$(cd "$SCRIPTS_DIR/../hooks" 2>/dev/null && pwd)/guard-codex-bridge.sh"
+
+# Pin the workspace this section provisions/verifies against to LOOM_WORKSPACE
+# instead of leaving it to spawn-codex.sh's own git-common-dir resolution
+# (issue #5350). provision-codex-hooks.sh install below bakes in whatever
+# --workspace value we pass it (here, $(pwd)); spawn-codex.sh's internal verify
+# call resolves its OWN --workspace via _resolve_workspace(), which always
+# returns the MAIN checkout path via `git rev-parse --git-common-dir`/dirname
+# — by design (mirrors guard-worktree-paths.sh's confinement anchor) and NOT
+# something this harness change alters. When this suite runs with its CWD
+# inside a linked worktree, that main-checkout resolution diverges from the
+# $(pwd) this section provisioned against, so the managed-hook verify sees a
+# bogus "different bridge than this workspace's" mismatch. Exporting
+# LOOM_WORKSPACE here makes both sides agree by construction, regardless of
+# which directory the suite is invoked from — LOOM_WORKSPACE is
+# _resolve_workspace()'s highest-precedence input, unchanged.
+#
+# Scope: this script is always run as its own `bash <file>` process (see
+# .github/workflows/ci.yml and test-spawn-generic.sh, which reference this
+# file by path, never `source` it), so this export cannot leak into another
+# suite's shell.
+export LOOM_WORKSPACE="$(pwd)"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+if bash -n "$PROVISION_SCRIPT" 2>/dev/null; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo -e "  ${GREEN}PASS${NC}: provision-codex-hooks.sh passes bash -n"
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo -e "  ${RED}FAIL${NC}: provision-codex-hooks.sh fails bash -n"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+if bash -n "$BRIDGE_SCRIPT" 2>/dev/null; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo -e "  ${GREEN}PASS${NC}: guard-codex-bridge.sh passes bash -n"
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo -e "  ${RED}FAIL${NC}: guard-codex-bridge.sh fails bash -n"
+fi
+
+HOOKTMP="$(mktemp -d)"
+mk_hook_profile() {
+    local name="$1"
+    local dir="$HOOKTMP/$name"
+    mkdir -p "$dir"
+    printf '{"tokens":{"refresh_token":"sk-loom-FAKE-4495"}}\n' > "$dir/auth.json"
+    printf '%s' "$dir"
+}
+
+# run_preflight <expect-exit> <description> [VAR=val ...]
+#
+# Publishes the combined stdout+stderr in the global PREFLIGHT_OUT rather than
+# printing it: the assertions below must run in THIS shell, not inside a
+# command substitution, or their TESTS_RUN/TESTS_PASSED increments are lost in
+# the subshell and the suite silently under-counts.
+PREFLIGHT_OUT=""
+run_preflight() {
+    local expected="$1" desc="$2"
+    shift 2
+    local rc=0
+    PREFLIGHT_OUT="$(env -u LOOM_CODEX_HOME -u LOOM_CODEX_PROFILE -u LOOM_CODEX_SANDBOX \
+        -u LOOM_CODEX_NETWORK -u LOOM_MODEL -u LOOM_EFFORT -u LOOM_CODEX_MODEL -u LOOM_ROLE \
+        LOOM_SWEEP_NICE=0 LOOM_CODEX_NO_EXEC=1 LOOM_SPAWN_NO_EXPORT=1 \
+        "$@" bash "$SPAWN_CODEX" -p "hi" 2>&1)" || rc=$?
+    assert_eq "$expected" "$rc" "$desc"
+}
+
+READY_PROFILE="$(mk_hook_profile ready)"
+# No explicit --bridge here: production `install` never passes one either, so
+# this must resolve the bridge the exact same way spawn-codex.sh's `verify`
+# call does (via resolve_bridge()'s --workspace-relative candidate). Pinning
+# to $BRIDGE_SCRIPT (the defaults/ copy) would diverge from verify's
+# resolution whenever a workspace-local .loom/hooks/guard-codex-bridge.sh
+# copy also exists (see #4787), spuriously reporting hooks=not-ready.
+bash "$PROVISION_SCRIPT" install --codex-home "$READY_PROFILE" \
+    --workspace "$LOOM_WORKSPACE" >/dev/null 2>&1
+printf 'hooks.state."loom".trusted_hash = "deadbeef"\n' > "$READY_PROFILE/config.toml"
+
+BARE_PROFILE="$(mk_hook_profile bare)"
+
+# (1) Builder with a ready profile starts.
+run_preflight 0 "builder + ready managed hook -> proceeds" \
+    LOOM_ROLE=builder CODEX_HOME="$READY_PROFILE"
+out="$PREFLIGHT_OUT"
+assert_contains "hooks=ready" "$out" "audit line reports hooks=ready"
+assert_contains "trust-bypass=never" "$out" "audit line records that trust is never bypassed"
+assert_not_contains "sk-loom-FAKE-4495" "$out" "the audit line leaks no credential material"
+assert_not_contains "auth.json" "$out" "the audit line names no credential file for a ready profile"
+
+# (2) Builder with an unprovisioned profile fails closed BEFORE the CLI starts.
+run_preflight 78 "builder + unprovisioned profile -> exit 78" \
+    LOOM_ROLE=builder CODEX_HOME="$BARE_PROFILE"
+out="$PREFLIGHT_OUT"
+assert_not_contains "would-exec" "$out" "no codex argv is assembled when the preflight fails"
+assert_contains "not ready" "$out" "the failure explains that hook parity is not ready"
+
+# (3) Builder with a provisioned-but-untrusted profile fails closed.
+UNTRUSTED_PROFILE="$(mk_hook_profile untrusted)"
+bash "$PROVISION_SCRIPT" install --codex-home "$UNTRUSTED_PROFILE" \
+    --workspace "$LOOM_WORKSPACE" --bridge "$BRIDGE_SCRIPT" >/dev/null 2>&1
+run_preflight 78 "builder + installed-but-untrusted profile -> exit 78" \
+    LOOM_ROLE=builder CODEX_HOME="$UNTRUSTED_PROFILE"
+
+# (4) Builder with a STALE (tampered) entry fails closed.
+STALE_PROFILE="$(mk_hook_profile stale)"
+bash "$PROVISION_SCRIPT" install --codex-home "$STALE_PROFILE" \
+    --workspace "$LOOM_WORKSPACE" --bridge "$BRIDGE_SCRIPT" >/dev/null 2>&1
+printf 'hooks.state."loom".trusted_hash = "deadbeef"\n' > "$STALE_PROFILE/config.toml"
+jq '(.hooks.PreToolUse[].hooks[] | select(.command | contains("guard-codex-bridge.sh")) | .command) |= (. + " --tampered")' \
+    "$STALE_PROFILE/hooks.json" > "$STALE_PROFILE/hooks.tmp" \
+    && mv "$STALE_PROFILE/hooks.tmp" "$STALE_PROFILE/hooks.json"
+run_preflight 78 "builder + stale managed-hook entry -> exit 78" \
+    LOOM_ROLE=builder CODEX_HOME="$STALE_PROFILE"
+
+# (5) Doctor is a mutable role too.
+run_preflight 78 "doctor + unprovisioned profile -> exit 78" \
+    LOOM_ROLE=doctor CODEX_HOME="$BARE_PROFILE"
+run_preflight 78 "pr-fixer (doctor alias) -> exit 78" \
+    LOOM_ROLE=pr-fixer CODEX_HOME="$BARE_PROFILE"
+run_preflight 78 "development-worker (builder alias) -> exit 78" \
+    LOOM_ROLE=development-worker CODEX_HOME="$BARE_PROFILE"
+run_preflight 78 "BUILDER (case-insensitive) -> exit 78" \
+    LOOM_ROLE=BUILDER CODEX_HOME="$BARE_PROFILE"
+# Issue #4768: a daemon-dispatched sweep child is admitted against Builder's
+# requirements and gets LOOM_ROLE=sweep-lifecycle (never a bare "builder") —
+# it must get the SAME mutable-role fail-closed treatment, not the read-only
+# fallback an unrecognized role would silently take.
+run_preflight 78 "sweep-lifecycle (daemon sweep-child alias) -> exit 78" \
+    LOOM_ROLE=sweep-lifecycle CODEX_HOME="$BARE_PROFILE"
+
+# (6) Read-only roles keep the conservative fallback, with an explicit warning.
+run_preflight 0 "judge + unprovisioned profile -> proceeds (read-only role)" \
+    LOOM_ROLE=judge CODEX_HOME="$BARE_PROFILE"
+out="$PREFLIGHT_OUT"
+assert_contains "hook parity unavailable" "$out" \
+    "a read-only role is told, explicitly, that hook parity is unavailable"
+assert_contains "NOT Builder-capable" "$out" \
+    "a read-only fallback session is never reported as Builder-capable"
+assert_contains "would-exec" "$out" "a read-only role still assembles the codex argv"
+
+run_preflight 0 "no LOOM_ROLE + unprovisioned profile -> proceeds" \
+    CODEX_HOME="$BARE_PROFILE"
+out="$PREFLIGHT_OUT"
+assert_contains "role=unset" "$out" "the audit line reports an unset role"
+
+# (7) Ambient auth (no CODEX_HOME) is reported as unavailable, not ready.
+out="$(env -u CODEX_HOME -u LOOM_CODEX_HOME -u LOOM_CODEX_PROFILE \
+    LOOM_SWEEP_NICE=0 LOOM_CODEX_NO_EXEC=1 LOOM_SPAWN_NO_EXPORT=1 \
+    LOOM_ROLE=judge bash "$SPAWN_CODEX" -p "hi" 2>&1)" || true
+assert_contains "hooks=unavailable" "$out" \
+    "ambient Codex login state reports hooks=unavailable"
+
+# (8) The adapter must never pass Codex's hook-trust bypass flag.
+TESTS_RUN=$((TESTS_RUN + 1))
+if grep -nE '^[^#]*--dangerously-bypass-hook-trust' "$SPAWN_CODEX" \
+    | grep -vqE 'log_(error|warn|info)'; then
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo -e "  ${RED}FAIL${NC}: spawn-codex.sh must never pass --dangerously-bypass-hook-trust"
+else
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo -e "  ${GREEN}PASS${NC}: spawn-codex.sh never passes --dangerously-bypass-hook-trust"
+fi
+
+# ...and the config-key spelling of the same waiver (`-c bypass_hook_trust=true`),
+# which the 0.146.0 binary honors identically.
+TESTS_RUN=$((TESTS_RUN + 1))
+if grep -nE 'bypass_hook_trust' "$SPAWN_CODEX" | grep -vqE '#|log_(error|warn|info)'; then
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo -e "  ${RED}FAIL${NC}: spawn-codex.sh sets the bypass_hook_trust config key"
+else
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo -e "  ${GREEN}PASS${NC}: spawn-codex.sh never sets the bypass_hook_trust config key"
+fi
+
+# (9) Capability truth stays gated: the manifest must remain `partial` until the
+#     #4495 evidence gate is satisfied, so #4494's admission keeps rejecting
+#     Builder/Doctor + Codex.
+CODEX_MANIFEST="$SCRIPTS_DIR/../runtimes/codex.json"
+assert_eq "partial" "$(jq -r '.capabilities.worktreeIsolation' "$CODEX_MANIFEST")" \
+    "codex.json worktreeIsolation is still 'partial' (evidence-gated, #4478/#4495)"
+assert_eq "partial" "$(jq -r '.capabilities.hooks' "$CODEX_MANIFEST")" \
+    "codex.json hooks is still 'partial' (evidence-gated, #4478/#4495)"
+assert_eq "no" "$(jq -r '.capabilities.subagents' "$CODEX_MANIFEST")" \
+    "codex.json subagents is unchanged by this phase"
+assert_eq "yes" "$(jq -r '.capabilities.mcp' "$CODEX_MANIFEST")" \
+    "codex.json mcp is unchanged by this phase"
+TESTS_RUN=$((TESTS_RUN + 1))
+if jq -e '.capabilityGate.pending | type == "array" and length > 0' "$CODEX_MANIFEST" >/dev/null 2>&1; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo -e "  ${GREEN}PASS${NC}: codex.json records the outstanding promotion evidence"
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo -e "  ${RED}FAIL${NC}: codex.json records the outstanding promotion evidence"
+fi
+
+# (10) Doctor declares the isolation/mutation requirements its real work needs,
+#      so capability admission rejects Doctor + Codex while the manifest is
+#      partial and admits it only once the capability is proven.
+DOCTOR_ROLE="$SCRIPTS_DIR/../roles/doctor.json"
+TESTS_RUN=$((TESTS_RUN + 1))
+if jq -e '.runtimeRequirements | index("worktreeIsolation") != null' "$DOCTOR_ROLE" >/dev/null 2>&1; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    echo -e "  ${GREEN}PASS${NC}: doctor.json declares worktreeIsolation"
+else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo -e "  ${RED}FAIL${NC}: doctor.json declares worktreeIsolation"
+fi
+
+set +e
+bash "$SCRIPTS_DIR/check-runtime-capabilities.sh" --role doctor --runtime codex \
+    --dir "$SCRIPTS_DIR/.." >/dev/null 2>&1
+doctor_codex_rc=$?
+set -e
+assert_eq "78" "$doctor_codex_rc" "doctor + codex is rejected while the manifest is partial (#4494)"
+
+# The same checker admits doctor + claude, so the new requirement is not a
+# blanket rejection.
+set +e
+bash "$SCRIPTS_DIR/check-runtime-capabilities.sh" --role doctor --runtime claude \
+    --dir "$SCRIPTS_DIR/.." >/dev/null 2>&1
+doctor_claude_rc=$?
+set -e
+assert_eq "0" "$doctor_claude_rc" "doctor + claude remains admitted"
+
+# ...and with a hypothetical PROMOTED codex manifest, doctor is admitted — the
+# inverse assertion that proves the gate is the manifest value, not a hard-coded
+# runtime denylist.
+PROMOTED_DIR="$HOOKTMP/promoted"
+mkdir -p "$PROMOTED_DIR/runtimes" "$PROMOTED_DIR/roles"
+jq '.capabilities.worktreeIsolation = "yes" | .capabilities.hooks = "yes"' \
+    "$CODEX_MANIFEST" > "$PROMOTED_DIR/runtimes/codex.json"
+cp "$DOCTOR_ROLE" "$PROMOTED_DIR/roles/doctor.json"
+set +e
+bash "$SCRIPTS_DIR/check-runtime-capabilities.sh" --role doctor --runtime codex \
+    --dir "$PROMOTED_DIR" >/dev/null 2>&1
+promoted_rc=$?
+set -e
+assert_eq "0" "$promoted_rc" "doctor + codex is admitted once the manifest declares the capability"
+
+rm -rf "$HOOKTMP"
 
 # ============================================================
 # Summary

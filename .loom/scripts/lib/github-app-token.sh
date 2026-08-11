@@ -237,8 +237,19 @@ _github_app_cache_path() {
 # mapping cache file path. This value is not a secret (an installation id is
 # just an integer identifying a repo grant) so it does not need 0600, but it
 # lives in the same 0700 directory as the token cache for simplicity.
+#
+# Keyed by (owner, app id) rather than owner alone (#5912): a host running
+# daemons for two repos that share a GitHub account but are backed by two
+# different GitHub Apps would otherwise collide on one cache entry --
+# whichever app resolves first wins, and the second app then mints against an
+# installation id its JWT has no claim on (404), silently falling back to
+# ambient `gh` auth. `_GH_APP_ID` is populated by `_github_app_load_config`
+# (via `github_app_configured`) before every call site here is reached.
+# Pre-existing owner-only cache files (`owner-<owner>.installation`) are
+# simply left as dead filenames -- no migration needed.
 _github_app_installation_cache_path() {
-  echo "$(_github_app_cache_dir)/owner-${1}.installation"
+  local app_id="${_GH_APP_ID:-unknown}"
+  echo "$(_github_app_cache_dir)/owner-${1}-app-${app_id}.installation"
 }
 
 # _github_app_write_cache <installation_id> <token> <expires_at_iso8601> ->
@@ -315,7 +326,17 @@ _github_app_api_get_installation() {
   http_code=$(echo "$resp" | tail -1)
   body=$(echo "$resp" | sed '$d')
   if [[ "$http_code" -ge 200 && "$http_code" -lt 300 ]]; then
-    echo "$body" | jq -r '.id'
+    # Validate before echoing: a 2xx body missing `.id` yields the literal
+    # string "null", which is non-empty and would poison the per-owner cache
+    # persistently (#4456). Installation ids are numeric -- reject anything
+    # else at the source so the caller never caches a bad value.
+    local id
+    id=$(echo "$body" | jq -r '.id')
+    if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+      _GH_APP_LAST_ERROR="GitHub App installation response for ${nwo} did not include a numeric installation id (HTTP ${http_code})"
+      return 1
+    fi
+    printf '%s' "$id"
     return 0
   fi
   _GH_APP_LAST_ERROR="could not resolve the GitHub App installation for ${nwo} (HTTP ${http_code} -- is the app installed on this repo/org?)"
@@ -366,7 +387,11 @@ github_app_get_token() {
 
   local installation_id
   installation_id=$(cat "$(_github_app_installation_cache_path "$owner")" 2>/dev/null || echo "")
-  if [[ -z "$installation_id" ]]; then
+  # Treat a missing OR non-numeric cache value as a miss (#4456): a
+  # pre-poisoned cache file holding the literal "null" (or any non-numeric
+  # junk from an older build) is non-empty, so a bare `-z` test would keep
+  # reusing it forever. Re-resolving self-heals such hosts.
+  if [[ ! "$installation_id" =~ ^[0-9]+$ ]]; then
     installation_id=$(_github_app_api_get_installation "$nwo") || return 1
     printf '%s' "$installation_id" > "$(_github_app_installation_cache_path "$owner")"
   fi
@@ -428,9 +453,26 @@ if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]]; then
         jq -cn --arg message "$_GH_APP_LAST_ERROR" '{status:"not_configured", message:$message}'
         exit 0
       fi
-      if _gh_app_token=$(github_app_get_token "$_nwo"); then
-        jq -cn --arg token "$_gh_app_token" --arg installation_id "$GITHUB_APP_INSTALLATION_ID" \
-          --arg app_id "$_GH_APP_ID" --arg expires_at "$GITHUB_APP_TOKEN_EXPIRES_AT" \
+      # `github_app_get_token` sets GITHUB_APP_INSTALLATION_ID /
+      # GITHUB_APP_TOKEN_EXPIRES_AT as a side effect, but `$(...)` command
+      # substitution runs its command in a SUBSHELL -- those assignments never
+      # propagate back to this (the parent) shell, so reading them directly
+      # after the substitution always sees the pre-call (empty) values (the
+      # root cause of `installation_id` always coming back empty in the CLI
+      # envelope). Fix: emit them as two extra output lines from INSIDE the
+      # same subshell (`github_app_get_token` itself always emits exactly one
+      # trailing-newline-terminated line -- the token), then split the
+      # captured 3-line output back apart out here (#5401).
+      if _gh_app_out=$(
+        github_app_get_token "$_nwo" &&
+          printf '%s\n%s' "$GITHUB_APP_INSTALLATION_ID" "$GITHUB_APP_TOKEN_EXPIRES_AT"
+      ); then
+        _gh_app_token="${_gh_app_out%%$'\n'*}"
+        _gh_app_rest="${_gh_app_out#*$'\n'}"
+        _gh_app_installation_id="${_gh_app_rest%%$'\n'*}"
+        _gh_app_expires_at="${_gh_app_rest#*$'\n'}"
+        jq -cn --arg token "$_gh_app_token" --arg installation_id "$_gh_app_installation_id" \
+          --arg app_id "$_GH_APP_ID" --arg expires_at "$_gh_app_expires_at" \
           '{status:"ok", token:$token, installation_id:$installation_id, app_id:$app_id, expires_at:$expires_at}'
       else
         jq -cn --arg message "$_GH_APP_LAST_ERROR" '{status:"error", message:$message}'

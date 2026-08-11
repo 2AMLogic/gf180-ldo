@@ -2,14 +2,46 @@
 # classify-error.sh — Classify a (output, exit_code, [provider]) triple into
 # an error category.
 #
-# Source this file (do not exec). Defines a single public function:
+# Source this file (do not exec). Defines two public functions:
+#
+#   classification_is_transient <category> -> exit 0 when a caller's retry loop
+#       should retry, 1 when the category is terminal. THE single source of
+#       truth for every retry decision (issue #4501) — see the function's own
+#       comment for the deny-list policy and why no caller may keep a private
+#       pattern list alongside it.
 #
 #   classify_error <output> <exit_code> [provider] -> echoes one of:
 #       SUCCESS         — exit 0 (regardless of output content)
 #       TIMEOUT         — exit 124/137 (productive cycle, not a failure)
 #       CWD_DELETED     — working directory was removed
 #       TOKEN_EXPIRED   — 401 / OAuth token expired (skip this token)
-#       TOKEN_EXHAUSTED — quota/weekly limit hit (rotate)
+#       TOKEN_EXHAUSTED — quota/weekly/per-model limit hit (rotate). Covers
+#                         both the "hit your … limit" family (#3738) and the
+#                         per-model "reached your <model> limit" ceiling the
+#                         CLI emits today (#4501) — the latter is a safe
+#                         over-approximation (the account may still have
+#                         headroom on a cheaper model) chosen over a new
+#                         model-dimensioned category so no downstream consumer
+#                         has to learn a new enum value.
+#       MODEL_CREDITS_EXHAUSTED
+#                       — per-model-TIER usage credits ran out (issue #5687):
+#                         "You're out of usage credits". Distinct from
+#                         TOKEN_EXHAUSTED because the remedy differs in KIND,
+#                         not just degree: credits are scoped to a model tier,
+#                         so re-dispatching the SAME work on a CHEAPER model
+#                         under the SAME account is a valid (often the only
+#                         available) remedy — account rotation is not the only
+#                         option, and on a single-account host it is not an
+#                         option at all. Every account-pool consumer treats it
+#                         exactly like TOKEN_EXHAUSTED (rotate, same cooldown,
+#                         same retryability), so the daemon path is unchanged;
+#                         the distinct NAME exists so the in-session
+#                         `/loom:sweep` orchestrator — which dispatches wave
+#                         builders through the Task tool and never runs this
+#                         classifier as a subprocess — has a precise signature
+#                         to key its one-rung-down model fallback on (see
+#                         sweep.md, "Credit-exhaustion fallback"), and so
+#                         sweep forensics can name the failure class.
 #       SESSION_LIMIT   — concurrent-session-limit fault (issue #3947): the
 #                         account is NOT out of quota, it just cannot start
 #                         another *simultaneous* session right now (a capacity
@@ -65,10 +97,19 @@
 #
 #   Within the `claude` table, match order is significant and preserved from
 #   the pre-split implementation: CWD_DELETED -> MODEL_REFUSAL ->
-#   TOKEN_EXPIRED -> SESSION_LIMIT -> TOKEN_EXHAUSTED -> the "No messages
-#   returned" RECOVERABLE case. SESSION_LIMIT must precede TOKEN_EXHAUSTED
+#   TOKEN_EXPIRED -> SESSION_LIMIT -> TOKEN_EXHAUSTED ->
+#   MODEL_CREDITS_EXHAUSTED -> the "No messages returned" RECOVERABLE case.
+#   MODEL_CREDITS_EXHAUSTED is checked LAST among the account-side categories
+#   (#5687) so every pre-existing vector keeps its pre-#5687 category: the
+#   #4501 per-model ceiling ("You've reached your Fable 5 limit. Run
+#   /usage-credits to continue …") mentions credits too, and matching the new
+#   branch first would have re-classified it. SESSION_LIMIT must precede
+#   TOKEN_EXHAUSTED
 #   because "concurrent session limit" contains the substring "session limit"
-#   that the exhaustion regex also matches (#3947). MODEL_REFUSAL is matched
+#   that the exhaustion regex also matches (#3947) — and, since #4501 widened
+#   the exhaustion regex to "reached your <model> limit", it now also contains
+#   the "reached your … limit" shape, making that ordering load-bearing for a
+#   second reason. MODEL_REFUSAL is matched
 #   only when exit_code != 0, preserving the #3233 exit-code-first guarantee
 #   (a clean exit whose output merely mentions "refusal" stays SUCCESS).
 #
@@ -157,8 +198,79 @@ _classify_error_claude() {
     # file rather than duplicating the pattern (issue #3738) — moving the
     # pattern into this table preserves that single-source property; the
     # wrapper still reaches it only via `classify_error`, never a copy.
-    if echo "$output" | grep -qiE "hit your (limit|session limit|weekly limit)|hit\.your\.limit|monthly usage limit|out of extra usage"; then
+    #
+    # Issue #4501 adds the "reached your <model> limit" family: the CLI now
+    # emits a PER-MODEL ceiling — "You've reached your Fable 5 limit. Run
+    # /usage-credits to continue or switch models with /model." — where the
+    # model name sits between "your" and "limit", so none of the "hit your …"
+    # phrasings above fired and every daemon-dispatched child died permanently
+    # at CLI start instead of rotating. `([^[:space:]]+[[:space:]]+){0,3}`
+    # bounds the filler to at most three words so the pattern cannot swallow a
+    # whole unrelated sentence that merely ends in "limit". Ordered AFTER the
+    # SESSION_LIMIT branch above so "reached your concurrent session limit"
+    # keeps its distinct capacity classification (#3947).
+    #
+    # Deliberately reuses TOKEN_EXHAUSTED rather than introducing a
+    # model-dimensioned MODEL_LIMIT category: a Fable-only ceiling does not
+    # exhaust `sonnet` on the same account, so marking the whole account
+    # exhausted is a *safe over-approximation* (correct rotation, slightly
+    # pessimistic pool) that needs no change in any downstream consumer
+    # (`spawn-codex.sh`'s terminal-result allowlist,
+    # `loom-daemon/src/tokens_pool/health.rs`'s `TerminalClassification`,
+    # `bad_tokens.rs`/`failure_counts.rs`). Per-model account state is tracked
+    # as an explicit follow-up, not smuggled in here.
+    #
+    # Issue #5631: "hit your (limit|session limit|weekly limit)" was a fixed
+    # alternation that missed "You've hit your monthly spend limit" (a
+    # billing cap, distinct from "monthly usage limit"), so a spend-capped
+    # account fell through to RECOVERABLE and was retried with backoff
+    # instead of rotated away from. Widened to the same bounded-filler shape
+    # already used for "reached your <model> limit" above, so the next
+    # "hit your <N-word> limit" variant is caught without another round trip.
+    if echo "$output" | grep -qiE "hit your ([^[:space:]]+[[:space:]]+){0,3}limit|hit\.your\.limit|monthly usage limit|out of extra usage|reached your ([^[:space:]]+[[:space:]]+){0,3}limit"; then
         echo "TOKEN_EXHAUSTED"
+        return
+    fi
+
+    # Per-model-TIER credit exhaustion (issue #5687) — "You're out of usage
+    # credits". Observed 2026-08-08 during a `/loom:sweep all` run: all six
+    # in-session wave builders were dispatched on the session-default model and
+    # died within minutes of each other when the account's credits for THAT
+    # MODEL TIER ran out. None of the TOKEN_EXHAUSTED phrasings above fires on
+    # this wording (there is no "limit" token and no "extra usage"), so before
+    # this branch it fell through to the RECOVERABLE catch-all and the wrapper
+    # retried the same model with backoff instead of rotating or downgrading.
+    #
+    # Why this is a DISTINCT category rather than another TOKEN_EXHAUSTED
+    # phrase (the #4501 precedent went the other way):
+    #   * The remedy differs in kind. Credits are model-tier-scoped, so
+    #     re-running the SAME work on a cheaper model under the SAME account
+    #     clears it. On a single-account host — and on the in-session Task
+    #     dispatch path, which has no account pool at all — that is the ONLY
+    #     remedy; "rotate the account" is not applicable there.
+    #   * The consumer that needs it is not this classifier's caller. The
+    #     `/loom:sweep` orchestrator dispatches wave builders via the Task
+    #     tool, so no subprocess exists for this file to classify; it reads
+    #     the failure text itself and needs a named signature to key its
+    #     one-rung-down model fallback on (sweep.md, "Credit-exhaustion
+    #     fallback"). Folding the phrase into TOKEN_EXHAUSTED would have made
+    #     that signature unnameable.
+    # Behaviourally it is a SYNONYM of TOKEN_EXHAUSTED for every account-pool
+    # consumer: `claude-wrapper.sh::is_account_exhaustion` accepts it (rotate +
+    # mark bad), `classification_is_transient` retries it, and
+    # `tokens_pool::health` gives it the identical PlanExhausted cooldown. So
+    # the daemon/wrapper path behaves as it would have under TOKEN_EXHAUSTED —
+    # only the reported name (and therefore the telemetry + the orchestrator's
+    # remedy choice) is finer-grained.
+    #
+    # Ordered AFTER TOKEN_EXHAUSTED deliberately: #4501's live message
+    # ("You've reached your Fable 5 limit. Run /usage-credits to continue or
+    # switch models with /model.") also mentions credits, and must keep its
+    # existing classification. The regex is anchored on the word "credits"
+    # preceded by an exhaustion verb so an unrelated mention ("credit card
+    # declined", "credit the original author") cannot false-positive.
+    if echo "$output" | grep -qiE "(ran |run )?out of (usage |extra |plan )?credits|no (usage |extra |plan )?credits (remaining|left)|insufficient (usage |plan )?credits"; then
+        echo "MODEL_CREDITS_EXHAUSTED"
         return
     fi
 
@@ -191,7 +303,7 @@ _classify_error_claude() {
 #                             429, and mis-classifying a quota fault as an auth
 #                             fault is the expensive direction — TOKEN_EXPIRED
 #                             marks an account bad with reason `auth` (persists
-#                             until a manual `loom-tokens unblock`), whereas
+#                             until a manual `loom-daemon tokens unblock`), whereas
 #                             TOKEN_EXHAUSTED uses reason `exhausted` (TTL-
 #                             expires on its own). Quota wording is also the
 #                             more specific signal, so letting it win is both
@@ -240,6 +352,27 @@ _classify_error_codex() {
     # it FATAL is the safe direction: a worker that cannot establish its
     # sandbox must NOT be silently retried into running unsandboxed.
     if echo "$output" | grep -qiE "not inside a trusted directory|unknown configuration field|landlock_sandbox_executable_not_provided"; then
+        echo "FATAL"
+        return
+    fi
+
+    # Model unsupported for this account's auth mode (issue #5499). Observed
+    # verbatim as a 400 `invalid_request_error` when an explicitly-pinned
+    # model (even a Codex-family one, e.g. `gpt-5-codex`) is forwarded to a
+    # ChatGPT-plan-authenticated profile: "The 'gpt-5-codex' model is not
+    # supported when using Codex with a ChatGPT account." Retrying the
+    # identical invocation can never succeed — the fault is the model/auth-mode
+    # pairing, not the transport or the account's quota — so this must NOT
+    # fall through to the generic RECOVERABLE catch-all below (the pre-#5499
+    # behavior, which retried this identically forever, burning an invocation
+    # every cadence tick). `spawn-codex.sh` independently guards against this
+    # by dropping a pinned model before launch when it detects a ChatGPT-plan
+    # profile (issue #5499); this classification is the backstop for every
+    # OTHER path that can still reach the CLI with a bad pin (the guard's own
+    # escape hatch `LOOM_CODEX_AUTH_MODE_CHECK=0`, a pre-existing/ambient
+    # `CODEX_HOME` the guard could not resolve in time, or a future caller
+    # that bypasses spawn-codex.sh entirely).
+    if echo "$output" | grep -qiE "is not supported when using codex with a chatgpt account"; then
         echo "FATAL"
         return
     fi
@@ -374,4 +507,65 @@ is_recoverable_error() {
     local classification
     classification=$(classify_error "$1" "$2")
     [[ "$classification" != "FATAL" && "$classification" != "SUCCESS" ]]
+}
+
+# --- Retry verdict: the single source of truth (issue #4501) --------------
+#
+# classification_is_transient <category> -> exit 0 when a caller's retry loop
+# SHOULD retry the same invocation, 1 when the failure is terminal for that
+# caller. The argument is a category emitted by `classify_error`.
+#
+# Why this lives here. Before #4501, `claude-wrapper.sh::is_transient_error`
+# kept its OWN pattern array, disjoint from this file's tables, so the retry
+# decision and the printed `classification=` were two independent verdict
+# systems that could — and did — contradict each other in the same log block:
+#
+#   [ERROR] Non-transient error detected - not retrying
+#   [ERROR] exit_code=1 classification=RECOVERABLE
+#
+# Deriving the verdict from the category makes that contradiction structurally
+# impossible: there is now exactly one classifier, and the retry decision is a
+# pure function of its output.
+#
+# Policy is a DENY-LIST. Only categories whose fault cannot be cleared by
+# retrying the same invocation are terminal; everything else — including the
+# generic RECOVERABLE catch-all for an *unrecognized* non-zero exit — is
+# retried, bounded by the caller's own retry cap. Retry-by-default is the
+# fail-safe direction for unattended daemon children: an allow-list of known
+# transient phrasings has twice turned a new CLI wording into an instant
+# permanent death (#4255's bare `Execution error`, #4501's "reached your
+# <model> limit"), while an over-retry costs only a bounded backoff. It also
+# matches the documented contract of the catch-all in
+# `_classify_error_generic` ("unknown non-zero exit, treat as recoverable in
+# daemon mode").
+classification_is_transient() {
+    case "$1" in
+        # Terminal — retrying the same invocation cannot succeed:
+        #   SUCCESS       nothing to retry.
+        #   TIMEOUT       the wall-clock budget was already spent, and a 137 is
+        #                 normally an external kill (daemon reaper / OOM) —
+        #                 surface it rather than re-spending the budget.
+        #   TOKEN_EXPIRED this token needs re-auth, not another attempt.
+        #   CWD_DELETED   the working directory is gone.
+        #   MODEL_REFUSAL the same model refuses the same turn again; the sweep
+        #                 orchestrator drops a ladder rung instead (see
+        #                 sweep.md, "Refusal-aware fallback").
+        #   FATAL         a configuration fault (the `codex` table's category).
+        SUCCESS|TIMEOUT|TOKEN_EXPIRED|CWD_DELETED|MODEL_REFUSAL|FATAL)
+            return 1
+            ;;
+        # Retryable: RECOVERABLE (including the unknown-non-zero-exit
+        # catch-all), plus TOKEN_EXHAUSTED, MODEL_CREDITS_EXHAUSTED and
+        # SESSION_LIMIT. Those three are
+        # normally consumed by a caller's account-rotation / re-selection path
+        # BEFORE this predicate is reached; they land here only when that path
+        # is capped or found no alternate account, where a bounded
+        # backoff-and-retry (rather than a permanent death) is exactly what
+        # claude-wrapper.sh's own comments already promise.
+        # MODEL_CREDITS_EXHAUSTED (#5687) is deliberately in the SAME arm as
+        # TOKEN_EXHAUSTED: it is a distinct NAME, not a distinct retry policy.
+        *)
+            return 0
+            ;;
+    esac
 }

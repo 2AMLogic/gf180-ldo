@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# check-main-freshness.sh - Warn when local default branch is behind origin.
+# check-main-freshness.sh - Warn when local default branch is behind OR ahead
+# of origin.
 #
 # This is a NON-BLOCKING, advisory check. During a long-running /loom:sweep
 # session, other PRs can merge to origin's default branch — and because the
@@ -9,6 +10,12 @@
 # recently-merged logic (see #3770 for the incident: worktree.sh --base (#3742)
 # and merge-pr.sh auto-reconcile (#3752) were absent from the copies the session
 # was actually running, even though both had merged to origin/main).
+#
+# Ahead is the more dangerous direction (#5182): worktree.sh sets
+# BASE_REF="origin/$DEFAULT_BRANCH", so every builder worktree branches off
+# origin, not local. Unpushed local commits are invisible to every builder
+# dispatched this session — a silent, wave-wide correctness gap, not just
+# stale tooling.
 #
 # It is invoked at the start of /loom:sweep, alongside check-host-sleep.sh
 # (#3350). It MUST NOT block — even if git / the network fails, it returns 0 and
@@ -58,7 +65,7 @@ for arg in "$@"; do
             QUIET=1
             ;;
         --help|-h)
-            sed -n '2,27p' "$0" | sed 's/^# //; s/^#//'
+            sed -n '2,33p' "$0" | sed 's/^# //; s/^#//'
             exit 0
             ;;
         *)
@@ -128,44 +135,40 @@ if ! git show-ref --verify --quiet "refs/remotes/$REMOTE_REF" 2>/dev/null; then
     exit 0
 fi
 
-# ---------- compute how far behind ----------
+# ---------- compute how far behind AND how far ahead ----------
 
 N="$(git rev-list --count "${BRANCH}..${REMOTE_REF}" 2>/dev/null || echo 0)"
 if ! [[ "$N" =~ ^[0-9]+$ ]]; then
     N=0
 fi
 
-if [[ "$N" -eq 0 ]]; then
-    info_oneliner "${GREEN}[freshness-check] local ${BRANCH} is up to date with ${REMOTE_REF}.${NC}"
-    exit 0
+# Ahead is the dangerous direction (#5182): worktree.sh sets
+# BASE_REF="origin/$DEFAULT_BRANCH", so every builder worktree branches off
+# REMOTE_REF, not local BRANCH. Unpushed local commits are simply absent from
+# every builder's base — silently, with no error anywhere in the pipeline.
+A="$(git rev-list --count "${REMOTE_REF}..${BRANCH}" 2>/dev/null || echo 0)"
+if ! [[ "$A" =~ ^[0-9]+$ ]]; then
+    A=0
 fi
 
-# ---------- N > 0: warn (non-blocking) ----------
-
-warn ""
-warn "${YELLOW}${BOLD}========================================================================${NC}"
-warn "${YELLOW}${BOLD}  WARNING: local ${BRANCH} is behind ${REMOTE_REF} (#3770)${NC}"
-warn "${YELLOW}${BOLD}========================================================================${NC}"
-warn "${YELLOW}Local ${BRANCH} is ${N} commit(s) behind ${REMOTE_REF}.${NC}"
-warn "${YELLOW}The installed .loom/scripts/ and .loom/hooks/ copies are synced from${NC}"
-warn "${YELLOW}defaults/ at install time, so this session may be executing STALE${NC}"
-warn "${YELLOW}orchestration scripts that silently lack recently-merged logic.${NC}"
-warn ""
-warn "${BOLD}Remediation (read-only advisory — this script never pulls for you):${NC}"
-warn "      ${BOLD}git merge --ff-only ${REMOTE_REF}${NC}"
-warn "  then refresh the installed .loom/ copies from defaults/ (#3777):"
-warn "      ${BOLD}./.loom/scripts/resync-installed.sh${NC}"
-warn "  (preview first with ${BOLD}--dry-run${NC}; it only touches files present in defaults/)."
-warn ""
-
-# ---------- stretch goal: best-effort installed-vs-defaults drift note ----------
+# ---------- installed-copy drift check (files present in both trees) ----------
 #
-# When N > 0, additionally flag files present in BOTH .loom/scripts (installed)
-# and defaults/scripts whose content differs. Best-effort: if either tree can't
-# be resolved, skip silently. We only flag content differences for files present
-# in both trees — never "only on one side" (repo-specific hooks like
-# post-worktree.sh have no defaults/ counterpart and are not drift; as of #4007
-# guard-worktree-paths.sh DOES have one and is drift-checked like any other hook).
+# Compares the INSTALLED surfaces (.loom/scripts, .loom/hooks,
+# .claude/commands/loom, .loom/docs) against the LOCAL defaults/ tree they
+# were copied from — independent of whether local ${BRANCH} is behind/ahead
+# of ${REMOTE_REF}. This is deliberately computed unconditionally, not just
+# when N > 0 (#5874): a defaults/ change that has already merged to local
+# ${BRANCH} (so N == 0, "up to date") but was never propagated by a resync
+# is invisible to the behind/ahead comparison above entirely — that was the
+# exact blind spot behind #5846 shipping five role-prompt edits + a doc
+# change with installed copies never refreshed, while every version-based
+# currency check kept reporting the fleet as current. Only files present in
+# BOTH trees are compared — never "only on one side" (repo-specific hooks
+# like post-worktree.sh have no defaults/ counterpart and are not drift; as
+# of #4007 guard-worktree-paths.sh DOES have one and is drift-checked like
+# any other hook). Also covers .claude/commands/loom/ (role prompts) and
+# .loom/docs/ (the two installed-surface classes #5846 touched that scripts/
+# and hooks/ alone never would have caught).
 report_tree_drift() {
     local installed_dir="$1" defaults_dir="$2" label="$3"
     [[ -d "$installed_dir" && -d "$defaults_dir" ]] || return 0
@@ -176,7 +179,7 @@ report_tree_drift() {
         name="$(basename "$f")"
         if [[ -f "$defaults_dir/$name" ]]; then
             if ! cmp -s "$f" "$defaults_dir/$name" 2>/dev/null; then
-                warn "${YELLOW}  installed ${label}/${name} differs from defaults/${label}/${name}${NC}"
+                printf '%b\n' "${YELLOW}  installed ${label}/${name} differs from defaults/${label}/${name}${NC}"
             fi
         fi
     done
@@ -194,26 +197,105 @@ if [[ -n "$COMMON_DIR" ]]; then
     esac
 fi
 
+DRIFT_LINES=""
 if [[ -n "$REPO_ROOT" ]]; then
-    drift_found=0
-    if [[ -d "$REPO_ROOT/.loom/scripts" && -d "$REPO_ROOT/defaults/scripts" ]]; then
-        drift_found=1
-    fi
-    if [[ -d "$REPO_ROOT/.loom/hooks" && -d "$REPO_ROOT/defaults/hooks" ]]; then
-        drift_found=1
-    fi
-    if [[ "$drift_found" -eq 1 ]]; then
-        warn "${YELLOW}Installed-copy drift check (files present in both trees):${NC}"
+    DRIFT_LINES="$(
         report_tree_drift "$REPO_ROOT/.loom/scripts" "$REPO_ROOT/defaults/scripts" "scripts"
         report_tree_drift "$REPO_ROOT/.loom/hooks" "$REPO_ROOT/defaults/hooks" "hooks"
-        warn ""
+        report_tree_drift "$REPO_ROOT/.claude/commands/loom" "$REPO_ROOT/defaults/.claude/commands/loom" "roles"
+        report_tree_drift "$REPO_ROOT/.loom/docs" "$REPO_ROOT/defaults/docs" "docs"
+    )"
+fi
+
+if [[ "$N" -eq 0 && "$A" -eq 0 ]]; then
+    if [[ -z "$DRIFT_LINES" ]]; then
+        info_oneliner "${GREEN}[freshness-check] local ${BRANCH} is up to date with ${REMOTE_REF}.${NC}"
+        exit 0
     fi
+
+    # Local matches origin, but the installed surfaces have drifted from local
+    # defaults/ (#5874) — the version-comparison blind spot this check exists
+    # to close. See the report_tree_drift() comment above for why this is
+    # checked regardless of N/A.
+    warn ""
+    warn "${YELLOW}${BOLD}========================================================================${NC}"
+    warn "${YELLOW}${BOLD}  WARNING: installed surfaces are behind local defaults/ (#5874)${NC}"
+    warn "${YELLOW}${BOLD}========================================================================${NC}"
+    warn "${YELLOW}Local ${BRANCH} matches ${REMOTE_REF} — but the installed .loom/ and${NC}"
+    warn "${YELLOW}.claude/commands/loom/ copies differ from local defaults/. A merged${NC}"
+    warn "${YELLOW}defaults/ change (e.g. a role-prompt edit) was never propagated by a${NC}"
+    warn "${YELLOW}resync, so this session may be executing STALE instructions even though${NC}"
+    warn "${YELLOW}git itself reports everything current.${NC}"
+    warn ""
+    warn "${BOLD}Remediation (read-only advisory — this script never resyncs for you):${NC}"
+    warn "      ${BOLD}./.loom/scripts/resync-installed.sh${NC}"
+    warn "  (preview first with ${BOLD}--dry-run${NC}; it only touches files present in defaults/)."
+    warn ""
+    warn "${YELLOW}Installed-copy drift (files present in both trees):${NC}"
+    warn "$DRIFT_LINES"
+    warn ""
+    warn "${YELLOW}========================================================================${NC}"
+    warn ""
+    info_oneliner "${YELLOW}[freshness-check] WARNING: installed surfaces differ from local defaults/ even though ${BRANCH} matches ${REMOTE_REF}. See stderr for details.${NC}"
+    exit 0
+fi
+
+# ---------- behind and/or ahead: warn (non-blocking) ----------
+
+if [[ "$N" -gt 0 ]]; then
+    warn ""
+    warn "${YELLOW}${BOLD}========================================================================${NC}"
+    warn "${YELLOW}${BOLD}  WARNING: local ${BRANCH} is behind ${REMOTE_REF} (#3770)${NC}"
+    warn "${YELLOW}${BOLD}========================================================================${NC}"
+    warn "${YELLOW}Local ${BRANCH} is ${N} commit(s) behind ${REMOTE_REF}.${NC}"
+    warn "${YELLOW}The installed .loom/scripts/ and .loom/hooks/ copies are synced from${NC}"
+    warn "${YELLOW}defaults/ at install time, so this session may be executing STALE${NC}"
+    warn "${YELLOW}orchestration scripts that silently lack recently-merged logic.${NC}"
+    warn ""
+    warn "${BOLD}Remediation (read-only advisory — this script never pulls for you):${NC}"
+    warn "      ${BOLD}git merge --ff-only ${REMOTE_REF}${NC}"
+    warn "  then refresh the installed .loom/ copies from defaults/ (#3777):"
+    warn "      ${BOLD}./.loom/scripts/resync-installed.sh${NC}"
+    warn "  (preview first with ${BOLD}--dry-run${NC}; it only touches files present in defaults/)."
+    warn ""
+fi
+
+if [[ "$A" -gt 0 ]]; then
+    warn ""
+    warn "${YELLOW}${BOLD}========================================================================${NC}"
+    warn "${YELLOW}${BOLD}  WARNING: local ${BRANCH} is ahead of ${REMOTE_REF} (#5182)${NC}"
+    warn "${YELLOW}${BOLD}========================================================================${NC}"
+    warn "${YELLOW}Local ${BRANCH} is ${A} commit(s) ahead of ${REMOTE_REF} — unpushed.${NC}"
+    warn "${YELLOW}worktree.sh sets BASE_REF=\"origin/\$DEFAULT_BRANCH\", so every builder${NC}"
+    warn "${YELLOW}worktree branches off ${REMOTE_REF}, NOT local ${BRANCH}. These unpushed${NC}"
+    warn "${YELLOW}commits are invisible to every builder dispatched this session — a${NC}"
+    warn "${YELLOW}silent, wave-wide correctness gap, not just stale tooling.${NC}"
+    warn ""
+    warn "${BOLD}Remediation (read-only advisory — this script never pushes for you):${NC}"
+    warn "      ${BOLD}git push origin ${BRANCH}${NC}"
+    warn ""
+fi
+
+# ---------- installed-vs-defaults drift note (reuses DRIFT_LINES above) ----------
+#
+# DRIFT_LINES was already computed unconditionally, before the N==0 && A==0
+# early-return above, so it is simply reported here rather than recomputed.
+if [[ -n "$DRIFT_LINES" ]]; then
+    warn "${YELLOW}Installed-copy drift check (files present in both trees):${NC}"
+    warn "$DRIFT_LINES"
+    warn ""
 fi
 
 warn "${YELLOW}========================================================================${NC}"
 warn ""
 
-info_oneliner "${YELLOW}[freshness-check] WARNING: local ${BRANCH} is ${N} commit(s) behind ${REMOTE_REF}. See stderr for details.${NC}"
+if [[ "$N" -gt 0 && "$A" -gt 0 ]]; then
+    info_oneliner "${YELLOW}[freshness-check] WARNING: local ${BRANCH} has DIVERGED from ${REMOTE_REF} (${N} behind, ${A} ahead/unpushed). See stderr for details.${NC}"
+elif [[ "$N" -gt 0 ]]; then
+    info_oneliner "${YELLOW}[freshness-check] WARNING: local ${BRANCH} is ${N} commit(s) behind ${REMOTE_REF}. See stderr for details.${NC}"
+else
+    info_oneliner "${YELLOW}[freshness-check] WARNING: local ${BRANCH} is ${A} commit(s) ahead of ${REMOTE_REF} (unpushed). See stderr for details.${NC}"
+fi
 
 # Always succeed — this script is advisory only.
 exit 0
