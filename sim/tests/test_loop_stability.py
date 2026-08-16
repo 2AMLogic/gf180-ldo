@@ -17,12 +17,15 @@ import importlib.util
 import math
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 SIM_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
+
+from harness import report  # noqa: E402
 
 _SWEEP_PATH = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
 _spec = importlib.util.spec_from_file_location("loop_stability_sweep", _SWEEP_PATH)
@@ -344,6 +347,34 @@ class TestRegulatingBranchGuard(unittest.TestCase):
         # a few mV of droop must not void a stability run.
         self.assertEqual([], sweep.nonregulating([row(vout_v=1.78),
                                                   row(vout_v=1.82)]))
+
+
+class TestRecordWriteIsAppendOnly(unittest.TestCase):
+    """CLAUDE.md: ``sim/`` results are append-only evidence.
+
+    sweep.py mints its record-id before a ~63-point ngspice sweep and only
+    spends it at the end, so ``allocate_record_id()``'s at-allocation-time
+    check is not enough: two runs racing on the same commit would both see
+    the id as free. The write itself has to refuse a collision.
+    """
+
+    def test_the_sweep_writes_through_the_guarded_helper(self):
+        self.assertIs(sweep.write_markdown_record, report.write_markdown_record)
+
+    def test_a_second_write_of_the_same_record_id_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            records = Path(tmp) / "records"
+            path = sweep.write_markdown_record(
+                "20260729-153000-abc1234", "# first\n", records
+            )
+            self.assertEqual(path, records / "20260729-153000-abc1234.md")
+            self.assertEqual("# first\n", path.read_text())
+            with self.assertRaises(report.RecordExists):
+                sweep.write_markdown_record(
+                    "20260729-153000-abc1234", "# second\n", records
+                )
+            # the first run's evidence survived intact
+            self.assertEqual("# first\n", path.read_text())
 
 
 if __name__ == "__main__":
