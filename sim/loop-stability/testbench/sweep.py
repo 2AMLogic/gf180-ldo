@@ -75,7 +75,11 @@ LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
-from harness.report import git_provenance  # noqa: E402
+from harness.report import (  # noqa: E402
+    allocate_record_id,
+    format_record_id,
+    git_provenance,
+)
 from harness.runner import ngspice_version  # noqa: E402
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
@@ -828,16 +832,15 @@ def main() -> int:
         return 3
 
     prov = git_provenance(REPO_ROOT)
-    record_id = f"{_dt.datetime.now(_dt.timezone.utc).strftime('%Y%m%d-%H%M%S')}-{prov['short']}"
     dirty = prov["dirty"]
+    if not args.no_write:
+        record_id = allocate_record_id(REPO_ROOT, EXPDIR / "records", git=prov)
+    else:
+        record_id = format_record_id(prov["short"], _dt.datetime.now(_dt.timezone.utc))
     logdir = EXPDIR / "corners" / record_id
     workdir = REPO_ROOT / "sim" / ".work" / "loop-stability" / record_id
     workdir.mkdir(parents=True, exist_ok=True)
     if not args.no_write:
-        if (EXPDIR / "records" / f"{record_id}.md").exists():
-            print(f"FATAL: record {record_id} already exists; refusing to overwrite",
-                  file=sys.stderr)
-            return 3
         logdir.mkdir(parents=True, exist_ok=True)
     else:
         logdir = workdir
