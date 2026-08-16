@@ -17,11 +17,11 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3aeb225910549530c
 | Spec row | Verdict | Fresh? | Evidence |
 |---|---|---|---|
 | Input | N/A | N/A | see note below |
-| Output | PASS | STALE | `sim/mc-output-accuracy/records/20260801-030232-969e423.md` (+ 3 more, see detail) |
+| Output | PASS | fresh | `sim/mc-output-accuracy/records/20260816-141924-9f85f6b.md` (+ 3 more, see detail) |
 | Load | N/A | N/A | see note below |
 | Dropout @ 50 mA | FAIL | fresh | `sim/dropout-vs-load/records/20260816-103644-bea26f6.md` |
-| Line reg | PASS | STALE | `sim/line-regulation/records/20260801-114433-89f0528.md` |
-| Load reg (0–50 mA) | PASS | STALE | `sim/load-regulation/records/20260801-114250-89f0528.md` |
+| Line reg | PASS | fresh | `sim/line-regulation/records/20260816-083627-8e105a0.md` |
+| Load reg (0–50 mA) | PASS | fresh | `sim/load-regulation/records/20260816-090135-4316537.md` |
 | Load transient | PASS | fresh | `sim/load-transient/records/20260816-084229-3634e48.md` |
 | PSRR | PASS | fresh | `sim/psrr-dc/records/20260807-105159-64249c6.md` (+ 2 more, see detail) |
 | Iq (excluding load current) | PASS | fresh | `sim/quiescent-current/records/20260807-105203-64249c6.md` (+ 1 more, see detail) |
@@ -45,15 +45,15 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3aeb225910549530c
 
 **Ratified target**: 1.8 V ±2% (fixed; divider laid out as a unit-resistor string for metal-mask-option derivatives)
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: PASS  **Fresh**: fresh
 
-- `mc-output-accuracy` — statistical term (Monte Carlo mismatch): `sim/mc-output-accuracy/records/20260801-030232-969e423.md` — **PASS**, stale
+- `mc-output-accuracy` — statistical term (Monte Carlo mismatch): `sim/mc-output-accuracy/records/20260816-141924-9f85f6b.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall: PASS
 - `amp-openloop` — deterministic systematic-offset term: `sim/amp-openloop/records/20260807-105147-64249c6.md` — **PASS**, fresh (matches current `error_amp`)
   - Overall: PASS
-- `line-regulation` — counted inside the window, not added to it: `sim/line-regulation/records/20260801-114433-89f0528.md` — **PASS**, stale
+- `line-regulation` — counted inside the window, not added to it: `sim/line-regulation/records/20260816-083627-8e105a0.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall: PASS
-- `load-regulation` — counted inside the window, not added to it: `sim/load-regulation/records/20260801-114250-89f0528.md` — **PASS**, stale
+- `load-regulation` — counted inside the window, not added to it: `sim/load-regulation/records/20260816-090135-4316537.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall: PASS
 
 ### Load
@@ -75,18 +75,18 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3aeb225910549530c
 
 **Ratified target**: < 5 mV/V over Vin 2.97–3.63 V, at 1 mA and at 50 mA
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: PASS  **Fresh**: fresh
 
-- `line-regulation`: `sim/line-regulation/records/20260801-114433-89f0528.md` — **PASS**, stale
+- `line-regulation`: `sim/line-regulation/records/20260816-083627-8e105a0.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall: PASS
 
 ### Load reg (0–50 mA)
 
 **Ratified target**: < 1% (18 mV), counted inside the ±2% accuracy window rather than in addition to it
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: PASS  **Fresh**: fresh
 
-- `load-regulation`: `sim/load-regulation/records/20260801-114250-89f0528.md` — **PASS**, stale
+- `load-regulation`: `sim/load-regulation/records/20260816-090135-4316537.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall: PASS
 
 ### Load transient
@@ -185,7 +185,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3aeb225910549530c
 
 16 ratified rows: 12 testable (7 PASS, 5 FAIL, 0 MIXED, 0 UNKNOWN), 4 N/A.
 
-Freshness among the 12 testable rows: 8 fresh, 4 stale, 0 unknown.
+Freshness among the 12 testable rows: 11 fresh, 1 stale, 0 unknown.
 
 A row is only a true current PASS if its Verdict column reads PASS **and** its Fresh column reads fresh — a stale PASS reflects a design state this repo has since moved past, not a claim about `design/netlist/ldo_core.spice` as committed today.
 
