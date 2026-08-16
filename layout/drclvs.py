@@ -60,7 +60,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 LAYOUT_DIR = Path(__file__).resolve().parent
@@ -78,6 +77,7 @@ SUBSTRATE_NET = "VSS"          # the schematic's bulk port == the LVS substrate 
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.pdk import Pdk, PdkNotFound, find_pdk  # noqa: E402
+from harness.report import allocate_record_id  # noqa: E402
 
 # metal_top / mim_option / metal_level per gf180mcu variant, transcribed from
 # the PDK's own libs.tech/klayout/lvs/run_lvs.py (and the identical table in
@@ -488,21 +488,6 @@ def run_logged(cmd: list[str], log: Path, what: str) -> str:
     return output
 
 
-def short_sha() -> str:
-    try:
-        out = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=30,
-        )
-        return out.stdout.strip() or "nogit"
-    except Exception:  # noqa: BLE001
-        return "nogit"
-
-
-def record_id() -> str:
-    return f"{time.strftime('%Y%m%d-%H%M%S')}-{short_sha()}"
-
-
 # --------------------------------------------------------------------------
 # driver
 # --------------------------------------------------------------------------
@@ -519,7 +504,7 @@ def run(args: argparse.Namespace) -> int:
         )
         return 2
 
-    rid = record_id()
+    rid = allocate_record_id(REPO_ROOT, RECORDS_DIR)
     run_dir = WORK_DIR / rid
     run_dir.mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
