@@ -1,0 +1,54 @@
+{
+  "name": "psrr-vs-freq-50ma",
+  "description": "PSRR vs frequency at the 50 mA full-load condition, 1kHz and 100kHz spec points called out",
+  "claim": "README.md Target specification, 'PSRR' row (DR-0004 amendment A7): >50dB @ 1kHz and >20dB @ 100kHz, C_eff=1uF nominal -- evaluated here at the 50 mA FULL-LOAD condition. This is the load condition sim/psrr-vs-freq/ disclosed as an open gap: that deck is scoped to the 1 mA light-load point (the binding one per README.md note 1) and its tb_psrr.spice header records why the two load points cannot share one deck -- ngspice's per-.meas result vectors go out of scope as soon as a later analysis becomes the current plot, so an 'alter'-and-re-.ac deck silently re-reports the first .ac's numbers. This slug closes that gap the way sim/dropout-vs-load/ already handles its own fixed full-load point: a sibling experiment with the same DUT, the same stimulus and output network, the same full PVT sweep, and its own record carrying its own separate verdict. The two verdicts are deliberately NOT merged -- read this record for the 50 mA condition and sim/psrr-vs-freq/'s record for the 1 mA condition. The load sink is the compliance-limited sink #46 introduced (Vilc/Bload/Vlmeas): it draws its commanded current for VOUT well above ground and nothing at or below it, which deletes the unphysical sub-ground DC solution #40 found rather than biasing the solver away from it. That solution is the dominant risk at this load -- a larger demanded current biases the unphysical root harder -- so dc_vout_v and dc_iload_ma below read the .op plot and are gated at every corner: a PSRR number is only admissible as evidence if the operating point it was linearized about is the physical one and the sink really delivered 50 mA. No ratified threshold was changed by this experiment.",
+  "netlist": "tb_psrr_50ma.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.1,
+  "temperatures_c": [
+    -40,
+    27,
+    125
+  ],
+  "corners": [
+    "mos"
+  ],
+  "analyses": [
+    "op",
+    "ac dec 20 10 10meg",
+    "meas ac vout_1k FIND vdb(vout) AT=1k",
+    "meas ac vout_100k FIND vdb(vout) AT=100k"
+  ],
+  "operating_conditions": {
+    "load_current": "50 mA (full-load condition of the ratified PSRR row), commanded through a compliance-limited sink (Vilc/Bload/Vlmeas) and verified by dc_iload_ma",
+    "output_cap": "1.0 uF nominal + 100 mOhm ESR (PSRR row's stated C_eff)",
+    "enable_state": "enabled (EN tied to VIN at instantiation)"
+  },
+  "measure": {
+    "psrr_1k_db": "-vout_1k",
+    "psrr_100k_db": "-vout_100k",
+    "dc_vout_v": "op1.v(vout)",
+    "dc_iload_ma": "op1.i(vlmeas)*1e3"
+  },
+  "checks": {
+    "psrr_1k_db": {
+      "min": 50.0,
+      "description": "README.md PSRR target: >50 dB @ 1 kHz, applied at the 50 mA full-load point"
+    },
+    "psrr_100k_db": {
+      "min": 20.0,
+      "description": "README.md PSRR target: >20 dB @ 100 kHz, applied at the 50 mA full-load point"
+    },
+    "dc_iload_ma": {
+      "min": 49.95,
+      "max": 50.05,
+      "description": "Harness integrity, not a ratified spec line: the compliance-limited sink must deliver the commanded 50 mA at the operating point this .ac is expanded about (see Claim)"
+    },
+    "dc_vout_v": {
+      "min": 1.7,
+      "max": 1.9,
+      "description": "Harness integrity, not a ratified spec line (the ratified accuracy row is sim/mc-output-accuracy's): asserts the .ac was linearized about the physical operating point, not the sub-ground root #40 found"
+    }
+  }
+}
