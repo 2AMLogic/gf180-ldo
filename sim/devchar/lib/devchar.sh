@@ -44,11 +44,6 @@ dc_init() {
   mkdir -p "$DC_BUILD"
 }
 
-# dc_ngspice_version - record the simulator build in the results provenance line
-dc_ngspice_version() {
-  ngspice -v 2>&1 | sed -n 's/^\*\* \(ngspice-[0-9.]*\).*/\1/p' | head -1
-}
-
 # dc_csv_header <outfile> <header-line>
 # Truncates the CSV and writes the header. Provenance lives in the sibling
 # README / conclusions, not in the CSV, so the files stay machine-readable.
