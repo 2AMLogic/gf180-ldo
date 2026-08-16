@@ -14,9 +14,13 @@
 * later analysis becomes the current plot, so a second .ac after "alter"
 * silently drops the first .ac's captured values instead of erroring
 * (confirmed by hand: the harness's print-after-all-lets ordering emits
-* the SAME value for both "1mA" and "50mA" print lines). A 50mA re-run
-* is a documented follow-up (a second experiment or a --dut-netlist-style
-* CLI param override), not fabricated evidence here.
+* the SAME value for both "1mA" and "50mA" print lines).
+*
+* The 50mA condition the ratified row also names is therefore run as its
+* own sibling experiment rather than in this deck: sim/psrr-vs-freq-50ma/
+* (#99) -- same DUT, same stimulus and output network, same full PVT
+* sweep, its own record and its own separate verdict. This deck stays the
+* 1mA condition only; the two verdicts are never merged.
 Vsup VIN 0 DC {vdd_val} AC 1
 Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
 
