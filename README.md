@@ -116,6 +116,17 @@ Notes — these are part of the ratified spec, not commentary:
    without a testbench. The row is waived explicitly rather than left blank; a
    consumer requirement makes it a superseding record.
 
+**Current verdict per row**: this table states the ratified target, not the
+current pass/fail state of the evidence behind it — for that, see
+[`sim/CHARACTERIZATION.md`](sim/CHARACTERIZATION.md), a generated (not
+hand-maintained) rollup that cites the exact `sim/<slug>/records/` record
+behind every row's current verdict and flags whether that record is fresh
+against the netlist committed at `design/netlist/`. Regenerate it with
+`python3 sim/build_characterization_report.py > sim/CHARACTERIZATION.md`
+after any `sim/` record lands or `design/netlist/*.spice` changes; this
+table (the ratified spec + notes above) stays the authority on what is
+required, `sim/CHARACTERIZATION.md` on what the evidence currently shows.
+
 Maturity ladder: simulation-complete → layout DRC/LVS-clean → shuttle
 seat → measured silicon over temperature.
 
