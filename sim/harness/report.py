@@ -639,14 +639,40 @@ def render_record(record: dict, experiment: str) -> str:
     return "\n".join(lines)
 
 
-def write_record(record: dict, experiment_dir: Path) -> Path:
-    """Write ``records/<record-id>.md``; never overwrite an existing record."""
-    out_dir = experiment_dir / RECORDS_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{record['record_id']}.md"
+def reserve_record_path(record_id: str, records_dir: Path) -> Path:
+    """Return ``<records_dir>/<record_id>.md``, refusing an existing record.
+
+    ``allocate_record_id()`` only guarantees an id is free at *allocation*
+    time, and a sweep can run for a long while between minting its record-id
+    and spending it. Re-checking immediately before the write is what keeps
+    two concurrent runs from silently clobbering each other's append-only
+    evidence.
+
+    Raises :class:`RecordExists` if the target already exists.
+    """
+    records_dir.mkdir(parents=True, exist_ok=True)
+    path = records_dir / f"{record_id}.md"
     if path.exists():
         raise RecordExists(
             f"{path} already exists; records are append-only -- mint a new record-id"
         )
+    return path
+
+
+def write_markdown_record(record_id: str, text: str, records_dir: Path) -> Path:
+    """Write already-rendered markdown to ``<records_dir>/<record_id>.md``.
+
+    For experiment drivers that render their own record body rather than the
+    generic corner-record schema ``render_record()`` produces. Never
+    overwrites: raises :class:`RecordExists` on a collision.
+    """
+    path = reserve_record_path(record_id, records_dir)
+    path.write_text(text)
+    return path
+
+
+def write_record(record: dict, experiment_dir: Path) -> Path:
+    """Write ``records/<record-id>.md``; never overwrite an existing record."""
+    path = reserve_record_path(record["record_id"], experiment_dir / RECORDS_DIR)
     path.write_text(render_record(record, experiment_dir.name))
     return path

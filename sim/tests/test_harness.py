@@ -545,6 +545,18 @@ class RecordIdTests(unittest.TestCase):
                     {"record_id": "20260729-153000-abc1234"}, experiment
                 )
 
+    def test_write_markdown_record_refuses_to_overwrite(self):
+        """The same guard, for drivers that render their own record body."""
+        with tempfile.TemporaryDirectory() as tmp:
+            records = Path(tmp) / "records"  # created on demand
+            path = report.write_markdown_record("20260729-153000-abc1234", "keep\n", records)
+            self.assertEqual(path, records / "20260729-153000-abc1234.md")
+            with self.assertRaises(report.RecordExists):
+                report.write_markdown_record(
+                    "20260729-153000-abc1234", "clobber\n", records
+                )
+            self.assertEqual("keep\n", path.read_text())
+
 
 class MatrixConformanceTests(unittest.TestCase):
     """sim/README.md requires the full mandated matrix, or a stated reason."""

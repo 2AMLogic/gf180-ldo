@@ -80,6 +80,7 @@ from harness.report import (  # noqa: E402
     allocate_record_id,
     format_record_id,
     git_provenance,
+    write_markdown_record,
 )
 from harness.runner import ngspice_version  # noqa: E402
 
@@ -956,10 +957,12 @@ def main() -> int:
         ceffs=ceffs, esrs=esrs, pdk=pdk, dirty=dirty, args=args,
         curve_log=curve_log, seeded=seeded, prov=prov,
     )
-    (records / f"{record_id}.md").write_text(md)
+    # Append-only: the record-id was minted before the sweep ran, so re-check
+    # that it is still free rather than clobbering whatever landed meanwhile.
+    record_path = write_markdown_record(record_id, md, records)
 
     print()
-    print(f"record           : {records / f'{record_id}.md'}")
+    print(f"record           : {record_path}")
     print(f"matrix csv       : {csv_path}")
     print(f"netlist snapshot : {snap}")
     print(f"raw logs         : {logdir}/")
