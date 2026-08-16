@@ -75,6 +75,7 @@ LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.pdk import find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
     allocate_record_id,
     format_record_id,
@@ -195,15 +196,6 @@ F_STOP = "1e9"
 AC_DEC = "400"
 
 TOKEN_RE = re.compile(r"@([A-Z0-9_]+)@")
-
-
-# ---------------------------------------------------------------------------
-# environment
-# ---------------------------------------------------------------------------
-def resolve_pdk():
-    from harness.pdk import find_pdk  # noqa: WPS433 -- deferred, needs sys.path
-
-    return find_pdk()
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +773,7 @@ def main() -> int:
         print("FATAL: ngspice not on PATH", file=sys.stderr)
         return 3
     try:
-        pdk = resolve_pdk()
+        pdk = find_pdk()
     except Exception as exc:  # pragma: no cover - environment problem
         print(f"FATAL: {exc}", file=sys.stderr)
         return 3
