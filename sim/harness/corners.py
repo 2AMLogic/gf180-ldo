@@ -27,7 +27,7 @@ claims where that matters (e.g. divider-accuracy or reference claims).
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # Default PVT axes. CLAUDE.md mandates these on every recorded result;
 # spec/decision-records/DR-0002-input-flavor.md fixes the 3.3 V +/-10% input.
@@ -157,7 +157,6 @@ class PvtPoint:
     corner: Corner
     temp_c: float
     vdd: float
-    index: int = field(default=0, compare=False)
 
     @property
     def corner_id(self) -> str:
@@ -192,9 +191,7 @@ def build_grid(
 ) -> list[PvtPoint]:
     """Full factorial P x V x T grid, in a stable, reproducible order."""
     points = [
-        PvtPoint(corner=corner, temp_c=float(temp), vdd=float(vdd), index=i)
-        for i, (corner, temp, vdd) in enumerate(
-            itertools.product(corners, temperatures, supplies)
-        )
+        PvtPoint(corner=corner, temp_c=float(temp), vdd=float(vdd))
+        for corner, temp, vdd in itertools.product(corners, temperatures, supplies)
     ]
     return points
