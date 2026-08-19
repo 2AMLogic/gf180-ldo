@@ -52,7 +52,13 @@ Ratified by the operator on issue #1 with the amendments recorded in
 [`spec/decision-records/DR-0004-spec-ratification.md`](spec/decision-records/DR-0004-spec-ratification.md),
 which also ratifies DR-0001 (output capacitor and ESR window), DR-0002 (input
 flavor) and DR-0003 (output programmability). Changing a line below requires a
-new decision record; it may not be relaxed to make a result pass.
+new decision record; it may not be relaxed to make a result pass. The
+Startup row's settling clause is amended by
+[`spec/decision-records/DR-0006-startup-settling-window.md`](spec/decision-records/DR-0006-startup-settling-window.md)
+(note 8) — **pending** the operator's approval of the pull request that
+carries that record's `Status` flip (2026-08-19 ratification-via-PR policy,
+2AMLogic/2am#357); the row below already reflects DR-0006's proposed 6 ms
+window.
 
 | Parameter | Target | Stretch |
 |---|---|---|
@@ -66,7 +72,7 @@ new decision record; it may not be relaxed to make a result pass.
 | PSRR | > 50 dB @ 1 kHz and > 20 dB @ 100 kHz, at I_load = 1 mA (binding — light load) and at 50 mA, C_eff = 1 µF nominal, verified across the stability window | > 60 dB @ 1 kHz, > 30 dB @ 100 kHz, 1 MHz point characterized |
 | Iq (excluding load current) | < 30 µA at no load **and** at full load — binds ff / 125 °C / 3.63 V | < 10 µA — subordinate to DR-0001's ESR window; not to be bought back by reintroducing a minimum ESR |
 | Current limit | 65–80 mA over PVT, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5) | — |
-| Startup | monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 1 V/ms, so inrush ≤ 5 mA at C_eff = 4.7 µF and startup at full rated load stays ≥ 10 mA below the current limit; inside ±2% within 3 ms of enable; overshoot ≤ +2% of the final value | — |
+| Startup | monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 1 V/ms, so inrush ≤ 5 mA at C_eff = 4.7 µF and startup at full rated load stays ≥ 10 mA below the current limit; inside ±2% within 6 ms of enable (note 8); overshoot ≤ +2% of the final value | — |
 | Enable / shutdown | shutdown Iq < 3 µA at ff / 125 °C / 3.63 V; disabled output state is pass device fully off with no internal active discharge; Vin→Vout leakage ≤ 1 µA at the same corner | — |
 | Thermal | 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 290 mW into a Vout = 0 short at the 80 mA limit ceiling; specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec | — |
 | Output noise | not specified — explicitly waived (note 7) | 10 Hz–100 kHz µVrms row if a consumer asks for one |
@@ -109,12 +115,28 @@ Notes — these are part of the ratified spec, not commentary:
    from measured device data plus the architecture survey's loop budget, before
    any loop-level simulation exists. Each carries a falsifiable revisit trigger
    in DR-0004; a row that proves unmeetable is superseded by a new record, never
-   silently relaxed.
+   silently relaxed. The startup row's settling-clause trigger fired and is
+   discharged by DR-0006 (note 8); the row's other clauses remain provisional
+   in this sense.
 7. **Output-noise waiver.** No consumer of this block has stated a noise
    requirement, and no reference or amplifier design exists yet against which a
    µVrms number could be substantiated — so a number here would be a claim
    without a testbench. The row is waived explicitly rather than left blank; a
    consumer requirement makes it a superseding record.
+8. **Startup settling window, amended by DR-0006.** The ±2% settling bound
+   was originally ratified at 3 ms (DR-0004 amendment A9); measured evidence
+   showed that bound cannot coexist with the row's own ≤ 1 V/ms ramp bound
+   on this PDK's untrimmed on-chip `R · C` soft-start (2.93 : 1 measured
+   process/temperature spread against a 1.70 : 1 window that both clauses
+   jointly admit). [`DR-0006`](spec/decision-records/DR-0006-startup-settling-window.md)
+   amends the settling bound to 6 ms, the slowest measured point
+   (5.82788 ms, `ss_-40c_3.63v`,
+   `sim/startup/records/20260816-100018-af4d1f9.md`) plus ~3% headroom,
+   leaving every other clause of the row untouched. **Pending** operator
+   approval of DR-0006's ratifying pull request (issue #106) per the
+   2026-08-19 ratification-via-PR policy (2AMLogic/2am#357) — the row above
+   reflects the proposed 6 ms window in advance of that merge, per that
+   policy's own drafting convention.
 
 **Current verdict per row**: this table states the ratified target, not the
 current pass/fail state of the evidence behind it — for that, see
