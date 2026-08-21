@@ -1097,6 +1097,95 @@ class TestDropoutMeasuresTheRegulationKnee(unittest.TestCase):
         self.assertAlmostEqual(1764.0, check["min"], places=3)
         self.assertAlmostEqual(1836.0, check["max"], places=3)
 
+    def test_the_knee_crossing_is_gated_as_unique(self):
+        """#138: a swept knee is only as good as the sweep is well-behaved.
+
+        A single sweep point that lands on the #40 non-physical fixed point
+        (pass device off, Vout collapsed) inserts a spurious pair of 1.764 V
+        crossings above the real knee, and ``FALL=1`` then interpolates a
+        knee at the artifact instead of at the regulation knee. Measured:
+        widening ``XMpass`` to ``W=8000u nf=160`` makes exactly one point
+        (Vin = 2.09 V, tt / 27 C) do this, and the reading becomes
+        330.901 mV instead of the true 49.1 mV.
+
+        So the deck locates the crossing twice -- first and last -- and gates
+        the difference at zero. Every corner of the shipped netlist crosses
+        exactly once (knee_uniqueness_mv = 0.000 at 27/27), and the guard
+        reads 281.84 mV on the 4x netlist above.
+        """
+        analyses = " ".join(self.tb["analyses"]).lower().replace(" ", "")
+        self.assertIn(
+            "fall=1",
+            analyses,
+            "the knee must be located at the FIRST falling crossing",
+        )
+        self.assertIn(
+            "fall=last",
+            analyses,
+            "the knee must ALSO be located at the LAST falling crossing, so "
+            "a spurious crossing pair is detectable (#138)",
+        )
+
+        name = "knee_uniqueness_mv"
+        self.assertIn(
+            name,
+            self.tb["measure"],
+            "the first-vs-last knee difference must be a reported "
+            "measurement, not an unrecorded internal",
+        )
+        check = self.tb["checks"][name]
+        # Zero-width window: any second crossing at all is a failure. The
+        # sweep step is 5 mV, so a real artifact shows up as tens or
+        # hundreds of mV, never as float noise.
+        self.assertLessEqual(check["max"], 0.001)
+        self.assertGreaterEqual(check["min"], -0.001)
+
+    def test_the_recorded_evidence_passes_the_uniqueness_guard(self):
+        """The live record must actually exercise the guard, not just declare it.
+
+        Guards that never appear in a record are guards nobody has run. Parse
+        the newest dropout record and require a ``knee_uniqueness_mv`` column
+        reading zero at every corner -- otherwise the recorded dropout numbers
+        could be artifact interpolations and no test would notice.
+        """
+        records = sorted((SIM_DIR / "dropout-vs-load" / "records").glob("*.md"))
+        self.assertTrue(records, "no dropout-vs-load records committed")
+        text = records[-1].read_text()
+
+        header = next(
+            (ln for ln in text.splitlines() if ln.strip().startswith("| corner-id |")),
+            None,
+        )
+        self.assertIsNotNone(header, f"no result table in {records[-1].name}")
+        cols = [c.strip() for c in header.strip().strip("|").split("|")]
+        self.assertIn(
+            "knee_uniqueness_mv",
+            cols,
+            f"{records[-1].name} predates the #138 uniqueness guard",
+        )
+        idx = cols.index("knee_uniqueness_mv")
+
+        # Only the per-corner rows of the result table: the spread table that
+        # follows has the same column count and also quotes corner-ids, so key
+        # on the first cell being nothing but a corner-id.
+        corner_id = re.compile(r"^`[a-z0-9_]+_-?\d+c_[\d.]+v`$")
+        rows = 0
+        for line in text.splitlines():
+            line = line.strip()
+            if not line.startswith("| `"):
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if len(cells) != len(cols) or not corner_id.match(cells[0]):
+                continue
+            rows += 1
+            self.assertEqual(
+                0.0,
+                float(cells[idx]),
+                f"{records[-1].name}: {cells[0]} crossed the -2% edge more "
+                "than once -- its dropout number may be an artifact",
+            )
+        self.assertGreaterEqual(rows, 27, "expected the 27-point PVT grid")
+
 
 class TestStartupDeckStaysResistivelyLoaded(unittest.TestCase):
     """#46: sim/startup/ is immune to the artifact because it loads
