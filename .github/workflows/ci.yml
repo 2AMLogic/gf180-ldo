@@ -6,6 +6,10 @@ name: CI
 #                                       PVT smoke run; gracefully SKIPs the
 #                                       smoke stage, exit 0, when ngspice/PDK
 #                                       are unavailable)
+#   - layout/tests/test_drclvs.py     (stdlib unittest, no PDK/klayout/xschem
+#                                       needed -- covers layout/drclvs.py's
+#                                       record-writing path only, not the
+#                                       DRC/LVS stages themselves)
 #
 # CLAUDE.md's "headless only" flow keeps the default PR path free of any PDK
 # or GUI dependency: `harness-selftest` below runs on every push/PR and never
@@ -52,6 +56,9 @@ jobs:
         # No ngspice/PDK is installed on this runner, so the harness's own
         # `--check-env` gate SKIPs (not fails) the PVT smoke stage; the unit
         # tests (sim/tests/test_harness.py) always run and must pass.
+
+      - name: Run layout/tests (no PDK/klayout/xschem required)
+        run: python3 -m unittest discover -s layout/tests -t layout/tests -v
 
   pvt-smoke:
     name: PVT smoke run against gf180mcu (ngspice + PDK)

@@ -77,7 +77,11 @@ SUBSTRATE_NET = "VSS"          # the schematic's bulk port == the LVS substrate 
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.pdk import Pdk, PdkNotFound, find_pdk  # noqa: E402
-from harness.report import allocate_record_id  # noqa: E402
+from harness.report import (  # noqa: E402
+    RecordExists,
+    allocate_record_id,
+    write_markdown_record,
+)
 
 # metal_top / mim_option / metal_level per gf180mcu variant, transcribed from
 # the PDK's own libs.tech/klayout/lvs/run_lvs.py (and the identical table in
@@ -642,7 +646,15 @@ def run(args: argparse.Namespace) -> int:
     print("OK: DRC clean (klt subset and the PDK's own deck), LVS matches, and")
     print("    both negative controls correctly fail.")
     if args.record:
-        path = write_record(rid, summary, pdk)
+        try:
+            path = write_record(rid, summary, pdk)
+        except RecordExists as exc:
+            raise StageError(
+                f"could not write the run record: {exc}. Records are "
+                "append-only (CLAUDE.md): a concurrent --record run already "
+                f"spent record id {rid} -- re-run this command to mint a "
+                "fresh id rather than overwriting the existing record."
+            ) from exc
         print(f"\nwrote {path.relative_to(REPO_ROOT)}")
     if args.keep:
         print(f"\nrun directory kept at {run_dir}")
@@ -666,8 +678,14 @@ def control_rows(summary: dict) -> str:
 
 
 def write_record(rid: str, summary: dict, pdk: Pdk) -> Path:
-    RECORDS_DIR.mkdir(parents=True, exist_ok=True)
-    path = RECORDS_DIR / f"{rid}.md"
+    """Render and write ``layout/records/<rid>.md``.
+
+    Writing goes through ``harness.report.write_markdown_record()`` rather
+    than a hand-rolled ``mkdir``/``write_text``, so a collision with a
+    record another concurrent ``--record`` run already spent for this same
+    ``rid`` raises :class:`RecordExists` instead of silently overwriting
+    it -- see ``run()``'s handling of that exception.
+    """
     klt = summary["klt_drc"]
     drc = summary["pdk_drc"]
     warnings = summary["lvs"]["warnings"]
@@ -711,8 +729,7 @@ xschem's `lvs_netlist` form from `layout/testcell/{CELL}.sch`.
         body += "\n## LVS deck notes\n\n"
         for warning in warnings:
             body += f"- {warning}\n"
-    path.write_text(body)
-    return path
+    return write_markdown_record(rid, body, RECORDS_DIR)
 
 
 def tool_version(tool: str, args: list[str]) -> str:
