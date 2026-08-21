@@ -52,7 +52,13 @@ Ratified by the operator on issue #1 with the amendments recorded in
 [`spec/decision-records/DR-0004-spec-ratification.md`](spec/decision-records/DR-0004-spec-ratification.md),
 which also ratifies DR-0001 (output capacitor and ESR window), DR-0002 (input
 flavor) and DR-0003 (output programmability). Changing a line below requires a
-new decision record; it may not be relaxed to make a result pass.
+new decision record; it may not be relaxed to make a result pass. The
+Current limit and Thermal rows are amended by
+[`spec/decision-records/DR-0005-current-limit-window.md`](spec/decision-records/DR-0005-current-limit-window.md)
+(note 8) — **pending** the operator's approval of the pull request that
+carries that record's `Status` flip (2026-08-19 ratification-via-PR policy,
+2AMLogic/2am#357); the rows below already reflect DR-0005's proposed
+62–95 mA / ≤ 346 mW window.
 
 | Parameter | Target | Stretch |
 |---|---|---|
@@ -65,10 +71,10 @@ new decision record; it may not be relaxed to make a result pass.
 | Load transient | 1 ↔ 50 mA step, 1 µs edges, at C_eff = 0.33 µF and ESR 0–500 mΩ: peak excursion ≤ 150 mV, recovery to within ±1% (18 mV) of the settled value in ≤ 20 µs | peak excursion ≤ 100 mV |
 | PSRR | > 50 dB @ 1 kHz and > 20 dB @ 100 kHz, at I_load = 1 mA (binding — light load) and at 50 mA, C_eff = 1 µF nominal, verified across the stability window | > 60 dB @ 1 kHz, > 30 dB @ 100 kHz, 1 MHz point characterized |
 | Iq (excluding load current) | < 30 µA at no load **and** at full load — binds ff / 125 °C / 3.63 V | < 10 µA — subordinate to DR-0001's ESR window; not to be bought back by reintroducing a minimum ESR |
-| Current limit | 65–80 mA over PVT, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5) | — |
+| Current limit | 62–95 mA over PVT untrimmed, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5, note 8) | — |
 | Startup | monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 1 V/ms, so inrush ≤ 5 mA at C_eff = 4.7 µF and startup at full rated load stays ≥ 10 mA below the current limit; inside ±2% within 3 ms of enable; overshoot ≤ +2% of the final value | — |
 | Enable / shutdown | shutdown Iq < 3 µA at ff / 125 °C / 3.63 V; disabled output state is pass device fully off with no internal active discharge; Vin→Vout leakage ≤ 1 µA at the same corner | — |
-| Thermal | 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 290 mW into a Vout = 0 short at the 80 mA limit ceiling; specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec | — |
+| Thermal | 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 346 mW into a Vout = 0 short at the untrimmed 95 mA limit ceiling (note 8); specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec | — |
 | Output noise | not specified — explicitly waived (note 7) | 10 Hz–100 kHz µVrms row if a consumer asks for one |
 | Area | < 0.1 mm² total core area, pass FET included, excluding pads and sealring | — |
 | Stability | stable 0–50 mA with C_out 0.33–4.7 µF effective (1 µF nominal X5R/X7R), ESR 0–500 mΩ; PM ≥ 45°, GM ≥ 10 dB worst corner | capless variant (separate design fork) |
@@ -101,7 +107,7 @@ Notes — these are part of the ratified spec, not commentary:
 5. **Current-limit behaviour.** The limit is a constant-current clamp; foldback
    is deliberately not required, so a folded-back limit can never prevent
    startup into a loaded output. The cost is that a sustained short dissipates
-   the full ≤ 290 mW of the Thermal row, which is an integration constraint —
+   the full ≤ 346 mW of the Thermal row, which is an integration constraint —
    if an integration cannot absorb it, adding foldback or thermal shutdown is a
    superseding decision record, not an implementation choice.
 6. **Provisional rows.** The line-regulation, load-transient, PSRR 100 kHz,
@@ -109,12 +115,36 @@ Notes — these are part of the ratified spec, not commentary:
    from measured device data plus the architecture survey's loop budget, before
    any loop-level simulation exists. Each carries a falsifiable revisit trigger
    in DR-0004; a row that proves unmeetable is superseded by a new record, never
-   silently relaxed.
+   silently relaxed. The current-limit row's ±10% window trigger fired and is
+   discharged by DR-0005 (note 8); the row's other clauses (never-engages
+   floor, brickwall behaviour, short-circuit survivability) remain as
+   originally ratified and passing.
 7. **Output-noise waiver.** No consumer of this block has stated a noise
    requirement, and no reference or amplifier design exists yet against which a
    µVrms number could be substantiated — so a number here would be a claim
    without a testbench. The row is waived explicitly rather than left blank; a
    consumer requirement makes it a superseding record.
+8. **Current-limit window and thermal ceiling, amended by DR-0005.** The
+   ±10% current-limit window (65–80 mA) and its ≤ 290 mW thermal consequence
+   were originally ratified before issue #11's full PVT sweep existed;
+   measured evidence showed both bounds are structurally unreachable
+   untrimmed on this PDK — the current threshold is a voltage over one
+   uncancelled absolute on-chip resistance, and gf180mcu's poly-resistor
+   sheet spread alone moves the limit ±20% (`ppolyf_u`, 40% ff-to-ss),
+   against everything the circuit itself contributes (under ±1.2%).
+   [`DR-0005`](spec/decision-records/DR-0005-current-limit-window.md) amends
+   the window to 62–95 mA (the measured 62.0–93.8 mA plus rounding
+   headroom) and the thermal ceiling to 346 mW (the measured worst-case
+   short-circuit dissipation, 345.215 mW at `ff_125c_3.63v`
+   (`sim/current-limit/records/20260816-080440-8e105a0.md`), rounded up to
+   the next whole milliwatt), leaving every other clause of both rows
+   untouched. A ±10% window remains a stretch goal, explicitly conditional
+   on adding a trim option — not proposed here, as trim is a product/flow
+   commitment outside this block's charter. **Pending** operator approval
+   of DR-0005's ratifying pull request (issue #105) per the 2026-08-19
+   ratification-via-PR policy (2AMLogic/2am#357) — the rows above reflect
+   the proposed window in advance of that merge, per that policy's own
+   drafting convention.
 
 **Current verdict per row**: this table states the ratified target, not the
 current pass/fail state of the evidence behind it — for that, see
