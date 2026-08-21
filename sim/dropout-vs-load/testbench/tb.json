@@ -1,27 +1,40 @@
 {
   "name": "dropout-vs-load",
-  "description": "Dropout voltage at the 50 mA full-load spec point, binding Vin=2.10V (DR-0004 note 4)",
-  "claim": "README.md Target specification, 'Dropout @ 50 mA' row (< 300 mV target, < 200 mV stretch); binding test point Vin=2.10V per DR-0004 note 4. The prior record (20260801-002525-b64d60e, from #37) was taken against the amp landed by #35, before #39's constant-current-limit and enable/shutdown additions changed the DUT again; #40 supersedes it against the current netlist. This is also a DC/loop-closure-only measurement: it does not account for stability (#10, open), so a margin this close to the 300 mV line is never final sign-off. #40 investigation note: a cold-start Newton-Raphson op-point solve of this closed, high-gain loop at full load has more than one KCL/KVL-satisfying fixed point -- with an all-zero initial guess, several corners converged 'successfully' onto a non-physical point where the PMOS pass device is off and the 50 mA ideal current sink has no DC path (Cout blocks DC) except through parasitic junction leakage, forcing Vout to tens of volts negative to satisfy KCL against that leakage's exponential I-V curve. This is a harness convergence artifact, not a DC design bug (confirmed by inspecting the op-point node voltages directly with 'print all'/manual node prints). The 'nodeset' hint below (Vout=1.8V, the pass-gate/loop node=0.7V, both read off a corner that already converged physically) reliably biases every corner in this experiment's grid into the physical solution's basin of attraction -- verified 15/15 points converge to a consistent ~300 mV reading before this record was minted. The same artifact was found in load-regulation, line-regulation, load-transient, psrr-vs-freq, and quiescent-current's full-load sub-measurement, but a nodeset hint did not reliably clear it for those (multi-corner-times-load-sweep, or multi-instance-per-deck) experiments within this issue's investigation -- see #40 for the follow-up this leaves open.",
+  "description": "Dropout voltage at the 50 mA full-load spec point, found at the regulation knee by sweeping Vin through it (DR-0017); the ratified Vin=2.10V binding test point (DR-0004 note 4) is checked in the same sweep",
+  "claim": "README.md Target specification, 'Dropout @ 50 mA' row (< 300 mV target, < 200 mV stretch); binding corner ss/125 C, binding test point Vin=2.10V per DR-0004 note 4. MEASUREMENT DEFINITION CHANGED BY #138 / DR-0017 -- records before 20260816-103644-bea26f6 are NOT comparable to this one. Until #138 this deck solved a single .op at Vin=2.10V and reported vdrop_mv = (v(vin)-v(vout))*1e3. Because the ratified test point IS Vout_nom + the ratified bound (2.10 = 1.800 + 0.300), that expression is identically 300 mV + (1.800 V - Vout) for as long as the loop is in regulation: it reports the DC regulation error offset by exactly the bound, not the dropout voltage, and it can read below 300 mV only if Vout sits ABOVE its own setpoint -- which a negative-feedback loop with finite DC gain cannot do. That is why it FAILed 27/27 corners by 0.476-1.014 mV, and why no pass-device resize clears it (2x width moves the reading to 300.575 mV, 4x to 300.574 mV -- an asymptote above the bound; see DR-0017). The bound is NOT relaxed. vdrop_mv is now the dropout voltage proper: Vin is swept down through the regulation knee at the full 50 mA load and vdrop_mv is the Vin - Vout headroom at the point where Vout has fallen to the ratified -2% accuracy edge (1.764 V = 1.800 V - 2%, README note 2). In dropout Vout tracks Vin with a slowly varying offset, so the reading is insensitive to the exact threshold: a -1% (1.782 V) threshold moves tt/27C by ~2 mV. The ratified Vin=2.10V binding test point survives as its own gate -- vout_at_210_mv must sit inside the ratified +/-2% window at that headroom, which is the direct statement of 'dropout <= 300 mV at Vin = 2.10 V'. This remains a DC/loop-closure-only measurement: it does not account for stability (see sim/loop-stability), so it is never final sign-off on its own. #40's convergence note still applies: a cold-start Newton-Raphson solve of this closed, high-gain loop at full load has more than one KCL/KVL-satisfying fixed point -- with an all-zero initial guess several corners converge 'successfully' onto a non-physical point where the pass device is off and the 50 mA sink has no DC path except parasitic junction leakage, driving Vout tens of volts negative. The nodeset hint below biases the sweep's first operating point into the physical basin, and each subsequent sweep point starts from its predecessor's solution; the tanh-bounded sink in the deck deletes the sub-ground branch outright rather than hiding it.",
   "netlist": "tb_dropout.spice",
   "dut_netlist": "design/netlist/ldo_core.spice",
   "nominal_supply_v": 2.10,
   "supply_tolerance": 0.0,
   "temperatures_c": [-40, 27, 125],
   "corners": ["mos"],
-  "analyses": ["op"],
+  "analyses": [
+    "dc Vsup 2.20 1.75 -0.005",
+    "meas dc vin_knee_v WHEN v(vout)=1.764 FALL=1",
+    "meas dc vout_210_v FIND v(vout) AT=2.10",
+    "meas dc i_vlmeas_210_a FIND i(vlmeas) AT=2.10"
+  ],
   "operating_conditions": {
-    "load_current": "50 mA (full-load dropout point, constant-current sink Iload)",
-    "output_cap": "1.0 uF nominal + 100 mOhm ESR (DR-0001 window; inert at this DC operating point)",
-    "enable_state": "enabled (EN tied to VIN at instantiation, Vgs=0 at the enable clamp)"
+    "load_current": "50 mA (full-load dropout point, constant-current sink Iload), held across the whole Vin sweep",
+    "output_cap": "1.0 uF nominal + 100 mOhm ESR (DR-0001 window; inert at these DC operating points)",
+    "enable_state": "enabled (EN tied to VIN at instantiation, Vgs=0 at the enable clamp)",
+    "supply_sweep": "Vin swept 2.20 V -> 1.75 V in 5 mV steps at fixed 50 mA, through the regulation knee",
+    "knee_definition": "Vout = 1.764 V, the ratified -2% edge of the 1.8 V +/-2% Output row (README note 2)"
   },
   "measure": {
-    "vdrop_mv": "(v(vin) - v(vout))*1e3",
-    "iload_ma": "i(vlmeas)*1e3"
+    "vdrop_mv": "(vin_knee_v - 1.764)*1e3",
+    "vout_at_210_mv": "vout_210_v*1e3",
+    "iload_ma": "i_vlmeas_210_a*1e3"
   },
   "checks": {
     "vdrop_mv": {
       "max": 300.0,
-      "description": "README.md Dropout @ 50 mA target (< 300 mV); the < 200 mV stretch bound is not separately gated"
+      "description": "README.md 'Dropout @ 50 mA' target (< 300 mV), unchanged by DR-0017 -- only the measurement that feeds it changed; the < 200 mV stretch bound is not separately gated"
+    },
+    "vout_at_210_mv": {
+      "min": 1764.0,
+      "max": 1836.0,
+      "description": "at the ratified binding test point Vin = 2.10 V (DR-0004 note 4) the part must still be in regulation, i.e. inside the ratified 1.8 V +/-2% window -- this is the direct statement of 'dropout <= 300 mV' at that headroom"
     },
     "iload_ma": {
       "min": 49.99,
