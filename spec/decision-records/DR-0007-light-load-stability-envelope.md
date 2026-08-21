@@ -16,6 +16,19 @@
   be cited. On that evidence this record can be ratified, amended, or
   superseded.
 
+  **Hold condition met as of 2026-08-07 (noted 2026-08-21).** DR-0015 supplies
+  both things this hold asked for against the *current* `design/` netlist
+  (`Mrza`/`Rza`, the shipped adaptive shelf): `sim/amp-selfosc/records/20260807-105211-64249c6.md`
+  PASS 45/45, and `sim/loop-stability/records/20260807-103351-64249c6.md`
+  (0/4536 DR-0008 resurgence points — a loop-stability run that may
+  legitimately be cited). `spec/decision-records/DR-0018-narrow-stability-envelope-to-1uf-nominal.md`
+  re-derives this record's 0 mA conclusion directly against that current
+  matrix (0/756 passing at 0 mA, every cap, every ESR) and finds it
+  reconfirmed, on stronger evidence than this record had when it was
+  written. This note does not ratify this record — that is still the
+  operator's call — it only records that the hold's own stated prerequisite
+  is satisfied and the evidence is ready for a ratification decision.
+
   Original status line follows.
 
 - **Status (original)**: proposed — ratification is the operator's (issue #1's process,
