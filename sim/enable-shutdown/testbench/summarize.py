@@ -13,8 +13,11 @@ and so ordinary Python tooling (ruff/black) can see it.
 from __future__ import annotations
 
 import pathlib
-import re
 import sys
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT / "sim"))
+from harness.pvt_log import read_measurements, report_flag, report_minmax  # noqa: E402
 
 SCALARS = ["m_vout_en", "m_iload_en_ma", "m_isup_en_ua", "m_iref_en_ua",
            "m_iq_en_ua",
@@ -28,18 +31,7 @@ SCALARS = ["m_vout_en", "m_iload_en_ma", "m_isup_en_ua", "m_iref_en_ua",
 
 
 def read(log):
-    vals = {}
-    for line in log.read_text().splitlines():
-        m = re.match(r"^(m_\w+)\s*=\s*([-+0-9.eE]+)", line)
-        if m:
-            try:
-                vals[m.group(1)] = float(m.group(2))
-            except ValueError:
-                pass
-    missing = [s for s in SCALARS if s not in vals]
-    if missing:
-        raise SystemExit(f"FATAL: {log.name} is missing measurements: {missing}")
-    return vals
+    return read_measurements(log, SCALARS)
 
 
 def main() -> None:
@@ -62,22 +54,16 @@ def main() -> None:
         for cid, c, t, v, vals in rows:
             fh.write(f"{cid},{c},{t},{v}," + ",".join(f"{vals[k]:.6g}" for k in cols) + "\n")
 
-    def rep(name):
-        vs = [(cid, vals[name]) for cid, _, _, _, vals in rows]
-        lo = min(vs, key=lambda x: x[1]); hi = max(vs, key=lambda x: x[1])
-        print(f"  {name[2:]:20s} min {lo[1]:12.5f} @ {lo[0]:20s}  max {hi[1]:12.5f} @ {hi[0]}")
-
     print(f"\n{len(rows)} PVT points")
     for m in ("m_vout_en", "m_iq_en_ua", "m_vout_off", "m_iloop_off_ua",
               "m_nbias_off", "m_iq_off_ua", "m_ileak_vin_vout_ua",
               "m_t_startup_us", "m_vout_settled", "m_vout_max_en",
               "m_vout_min_reg", "m_isup_peak_ma", "m_clg_min_reg",
               "m_isup_peak_reg_ma", "m_vout_pp_late", "m_vout_off_tran", "m_pg_off_tran"):
-        rep(m)
+        report_minmax(rows, m, val_width=12, val_prec=5)
 
     def flag(label, pred):
-        bad = [cid for cid, *_, vals in rows if pred(vals)]
-        print(f"  {label:52s} {bad or 'none'}")
+        report_flag(rows, label, pred, label_width=52)
 
     print()
     flag("shutdown Iq above the ratified 3 uA:", lambda v: v["m_iq_off_ua"] > 3.0)

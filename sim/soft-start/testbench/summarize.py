@@ -15,6 +15,10 @@ import pathlib
 import re
 import sys
 
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT / "sim"))
+from harness.pvt_log import read_measurements, report_flag, report_minmax  # noqa: E402
+
 # Scalars every log must carry; a missing one is a bench error, not a result.
 SCALARS = [
     "m_t_v04", "m_t_v14",
@@ -53,18 +57,7 @@ CORNER_RE = re.compile(
 
 
 def read_log(log: pathlib.Path) -> dict[str, float]:
-    vals: dict[str, float] = {}
-    for line in log.read_text().splitlines():
-        m = re.match(r"^(m_\w+)\s*=\s*([-+0-9.eE]+)", line)
-        if m:
-            try:
-                vals[m.group(1)] = float(m.group(2))
-            except ValueError:
-                pass
-    missing = [s for s in SCALARS if s not in vals]
-    if missing:
-        raise SystemExit(f"FATAL: {log.name} is missing measurements: {missing}")
-    return vals
+    return read_measurements(log, SCALARS)
 
 
 def main() -> None:
@@ -98,11 +91,7 @@ def main() -> None:
                 + ",".join(f"{v[k]:.6g}" for k in cols) + "\n")
 
     def rep(name: str, scale: float = 1.0, unit: str = "") -> None:
-        vs = [(cid, v[name] * scale) for cid, _, v in rows]
-        lo = min(vs, key=lambda x: x[1])
-        hi = max(vs, key=lambda x: x[1])
-        print(f"  {name[2:]:16s} min {lo[1]:11.4f}{unit} @ {lo[0]:34s}"
-              f"  max {hi[1]:11.4f}{unit} @ {hi[0]}")
+        report_minmax(rows, name, scale=scale, unit=unit, name_width=16, cid_width=34)
 
     print(f"\n{len(rows)} points")
     for name in ("m_slope_vpms", "m_dvout_max", "m_dvout_min",
@@ -113,10 +102,7 @@ def main() -> None:
         rep(name)
 
     def flag(label: str, pred) -> None:
-        bad = [cid for cid, _, v in rows if pred(v)]
-        n = len(bad)
-        shown = bad if n <= 6 else bad[:6] + [f"... (+{n - 6} more)"]
-        print(f"  {label:56s} {shown or 'none'}")
+        report_flag(rows, label, pred)
 
     print()
     flag(f"steady ramp rate above the ratified {RAMP_MAX_VPMS} V/ms:",
