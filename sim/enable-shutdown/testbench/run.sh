@@ -60,13 +60,14 @@ PDK_INFO="$(python3 - "$REPO_ROOT" <<'EOF'
 import sys
 sys.path.insert(0, sys.argv[1] + "/sim")
 from harness.pdk import find_pdk
-from harness.runner import ngspice_version
+from harness.runner import FATAL_LOG_PATTERN, ngspice_version
 pdk = find_pdk()
 print(pdk.design_include)
 print(pdk.model_lib)
 print(pdk.variant)
 print(pdk.version)
 print(ngspice_version().split()[0])
+print(FATAL_LOG_PATTERN)
 EOF
 )"
 DESIGN_INCLUDE="$(sed -n '1p' <<<"$PDK_INFO")"
@@ -74,6 +75,9 @@ MODEL_LIB="$(sed -n '2p' <<<"$PDK_INFO")"
 PDK_VARIANT="$(sed -n '3p' <<<"$PDK_INFO")"
 PDK_VERSION="$(sed -n '4p' <<<"$PDK_INFO")"
 NGSPICE_VERSION="$(sed -n '5p' <<<"$PDK_INFO")"
+# Fatal-condition sentinel: single source of truth is
+# sim/harness/runner.py's FATAL_LOG_PATTERN (issue #157).
+FATAL_LOG_PATTERN="$(sed -n '6p' <<<"$PDK_INFO")"
 
 python3 "$REPO_ROOT/design/netlist.py" --check >/dev/null
 LDO_NETLIST="$REPO_ROOT/design/netlist/ldo_core.spice"
@@ -117,15 +121,15 @@ run_point() {
     tail -40 "$log" >&2
     return 1
   fi
-  if grep -qE 'could not find a valid modelname|Simulation interrupted|singular matrix|no convergence|iteration limit reached|fatal error|no such vector|failed$' "$log"; then
+  if grep -qE "$FATAL_LOG_PATTERN" "$log"; then
     echo "FATAL: ngspice reported an error on $corner_id (see $log)" >&2
-    grep -nE 'could not find a valid modelname|Simulation interrupted|singular matrix|no convergence|iteration limit reached|fatal error|no such vector|failed$' "$log" >&2
+    grep -nE "$FATAL_LOG_PATTERN" "$log" >&2
     return 1
   fi
   echo "$corner_id"
 }
 export -f run_point corner_sections
-export WORKDIR LOG_DIR HERE DESIGN_INCLUDE MODEL_LIB LDO_NETLIST
+export WORKDIR LOG_DIR HERE DESIGN_INCLUDE MODEL_LIB LDO_NETLIST FATAL_LOG_PATTERN
 
 points=()
 for c in $CORNERS; do for t in $TEMPS; do for v in $SUPPLIES; do

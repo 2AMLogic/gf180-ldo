@@ -26,6 +26,7 @@ set -euo pipefail
 DC_MODELS=""
 DC_BUILD=""
 DC_ROOT=""
+DC_FATAL_LOG_PATTERN=""
 
 dc_init() {
   DC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -42,6 +43,16 @@ dc_init() {
     exit 1
   fi
   mkdir -p "$DC_BUILD"
+
+  # Fatal-condition sentinel: single source of truth is
+  # sim/harness/runner.py's FATAL_LOG_PATTERN (issue #157).
+  DC_FATAL_LOG_PATTERN="$(python3 - "$DC_ROOT" <<'EOF'
+import sys
+sys.path.insert(0, sys.argv[1] + "/..")
+from harness.runner import FATAL_LOG_PATTERN
+print(FATAL_LOG_PATTERN)
+EOF
+)"
 }
 
 # dc_csv_header <outfile> <header-line>
@@ -84,9 +95,9 @@ dc_run() {
   # ngspice reports model-selection and convergence problems on stdout while
   # still exiting 0 - treat those as hard failures so a broken corner can never
   # silently produce a plausible-looking table.
-  if grep -qE 'could not find a valid modelname|Simulation interrupted|singular matrix|no convergence|doAnalyses: iteration limit reached|failed!|no such vector' "$log"; then
+  if grep -qE "$DC_FATAL_LOG_PATTERN" "$log"; then
     echo "FATAL: ngspice reported an error on $deck (see $log)" >&2
-    grep -nE 'could not find a valid modelname|Simulation interrupted|singular matrix|no convergence|doAnalyses|failed!|no such vector' "$log" >&2
+    grep -nE "$DC_FATAL_LOG_PATTERN" "$log" >&2
     exit 1
   fi
   if [ -z "${DC_KEEP:-}" ]; then
