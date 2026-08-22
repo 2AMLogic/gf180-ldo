@@ -21,6 +21,57 @@ DEFAULT_TIMEOUT_S = 300
 _MEAS_RE = re.compile(r"^\s*m_(\w+)\s*=\s*([-+]?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*$")
 _ERROR_RE = re.compile(r"^\s*(?:Error|ERROR|Fatal|fatal error|doAnalyses:)", re.MULTILINE)
 
+# Phrases ngspice writes to stdout/stderr for a fatal condition (bad model
+# lookup, singular Jacobian, non-convergence, ...) while still exiting 0 --
+# every testbench's pass/fail gate has to grep for these on top of the exit
+# code. Single source of truth for that gate (issue #157): before this, six
+# call sites across five files each carried their own copy of this
+# alternation and had drifted into four mutually-inconsistent variants (one
+# file's own pass/fail check and its own diagnostic dump even disagreed with
+# each other).
+#
+# This tuple is the union of the seven copies' *unconditionally-safe*
+# phrases, deliberately dropping the eighth ("failed"/"failed!"/"failed$",
+# present in 2 of the 6 bash copies) that #157 proposed adding: ngspice's own
+# "Warning: Dynamic gmin stepping failed" -- a routine, non-fatal fallback
+# notice, not an error -- ends every line it appears on, so a bare/anchored
+# "failed" phrase matches it too. That is not hypothetical: it appears in
+# already-recorded, already-passing evidence under
+# sim/current-limit/corners/ (>100 occurrences across 3 record-ids as of this
+# commit) and, even more directly, `sim/loop-stability/testbench/sweep.py`'s
+# own docstring documents "a failed `meas` (no such crossing in band)" as an
+# *expected*, non-fatal outcome for that testbench -- exactly the string a
+# "failed" phrase would also catch. Including it here would have turned this
+# consolidation into a regression (spurious fatal failures on already-passing
+# corners) instead of a pure cleanup. None of the six call sites' own decks
+# use a ngspice `.meas` whose failure is the *only* fatal signal (the four
+# DC-sweep testbenches use `print`, not `.meas`, at all), so dropping it
+# loses no real detection coverage anywhere it is actually exercised.
+FATAL_LOG_PATTERNS: tuple[str, ...] = (
+    "could not find a valid modelname",
+    "Simulation interrupted",
+    "singular matrix",
+    "no convergence",
+    "iteration limit reached",
+    "fatal error",
+    "no such vector",
+)
+
+# `|`-joined alternation string, ready for `grep -E` (bash call sites, via
+# the same python-heredoc-`eval` pattern used for corner_sections() /
+# ngspice_version()) or `re.compile` (direct-import Python call sites).
+FATAL_LOG_PATTERN = "|".join(FATAL_LOG_PATTERNS)
+
+# Case-insensitive: ngspice's own capitalization of these phrases is not
+# consistent, and case-insensitivity only widens the match, never narrows
+# it relative to any prior case-sensitive bash copy.
+FATAL_LOG_RE = re.compile(FATAL_LOG_PATTERN, re.IGNORECASE)
+
+
+def is_fatal_log(text: str) -> bool:
+    """True if `text` contains any known ngspice fatal-condition phrase."""
+    return FATAL_LOG_RE.search(text) is not None
+
 
 class NgspiceMissing(RuntimeError):
     pass

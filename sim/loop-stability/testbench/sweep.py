@@ -82,7 +82,7 @@ from harness.report import (  # noqa: E402
     git_provenance,
     write_markdown_record,
 )
-from harness.runner import ngspice_version  # noqa: E402
+from harness.runner import FATAL_LOG_RE, ngspice_version  # noqa: E402
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
 DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
@@ -406,13 +406,6 @@ def render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec, dc_seed="") -> str:
     return TOKEN_RE.sub(lambda m: subs[m.group(1)], text)
 
 
-FATAL_RE = re.compile(
-    r"could not find a valid modelname|singular matrix|no convergence"
-    r"|iteration limit reached|Simulation interrupted|fatal error",
-    re.IGNORECASE,
-)
-
-
 def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path,
               dc_seed: str = ""):
     suffix = "_dcseed" if dc_seed else ""
@@ -426,8 +419,8 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
     text = log.read_text()
     if proc.returncode != 0:
         return pvt, [], f"ngspice exited {proc.returncode} (see {log})"
-    if FATAL_RE.search(text):
-        bad = [ln for ln in text.splitlines() if FATAL_RE.search(ln)][:3]
+    if FATAL_LOG_RE.search(text):
+        bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
         return pvt, [], f"ngspice reported a fatal condition: {bad} (see {log})"
     if "SWEEP COMPLETE" not in text:
         return pvt, [], f"sweep did not complete (see {log})"
