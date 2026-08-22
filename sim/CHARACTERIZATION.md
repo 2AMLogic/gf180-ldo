@@ -19,7 +19,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3aeb225910549530c
 | Input | N/A | N/A | see note below |
 | Output | PASS | fresh | `sim/mc-output-accuracy/records/20260816-141924-9f85f6b.md` (+ 3 more, see detail) |
 | Load | N/A | N/A | see note below |
-| Dropout @ 50 mA | PASS | fresh | `sim/dropout-vs-load/records/20260821-091219-4fcc251.md` |
+| Dropout @ 50 mA | PASS | fresh | `sim/dropout-vs-load/records/20260822-081238-2387db1.md` |
 | Line reg | PASS | fresh | `sim/line-regulation/records/20260816-083627-8e105a0.md` |
 | Load reg (0–50 mA) | PASS | fresh | `sim/load-regulation/records/20260816-090135-4316537.md` |
 | Load transient | PASS | fresh | `sim/load-transient/records/20260816-084229-3634e48.md` |
@@ -68,7 +68,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3aeb225910549530c
 
 **Verdict**: PASS  **Fresh**: fresh
 
-- `dropout-vs-load` — verdict rests on DR-0017's measurement definition (PROPOSED, not ratified): dropout read at the regulation knee. The ratified < 300 mV bound itself is unchanged. If the operator rejects DR-0017 this row reverts to FAIL on the superseded fixed-headroom metric: `sim/dropout-vs-load/records/20260821-091219-4fcc251.md` — **PASS**, fresh (matches current `ldo_core`)
+- `dropout-vs-load` — verdict rests on DR-0020's measurement definition (PROPOSED, not ratified): dropout read at the regulation knee. The ratified < 300 mV bound itself is unchanged. If the operator rejects DR-0020 this row reverts to FAIL on the superseded fixed-headroom metric: `sim/dropout-vs-load/records/20260822-081238-2387db1.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall: PASS
 
 ### Line reg
