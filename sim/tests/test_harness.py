@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
+import io
 import json
 import re
 import sys
@@ -19,6 +21,11 @@ sys.path.insert(0, str(SIM_DIR))
 
 from harness import corners, report, runner, testbench  # noqa: E402
 from harness.pdk import Pdk  # noqa: E402
+from harness.pvt_log import (  # noqa: E402
+    read_measurements,
+    report_flag,
+    report_minmax,
+)
 
 
 def fake_pdk(root: Path) -> Pdk:
@@ -457,6 +464,110 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(
             runner.parse_measurements(text), {"vout": 1.2003456789, "iq": -4.5e-05}
         )
+
+
+class PvtLogTests(unittest.TestCase):
+    """#161: the shared read_measurements/report_minmax/report_flag helpers
+    consolidated out of current-limit/enable-shutdown/soft-start's three
+    independently-drifted summarize.py copies."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write(self, name: str, text: str) -> Path:
+        log = self.dir / name
+        log.write_text(text)
+        return log
+
+    def test_parses_the_ngspice_print_line_shape(self):
+        log = self._write("a.log", "m_vout = 1.799202e+00\nm_iq = -4.5e-05\n")
+        self.assertEqual(
+            read_measurements(log, ["m_vout", "m_iq"]),
+            {"m_vout": 1.799202e00, "m_iq": -4.5e-05},
+        )
+
+    def test_ignores_trailing_targ_trig_at_context_on_a_meas_line(self):
+        """soft-start's .meas TRIG/TARG lines print extra tokens after the
+        first `=`-delimited value on the same line; only that first token is
+        the measurement."""
+        log = self._write(
+            "a.log", "m_t_startup         =  4.24466e-03 targ=  4.34504e-03 trig=  1.00386e-04\n"
+        )
+        self.assertEqual(read_measurements(log, ["m_t_startup"]), {"m_t_startup": 4.24466e-03})
+
+    def test_missing_scalar_is_a_fatal_systemexit(self):
+        log = self._write("a.log", "m_vout = 1.8\n")
+        with self.assertRaises(SystemExit) as ctx:
+            read_measurements(log, ["m_vout", "m_iq"])
+        self.assertIn("is missing measurements", str(ctx.exception))
+        self.assertIn("m_iq", str(ctx.exception))
+
+    def test_a_malformed_value_fails_loud_not_silently(self):
+        """current-limit's pre-#161 parser raised an uncaught traceback on a
+        malformed value; enable-shutdown/soft-start's pre-#161 parser
+        silently dropped it (surfacing only as a misleading "missing
+        measurement"). The shared helper does neither: it raises a named,
+        catchable SystemExit identifying the bad value."""
+        log = self._write("a.log", "m_vout = 1.-e+3\n")
+        with self.assertRaises(SystemExit) as ctx:
+            read_measurements(log, ["m_vout"])
+        self.assertIn("unparsable value", str(ctx.exception))
+        self.assertIn("m_vout", str(ctx.exception))
+        self.assertIn("1.-e+3", str(ctx.exception))
+
+    def test_report_minmax_prints_the_extremes_with_the_requested_width(self):
+        rows = [("a", {"m_x": 1.0}), ("b", {"m_x": 3.0}), ("c", {"m_x": 2.0})]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report_minmax(rows, "m_x", val_width=6, val_prec=2)
+        out = buf.getvalue()
+        self.assertIn("min", out)
+        self.assertIn("1.00", out)
+        self.assertIn("@ a", out)
+        self.assertIn("max", out)
+        self.assertIn("3.00", out)
+        self.assertIn("@ b", out)
+
+    def test_report_minmax_applies_scale_and_unit(self):
+        rows = [("a", {"m_t": 1e-3}), ("b", {"m_t": 2e-3})]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report_minmax(rows, "m_t", scale=1e3, unit="ms")
+        out = buf.getvalue()
+        self.assertIn("1.0000ms", out)
+        self.assertIn("2.0000ms", out)
+
+    def test_report_flag_lists_only_the_matching_corners(self):
+        rows = [("a", {"m_v": 1.0}), ("b", {"m_v": 5.0}), ("c", {"m_v": 9.0})]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report_flag(rows, "over 4:", lambda v: v["m_v"] > 4.0)
+        out = buf.getvalue()
+        self.assertIn("'b'", out)
+        self.assertIn("'c'", out)
+        self.assertNotIn("'a'", out)
+
+    def test_report_flag_reports_none_when_nothing_matches(self):
+        rows = [("a", {"m_v": 1.0})]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report_flag(rows, "never:", lambda v: v["m_v"] > 4.0)
+        self.assertIn("none", buf.getvalue())
+
+    def test_report_flag_truncates_past_max_shown(self):
+        """soft-start's already-generalized flag() truncates past 6; #161
+        applies that uniformly (enable-shutdown's pre-#161 copy lacked it)."""
+        rows = [(f"c{i}", {"m_v": 9.0}) for i in range(9)]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report_flag(rows, "all bad:", lambda v: True, max_shown=6)
+        out = buf.getvalue()
+        self.assertIn("+3 more", out)
+        self.assertNotIn("'c8'", out)
 
 
 class _StubPoint:

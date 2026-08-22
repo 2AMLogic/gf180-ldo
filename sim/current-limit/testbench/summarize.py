@@ -13,8 +13,11 @@ and so ordinary Python tooling (ruff/black) can see it.
 from __future__ import annotations
 
 import pathlib
-import re
 import sys
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT / "sim"))
+from harness.pvt_log import read_measurements, report_minmax  # noqa: E402
 
 SCALARS = ["m_vout_0ma", "m_vout_25ma", "m_vout_50ma", "m_ivin_0ma_ua",
            "m_iload_25ma", "m_iload_50ma",
@@ -24,15 +27,7 @@ SCALARS = ["m_vout_0ma", "m_vout_25ma", "m_vout_50ma", "m_ivin_0ma_ua",
 
 
 def read(log):
-    vals = {}
-    for line in log.read_text().splitlines():
-        m = re.match(r"^(m_\w+)\s*=\s*(\S+)\s*$", line)
-        if m:
-            vals[m.group(1)] = float(m.group(2))
-    missing = [s for s in SCALARS if s not in vals]
-    if missing:
-        raise SystemExit(f"FATAL: {log.name} is missing measurements: {missing}")
-    return vals
+    return read_measurements(log, SCALARS)
 
 
 def main() -> None:
@@ -61,16 +56,11 @@ def main() -> None:
         for cid, c, t, v, vals in rows:
             fh.write(f"{cid},{c},{t},{v}," + ",".join(f"{vals[k]:.6g}" for k in cols) + "\n")
 
-    def rep(name):
-        vs = [(cid, vals[name]) for cid, _, _, _, vals in rows]
-        lo = min(vs, key=lambda x: x[1]); hi = max(vs, key=lambda x: x[1])
-        print(f"  {name[2:]:20s} min {lo[1]:10.4f} @ {lo[0]:20s}  max {hi[1]:10.4f} @ {hi[0]}")
-
     print(f"\n{len(rows)} PVT points")
     for m in ("m_vout_0ma", "m_vout_50ma", "m_ivin_0ma_ua", "m_sense_margin_pct",
               "m_ilim_1764_ma", "m_ilim_0000_ma", "m_flat_0_vs_1500_pct",
               "m_pshort_mw"):
-        rep(m)
+        report_minmax(rows, m, val_width=10, val_prec=4)
 
     lim = [vals["m_ilim_1764_ma"] for *_, vals in rows]
     mid = (max(lim) + min(lim)) / 2
