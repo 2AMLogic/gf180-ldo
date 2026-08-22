@@ -906,7 +906,7 @@ class TestComplianceLimitedLoadSinks(unittest.TestCase):
 
 
 class TestDropoutMeasuresTheRegulationKnee(unittest.TestCase):
-    """#138 / DR-0017: dropout is the headroom at the regulation knee.
+    """#138 / DR-0020: dropout is the headroom at the regulation knee.
 
     The original manifest measured ``vdrop_mv = (v(vin) - v(vout))*1e3`` at a
     single fixed supply, Vin = 2.10 V. Because 2.10 V *is* 1.800 V + 300 mV,
@@ -917,7 +917,7 @@ class TestDropoutMeasuresTheRegulationKnee(unittest.TestCase):
     feedback loop with finite DC gain cannot do that, which is why the metric
     FAILed 27/27 corners by 0.476-1.014 mV and why no pass-device resize can
     fix it (widening XMpass 4x moves the reading to a 300.574 mV asymptote --
-    still above the bound; see DR-0017 for the numbers).
+    still above the bound; see DR-0020 for the numbers).
 
     These assertions pin the corrected methodology so a future edit cannot
     silently regress to a fixed-headroom subtraction -- and, just as
