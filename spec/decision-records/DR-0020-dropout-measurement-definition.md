@@ -1,4 +1,4 @@
-# DR-0017: dropout is the headroom at the regulation knee, not `Vin − Vout` at a pinned `Vin = 2.10 V`
+# DR-0020: dropout is the headroom at the regulation knee, not `Vin − Vout` at a pinned `Vin = 2.10 V`
 
 - **Status**: proposed — ratification is the operator's, the same process
   DR-0001 went through ("Decided by: Builder agent … recommendation only —
@@ -168,7 +168,7 @@ The row's numbers do not change.**
    >    2.10 V anchor is **not** a dropout measurement: because 2.10 V is
    >    1.800 V + 300 mV exactly, that quantity is identically
    >    300 mV + (1.800 V − Vout), i.e. the DC regulation error offset by the
-   >    bound (see DR-0017).
+   >    bound (see DR-0020).
 
 3. **The ratified `Vin = 2.10 V` anchor keeps a gate of its own.** The
    testbench checks, in the same sweep, that `Vout` at `Vin = 2.10 V` lies

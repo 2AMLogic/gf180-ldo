@@ -226,10 +226,10 @@ ROWS: list[Row] = [
             Source(
                 "dropout-vs-load",
                 note=(
-                    "verdict rests on DR-0017's measurement definition "
+                    "verdict rests on DR-0020's measurement definition "
                     "(PROPOSED, not ratified): dropout read at the "
                     "regulation knee. The ratified < 300 mV bound itself is "
-                    "unchanged. If the operator rejects DR-0017 this row "
+                    "unchanged. If the operator rejects DR-0020 this row "
                     "reverts to FAIL on the superseded fixed-headroom metric"
                 ),
             )
