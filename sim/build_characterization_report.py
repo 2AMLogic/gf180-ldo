@@ -220,7 +220,21 @@ ROWS: list[Row] = [
             "a testbench of its own."
         ),
     ),
-    Row("Dropout @ 50 mA", sources=[Source("dropout-vs-load")]),
+    Row(
+        "Dropout @ 50 mA",
+        sources=[
+            Source(
+                "dropout-vs-load",
+                note=(
+                    "verdict rests on DR-0020's measurement definition "
+                    "(PROPOSED, not ratified): dropout read at the "
+                    "regulation knee. The ratified < 300 mV bound itself is "
+                    "unchanged. If the operator rejects DR-0020 this row "
+                    "reverts to FAIL on the superseded fixed-headroom metric"
+                ),
+            )
+        ],
+    ),
     Row("Line reg", sources=[Source("line-regulation")]),
     Row("Load reg (0–50 mA)", sources=[Source("load-regulation")]),
     Row("Load transient", sources=[Source("load-transient")]),

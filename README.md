@@ -52,7 +52,15 @@ Ratified by the operator on issue #1 with the amendments recorded in
 [`spec/decision-records/DR-0004-spec-ratification.md`](spec/decision-records/DR-0004-spec-ratification.md),
 which also ratifies DR-0001 (output capacitor and ESR window), DR-0002 (input
 flavor) and DR-0003 (output programmability). Changing a line below requires a
-new decision record; it may not be relaxed to make a result pass.
+new decision record; it may not be relaxed to make a result pass. The
+`Dropout @ 50 mA` row's **measurement definition** (note 4) is amended by
+[`spec/decision-records/DR-0020-dropout-measurement-definition.md`](spec/decision-records/DR-0020-dropout-measurement-definition.md)
+— **pending** the operator's approval of the pull request that carries that
+record's `Status` flip (2026-08-19 ratification-via-PR policy,
+2AMLogic/2am#357); note 4 below already reflects DR-0020's proposed wording.
+The row's **numbers are not touched** by that record: the < 300 mV target and
+< 200 mV stretch stand exactly as ratified, and only the quantity the
+testbench computes when it claims to have measured "dropout" changes.
 
 | Parameter | Target | Stretch |
 |---|---|---|
@@ -95,9 +103,22 @@ Notes — these are part of the ratified spec, not commentary:
    simulation against these models. It is carried as a stated assumption
    (e.g. `ppolyf_u`'s `par_r = 0.021` card value as a proxy); a Monte Carlo
    "pass" against this PDK is not evidence for that term.
-4. **Dropout test point.** Dropout is measured at Vin = Vout + dropout ≈ 2.10 V,
-   not at the 2.97 V supply floor; sizing from the 2.97 V rows undersizes the
-   pass device by ~50% (`sim/devchar/CONCLUSIONS.md` §1).
+4. **Dropout test point and measurement.** Dropout is the `Vin − Vout` headroom
+   at which the regulator leaves regulation at full load: `Vin` is swept down at
+   `I_load` = 50 mA and dropout is read at the point where `Vout` falls to the
+   −2% edge of the Output row (1.764 V). It is anchored at
+   Vin = Vout + dropout ≈ 2.10 V, not at the 2.97 V supply floor — sizing from
+   the 2.97 V rows undersizes the pass device by ~50%
+   (`sim/devchar/CONCLUSIONS.md` §1) — and the regulator must still be inside
+   the Output row's ±2% window at that 2.10 V anchor, which is the direct
+   statement of dropout ≤ 300 mV. Reporting `Vin − Vout` at the 2.10 V anchor is
+   **not** a dropout measurement: because 2.10 V is 1.800 V + 300 mV exactly,
+   that quantity is identically 300 mV + (1.800 V − Vout), i.e. the DC
+   regulation error offset by the bound. The measurement clause of this note is
+   **pending** operator approval of DR-0020's ratifying pull request (issue
+   #138) per the 2026-08-19 ratification-via-PR policy (2AMLogic/2am#357); the
+   ratified anchor and the row's numbers are unchanged by it. See
+   [`DR-0020`](spec/decision-records/DR-0020-dropout-measurement-definition.md).
 5. **Current-limit behaviour.** The limit is a constant-current clamp; foldback
    is deliberately not required, so a folded-back limit can never prevent
    startup into a loaded output. The cost is that a sustained short dissipates
