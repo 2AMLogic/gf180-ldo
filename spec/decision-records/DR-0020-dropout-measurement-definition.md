@@ -7,8 +7,30 @@
   untouched by this record**, and this record must not be read as relaxing
   them. What it changes is which quantity the `dropout-vs-load` testbench
   computes when it claims to have measured "dropout".
-- **Date**: 2026-08-21
+- **Date**: 2026-08-21 (renumbered 2026-08-22 — see *Numbering* below)
 - **Decided by**: Builder agent, issue #138 (recommendation only)
+
+### Numbering
+
+This record was drafted as `DR-0017` while issue #138's branch was open. Three
+records landed on `main` in the meantime — `DR-0017` (compensation return
+node, PR #145), `DR-0018` and `DR-0019` — so it was renumbered into the next
+free slot, `DR-0020`, before publication. It was never merged under the old
+number, so nothing on `main` ever pointed at it as `DR-0017`.
+
+One consequence is visible in the evidence trail and is deliberately not
+"fixed": the superseded record
+`sim/dropout-vs-load/records/20260821-091219-4fcc251.md` and its netlist
+snapshot name this record by its draft number, `DR-0017`. `sim/README.md`'s
+append-only rule has no exceptions — records are never edited after they are
+written, "even to typo fixes" — so those two artifacts keep their original
+text, and the live record
+(`20260822-081238-2387db1`, which supersedes them) carries the correct number.
+That live record is also the citable one for an independent reason: the
+superseded run was taken against a dirty working tree and says so in its own
+provenance line, while the superseding run is a clean-tree re-run of the same
+27 points, on a different host and a different ngspice build (46 vs 47), which
+reproduced every corner value in this record to the digit.
 
 ## Context
 
@@ -235,7 +257,7 @@ The row's numbers do not change.**
 - **The `Dropout @ 50 mA` row passes, with real margin, on the shipped
   netlist**: 27/27 PVT points, worst case 267.383 mV at `ss / 125 °C` against
   the < 300 mV target (32.6 mV margin), best case 136.208 mV at `ff / −40 °C`.
-  The evidence is `sim/dropout-vs-load/records/20260821-091219-4fcc251.md`,
+  The evidence is `sim/dropout-vs-load/records/20260822-081238-2387db1.md`,
   which also reads `knee_uniqueness_mv = 0.000` at all 27 points (decision
   item 5). `sim/CHARACTERIZATION.md` is regenerated accordingly — with the
   row's detail line stating in the file itself that the PASS rests on this
