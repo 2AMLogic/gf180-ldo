@@ -108,9 +108,6 @@ echo "ngspice    : $NGSPICE_VERSION"
 echo "record id  : $RECORD_ID"
 echo
 
-# "1u/0.1/36" -> "1u_0.1_36" with the dots kept out of the field separators.
-cap_tag() { echo "$1" | tr '/' '_'; }
-
 run_point() {
   local corner="$1" temp="$2" vin="$3" cap="$4"
   local sections; sections="$(corner_sections "$corner")"
