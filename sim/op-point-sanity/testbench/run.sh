@@ -31,28 +31,28 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPDIR="$(cd "$HERE/.." && pwd)"           # sim/op-point-sanity
 REPO_ROOT="$(cd "$EXPDIR/../.." && pwd)"
 
-# --- PDK discovery (single implementation: sim/harness/pdk.py) -----------
+# --- PDK / ngspice discovery (single implementation: sim/harness/pdk.py,
+# sim/harness/runner.py) -- ngspice_version() also fails loud with an
+# actionable message if ngspice is missing, replacing a bare `command -v`
+# guard. --------------------------------------------------------------------
 PDK_INFO="$(python3 - "$REPO_ROOT" <<'EOF'
 import sys
 sys.path.insert(0, sys.argv[1] + "/sim")
 from harness.pdk import find_pdk
+from harness.runner import ngspice_version
 pdk = find_pdk()
 print(pdk.design_include)
 print(pdk.model_lib)
 print(pdk.variant)
 print(pdk.version)
+print(ngspice_version().split()[0])
 EOF
 )"
 DESIGN_INCLUDE="$(sed -n '1p' <<<"$PDK_INFO")"
 MODEL_LIB="$(sed -n '2p' <<<"$PDK_INFO")"
 PDK_VARIANT="$(sed -n '3p' <<<"$PDK_INFO")"
 PDK_VERSION="$(sed -n '4p' <<<"$PDK_INFO")"
-
-if ! command -v ngspice >/dev/null 2>&1; then
-  echo "FATAL: ngspice not on PATH" >&2
-  exit 1
-fi
-NGSPICE_VERSION="$(ngspice -v 2>&1 | sed -n 's/^\*\* \(ngspice-[0-9.]*\).*/\1/p' | head -1)"
+NGSPICE_VERSION="$(sed -n '5p' <<<"$PDK_INFO")"
 
 # --- committed, current netlist (fail loud if stale) ----------------------
 python3 "$REPO_ROOT/design/netlist.py" --check >/dev/null

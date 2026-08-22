@@ -45,37 +45,49 @@ EXTRA_SUPPLIES="${EXTRA_SUPPLIES:-2.97 3.63}"
 EXTRA_CAPS="${EXTRA_CAPS:-0.33u/0.001/36 0.33u/0.5/36 4.7u/0.001/36 4.7u/0.5/36 1u/0.1/1e9}"
 JOBS="${JOBS:-8}"
 
-corner_sections() {
-  case "$1" in
-    tt)     echo "typical res_typical bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    ff)     echo "ff res_ff bjt_ff diode_ff moscap_ff mimcap_ff" ;;
-    ss)     echo "ss res_ss bjt_ss diode_ss moscap_ss mimcap_ss" ;;
-    fs)     echo "fs res_typical bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    sf)     echo "sf res_typical bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    res_ff) echo "typical res_ff bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    res_ss) echo "typical res_ss bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    *) echo "FATAL: unknown corner $1" >&2; exit 1 ;;
-  esac
-}
+# corner name -> "mos res bjt diode moscap mimcap" model sections. Single
+# source of truth: sim/harness/corners.py's CORNERS. Generated once, up
+# front (like PDK_INFO below) rather than shelled out to python per lookup,
+# since corner_sections() runs inside the parallel `xargs -P "$JOBS"`
+# fan-out in run_point() -- one python3 startup per script run, not one per
+# PVT point.
+eval "$(python3 - "$REPO_ROOT" <<'EOF'
+import sys
+sys.path.insert(0, sys.argv[1] + "/sim")
+from harness.corners import CORNERS
 
+print("corner_sections() {")
+print('  case "$1" in')
+for name, corner in CORNERS.items():
+    print(f'    {name}) echo "{" ".join(corner.sections)}" ;;')
+print('    *) echo "FATAL: unknown corner $1" >&2; exit 1 ;;')
+print("  esac")
+print("}")
+EOF
+)"
+
+# --- PDK / ngspice discovery (single implementation: sim/harness/pdk.py,
+# sim/harness/runner.py) -- ngspice_version() also fails loud with an
+# actionable message if ngspice is missing, replacing a bare `command -v`
+# guard. --------------------------------------------------------------------
 PDK_INFO="$(python3 - "$REPO_ROOT" <<'EOF'
 import sys
 sys.path.insert(0, sys.argv[1] + "/sim")
 from harness.pdk import find_pdk
+from harness.runner import ngspice_version
 pdk = find_pdk()
 print(pdk.design_include)
 print(pdk.model_lib)
 print(pdk.variant)
 print(pdk.version)
+print(ngspice_version().split()[0])
 EOF
 )"
 DESIGN_INCLUDE="$(sed -n '1p' <<<"$PDK_INFO")"
 MODEL_LIB="$(sed -n '2p' <<<"$PDK_INFO")"
 PDK_VARIANT="$(sed -n '3p' <<<"$PDK_INFO")"
 PDK_VERSION="$(sed -n '4p' <<<"$PDK_INFO")"
-
-command -v ngspice >/dev/null 2>&1 || { echo "FATAL: ngspice not on PATH" >&2; exit 1; }
-NGSPICE_VERSION="$(ngspice -v 2>&1 | sed -n 's/^\*\* \(ngspice-[0-9.]*\).*/\1/p' | head -1)"
+NGSPICE_VERSION="$(sed -n '5p' <<<"$PDK_INFO")"
 
 python3 "$REPO_ROOT/design/netlist.py" --check >/dev/null
 LDO_NETLIST="$REPO_ROOT/design/netlist/ldo_core.spice"
