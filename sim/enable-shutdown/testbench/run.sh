@@ -31,18 +31,26 @@ TEMPS="${TEMPS:--40 27 125}"
 SUPPLIES="${SUPPLIES:-2.97 3.30 3.63}"
 JOBS="${JOBS:-4}"
 
-corner_sections() {
-  case "$1" in
-    tt)     echo "typical res_typical bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    ff)     echo "ff res_ff bjt_ff diode_ff moscap_ff mimcap_ff" ;;
-    ss)     echo "ss res_ss bjt_ss diode_ss moscap_ss mimcap_ss" ;;
-    fs)     echo "fs res_typical bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    sf)     echo "sf res_typical bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    res_ff) echo "typical res_ff bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    res_ss) echo "typical res_ss bjt_typical diode_typical moscap_typical mimcap_typical" ;;
-    *) echo "FATAL: unknown corner $1" >&2; exit 1 ;;
-  esac
-}
+# corner name -> "mos res bjt diode moscap mimcap" model sections. Single
+# source of truth: sim/harness/corners.py's CORNERS. Generated once, up
+# front (like PDK_INFO below) rather than shelled out to python per lookup,
+# since corner_sections() runs inside the parallel `xargs -P "$JOBS"`
+# fan-out in run_point() -- one python3 startup per script run, not one per
+# PVT point.
+eval "$(python3 - "$REPO_ROOT" <<'EOF'
+import sys
+sys.path.insert(0, sys.argv[1] + "/sim")
+from harness.corners import CORNERS
+
+print("corner_sections() {")
+print('  case "$1" in')
+for name, corner in CORNERS.items():
+    print(f'    {name}) echo "{" ".join(corner.sections)}" ;;')
+print('    *) echo "FATAL: unknown corner $1" >&2; exit 1 ;;')
+print("  esac")
+print("}")
+EOF
+)"
 
 PDK_INFO="$(python3 - "$REPO_ROOT" <<'EOF'
 import sys
