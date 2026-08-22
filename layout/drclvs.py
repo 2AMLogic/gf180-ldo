@@ -211,7 +211,7 @@ def export_netlist(pdk: Pdk, outdir: Path) -> str:
             "an xschem older than 3.4.6 -- the version Debian/Ubuntu package "
             "(3.4.4) has no `lvs_format` support at all and silently ignores "
             "the switch.\n"
-            f"  `xschem --version` here: {xschem_version()}\n"
+            f"  `xschem --version` here: {tool_version('xschem', ['--version'])}\n"
             "  This repo pins 3.4.7; see docs/environment-setup.md.\n"
             f"--- exported ---\n{text}"
         )
@@ -220,7 +220,7 @@ def export_netlist(pdk: Pdk, outdir: Path) -> str:
             f"the exported netlist has no `.subckt {CELL}` line -- xschem "
             "emitted the commented `**.subckt` form, which KLayout will not "
             "read. This is also an xschem-too-old symptom "
-            f"(`xschem --version`: {xschem_version()}; this repo pins 3.4.7).\n"
+            f"(`xschem --version`: {tool_version('xschem', ['--version'])}; this repo pins 3.4.7).\n"
             f"--- exported ---\n{text}"
         )
 
@@ -231,16 +231,6 @@ def export_netlist(pdk: Pdk, outdir: Path) -> str:
         f"* the schematic and re-run the export.\n"
     )
     return header + text
-
-
-def xschem_version() -> str:
-    try:
-        out = subprocess.run(
-            ["xschem", "--version"], capture_output=True, text=True, timeout=30
-        )
-        return (out.stdout + out.stderr).strip().splitlines()[0]
-    except Exception:  # noqa: BLE001 -- diagnostics only
-        return "unknown"
 
 
 def _mos_line(text: str) -> tuple[str, list[str]]:
@@ -677,7 +667,7 @@ new record rather than editing this one.
 | PDK | gf180mcu variant `{pdk.variant}`, open_pdks `{pdk.version}` |
 | klayout | `{tool_version('klayout', ['-b', '-v'])}` |
 | klt | `{tool_version('klt', ['--version'])}` |
-| xschem | `{xschem_version()}` |
+| xschem | `{tool_version('xschem', ['--version'])}` |
 
 ## Results
 
