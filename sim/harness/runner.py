@@ -59,18 +59,15 @@ FATAL_LOG_PATTERNS: tuple[str, ...] = (
 
 # `|`-joined alternation string, ready for `grep -E` (bash call sites, via
 # the same python-heredoc-`eval` pattern used for corner_sections() /
-# ngspice_version()) or `re.compile` (direct-import Python call sites).
+# ngspice_version()).
 FATAL_LOG_PATTERN = "|".join(FATAL_LOG_PATTERNS)
 
 # Case-insensitive: ngspice's own capitalization of these phrases is not
 # consistent, and case-insensitivity only widens the match, never narrows
-# it relative to any prior case-sensitive bash copy.
+# it relative to any prior case-sensitive bash copy. Direct-import Python
+# call sites (e.g. sim/loop-stability/testbench/sweep.py) call
+# `FATAL_LOG_RE.search()` themselves rather than going through a wrapper.
 FATAL_LOG_RE = re.compile(FATAL_LOG_PATTERN, re.IGNORECASE)
-
-
-def is_fatal_log(text: str) -> bool:
-    """True if `text` contains any known ngspice fatal-condition phrase."""
-    return FATAL_LOG_RE.search(text) is not None
 
 
 class NgspiceMissing(RuntimeError):
