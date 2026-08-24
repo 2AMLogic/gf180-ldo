@@ -124,7 +124,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3aeb225910549530c
 
 ### Current limit
 
-**Ratified target**: 65–80 mA over PVT, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5)
+**Ratified target**: 62–95 mA over PVT untrimmed, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5, note 8)
 
 **Verdict**: FAIL  **Fresh**: fresh
 
@@ -153,7 +153,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3aeb225910549530c
 
 ### Thermal
 
-**Ratified target**: 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 290 mW into a Vout = 0 short at the 80 mA limit ceiling; specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec
+**Ratified target**: 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 346 mW into a Vout = 0 short at the untrimmed 95 mA limit ceiling (note 8); specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec
 
 **Verdict**: FAIL  **Fresh**: fresh
 
