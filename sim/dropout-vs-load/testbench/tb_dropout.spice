@@ -1,16 +1,42 @@
 * dropout-vs-load -- stimulus fragment for ldo_core (issue #12)
 *
-* Measures dropout voltage (Vin - Vout) at the ratified 50 mA full-load spec
-* point. Per spec/decision-records/DR-0004-spec-ratification.md note 4,
-* dropout is measured at Vin = Vout + dropout ~= 2.10 V, not at the +/-10%
-* supply floor (2.97 V) -- undersizing from the 2.97 V rows undersizes the
-* pass device by ~50% (sim/devchar/CONCLUSIONS.md Sec.1). The harness's
-* normal supply grid is collapsed to this single binding value via tb.json's
-* nominal_supply_v/supply_tolerance (see the recorded --subset-reason).
+* Measures dropout voltage at the ratified 50 mA full-load spec point. Per
+* spec/decision-records/DR-0004-spec-ratification.md note 4, dropout is
+* measured at Vin = Vout + dropout ~= 2.10 V, not at the +/-10% supply floor
+* (2.97 V) -- undersizing from the 2.97 V rows undersizes the pass device by
+* ~50% (sim/devchar/CONCLUSIONS.md Sec.1). The harness's normal supply grid
+* is collapsed via tb.json's nominal_supply_v/supply_tolerance (see the
+* recorded --subset-reason); the supply axis is instead the swept variable of
+* the measurement itself.
+*
+* HOW DROPOUT IS MEASURED HERE (changed by #138 / DR-0020): the manifest
+* sweeps Vsup down through the regulation knee at a fixed 50 mA load and
+* reports the Vin - Vout headroom at the point where Vout has fallen to the
+* ratified -2% accuracy edge (1.764 V). It does NOT report v(vin)-v(vout) at
+* a pinned Vin = 2.10 V, which is what this deck's manifest asked for until
+* #138: because the ratified test point *is* Vout_nom + the ratified bound
+* (2.10 = 1.800 + 0.300), that expression is identically 300 mV + (1.800 V -
+* Vout) while the loop is in regulation -- the DC regulation error offset by
+* exactly the bound, not the dropout voltage. Nothing in the netlist below
+* changed for #138; the whole correction lives in tb.json's analyses/measure.
+*
+* KNEE-UNIQUENESS GUARD: a swept measurement of a knee is only as good as the
+* sweep is well-behaved, so the manifest locates the 1.764 V crossing twice --
+* FALL=1 and FALL=LAST -- and gates their difference (knee_uniqueness_mv) at
+* zero. Any single sweep point that lands on the #40 non-physical fixed point
+* (pass device off, Vout collapsed) inserts a spurious crossing pair, and
+* FALL=1 then interpolates a knee at that point instead of the real one. This
+* is not hypothetical: widening XMpass 4x makes exactly one point (Vin =
+* 2.09 V) do this, and the unguarded reading becomes 330.901 mV instead of the
+* true 49.1 mV. Every corner in the shipped netlist's grid crosses exactly
+* once, so the guard reads 0.000 there -- it exists so that a future netlist
+* that does provoke the artifact reports a FAIL on the guard rather than a
+* silently wrong dropout number.
 *
 * EN is tied directly to VIN at instantiation (same net used twice), which
 * wires Vgs=0 at the enable clamp -- the "enabled" state -- without a
-* separate source.
+* separate source. EN therefore tracks the swept Vin, which is the intended
+* condition: a real supply brownout takes the enable input down with it.
 Vsup VIN 0 DC {vdd_val}
 Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
 
@@ -34,10 +60,11 @@ Xdut VIN VOUT VIN 0 LOOP LOOP ldo_core
 *
 *     f(VOUT) = 0.5 * (1 + tanh((VOUT - 0.2) / 0.05))
 *
-* At the ~1.8 V this design regulates to, 1 - f is below double precision,
-* so the sink is an ideal 50 mA current sink at every operating point this
-* record reports; i(Vlmeas) is measured and checked against the commanded
-* 50 mA so that stays verified rather than assumed.
+* At the ~1.8 V this design regulates to -- and still at the ~1.46 V the
+* output falls to at the bottom of the Vin sweep, deep in dropout -- 1 - f is
+* below double precision, so the sink is an ideal 50 mA current sink at every
+* operating point this record reports; i(Vlmeas) is measured and checked
+* against the commanded 50 mA so that stays verified rather than assumed.
 Vilc ILC 0 DC 50m
 Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
 Vlmeas NLOAD 0 DC 0

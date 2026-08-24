@@ -1016,6 +1016,177 @@ class TestComplianceLimitedLoadSinks(unittest.TestCase):
         self.assertIn("vout", {k.lower() for k in tb["nodeset"]})
 
 
+class TestDropoutMeasuresTheRegulationKnee(unittest.TestCase):
+    """#138 / DR-0020: dropout is the headroom at the regulation knee.
+
+    The original manifest measured ``vdrop_mv = (v(vin) - v(vout))*1e3`` at a
+    single fixed supply, Vin = 2.10 V. Because 2.10 V *is* 1.800 V + 300 mV,
+    that expression is identically ``300 mV + (1.800 V - Vout)`` whenever the
+    regulator is still in regulation -- so it reports the DC regulation error
+    offset by exactly the bound, never the dropout voltage, and it can only
+    read below 300 mV if Vout sits *above* its own setpoint. A negative
+    feedback loop with finite DC gain cannot do that, which is why the metric
+    FAILed 27/27 corners by 0.476-1.014 mV and why no pass-device resize can
+    fix it (widening XMpass 4x moves the reading to a 300.574 mV asymptote --
+    still above the bound; see DR-0020 for the numbers).
+
+    These assertions pin the corrected methodology so a future edit cannot
+    silently regress to a fixed-headroom subtraction -- and, just as
+    importantly, they pin the ratified < 300 mV bound itself so the metric
+    cannot be "fixed" by relaxing the number instead (CLAUDE.md: agents do not
+    relax the ratified spec to make results pass).
+    """
+
+    MANIFEST = SIM_DIR / "dropout-vs-load" / "testbench" / "tb.json"
+
+    #: README.md "Output" row: 1.8 V +/-2%. The -2% edge, 1.764 V, is the
+    #: out-of-regulation threshold the knee search keys on.
+    VOUT_NOM_V = 1.8
+    VOUT_MINUS_2PCT_V = 1.764
+
+    def setUp(self):
+        self.tb = json.loads(self.MANIFEST.read_text())
+
+    def test_supply_is_swept_rather_than_pinned_at_the_test_point(self):
+        analyses = " ".join(self.tb["analyses"]).lower()
+        self.assertRegex(
+            analyses,
+            r"\bdc\s+vsup\b",
+            "dropout must be found by sweeping the supply through the "
+            "regulation knee, not solved at one pinned headroom",
+        )
+
+    def test_vdrop_is_not_a_fixed_headroom_subtraction(self):
+        expr = self.tb["measure"]["vdrop_mv"].lower().replace(" ", "")
+        self.assertNotIn(
+            "v(vin)-v(vout)",
+            expr,
+            "vdrop_mv = v(vin)-v(vout) at a pinned Vin measures regulation "
+            "error offset by the bound, not dropout (#138)",
+        )
+
+    def test_knee_threshold_is_the_ratified_minus_two_percent_edge(self):
+        analyses = " ".join(self.tb["analyses"]).lower().replace(" ", "")
+        self.assertIn(
+            f"v(vout)={self.VOUT_MINUS_2PCT_V}",
+            analyses,
+            "the knee search must key on the ratified -2% accuracy edge "
+            f"({self.VOUT_NOM_V} V - 2% = {self.VOUT_MINUS_2PCT_V} V)",
+        )
+        self.assertAlmostEqual(
+            self.VOUT_MINUS_2PCT_V, self.VOUT_NOM_V * 0.98, places=6
+        )
+
+    def test_the_ratified_300_mv_bound_is_unchanged(self):
+        """The measurement is corrected; the spec number is NOT relaxed."""
+        self.assertEqual(300.0, self.tb["checks"]["vdrop_mv"]["max"])
+
+    def test_regulation_at_the_ratified_binding_test_point_is_still_gated(self):
+        """DR-0004 note 4's Vin = 2.10 V point survives as its own check.
+
+        Dropout <= 300 mV *means* the part still regulates with 300 mV of
+        headroom, so the corrected deck keeps a direct check of that at the
+        ratified binding test point rather than dropping it.
+        """
+        name = "vout_at_210_mv"
+        self.assertIn(name, self.tb["measure"])
+        self.assertIn("at=2.10", self.tb["measure"][name].lower() + " ".join(
+            self.tb["analyses"]
+        ).lower().replace(" ", ""))
+        check = self.tb["checks"][name]
+        self.assertAlmostEqual(1764.0, check["min"], places=3)
+        self.assertAlmostEqual(1836.0, check["max"], places=3)
+
+    def test_the_knee_crossing_is_gated_as_unique(self):
+        """#138: a swept knee is only as good as the sweep is well-behaved.
+
+        A single sweep point that lands on the #40 non-physical fixed point
+        (pass device off, Vout collapsed) inserts a spurious pair of 1.764 V
+        crossings above the real knee, and ``FALL=1`` then interpolates a
+        knee at the artifact instead of at the regulation knee. Measured:
+        widening ``XMpass`` to ``W=8000u nf=160`` makes exactly one point
+        (Vin = 2.09 V, tt / 27 C) do this, and the reading becomes
+        330.901 mV instead of the true 49.1 mV.
+
+        So the deck locates the crossing twice -- first and last -- and gates
+        the difference at zero. Every corner of the shipped netlist crosses
+        exactly once (knee_uniqueness_mv = 0.000 at 27/27), and the guard
+        reads 281.84 mV on the 4x netlist above.
+        """
+        analyses = " ".join(self.tb["analyses"]).lower().replace(" ", "")
+        self.assertIn(
+            "fall=1",
+            analyses,
+            "the knee must be located at the FIRST falling crossing",
+        )
+        self.assertIn(
+            "fall=last",
+            analyses,
+            "the knee must ALSO be located at the LAST falling crossing, so "
+            "a spurious crossing pair is detectable (#138)",
+        )
+
+        name = "knee_uniqueness_mv"
+        self.assertIn(
+            name,
+            self.tb["measure"],
+            "the first-vs-last knee difference must be a reported "
+            "measurement, not an unrecorded internal",
+        )
+        check = self.tb["checks"][name]
+        # Zero-width window: any second crossing at all is a failure. The
+        # sweep step is 5 mV, so a real artifact shows up as tens or
+        # hundreds of mV, never as float noise.
+        self.assertLessEqual(check["max"], 0.001)
+        self.assertGreaterEqual(check["min"], -0.001)
+
+    def test_the_recorded_evidence_passes_the_uniqueness_guard(self):
+        """The live record must actually exercise the guard, not just declare it.
+
+        Guards that never appear in a record are guards nobody has run. Parse
+        the newest dropout record and require a ``knee_uniqueness_mv`` column
+        reading zero at every corner -- otherwise the recorded dropout numbers
+        could be artifact interpolations and no test would notice.
+        """
+        records = sorted((SIM_DIR / "dropout-vs-load" / "records").glob("*.md"))
+        self.assertTrue(records, "no dropout-vs-load records committed")
+        text = records[-1].read_text()
+
+        header = next(
+            (ln for ln in text.splitlines() if ln.strip().startswith("| corner-id |")),
+            None,
+        )
+        self.assertIsNotNone(header, f"no result table in {records[-1].name}")
+        cols = [c.strip() for c in header.strip().strip("|").split("|")]
+        self.assertIn(
+            "knee_uniqueness_mv",
+            cols,
+            f"{records[-1].name} predates the #138 uniqueness guard",
+        )
+        idx = cols.index("knee_uniqueness_mv")
+
+        # Only the per-corner rows of the result table: the spread table that
+        # follows has the same column count and also quotes corner-ids, so key
+        # on the first cell being nothing but a corner-id.
+        corner_id = re.compile(r"^`[a-z0-9_]+_-?\d+c_[\d.]+v`$")
+        rows = 0
+        for line in text.splitlines():
+            line = line.strip()
+            if not line.startswith("| `"):
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if len(cells) != len(cols) or not corner_id.match(cells[0]):
+                continue
+            rows += 1
+            self.assertEqual(
+                0.0,
+                float(cells[idx]),
+                f"{records[-1].name}: {cells[0]} crossed the -2% edge more "
+                "than once -- its dropout number may be an artifact",
+            )
+        self.assertGreaterEqual(rows, 27, "expected the 27-point PVT grid")
+
+
 class TestStartupDeckStaysResistivelyLoaded(unittest.TestCase):
     """#46: sim/startup/ is immune to the artifact because it loads
     resistively and starts genuinely disabled. Guard both properties."""
