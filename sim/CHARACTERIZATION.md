@@ -133,7 +133,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3aeb225910549530c
 
 ### Startup
 
-**Ratified target**: monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 1 V/ms, so inrush ≤ 5 mA at C_eff = 4.7 µF and startup at full rated load stays ≥ 10 mA below the current limit; inside ±2% within 3 ms of enable; overshoot ≤ +2% of the final value
+**Ratified target**: monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 1 V/ms, so inrush ≤ 5 mA at C_eff = 4.7 µF and startup at full rated load stays ≥ 10 mA below the current limit; inside ±2% within 6 ms of enable (note 8); overshoot ≤ +2% of the final value
 
 **Verdict**: FAIL  **Fresh**: STALE
 

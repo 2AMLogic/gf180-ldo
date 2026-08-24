@@ -1,12 +1,21 @@
 # DR-0006: the Startup row's 3 ms settling window cannot coexist with its 1 V/ms ramp bound on an untrimmed on-chip ramp
 
-- **Status**: proposed
+- **Status**: ratified 2026-08-19 (issue #106) — **pending**: this status
+  line states the diff this record's ratifying pull request proposes; per
+  the 2026-08-19 ratification-via-PR policy (2AMLogic/2am#357), the
+  operator's review and approval **of that pull request** is the
+  ratification act itself — no separate ratification comment is expected.
+  Until the pull request merges, this line is a proposal, not yet true of
+  `main`, and `README.md`'s Startup row keeps its originally ratified 3 ms
+  settling clause.
 - **Date**: 2026-08-01
-- **Decided by**: agent-builder (issue #38) — **proposing**. The ratified spec
-  is a human gate, and nothing in this record changes the table until it is
-  ratified. Until then `README.md`'s Startup row stands as written and issue
-  #38's evidence (`sim/soft-start/records/20260801-071013-6026a64.md`) records
-  it as **failing** on the settling clause.
+- **Decided by**: agent-builder (issue #38) — recommendation only;
+  ratification is #106 (drafted as a pull request, not a comment), mirroring
+  how DR-0001–DR-0003 were ratified by DR-0004's merge onto `main`. Issue
+  #38's original evidence
+  (`sim/soft-start/records/20260801-071013-6026a64.md`) recorded the row as
+  **failing** on the settling clause; see "Evidence refresh" below for the
+  current, fresher record.
 
 ## Context
 
@@ -78,7 +87,43 @@ crystal, and no trim provision anywhere in this design (DR-0005 already
 declined to introduce one for the current limit, on the same kind of argument).
 Any untrimmed soft start on gf180mcu has this spread.
 
-## Decision (proposed)
+### Evidence refresh (issue #106, 2026-08-19)
+
+Issue #101 (closed, merged via PR #118) minted a fresher, full-factorial
+settling record after this record was first drafted:
+`sim/startup/records/20260816-100018-af4d1f9.md`, an 81-point run (9 process
+corners — the original 5 plus the `res_ff`/`res_ss`/`bjt_ff`/`bjt_ss`
+mismatch-model corners — × 3 temperatures × 3 supplies) against the current
+`design/netlist/ldo_core.spice`, measuring both the full-load (~50 mA) and
+minimum/no-load (~1 µA) branches at every corner. It supersedes the
+163-point record originally cited here
+(`sim/soft-start/records/20260801-071013-6026a64.md`) as the settling-clause
+evidence of record: it is the record `sim/CHARACTERIZATION.md` now cites for
+the Startup row, and it is fresh against the current DUT (the original
+citation is not — it predates issue #48's Gear-integrator fix).
+
+The worst measured point moves from **5.88 ms** (the original citation —
+`ss` / −40 °C / 3.63 V / 0 mA load, drawn from a 20-point bracketing subset
+at C_eff = 1 µF) to **5.82788 ms**
+(`ss_-40c_3.63v`, full-load branch, of the fresh record; the no-load
+branch's worst point at the same corner is 5.82711 ms) — a ~1% change,
+consistent with the different testbench, corner count and C_eff (the fresh
+record deliberately runs the full grid at C_eff = 4.7 µF, DR-0001's window's
+upper bound and, per the fresh record's own claim text, "the softest/slowest
+startup corner", rather than a bracketing subset at 1 µF) rather than a real
+discrepancy. The new number is **lower**, not higher, so it does not weaken
+this record's case — if anything the 6 ms proposal below now carries
+marginally more headroom than originally computed (≈2.95% instead of
+≈2.04%).
+
+This refresh does **not** touch the ramp-rate evidence cited above
+(0.296–0.867 V/ms, 163 points, 2.93 : 1 spread): the fresh testbench
+(`sim/startup/testbench/tb_startup.spice`) measures settling time and
+overshoot only, not ramp rate, so
+`sim/soft-start/records/20260801-071013-6026a64.md` remains the evidence of
+record for the ramp-bound clause.
+
+## Decision
 
 **Amend one clause of the Startup row.** Replace
 
@@ -91,11 +136,14 @@ with
 and add a note recording why: the ramp rate is an untrimmed on-chip `R · C`
 whose measured PVT spread is 2.93 : 1, so a settling window narrower than
 `1.764 ms × 2.93 ≈ 5.2 ms` cannot coexist with the ≤ 1 V/ms bound without a
-trim provision. 6 ms is not that floor, though — it is 5.88 ms, the slowest
-**measured** point (`ss` / −40 °C / 3.63 V at 0 mA load), plus ~2%. The
-measured slowest point is the binding number here, and it is above the
-arithmetic floor because the as-built ramp is not centred with its fastest
-corner exactly on 1 V/ms (it is at 0.867 V/ms).
+trim provision. 6 ms is not that floor, though — it is 5.82788 ms, the
+slowest **measured** point across the current full-factorial grid
+(`sim/startup/records/20260816-100018-af4d1f9.md`, `ss_-40c_3.63v`,
+full-load branch — see "Evidence refresh" above), plus ~3%
+(6 ms / 5.82788 ms ≈ 1.0295). The measured slowest point is the binding
+number here, and it is above the arithmetic floor because the as-built ramp
+is not centred with its fastest corner exactly on 1 V/ms (it is at
+0.867 V/ms).
 
 **Every other clause of the row is left exactly as ratified**, including the
 clauses this design does not currently meet. Specifically, this record does
@@ -156,9 +204,11 @@ pass, which CLAUDE.md forbids and which this record declines to do.
 
 ## Consequences
 
-- **The Startup row becomes verifiable.** With a 6 ms window, 163 of 163
-  measured points pass the settling clause, and the row's remaining failures
-  are unambiguously circuit debt with a named cause.
+- **The Startup row becomes verifiable.** With a 6 ms window, 81 of 81
+  measured points pass the settling clause in the current record of evidence
+  (`sim/startup/records/20260816-100018-af4d1f9.md`; the originally-cited
+  163-point record also passed 163 of 163 on this clause), and the row's
+  remaining failures are unambiguously circuit debt with a named cause.
 - **The as-built ramp keeps 13% margin on the clause that matters.** The
   fastest measured corner is 0.867 V/ms against 1 V/ms. That margin is
   deliberate and is what the settling window is paying for; a future record
@@ -168,12 +218,25 @@ pass, which CLAUDE.md forbids and which this record declines to do.
   externally visible change from the pre-#38 behaviour (28–64 µs) and it is
   the price of the inrush bound; it should appear in whatever integration
   document this block eventually ships with.
+- **Bad consequence, mechanical:** `sim/startup/testbench/tb.json`'s checks
+  (`tsettle_full_ms`/`tsettle_min_ms` `max: 3.0`) are unchanged by this
+  record — evidence records are append-only and this record does not
+  re-run the harness — so the current record
+  (`sim/startup/records/20260816-100018-af4d1f9.md`) and
+  `sim/CHARACTERIZATION.md`'s generated Startup verdict keep reading
+  **FAIL** even once this record is ratified, judged against the
+  superseded 3 ms bound. The raw `tsettle_full_ms`/`tsettle_min_ms` columns
+  in that record already show every point under 6 ms (see "Evidence
+  refresh" above), but a fresh record with `tb.json`'s checks updated to
+  `max: 6.0` is a follow-on step, not part of this record.
 - **Bad consequence, stated plainly:** four clauses of this row remain failing
   after this record is ratified, and this record deliberately does not cover
   them. They need a follow-on issue against `ldo_softstart`'s two transients
   and, for the low-ESR corners, against issue #10's main-loop compensation.
   Anyone reading the Startup row as "passing" once this is ratified is reading
-  it wrong; `sim/soft-start/records/` is the authority on what passes.
+  it wrong; `sim/startup/records/` (settling, overshoot) and
+  `sim/soft-start/records/` (ramp rate, inrush) are the authority on what
+  passes.
 - **DR-0004's revisit trigger for this row is discharged**, and the row leaves
   DR-0004's provisional list.
 
