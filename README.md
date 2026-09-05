@@ -201,6 +201,15 @@ See [`layout/README.md`](layout/README.md) for what each stage establishes, what
 "DRC clean" does and does not mean here, and the tool caveats worth knowing
 before believing a result.
 
+## Chipalooza
+
+This block's proposal for Open Circuit Design's Chipalooza Challenge #5
+(GF180MCU / Wafer.Space) is at
+[`docs/chipalooza/challenge-5-proposal.md`](docs/chipalooza/challenge-5-proposal.md) —
+block type, I/O mapped to the slot budget, functional description, a target
+spec table re-derived from `sim/`, and a bench test plan, all stated honestly
+against this repository's current maturity (no GDS yet).
+
 ## License
 
 Licensed under the Apache License, Version 2.0 — see [`LICENSE`](LICENSE).
