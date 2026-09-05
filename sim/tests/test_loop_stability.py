@@ -294,13 +294,14 @@ class TestDeckTemplate(unittest.TestCase):
                 / "tb_loop_stability.spice.in").read_text()
         # ldo_core's port order; the last two ports must land on DIFFERENT
         # nodes or there is no loop break at all and every margin is garbage.
-        self.assertIn("Xdut VIN VOUT EN 0 AINJ BINJ ldo_core", text)
+        self.assertIn("Xdut VIN VOUT EN 0 AINJ BINJ VREF ldo_core", text)
         self.assertIn("Vinj AINJ BINJ DC 0", text)
         self.assertIn("Iinj 0 BINJ DC 0", text)
         # and the DUT must be the committed export of the schematic
         netlist = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
-        self.assertIn(".subckt ldo_core VIN VOUT EN VSS ERRAMP_OUT PASS_GATE",
-                      netlist)
+        self.assertIn(
+            ".subckt ldo_core VIN VOUT EN VSS ERRAMP_OUT PASS_GATE VREF",
+            netlist)
 
     def test_template_removes_the_non_physical_dc_branch(self):
         # An ideal current-source load leaves VOUT unbounded below, which opens
@@ -317,11 +318,19 @@ class TestDeckTemplate(unittest.TestCase):
 
     def test_the_regulation_target_matches_the_designs_own_divider(self):
         # If the divider or the reference moves, the regulation check goes
-        # stale silently -- so derive the target from the netlist.
+        # stale silently -- so derive the target from the netlist and the
+        # deck. Since issue #174 / DR-0021 the reference is no longer inside
+        # ldo_core (it was `Vref1 VREF VSS 1.2` there); VREF is a top-level
+        # port and this deck drives it, so the reference half of the target
+        # is now derived from the deck that actually supplies it.
         netlist = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
         rtop = float(re.search(r"^Rtop VOUT FB (\S+)k", netlist, re.M).group(1))
         rbot = float(re.search(r"^Rbot FB VSS (\S+)k", netlist, re.M).group(1))
-        vref = float(re.search(r"^Vref1 VREF VSS (\S+)", netlist, re.M).group(1))
+        self.assertNotIn("Vref1", netlist,
+                         "ldo_core must not generate its own reference")
+        deck = (REPO_ROOT / "sim" / "loop-stability" / "testbench"
+                / "tb_loop_stability.spice.in").read_text()
+        vref = float(re.search(r"^Vref VREF 0 DC (\S+)", deck, re.M).group(1))
         self.assertAlmostEqual(sweep.VOUT_NOM_V, vref * (rtop + rbot) / rbot,
                                places=6)
 

@@ -83,9 +83,15 @@
 * Each `mc_source` redraws every agauss() parameter in the deck, so N
 * independent copies of ldo_core in one deck yield N independent mismatch
 * samples per solve. 25 copies x 40 redraws = 1000 samples per PVT point. The
-* copies share only the ideal VIN and EN sources and are otherwise
-* electrically disjoint (own load, own output network, own internal 1.2 V
-* reference), so they do not interact.
+* copies share only the ideal VIN, EN and VREF sources and are otherwise
+* electrically disjoint (own load, own output network), so they do not
+* interact. SHARING VREF IS NOT A COUPLING PATH: it is an ideal voltage
+* source, i.e. zero output impedance and an AC short, so no copy can perturb
+* another through it -- which is exactly why issue #174 / DR-0021 could move
+* it out of the subcircuit (where each copy had its own Vref1) to one
+* deck-level source here without changing the distribution. It carries no
+* mismatch of its own in either placement: the reference's own error is
+* EXCLUDED from this claim by construction, per README note 2.
 *
 * The reason to batch this way is EVIDENCE SIZE, not speed: ngspice reprints
 * its circuit/analysis banner on every re-source, which costs ~260 bytes per
@@ -162,34 +168,50 @@ Vin  VIN 0 dc {vdd_val}
 Ven  EN  0 dc {vdd_val}
 
 * ---- DUT: 25 independent copies of ldo_core --------------------------------
-* Port order (design/ldo_core.sym): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE.
+* Port order (design/ldo_core.sym): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE VREF.
 * ERRAMP_OUT/PASS_GATE are ldo_core's loop-break ports; tie them together for
 * normal closed-loop operation, exactly as sim/op-point-sanity does.
-X1  VIN vo1  EN 0 loop1  loop1  ldo_core
-X2  VIN vo2  EN 0 loop2  loop2  ldo_core
-X3  VIN vo3  EN 0 loop3  loop3  ldo_core
-X4  VIN vo4  EN 0 loop4  loop4  ldo_core
-X5  VIN vo5  EN 0 loop5  loop5  ldo_core
-X6  VIN vo6  EN 0 loop6  loop6  ldo_core
-X7  VIN vo7  EN 0 loop7  loop7  ldo_core
-X8  VIN vo8  EN 0 loop8  loop8  ldo_core
-X9  VIN vo9  EN 0 loop9  loop9  ldo_core
-X10 VIN vo10 EN 0 loop10 loop10 ldo_core
-X11 VIN vo11 EN 0 loop11 loop11 ldo_core
-X12 VIN vo12 EN 0 loop12 loop12 ldo_core
-X13 VIN vo13 EN 0 loop13 loop13 ldo_core
-X14 VIN vo14 EN 0 loop14 loop14 ldo_core
-X15 VIN vo15 EN 0 loop15 loop15 ldo_core
-X16 VIN vo16 EN 0 loop16 loop16 ldo_core
-X17 VIN vo17 EN 0 loop17 loop17 ldo_core
-X18 VIN vo18 EN 0 loop18 loop18 ldo_core
-X19 VIN vo19 EN 0 loop19 loop19 ldo_core
-X20 VIN vo20 EN 0 loop20 loop20 ldo_core
-X21 VIN vo21 EN 0 loop21 loop21 ldo_core
-X22 VIN vo22 EN 0 loop22 loop22 ldo_core
-X23 VIN vo23 EN 0 loop23 loop23 ldo_core
-X24 VIN vo24 EN 0 loop24 loop24 ldo_core
-X25 VIN vo25 EN 0 loop25 loop25 ldo_core
+* --- Reference (issue #174 / DR-0021) ------------------------------------
+* VREF is a TOP-LEVEL PORT of ldo_core as of #174; it used to be an internal
+* net driven by Vref1, an ideal 1.2 V vsource instantiated INSIDE the
+* subcircuit. That source is deleted from design/ldo_core.sch and reappears
+* here, unchanged, at deck level. This is an electrical no-op by
+* construction: an ideal vsource is an ideal vsource wherever it is
+* declared, its return was already the cell's VSS port (node 0 here), and it
+* is an AC short to ground in both placements -- so DC operating points, .ac
+* transfers and transients are all identical to the pre-#174 deck. The point
+* of the move is that the idealization is now visible at the interface and a
+* real reference (a bandgap block, or the Chipalooza Challenge #5 harness's
+* bandgap-referenced bias-voltage slot) can drive it without editing the
+* schematic. One source serves every DUT instance in this deck: an ideal
+* source has zero output impedance, so instances cannot interact through it.
+Vref VREF 0 DC 1.2
+
+X1  VIN vo1  EN 0 loop1  loop1 VREF ldo_core
+X2  VIN vo2  EN 0 loop2  loop2 VREF ldo_core
+X3  VIN vo3  EN 0 loop3  loop3 VREF ldo_core
+X4  VIN vo4  EN 0 loop4  loop4 VREF ldo_core
+X5  VIN vo5  EN 0 loop5  loop5 VREF ldo_core
+X6  VIN vo6  EN 0 loop6  loop6 VREF ldo_core
+X7  VIN vo7  EN 0 loop7  loop7 VREF ldo_core
+X8  VIN vo8  EN 0 loop8  loop8 VREF ldo_core
+X9  VIN vo9  EN 0 loop9  loop9 VREF ldo_core
+X10 VIN vo10 EN 0 loop10 loop10 VREF ldo_core
+X11 VIN vo11 EN 0 loop11 loop11 VREF ldo_core
+X12 VIN vo12 EN 0 loop12 loop12 VREF ldo_core
+X13 VIN vo13 EN 0 loop13 loop13 VREF ldo_core
+X14 VIN vo14 EN 0 loop14 loop14 VREF ldo_core
+X15 VIN vo15 EN 0 loop15 loop15 VREF ldo_core
+X16 VIN vo16 EN 0 loop16 loop16 VREF ldo_core
+X17 VIN vo17 EN 0 loop17 loop17 VREF ldo_core
+X18 VIN vo18 EN 0 loop18 loop18 VREF ldo_core
+X19 VIN vo19 EN 0 loop19 loop19 VREF ldo_core
+X20 VIN vo20 EN 0 loop20 loop20 VREF ldo_core
+X21 VIN vo21 EN 0 loop21 loop21 VREF ldo_core
+X22 VIN vo22 EN 0 loop22 loop22 VREF ldo_core
+X23 VIN vo23 EN 0 loop23 loop23 VREF ldo_core
+X24 VIN vo24 EN 0 loop24 loop24 VREF ldo_core
+X25 VIN vo25 EN 0 loop25 loop25 VREF ldo_core
 
 * ---- load and output network, one per copy ---------------------------------
 Rload1  vo1  0 1.8k

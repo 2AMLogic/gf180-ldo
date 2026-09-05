@@ -42,12 +42,20 @@
 *
 * THE REFERENCE CURRENT IS METERED SEPARATELY AND ADDED IN
 *
-* Vref1 is an ideal 1.2 V source inside ldo_core standing in for a bandgap
-* that does not exist yet, so current drawn from it does NOT appear in
-* i(vin) -- a real bandgap would source it from VIN. It is therefore added
-* into the reported quiescent numbers rather than silently dropped. The
-* bandgap's OWN quiescent current is not in any number here and never can
-* be until that block exists.
+* VREF is an ideal 1.2 V source standing in for a bandgap that does not
+* exist yet, so current drawn from it does NOT appear in i(vin) -- a real
+* bandgap would source it from VIN. It is therefore added into the reported
+* quiescent numbers rather than silently dropped. The bandgap's OWN
+* quiescent current is not in any number here and never can be until that
+* block exists.
+*
+* Issue #174 / DR-0021 moved that source from inside ldo_core (Vref1) to
+* this deck (Vref), so the meter changed from the internal-node vector
+* i(v.xdut.vref1) to the deck-level i(vref). Same source, same node, same
+* sign convention, same number -- but it is now metered AT THE PORT, which
+* is what makes m_iref_*_ua the load this block presents to whatever drives
+* VREF (e.g. the Chipalooza Challenge #5 bandgap-referenced bias slot)
+* rather than an internal-node curiosity.
 *
 * Template: run.sh substitutes the @TOKENS@ (PDK paths, corner sections,
 * temperature, supply) and runs the result with `ngspice -b`.
@@ -70,8 +78,24 @@ Vin VIN 0 DC @VIN_V@
 Ven EN 0 DC 0 PWL(0 0 100u 0 101u @VIN_V@ 8m @VIN_V@ 8.001m 0)
 
 * --- DUT -----------------------------------------------------------------
-* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE
-Xdut VIN VOUT EN 0 EOUT PG ldo_core
+* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE VREF
+* --- Reference (issue #174 / DR-0021) ------------------------------------
+* VREF is a TOP-LEVEL PORT of ldo_core as of #174; it used to be an internal
+* net driven by Vref1, an ideal 1.2 V vsource instantiated INSIDE the
+* subcircuit. That source is deleted from design/ldo_core.sch and reappears
+* here, unchanged, at deck level. This is an electrical no-op by
+* construction: an ideal vsource is an ideal vsource wherever it is
+* declared, its return was already the cell's VSS port (node 0 here), and it
+* is an AC short to ground in both placements -- so DC operating points, .ac
+* transfers and transients are all identical to the pre-#174 deck. The point
+* of the move is that the idealization is now visible at the interface and a
+* real reference (a bandgap block, or the Chipalooza Challenge #5 harness's
+* bandgap-referenced bias-voltage slot) can drive it without editing the
+* schematic. One source serves every DUT instance in this deck: an ideal
+* source has zero output impedance, so instances cannot interact through it.
+Vref VREF 0 DC 1.2
+
+Xdut VIN VOUT EN 0 EOUT PG VREF ldo_core
 Vloop PG EOUT DC 0
 
 * --- output network ------------------------------------------------------
@@ -107,7 +131,7 @@ op
 let m_vout_en = v(vout)
 let m_iload_en_ma = i(vlmeas)*1e3
 let m_isup_en_ua = -i(vin)*1e6
-let m_iref_en_ua = -i(v.xdut.vref1)*1e6
+let m_iref_en_ua = -i(vref)*1e6
 * Quiescent current = everything the supply and reference deliver that does
 * not reach the load.
 let m_iq_en_ua = m_isup_en_ua + m_iref_en_ua - m_iload_en_ma*1e3
@@ -125,7 +149,7 @@ alter Ven dc = 0
 op
 let m_vout_off = v(vout)
 let m_isup_off_ua = -i(vin)*1e6
-let m_iref_off_ua = -i(v.xdut.vref1)*1e6
+let m_iref_off_ua = -i(vref)*1e6
 let m_iloop_off_ua = i(vloop)*1e6
 let m_pg_off = v(pg)
 let m_clg_off = v(xdut.xilimit.clg)

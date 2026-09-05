@@ -84,29 +84,32 @@ block has never been simulated, laid out, or characterized above 3.63 V.
 | `VIN` (dedicated sweep access) | in, dedicated | dedicated pad (budget: up to 4) | 1 of 4 | This block's own PVT matrix sweeps `VIN` down to 1.75 V during dropout characterization (`sim/dropout-vs-load/`) and across 2.97–3.63 V for line regulation — well outside a fixed "3.3 V digital rail" tap. A dedicated pad the harness/bench can independently source is required; the shared rail cannot double as this pin without defeating the measurement |
 | `VOUT` | out, dedicated | dedicated pad (budget: up to 4) | 1 of 4 | The regulated output — the block's entire product, and the node the ratified current-limit test forces to a dead short (§4). Must sink/source up to the current-limit ceiling (~65–94 mA measured, §4) continuously; a shared multiplexed analog line is not rated for that and would also add series resistance that corrupts the sub-mV/sub-mA precision the Load reg and Line reg rows measure at |
 | `EN` | in | digital control input (budget: up to 24) | 1 of 24 | Active-high, CMOS-level (0 V / `VIN`). Gates the pass device, the amplifier bias, the current-limit block's bias, and soft-start's bias/ramp reset — one enable path, no second path anywhere in the hierarchy (`design/README.md`, "Enable path and the disabled state") |
-| `VREF` (bandgap-referenced bias voltage) | in, dedicated | bandgap-referenced bias voltage (budget: 1) | **proposed, 0 of 1 today** | **Material gap, disclosed here rather than glossed over**: this block's internal 1.2 V reference (`Vref1` in `design/netlist/ldo_core.spice`) is an ideal source instantiated *inside* the `ldo_core` subcircuit — it is not a top-level port today (`.subckt ldo_core VIN VOUT EN VSS ERRAMP_OUT PASS_GATE` has no `VREF` pin). Promoting it to a real pin fed by the harness's bandgap-referenced bias voltage — the same substitution `gf180-sar-adc`'s proposal makes for its own `V_REF` — is the natural path, but requires a schematic-level interface decision (renegotiating `error_amp`'s `INN` node and the shared `VREF` net inside `ldo_ilimit`/`ldo_softstart`) that has not been made. Tracked in a follow-up issue filed alongside this proposal (see §7) |
+| `VREF` (bandgap-referenced bias voltage) | in, dedicated | bandgap-referenced bias voltage (budget: 1) | **1 of 1** | 1.2 V nominal reference input. This **is a real top-level port** of `ldo_core` as of issue #174 / [DR-0021](../../spec/decision-records/DR-0021-vref-is-a-top-level-port.md): `.subckt ldo_core VIN VOUT EN VSS ERRAMP_OUT PASS_GATE VREF`. `ldo_core` **consumes** a reference and does not generate one — so this pin is not optional, and the harness's bandgap-referenced bias voltage is exactly what it is asking for (the same substitution `gf180-sar-adc`'s Challenge #3 proposal makes for its own `V_REF`). Feeds three consumers on one net: `error_amp`'s `INN`, `ldo_ilimit`'s bias generator, `ldo_softstart`'s ramp ceiling. **The driver must source this block's reference bias current** (measured at the port, per corner — §4 `I_ref` row) and its own tolerance/tempco/noise/PSRR pass to `VOUT` at 1/β = 1.5× — see §6 |
 | `ERRAMP_OUT`, `PASS_GATE` (loop-break test ports) | test-only | not proposed to consume Challenge pad budget | 0 of 4 | Two internal loop-break points (`design/README.md`, "Loop-break point: two ports, not one") that every existing testbench ties together at instantiation for closed-loop operation, and only separates for bench stability-injection testing. In the production/submission wrapper these are proposed tied together on-chip (as every testbench already does), consuming none of the Challenge's dedicated-pad or shared-analog-line budget |
 
-**Totals against the Challenge #5 budget**: 0 of 1 bandgap-referenced bias
-voltage (proposed, not yet a real pin — see above), 0 of ≤2
+**Totals against the Challenge #5 budget**: **1 of 1** bandgap-referenced
+bias voltage (`VREF`, a real pin since #174/DR-0021), 0 of ≤2
 bandgap-referenced current sources, 1 of ≤24 digital control inputs, 0 of ≤12
-digital test outputs, **2 of ≤4 dedicated pads** (`VIN`, `VOUT`; a third
-would be needed once `VREF` is promoted to a real pin), **0 of ≤4** shared
-(multiplexed) analog lines. Every category fits comfortably inside budget
-even after `VREF`'s promotion (3 of ≤4 dedicated pads), with the entire
-current-source and digital-test-output allocation unused by this block.
+digital test outputs, **3 of ≤4 dedicated pads** (`VIN`, `VOUT`, `VREF`),
+**0 of ≤4** shared (multiplexed) analog lines. Every category fits inside
+budget, with the entire current-source and digital-test-output allocation
+unused by this block.
 
 ### 2.3 What's dropped, multiplexed, or substituted relative to this repo's own port list
 
-- **Nothing is dropped.** `VIN`, `VOUT`, `EN`, `VSS` are exactly the
-  production-facing subset of `ldo_core`'s six netlist ports
+- **Nothing is dropped.** `VIN`, `VOUT`, `EN`, `VSS`, `VREF` are exactly the
+  production-facing subset of `ldo_core`'s seven netlist ports
   (`design/README.md`'s pinout table); `ERRAMP_OUT`/`PASS_GATE` are
   test-only and were never proposed as customer-facing pins even in this
   repository's own testbenches.
-- **`VREF` moves from "does not exist as a pin" to "proposed harness
-  bandgap-referenced bias voltage"** — the one substitution, and, unlike
-  `gf180-sar-adc`'s equivalent substitution, one this repository has not yet
-  implemented (§2.2, §7).
+- **`VREF` is substituted by the harness's bandgap-referenced bias
+  voltage** — the one substitution, and now the *same* substitution
+  `gf180-sar-adc`'s Challenge #3 proposal makes for its own `V_REF`, rather
+  than an aspiration: issue #174 / DR-0021 promoted `VREF` to a real
+  top-level port, deleting the ideal in-cell source that stood in for it.
+  Verified electrically inert — DR-0021's "Evidence" section tabulates a
+  back-to-back re-run of every affected `sim/` bench against the pre-change
+  tree on the same host, with no corner's verdict moved (§4).
 - **No pins are shared/multiplexed.** Both `VIN` (needs independent sweep
   access down to the dropout knee) and `VOUT` (needs to carry the full rated
   and current-limited load current) have requirements a multiplexed analog
@@ -136,12 +139,21 @@ rationale: `design/README.md`.
    proven end to end (`klt` DRC, PDK DRC, LVS, and two negative controls all
    pass on the trivial test cell) but has never been run against `ldo_core`
    itself. Tracked in a follow-up issue filed alongside this proposal (§7).
-2. **No bandgap/reference block exists.** The 1.2 V reference this design
-   regulates against is an ideal DC source inside the schematic, not a
-   synthesizable or even a pinned-out sub-block (§2.2). This is the same
-   category of gap `gf180-sar-adc`'s proposal disclosed for its own
-   externally-supplied `V_REF`, except this design does not yet even have
-   the external pin.
+2. **No bandgap/reference block exists, and this design does not contain
+   one — by decision, not by omission.** Issue #174 /
+   [DR-0021](../../spec/decision-records/DR-0021-vref-is-a-top-level-port.md)
+   settled this: `ldo_core` **consumes** a 1.2 V reference through its
+   `VREF` port and does not generate one, and a bandgap is not built in this
+   repository (that block is the subject of the sibling repo
+   `2AMLogic/gf180-bandgap`; DR-0021 records why forking a second one here
+   was rejected). This is now exactly the same shape of dependency
+   `gf180-sar-adc`'s proposal disclosed for its own externally-supplied
+   `V_REF` — and it is what the Challenge's bandgap-referenced bias-voltage
+   slot exists to satisfy (§2.2). **The honest cost**: every accuracy, PSRR
+   and noise number in §4 is measured against an *ideal* reference, so the
+   real reference's own tolerance, tempco, noise and supply rejection are
+   excluded from all of them and enter `VOUT` at 1/β = 1.5× once a real one
+   is attached (§6).
 
 Everything else in the hierarchy — the pass device, feedback divider,
 amplifier, current-limit block, and soft-start block — is drawn at
@@ -251,8 +263,13 @@ above.
    *proposal document*. Tracked in a follow-up issue filed alongside this
    proposal (§7), currently blocked on the floorplan/matching-plan issue
    which is itself blocked on item 1 (stability) closing.
-6. **`VREF` is not yet a top-level port** — a genuinely new finding
-   surfaced while writing this proposal (§2.2, §7), not previously tracked.
+6. **The reference's own error is not budgeted anywhere** — `VREF` is a
+   real top-level port as of #174/DR-0021 (§2.2), so the Challenge's
+   bandgap-referenced bias slot is usable; what is *not* closed is that no
+   `sim/` record covers a non-ideal reference's contribution to the `Output`,
+   `PSRR` or noise rows. DR-0021 states the 1/β = 1.5× pass-through
+   explicitly and files the reference-referred campaign that would measure
+   it — a disclosed exclusion, not a silent one.
 
 None of the above rows had any evidence at a 5.0 V rail to report as
 "unmet" in the sense of a missed 5.0 V measurement, because — per §0/§2.1 —
@@ -271,14 +288,17 @@ here relaxes a ratified spec row to make it pass.
 
 ## 5. Test-plan outline (packaged part, QFN on a daughterboard + test board)
 
-All measurements below use only the pads in §2.2 — `VIN`, `VOUT`, `EN`, and,
-once implemented, the harness bandgap-referenced `VREF` input. None require
-the Challenge's shared analog mux lines, which this block does not use.
+All measurements below use only the pads in §2.2 — `VIN`, `VOUT`, `EN`, and
+the harness bandgap-referenced `VREF` input. None require the Challenge's
+shared analog mux lines, which this block does not use.
 
 1. **Bring-up / DC sanity.** Apply `VIN` = 3.3 V, `VREF` = 1.2 V (harness
-   bandgap or bench-supplied until §7's port-promotion item lands), `EN` =
-   `VIN`. Confirm `VOUT` regulates to 1.8 V ± 2 % at no load and quiescent
-   current is within the Iq row's budget.
+   bandgap or bench-supplied), `EN` = `VIN`. Confirm `VOUT` regulates to
+   1.8 V ± 2 % at no load and quiescent current is within the Iq row's
+   budget. **`VREF` must be driven** — the part does not regulate without it
+   (§2.2), which makes this step the direct bench check on that dependency.
+   Meter the current the block draws from the `VREF` source and compare
+   against the simulated `I_ref` row (§4).
 2. **Line regulation.** Sweep `VIN` 2.97–3.63 V at 1 mA and 50 mA fixed
    load; compute mV/V and compare against the < 5 mV/V bound.
 3. **Load regulation.** Step the load 1 mA → 50 mA at fixed `VIN`; compare
@@ -316,10 +336,17 @@ the Challenge's shared analog mux lines, which this block does not use.
   from this repository's own spec is deferred
   ([DR-0003](../../spec/decision-records/DR-0003-output-programmability.md)),
   not part of this proposal.
-- **Reference note.** Full-scale accuracy of `VOUT` is set by the internal
-  1.2 V reference and the 300 k/600 kΩ feedback divider ratio
-  (`design/README.md`); per §2.2/§7 that reference is not yet a real pin the
-  Challenge's bandgap-referenced bias voltage slot can drive.
+- **Reference note.** Full-scale accuracy of `VOUT` is set by the
+  **externally supplied** 1.2 V reference on the `VREF` pin and the
+  300 k/600 kΩ feedback divider ratio (`design/README.md`), giving
+  `VOUT` = 1.5 × `VREF`. That 1.5× is also the pass-through: the reference's
+  tolerance, tempco, noise and supply rejection all land on `VOUT` multiplied
+  by 1/β = 1.5, and **none of them is inside any §4 row**, every one of which
+  was measured against an ideal source. A driver of `VREF` must also source
+  this block's reference bias current at every corner (§4 `I_ref` row). Full
+  contract:
+  [DR-0021](../../spec/decision-records/DR-0021-vref-is-a-top-level-port.md)
+  "Decision" item 3.
 
 ---
 
@@ -340,12 +367,17 @@ the Challenge's shared analog mux lines, which this block does not use.
    with open ratification PRs (#137, #127 respectively).
 4. **Thermal short-circuit dissipation (§4 item 4)** — no proposed fix yet;
    a genuinely open gap.
-5. **`VREF` is an internal ideal source, not a top-level port** — a
-   genuinely new finding surfaced while writing this proposal, not
-   previously tracked. Filed as
-   [#174](https://github.com/2AMLogic/gf180-ldo/issues/174) rather than fixed
-   here, since it needs a real interface decision (which existing cells'
-   ports it touches), not a documentation change.
+5. **`VREF` port promotion — CLOSED.**
+   [#174](https://github.com/2AMLogic/gf180-ldo/issues/174) is resolved:
+   `VREF` is a real top-level `ldo_core` port, the ideal in-cell source is
+   deleted, and all 15 `sim/` decks now drive it.
+   [DR-0021](../../spec/decision-records/DR-0021-vref-is-a-top-level-port.md)
+   carries the decision and its equivalence evidence (`Status: proposed`,
+   pending operator ratification like every other decision record here).
+   **What remains open** is not the pin but the reference's own
+   contribution: no `sim/` record covers a non-ideal reference, and its error
+   enters `VOUT` at 1.5× (§6). Disclosed, quantified as a multiplier, and
+   filed as follow-up work in DR-0021.
 
 None of the above blocks *submitting* this proposal by Challenge #5's
 window — the proposal's own acceptance criteria are to state the design
