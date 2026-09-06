@@ -31,7 +31,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `f32ebdd07be2b8591
 | Thermal | FAIL | fresh | `sim/current-limit/records/20260905-230521-3093ea1.md` |
 | Output noise | N/A | N/A | see note below |
 | Area | N/A | N/A | see note below |
-| Stability | FAIL | STALE | `sim/loop-stability/records/20260807-103351-64249c6.md` |
+| Stability | FAIL | fresh | `sim/loop-stability/records/20260906-071437-fff0bf0.md` |
 
 ## Detail
 
@@ -176,16 +176,16 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `f32ebdd07be2b8591
 
 **Ratified target**: stable 0–50 mA with C_out 0.33–4.7 µF effective (1 µF nominal X5R/X7R), ESR 0–500 mΩ; PM ≥ 45°, GM ≥ 10 dB worst corner
 
-**Verdict**: FAIL  **Fresh**: STALE
+**Verdict**: FAIL  **Fresh**: fresh
 
-- `loop-stability`: `sim/loop-stability/records/20260807-103351-64249c6.md` — **FAIL**, stale
+- `loop-stability`: `sim/loop-stability/records/20260906-071437-fff0bf0.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 
 ## Tally
 
 16 ratified rows: 12 testable (8 PASS, 4 FAIL, 0 MIXED, 0 UNKNOWN), 4 N/A.
 
-Freshness among the 12 testable rows: 11 fresh, 1 stale, 0 unknown.
+Freshness among the 12 testable rows: 12 fresh, 0 stale, 0 unknown.
 
 A row is only a true current PASS if its Verdict column reads PASS **and** its Fresh column reads fresh — a stale PASS reflects a design state this repo has since moved past, not a claim about `design/netlist/ldo_core.spice` as committed today.
 
