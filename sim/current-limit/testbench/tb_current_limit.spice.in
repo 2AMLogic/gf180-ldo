@@ -59,8 +59,24 @@ Vin VIN 0 DC @VIN_V@
 Ven EN 0 DC @VIN_V@
 
 * --- DUT -----------------------------------------------------------------
-* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE
-Xdut VIN VOUT EN 0 LOOP LOOP ldo_core
+* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE VREF
+* --- Reference (issue #174 / DR-0021) ------------------------------------
+* VREF is a TOP-LEVEL PORT of ldo_core as of #174; it used to be an internal
+* net driven by Vref1, an ideal 1.2 V vsource instantiated INSIDE the
+* subcircuit. That source is deleted from design/ldo_core.sch and reappears
+* here, unchanged, at deck level. This is an electrical no-op by
+* construction: an ideal vsource is an ideal vsource wherever it is
+* declared, its return was already the cell's VSS port (node 0 here), and it
+* is an AC short to ground in both placements -- so DC operating points, .ac
+* transfers and transients are all identical to the pre-#174 deck. The point
+* of the move is that the idealization is now visible at the interface and a
+* real reference (a bandgap block, or the Chipalooza Challenge #5 harness's
+* bandgap-referenced bias-voltage slot) can drive it without editing the
+* schematic. One source serves every DUT instance in this deck: an ideal
+* source has zero output impedance, so instances cannot interact through it.
+Vref VREF 0 DC 1.2
+
+Xdut VIN VOUT EN 0 LOOP LOOP VREF ldo_core
 
 * --- load ----------------------------------------------------------------
 * Rload values: 1 Gohm = open, 72 ohm ~ 25 mA, 36 ohm ~ 50 mA at Vout = 1.8 V.

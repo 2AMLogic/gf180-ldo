@@ -56,7 +56,14 @@ TOP_CELL = "ldo_core"
 # The interface contract issue #8 establishes for #9/#10/#11/#12/#13 to build
 # on. Changing this list means renegotiating that contract, not just editing
 # this file -- see design/README.md.
-RATIFIED_TOP_PORTS = ["VIN", "VOUT", "EN", "VSS", "ERRAMP_OUT", "PASS_GATE"]
+#
+# VREF was APPENDED as a seventh port by issue #174 / DR-0021 (it was an
+# internal net driven by an ideal in-cell 1.2 V source before that). Appending
+# rather than inserting is deliberate: the first six positions are unchanged,
+# so a stale 6-node instantiation fails loudly on node count in ngspice
+# instead of silently shifting every net by one. Same convention #11 used for
+# error_amp's EN and #55 for its BG.
+RATIFIED_TOP_PORTS = ["VIN", "VOUT", "EN", "VSS", "ERRAMP_OUT", "PASS_GATE", "VREF"]
 
 SUBCKT_RE = re.compile(r"^\.subckt\s+(\S+)\s*(.*)$", re.IGNORECASE)
 SYM_PIN_RE = re.compile(r"^B\s+\d+\s+\S+\s+\S+\s+\S+\s+\S+\s*\{(.*)\}\s*$")

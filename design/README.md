@@ -12,11 +12,14 @@ exported from here.
 > (`design/error_amp.md`); #11 added `ldo_ilimit` (constant-current limit)
 > and turned the enable stub into a real low-current disabled state by
 > gating every bias branch in the cell; #38 added `ldo_softstart`, the
-> controlled output ramp the ratified Startup row asks for. What is still
-> a stand-in: `Vref1`
-> (an ideal source -- no bandgap block exists) and `Mpass`'s width (2 mm,
-> #8's DC-sanity simplification of the ratified ~4 mm sizing). See "Scope
-> split" below.
+> controlled output ramp the ratified Startup row asks for; #174 promoted
+> `VREF` from an internal net to a seventh top-level port
+> (`spec/decision-records/DR-0021`). What is still
+> a stand-in: the **reference itself** -- no bandgap block exists, so every
+> testbench drives `VREF` with an ideal 1.2 V source, and `ldo_core`
+> consumes a reference rather than generating one -- and `Mpass`'s width
+> (2 mm, #8's DC-sanity simplification of the ratified ~4 mm sizing). See
+> "Scope split" below.
 
 ## Cells
 
@@ -41,12 +44,20 @@ ldo_core                          top level -- issue #8
 | `VSS`        | inout | Ground |
 | `ERRAMP_OUT` | out   | Loop-break point, output side (error-amp output) |
 | `PASS_GATE`  | in    | Loop-break point, input side (pass-device gate) |
+| `VREF`       | in    | Reference voltage, 1.2 V nominal. **Appended by issue #174** (`spec/decision-records/DR-0021`); it was an internal net driven by an in-cell ideal source before that. Shared by `error_amp`'s `INN`, `ldo_ilimit`'s bias generator and `ldo_softstart`'s ramp ceiling -- one net, one port. See "Reference voltage" below for the contract a driver of this pin must meet. |
 
 `python3 design/netlist.py --check` asserts this exact port list (and that
 the `.sym` pin order matches the `.sch` port order for every cell) so a
 schematic edit that drifts from this interface fails loudly instead of
 quietly shipping. Changing it means renegotiating with whichever of
 #9/#10/#11/#12/#13 depend on the field being changed.
+
+**Ports are appended, never inserted.** `VREF` is seventh, not tucked in
+next to `VSS` where a reader might expect a bias pin, precisely so the first
+six positions never move: a stale six-node instantiation then fails on node
+count in ngspice instead of silently re-binding every net by one. Same
+convention #11 used to append `EN` to `error_amp` and #55 used to append
+`BG`.
 
 ### Loop-break point: two ports, not one
 
@@ -56,7 +67,8 @@ node, but that tie is made *outside* the subcircuit, at the testbench level,
 not inside the schematic:
 
 ```spice
-Xdut VIN VOUT EN 0 LOOP LOOP ldo_core     * ties ERRAMP_OUT and PASS_GATE
+Vref VREF 0 DC 1.2                         * the reference this cell consumes
+Xdut VIN VOUT EN 0 LOOP LOOP VREF ldo_core * ties ERRAMP_OUT and PASS_GATE
                                            * to the same net ("LOOP") at
                                            * instantiation -- a plain wire
 ```
@@ -78,7 +90,9 @@ per-finger width, same source and same gate), and its current is returned to
 `VOUT` through the sense resistor. So the sensed current is *delivered to the
 load* rather than burned, the pass path is untouched, and `ldo_core`'s
 topology is unchanged -- `Xilimit` only attaches to existing nets (`VIN`,
-`VOUT`, `PASS_GATE`, `EN`, `VREF`, `VSS`) and adds no top-level port.
+`VOUT`, `PASS_GATE`, `EN`, `VREF`, `VSS`) and adds no top-level port. (`VREF`
+itself became a top-level port later, in #174 -- but by promoting the net
+`Xilimit` was already on, not by adding one for `Xilimit`.)
 
 **If `Mpass` is re-sized, `Msense` must be re-scaled with it**, or the limit
 moves by the same factor. In layout `Msense` should be one unit cell of the
@@ -195,10 +209,43 @@ different, non-overlapping piece:
   measured quantity by < 0.2 % (`sim/amp-openloop/records/`,
   `sim/psrr-dc/records/`).
 
-## Reference voltage assumption
+## Reference voltage
 
-There is no bandgap block designed yet for this repo. `Vref1`, an ideal
-**1.2 V** DC source, stands in for it inside `ldo_core`. The feedback divider
+**`ldo_core` consumes a reference; it does not generate one** (issue #174,
+[`spec/decision-records/DR-0021`](../spec/decision-records/DR-0021-vref-is-a-top-level-port.md)).
+`VREF` is a top-level port. There is still no bandgap block designed for this
+repo, and there is not going to be one *here* -- that block is the subject of
+the sibling repository `2AMLogic/gf180-bandgap`, and DR-0021 records why
+building a second one in this repo was rejected.
+
+Until #174, `Vref1` -- an ideal **1.2 V** DC source -- stood in for the
+reference *inside* the subcircuit. That source is deleted; the identical
+ideal source now lives in each testbench deck and drives the `VREF` port.
+The flattened circuit is the same one (an ideal vsource is an ideal vsource
+wherever it is declared, and its return was already the `VSS` port), which is
+why no ratified row moved -- DR-0021's "Evidence" section tabulates the
+back-to-back re-run of every affected bench against `origin/main` on the same
+host. What changed is that the idealization is **visible at the interface**
+instead of buried a level down, and a real reference (a bandgap block, or the
+Chipalooza Challenge #5 harness's bandgap-referenced bias-voltage slot) can
+drive this cell without editing the schematic.
+
+**What a driver of `VREF` must supply** (DR-0021 "Decision" item 3): 1.2 V
+nominal, at an impedance low enough that this cell's own reference bias
+current -- `ldo_ilimit`'s and `ldo_softstart`'s `VREF`/`R` branches; the
+amplifier's `INN` draws only gate leakage -- does not move the node. That
+current is measured at the port, per corner, by `sim/enable-shutdown/`
+(`m_iref_en_ua` / `m_iref_off_ua`).
+
+**What no record in `sim/` covers**: the reference's *own* error. Every
+accuracy, PSRR and noise number in this repo is measured against an ideal
+1.2 V source, so the reference's tolerance, tempco, noise and supply
+rejection are excluded from all of them -- and they enter `VOUT` at
+`1/beta` = **1.5x** when a real one is attached. That was already true before
+#174; the port makes it stateable rather than hidden. DR-0021's "Follow-up
+filed" section tracks the reference-referred campaign that would close it.
+
+The feedback divider
 (`Rtop`=300k, `Rbot`=600k, plain behavioral `R`, from `VOUT` to `VSS` via the
 `FB` midpoint) gives `FB = VOUT * Rbot/(Rtop+Rbot) = 2*VOUT/3`, so `VOUT`
 settles at `1.5 * VREF` = 1.8 V, and the 900 kOhm total holds the divider's
@@ -412,8 +459,13 @@ is usable as a pre-commit or CI gate once a runner exists.
 
 ```spice
 .include design/netlist/ldo_core.spice
-Xdut VIN VOUT EN VSS ERRAMP_OUT PASS_GATE ldo_core
+Vref VREF 0 DC 1.2
+Xdut VIN VOUT EN VSS ERRAMP_OUT PASS_GATE VREF ldo_core
 ```
+
+`VREF` has no in-cell driver, so **a deck that does not drive it will not
+regulate** -- that is the interface, not a bug (DR-0021). Every deck under
+`sim/` declares its own ideal 1.2 V source for exactly this reason.
 
 > **Include exactly one of these files per deck.** `ldo_core.spice` already
 > contains the sub-circuit definition; including it *and* `error_amp.spice`

@@ -114,7 +114,8 @@ RESURGENCE_MAX_DB = 0.0
 
 # Regulation target, and how far a point's DC output may sit from it before the
 # run is treated as void. VOUT_NOM_V is set by the design's own divider and
-# reference (Vref1 = 1.2 V, Rtop = 300k, Rbot = 600k => 1.2 * 900/600 = 1.8 V).
+# reference (VREF = 1.2 V driven by the deck's own Vref since #174/DR-0021,
+# Rtop = 300k, Rbot = 600k => 1.2 * 900/600 = 1.8 V).
 # The window is deliberately wide: it is a branch check (regulating vs the
 # current-limit latch state, which sits tens of volts away), not an accuracy
 # check -- accuracy is sim/load-regulation/ and sim/line-regulation/'s claim.
@@ -1166,8 +1167,11 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
   the pass device and the 300k/600k feedback divider from
   `design/ldo_core.sch`. No behavioural amplifier is used. The only
   idealizations in the loop are the ones the other records already name:
-  `Vref1`, an ideal 1.2 V source standing in for a bandgap block that does not
-  exist yet, and `Fbias` inside `ldo_ilimit`. The load is an ideal DC current
+  the ideal 1.2 V source this deck drives `ldo_core`'s `VREF` port with,
+  standing in for a bandgap block that does not exist yet (issue #174 /
+  DR-0021 promoted `VREF` from an internal net to a top-level port; the
+  source itself is unchanged, it just lives in the deck now), and `Fbias`
+  inside `ldo_ilimit`. The load is an ideal DC current
   source (see "Operating conditions"), which is the conservative choice for a
   stability measurement.
 - **Corner matrix run**:

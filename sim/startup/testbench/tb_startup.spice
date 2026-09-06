@@ -60,18 +60,34 @@
 Vsup VIN 0 DC {vdd_val}
 Ven EN 0 PULSE(0 {vdd_val} 1u 1n 1n 10m 20m)
 
-Xdut_full VIN VOUT_FULL EN 0 LOOP_FULL LOOP_FULL ldo_core
+* --- Reference (issue #174 / DR-0021) ------------------------------------
+* VREF is a TOP-LEVEL PORT of ldo_core as of #174; it used to be an internal
+* net driven by Vref1, an ideal 1.2 V vsource instantiated INSIDE the
+* subcircuit. That source is deleted from design/ldo_core.sch and reappears
+* here, unchanged, at deck level. This is an electrical no-op by
+* construction: an ideal vsource is an ideal vsource wherever it is
+* declared, its return was already the cell's VSS port (node 0 here), and it
+* is an AC short to ground in both placements -- so DC operating points, .ac
+* transfers and transients are all identical to the pre-#174 deck. The point
+* of the move is that the idealization is now visible at the interface and a
+* real reference (a bandgap block, or the Chipalooza Challenge #5 harness's
+* bandgap-referenced bias-voltage slot) can drive it without editing the
+* schematic. One source serves every DUT instance in this deck: an ideal
+* source has zero output impedance, so instances cannot interact through it.
+Vref VREF 0 DC 1.2
+
+Xdut_full VIN VOUT_FULL EN 0 LOOP_FULL LOOP_FULL VREF ldo_core
 Rload_full VOUT_FULL 0 36
 Resr_full VOUT_FULL n_esr_full 0.1
 Cout_full n_esr_full 0 4.7u
 
-Xdut_min VIN VOUT_MIN EN 0 LOOP_MIN LOOP_MIN ldo_core
+Xdut_min VIN VOUT_MIN EN 0 LOOP_MIN LOOP_MIN VREF ldo_core
 Rload_min VOUT_MIN 0 1.8Meg
 Resr_min VOUT_MIN n_esr_min 0.1
 Cout_min n_esr_min 0 4.7u
 
 Vamm_short VIN VIN_SHORT 0
-Xdut_short VIN_SHORT VOUT_SHORT EN 0 LOOP_SHORT LOOP_SHORT ldo_core
+Xdut_short VIN_SHORT VOUT_SHORT EN 0 LOOP_SHORT LOOP_SHORT VREF ldo_core
 Rload_short VOUT_SHORT 0 1
 Resr_short VOUT_SHORT n_esr_short 0.1
 Cout_short n_esr_short 0 4.7u

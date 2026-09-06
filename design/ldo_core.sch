@@ -27,6 +27,14 @@ updating both, and without re-running design/netlist.py --check):
   VSS         ground
   ERRAMP_OUT  error-amp output (loop-break point, output side)
   PASS_GATE   pass-device gate (loop-break point, input side)
+  VREF        reference voltage in, 1.2 V nominal (APPENDED by issue #174 --
+              see DR-0021). It is the seventh port precisely so the first six
+              keep their positions: an existing 6-node instantiation now
+              errors on node count in ngspice instead of silently mis-wiring,
+              the same append-not-insert convention #11 used for error_amp's
+              EN and #55 used for its BG. Consumed by three places inside
+              this cell -- Xerramp's INN, Xilimit's VREF and Xsoftstart's
+              VREF -- which is exactly why it is one port and not three.
 
 ERRAMP_OUT and PASS_GATE are deliberately NOT connected to each other
 inside this cell -- that is the loop-break point issue #10 needs for a
@@ -45,13 +53,30 @@ negative feedback around a PMOS common-source pass device requires (Vout
 falls as the gate voltage rises). The swap was a symbol-name change only:
 error_amp.sym reuses the placeholder's pin coordinates.
 
-Reference: VREF is an ideal 1.2 V source (Vref1), not a real bandgap --
-there is no bandgap block designed yet for this repo. 1.2 V (not the 0.6 V
-issue #8 first assumed) is the reference DR-0003 budgets against: it puts the
-amplifier's offset gain-up at 1/beta = Vout/Vref = 1.5, and it is the input
-common mode design/error_amp.sch's NMOS input pair needs to keep its tail
-source in saturation at the 2.10 V dropout test point. Changed with issue #9
--- see design/error_amp.md "Why 1.2 V, not 0.6 V".
+Reference (issue #174, spec/decision-records/DR-0021): VREF is a TOP-LEVEL
+PORT of this cell, not an internally generated node. Until #174 it was
+driven by Vref1, an ideal 1.2 V vsource instantiated right here inside the
+subcircuit; that source is DELETED and the same ideal 1.2 V source now lives
+in each testbench deck, one per DUT instance. The flattened circuit is
+identical -- an ideal vsource is an ideal vsource wherever it is declared,
+and its VSS-referred return was already the VSS port -- so no measured
+quantity moves; what changes is that the idealization is now VISIBLE at the
+interface instead of buried one level down, and a real reference (a bandgap
+block, or the Chipalooza Challenge #5 harness's bandgap-referenced bias
+voltage slot) can drive this cell without editing this schematic.
+
+There is still no bandgap block designed for this repo, and this cell does
+not contain one: it CONSUMES a reference, it does not generate one.
+DR-0021's Consequences section states the contract a driver of this port
+must meet (1.2 V nominal, must source this cell's reference bias current at
+every corner, and its own noise/tempco/PSRR flow straight through to VOUT at
+1/beta = 1.5x).
+
+1.2 V (not the 0.6 V issue #8 first assumed) is the reference DR-0003 budgets
+against: it puts the amplifier's offset gain-up at 1/beta = Vout/Vref = 1.5,
+and it is the input common mode design/error_amp.sch's NMOS input pair needs
+to keep its tail source in saturation at the 2.10 V dropout test point.
+Changed with issue #9 -- see design/error_amp.md "Why 1.2 V, not 0.6 V".
 
 Feedback divider: Rtop=300k, Rbot=600k (plain behavioral R, not the PDK's
 ppolyf_u_3k poly resistor -- guidance said either is acceptable for this
@@ -159,6 +184,7 @@ C {devices/ipin.sym} -700 -100 0 0 {name=p_en lab=EN}
 C {devices/iopin.sym} -700 300 0 0 {name=p_vss lab=VSS}
 C {devices/opin.sym} -100 -700 0 0 {name=p_erramp_out lab=ERRAMP_OUT}
 C {devices/ipin.sym} 100 -700 0 0 {name=p_pass_gate lab=PASS_GATE}
+C {devices/ipin.sym} -700 500 0 0 {name=p_vref lab=VREF}
 C {symbols/pfet_03v3.sym} 300 -100 0 0 {name=Mpass model=pfet_03v3 L=0.28u W=2000u nf=40 m=1}
 C {devices/lab_pin.sym} 280 -100 0 0 {name=l_mpass_g sig_type=std_logic lab=PASS_GATE}
 C {devices/lab_pin.sym} 320 -70 0 0 {name=l_mpass_d sig_type=std_logic lab=VOUT}
@@ -178,9 +204,6 @@ C {devices/lab_pin.sym} 750 -220 0 0 {name=l_cff_b sig_type=std_logic lab=FB}
 C {devices/res.sym} 550 -100 0 0 {name=Rbot value=600k footprint=1206 device=resistor m=1}
 C {devices/lab_pin.sym} 550 -130 0 0 {name=l_rbot_p sig_type=std_logic lab=FB}
 C {devices/lab_pin.sym} 550 -70 0 0 {name=l_rbot_m sig_type=std_logic lab=VSS}
-C {devices/vsource.sym} -300 -350 0 0 {name=Vref1 value=1.2}
-C {devices/lab_pin.sym} -300 -380 0 0 {name=l_vref_p sig_type=std_logic lab=VREF}
-C {devices/lab_pin.sym} -300 -320 0 0 {name=l_vref_m sig_type=std_logic lab=VSS}
 C {error_amp.sym} 0 -450 0 0 {name=Xerramp}
 C {devices/lab_pin.sym} -100 -480 0 0 {name=l_amp_inp sig_type=std_logic lab=FB}
 C {devices/lab_pin.sym} -100 -460 0 0 {name=l_amp_inn sig_type=std_logic lab=VREF}
