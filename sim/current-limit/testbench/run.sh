@@ -100,6 +100,9 @@ echo "ngspice    : $NGSPICE_VERSION"
 echo "record id  : $RECORD_ID"
 echo
 
+# Shared substitute/run/fatal-check body (single implementation: issue #193).
+source "$REPO_ROOT/sim/harness/lib/run_point.sh"
+
 # One ngspice invocation per PVT point.
 run_point() {
   local corner="$1" temp="$2" vin="$3"
@@ -109,33 +112,20 @@ run_point() {
   local deck="$WORKDIR/${corner_id}.spice"
   local log="$LOG_DIR/${corner_id}.log"
 
-  sed \
-    -e "s|@DESIGN_INCLUDE@|$DESIGN_INCLUDE|g" \
-    -e "s|@MODEL_LIB@|$MODEL_LIB|g" \
-    -e "s|@LDO_NETLIST@|$LDO_NETLIST|g" \
-    -e "s|@MOS_CORNER@|$s_mos|g" \
-    -e "s|@RES_CORNER@|$s_res|g" \
-    -e "s|@BJT_CORNER@|$s_bjt|g" \
-    -e "s|@DIODE_CORNER@|$s_dio|g" \
-    -e "s|@MOSCAP_CORNER@|$s_mosc|g" \
-    -e "s|@MIMCAP_CORNER@|$s_mimc|g" \
-    -e "s|@TEMP_C@|$temp|g" \
-    -e "s|@VIN_V@|$vin|g" \
-    "$HERE/tb_current_limit.spice.in" > "$deck"
-
-  if ! ngspice -b "$deck" > "$log" 2>&1; then
-    echo "FATAL: ngspice failed on $corner_id (see $log)" >&2
-    tail -40 "$log" >&2
-    return 1
-  fi
-  if grep -qE "$FATAL_LOG_PATTERN" "$log"; then
-    echo "FATAL: ngspice reported an error on $corner_id (see $log)" >&2
-    grep -nE "$FATAL_LOG_PATTERN" "$log" >&2
-    return 1
-  fi
-  echo "$corner_id"
+  harness_run_point "$HERE/tb_current_limit.spice.in" "$corner_id" "$deck" "$log" \
+    "DESIGN_INCLUDE=$DESIGN_INCLUDE" \
+    "MODEL_LIB=$MODEL_LIB" \
+    "LDO_NETLIST=$LDO_NETLIST" \
+    "MOS_CORNER=$s_mos" \
+    "RES_CORNER=$s_res" \
+    "BJT_CORNER=$s_bjt" \
+    "DIODE_CORNER=$s_dio" \
+    "MOSCAP_CORNER=$s_mosc" \
+    "MIMCAP_CORNER=$s_mimc" \
+    "TEMP_C=$temp" \
+    "VIN_V=$vin"
 }
-export -f run_point corner_sections
+export -f run_point corner_sections harness_run_point
 export WORKDIR LOG_DIR HERE DESIGN_INCLUDE MODEL_LIB LDO_NETLIST FATAL_LOG_PATTERN
 
 points=()
