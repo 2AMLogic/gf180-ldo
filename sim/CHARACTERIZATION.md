@@ -139,8 +139,8 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `f32ebdd07be2b8591
 
 - `startup`: `sim/startup/records/20260906-004356-3093ea1.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
-- `soft-start`: `sim/soft-start/records/20260905-234149-3093ea1.md` — **MIXED**, fresh (matches current `ldo_core`)
-  - Overall: PASS on the ramp-rate, overshoot and peak-supply-current clauses at 63/63 main-matrix points; FAIL on `t_startup <= 3 ms` at 48/63 (the long-standing DR-0006 dispute, unchanged from every prior record of this bench) and on inrush (`icap_peak_ma <= 5 mA`) at 22/63.
+- `soft-start`: `sim/soft-start/records/20260906-012405-2a7caec.md` — **MIXED**, fresh (matches current `ldo_core`)
+  - Overall (Startup, ratified row): PASS on the ramp-rate, overshoot and peak-supply-current clauses at 63/63 main-matrix points; FAIL on `t_startup <= 3 ms` at 48/63 (DR-0006, unmoved by DR-0015 — measured, not assumed) and on inrush (`icap_peak_ma <= 5 mA`) at 22/63 on the main matrix and 0/20 at the 4.7 µF corner the clause is written against. / Overall (DR-0015 attribution): CONFIRMED.
 
 ### Enable / shutdown
 
