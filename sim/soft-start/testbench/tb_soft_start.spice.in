@@ -142,10 +142,20 @@ meas tran m_dvout_max MAX dvout_vpms FROM=105u TO=8m
 meas tran m_dvout_min MIN dvout_vpms FROM=105u TO=8m
 
 * --- hand-over sanity ----------------------------------------------------
-* SSR must finish ABOVE VREF (1.2 V) and CLG must finish at VIN, or the
-* soft-start clamp never disengaged and is still fighting the main loop.
+* SSR must finish ABOVE VREF (1.2 V), or the injection never shut off and is
+* still pulling FB away from VREF. HG (the soft-start hold gate) must finish
+* at VIN, or Mhold_ss/Mhold_bg_ss are still carrying a Vsg and the startup
+* hold has not fully let go of PASS_GATE / BG.
+*
+* HG REPLACES THE CLG PROBE this bench carried while soft start was a clamp
+* on PASS_GATE (issues #38/#43). Both probe the same invariant -- "the node
+* that gates the soft-start block's PMOS onto PASS_GATE has returned to VIN,
+* so that device is in cutoff and the main loop owns the pass gate" -- and
+* the predicate that adjudicates it in summarize.py is unchanged apart from
+* the node name. The node CLG no longer exists: issue #189 replaced the
+* clamp comparator with FB injection (design/ldo_softstart.sch).
 meas tran m_ssr_end FIND v(xdut.xsoftstart.ssr) AT=7.9m
-meas tran m_clg_end FIND v(xdut.xsoftstart.clg) AT=7.9m
+meas tran m_hg_end FIND v(xdut.xsoftstart.hg) AT=7.9m
 * Residual ripple once everything has settled: distinguishes "settled" from
 * "still ringing slowly".
 meas tran m_vout_pp_late PP v(vout) FROM=7.5m TO=7.9m
@@ -156,6 +166,6 @@ meas tran m_vout_pp_late PP v(vout) FROM=7.5m TO=7.9m
 meas tran m_vout_off_tran FIND v(vout) AT=8.9m
 meas tran m_pg_off_tran FIND v(pg) AT=8.9m
 meas tran m_ssr_off_tran FIND v(xdut.xsoftstart.ssr) AT=8.9m
-meas tran m_clg_off_tran FIND v(xdut.xsoftstart.clg) AT=8.9m
+meas tran m_hg_off_tran FIND v(xdut.xsoftstart.hg) AT=8.9m
 .endc
 .end

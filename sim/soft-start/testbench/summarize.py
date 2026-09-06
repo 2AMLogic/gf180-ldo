@@ -25,9 +25,9 @@ SCALARS = [
     "m_t_startup", "m_vout_max_en", "m_vout_settled",
     "m_icap_peak_ma", "m_isup_peak_ma",
     "m_dvout_max", "m_dvout_min",
-    "m_ssr_end", "m_clg_end", "m_vout_pp_late",
+    "m_ssr_end", "m_hg_end", "m_vout_pp_late",
     "m_vout_off_tran", "m_pg_off_tran",
-    "m_ssr_off_tran", "m_clg_off_tran",
+    "m_ssr_off_tran", "m_hg_off_tran",
 ]
 
 # Ratified bounds (README.md "Startup" row) plus the two measured references
@@ -39,15 +39,19 @@ INRUSH_MAX_MA = 5.0      # ratified inrush bound (at C_eff = 4.7 uF)
 ILIMIT_MIN_MA = 62.0     # worst-corner measured limit, sim/current-limit/records/
 SETTLE_MAX_S = 3e-3      # ratified "+/-2% within 3 ms of enable"
 
-# Hand-over invariant, per tb_soft_start.spice.in's own comment: CLG must
-# finish at VIN, or Mclamp_ss is still carrying a Vsg and the soft-start clamp
-# has not fully let go of PASS_GATE. The bench measured m_clg_end from the
-# start and nothing adjudicated it; this is the missing predicate. 0.2 V is a
-# reporting threshold, not a ratified bound -- there is no spec line on this
-# node -- chosen well below the |Vtp| range measured in
+# Hand-over invariant, per tb_soft_start.spice.in's own comment: the node that
+# gates the soft-start block's PMOS onto PASS_GATE must finish at VIN, or that
+# device is still carrying a Vsg and soft start has not fully let go of the
+# pass gate. 0.2 V is a reporting threshold, not a ratified bound -- there is
+# no spec line on this node -- chosen well below the |Vtp| range measured in
 # sim/devchar/CONCLUSIONS.md (0.622 V at ff/125 C .. 1.031 V at ss/-40 C) so
-# that any point where the clamp is meaningfully out of cutoff is named.
-CLG_END_BELOW_VIN_MAX = 0.2
+# that any point where the hold is meaningfully out of cutoff is named.
+#
+# The node was CLG (Mclamp_ss's gate) while soft start was a clamp comparator
+# on PASS_GATE (#38/#43); it is HG (Mhold_ss/Mhold_bg_ss's gate) since #189
+# replaced that comparator with FB injection. Same invariant, same threshold,
+# renamed probe.
+HG_END_BELOW_VIN_MAX = 0.2
 
 CORNER_RE = re.compile(
     r"^(?P<corner>tt|ff|ss|fs|sf|res_ff|res_ss)_"
@@ -74,10 +78,9 @@ def main() -> None:
         dt = v["m_t_v14"] - v["m_t_v04"]
         v["m_slope_vpms"] = 1.0 / (dt * 1e3) if dt > 0 else float("nan")
         v["m_t_startup_ms"] = v["m_t_startup"] * 1e3
-        # Vsg(Mclamp_ss) at the end of the enable window. Derived for the
-        # hand-over predicate only, and deliberately NOT a CSV column: the
-        # committed summary.csv is evidence and its schema does not move.
-        v["m_clg_end_below_vin"] = float(m.group("vin")) - v["m_clg_end"]
+        # Vsg(Mhold_ss) at the end of the enable window. Derived for the
+        # hand-over predicate only, and deliberately NOT a CSV column.
+        v["m_hg_end_below_vin"] = float(m.group("vin")) - v["m_hg_end"]
         rows.append((cid, m.groupdict(), v))
 
     cols = SCALARS + ["m_slope_vpms", "m_t_startup_ms"]
@@ -97,7 +100,7 @@ def main() -> None:
     for name in ("m_slope_vpms", "m_dvout_max", "m_dvout_min",
                  "m_t_startup_ms", "m_vout_max_en", "m_vout_settled",
                  "m_icap_peak_ma", "m_isup_peak_ma", "m_vout_pp_late",
-                 "m_ssr_end", "m_clg_end",
+                 "m_ssr_end", "m_hg_end",
                  "m_vout_off_tran", "m_ssr_off_tran"):
         rep(name)
 
@@ -127,9 +130,9 @@ def main() -> None:
          lambda v: v["m_vout_pp_late"] > 0.018)
     flag("soft-start ramp did not finish above VREF (clamp still engaged):",
          lambda v: v["m_ssr_end"] < 1.2)
-    flag(f"clamp gate ended >{CLG_END_BELOW_VIN_MAX} V below VIN "
-         "(Mclamp_ss not fully off):",
-         lambda v: v["m_clg_end_below_vin"] > CLG_END_BELOW_VIN_MAX)
+    flag(f"hold gate ended >{HG_END_BELOW_VIN_MAX} V below VIN "
+         "(Mhold_ss not fully off):",
+         lambda v: v["m_hg_end_below_vin"] > HG_END_BELOW_VIN_MAX)
     flag("disabled output above 10 mV at the end of the tail:",
          lambda v: v["m_vout_off_tran"] > 0.010)
     flag("soft-start ramp capacitor not reset by disable (>10 mV):",
