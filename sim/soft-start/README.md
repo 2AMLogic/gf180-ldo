@@ -95,3 +95,17 @@ clearance** clauses are met; the **3 ms settling window** is not, at the slow
 end of the ramp's own PVT spread, and **peak** dV_out/dt (as opposed to the
 steady ramp rate) exceeds 1 V/ms in two short transients per startup. DR-0006
 records what changes and what does not, with these measurements as its basis.
+
+## One `corners/` directory here is a control arm, not a characterization
+
+`corners/20260906-021024-2a7caec/` and `netlist-snapshots/20260906-021024-2a7caec.spice`
+have **no matching file under `records/`**, and that is deliberate. They are the
+**pre-DR-0015 control arm** of the bisection written up in
+`records/20260906-012405-2a7caec.md` (issue #177): the same 163-point grid run
+against `main`'s netlist with `Mrza`/`Rza` removed, so that the record can
+attribute this bench's inrush / overshoot / peak-supply / settled-ripple
+improvement to that device pair rather than infer it. That snapshot is
+therefore **not** the current DUT and must not be read as a stale
+characterization of the shipped design — the record that owns it says so, and
+`sim/build_characterization_report.py` never looks at a snapshot whose
+record-id has no record file.
