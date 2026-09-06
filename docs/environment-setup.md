@@ -146,6 +146,59 @@ $ echo $PDK_ROOT $PDK
 - [ ] Run `bash sim/selftest.sh --require-pdk` (see §6) and confirm it exits
       0 with the harness's own end-to-end PVT smoke run passing.
 
+### A version banner is not a toolchain identity (#182 / #184)
+
+`ngspice --version` only reports what the binary *claims* to be, not what it
+actually is. Issue #182 found two independently-built `ngspice-46` binaries
+coexisting on one host with **different content**, both printing the exact
+same version banner -- and found that this host's `PATH` was resolving a
+self-built `~/.local/bin/ngspice` **ahead of** the Homebrew install this
+section (§1) pins, with nothing catching the mismatch.
+
+`python3 sim/run_corners.py --check-env` (`cmd_check_env` in
+`sim/harness/cli.py`) now enforces toolchain identity, not just presence:
+
+```bash
+python3 sim/run_corners.py --check-env
+```
+
+- Reports the resolved `ngspice`'s version banner **and** a content sha256
+  fingerprint (`ngspice_binary_sha256()` in `sim/harness/runner.py`, from
+  #182) -- a banner match alone is not proof of a binary match.
+- Resolves the *expected* toolchain root as `brew --prefix ngspice` (the
+  Homebrew install this doc's §1 pins) unless overridden (see below), and
+  fails loudly -- non-zero exit, `MISMATCH` in the output -- if the `PATH`-
+  resolved `ngspice` does not live under that root. This is the exact #182
+  failure mode: a different build silently shadowing the documented one.
+- On the happy path (a host whose resolved `ngspice` really is the Homebrew
+  one), it prints `provenance OK` and exits `0`; nothing changes for a
+  correctly-provisioned host.
+
+**If `--check-env` reports `MISMATCH`:**
+
+1. Run `which -a ngspice` to see every candidate on `PATH`, in resolution
+   order.
+2. Either reorder `PATH` so the Homebrew-managed one resolves first, or
+   remove/rename the shadowing binary (e.g. a stale `~/.local/bin/ngspice`
+   from an earlier from-source build).
+3. Re-run `python3 sim/run_corners.py --check-env` and confirm it now
+   reports `provenance OK`.
+
+**If a host legitimately needs a different, already-validated toolchain
+root** (e.g. a Linux/apt install -- this doc is written for macOS/Homebrew
+per its title, and does not yet pin a portable discovery rule for apt), bless
+it explicitly rather than letting `--check-env` guess:
+
+```bash
+export GF180_LDO_NGSPICE_ROOT=/path/to/that/install/prefix
+```
+
+`GF180_LDO_NGSPICE_ROOT`, when set, takes priority over the `brew --prefix`
+probe. On a host with no Homebrew on `PATH` and no override set,
+`--check-env` reports `provenance not verified` (not `OK`, not `MISMATCH`)
+-- version and sha256 are still reported, but identity cannot be checked
+against a pin there yet.
+
 ## 6. Next: the PVT corner harness
 
 Everything above establishes the *install*. The evidence-producing harness

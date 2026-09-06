@@ -37,13 +37,19 @@ echo
 echo "== 2/3 environment =="
 if ! python3 "${SIM_DIR}/run_corners.py" --check-env; then
   if [ "${REQUIRE_PDK}" -eq 1 ]; then
-    echo "FAIL: ngspice and/or the gf180mcu PDK are not available"
+    echo "FAIL: environment check failed -- see the ngspice/PDK detail above"
+    echo "      (either ngspice/the gf180mcu PDK are not available, or #184's"
+    echo "      toolchain-identity check found the resolved ngspice does not"
+    echo "      match what docs/environment-setup.md pins; both are reported"
+    echo "      above by --check-env)."
     exit 1
   fi
   echo
-  echo "SKIP: simulation stage -- ngspice and/or the gf180mcu PDK are not available."
-  echo "      Unit tests passed. Install the PDK (see the hint above) to run the"
-  echo "      end-to-end PVT smoke test."
+  echo "SKIP: simulation stage -- see the ngspice/PDK detail above; either"
+  echo "      ngspice/the gf180mcu PDK are not available, or #184's toolchain-"
+  echo "      identity check found a mismatch (both reported above)."
+  echo "      Unit tests passed. Install the PDK / fix the mismatch (see the"
+  echo "      hint above) to run the end-to-end PVT smoke test."
   exit 0
 fi
 
