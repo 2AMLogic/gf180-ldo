@@ -1,0 +1,41 @@
+* vref-transfer -- stimulus fragment for ldo_core (issue #178)
+*
+* VREF-to-VOUT small-signal transfer over frequency, light-load (1 mA)
+* condition. This is the follow-up campaign DR-0021 names in its "Follow-up
+* filed" section and in its Decision #3 contract table: the "Accuracy /
+* tempco / noise / its own PSRR" row of that table states a real VREF
+* driver's own error terms "flow straight through to VOUT at 1.5x" and are
+* "not in any ratified row of this block's spec". This bench measures that
+* transfer directly -- |Vout(f)/Vref(f)| -- so a real reference's tempco,
+* noise and PSRR can be converted into a VOUT contribution against a
+* measured gain instead of only the nominal 1/beta = Vout/Vref = 1.5
+* estimate DR-0003 already uses for the amplifier's own offset. This
+* testbench could not exist before #174/DR-0021 promoted VREF to a
+* top-level port -- there was nowhere to inject the stimulus from.
+*
+* Stimulus convention follows sim/psrr-vs-freq/testbench/tb_psrr.spice, with
+* the AC=1 source moved from VIN to VREF: VIN is now a plain DC rail (no AC
+* content) and VREF carries the small-signal probe instead. vdb(vout) then
+* reads the VREF-to-VOUT transfer directly in dB, since the 1 V AC stimulus
+* is 0 dB.
+Vsup VIN 0 DC {vdd_val}
+Vref VREF 0 DC 1.2 AC 1
+
+Xdut VIN VOUT VIN 0 LOOP LOOP VREF ldo_core
+
+* --- Compliance-limited load sink (#46), light-load 1 mA condition -------
+* Same rationale as sim/psrr-vs-freq/testbench/tb_psrr.spice -- see that
+* file's header for the full derivation of why an ideal current sink has an
+* unphysical sub-ground DC root that a naive .ac would linearize about, and
+* why this behavioral sink (ideal to within 1.3e-14 relative error at
+* VOUT >= 1.0 V, and presenting under 5.1e-16 S of small-signal conductance
+* at 1 mA) removes that root instead of merely avoiding it. dc_vout_v /
+* dc_iload_ma below read the .op plot so both properties are checked at
+* every corner rather than assumed. See sim/harness/README.md,
+* "Compliance-limited load sinks".
+Vilc ILC 0 DC 1m
+Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+Vlmeas NLOAD 0 DC 0
+
+Resr VOUT n_esr 0.1
+Cout n_esr 0 1u

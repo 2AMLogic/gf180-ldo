@@ -1,0 +1,50 @@
+{
+  "name": "vref-transfer",
+  "description": "VREF-to-VOUT small-signal transfer over frequency at the light-load (1 mA) condition -- the reference-referred follow-up campaign named by DR-0021",
+  "claim": "spec/decision-records/DR-0021-vref-is-a-top-level-port.md, Decision #3 contract table, 'Accuracy / tempco / noise / its own PSRR' row: a real VREF driver's tempco, noise and PSRR 'flow straight through to VOUT at 1/beta = 1.5x' and are 'not in any ratified row of this block's spec'. This bench measures that transfer directly, |Vout(f)/Vref(f)| in dB, at the ratified light-load (1 mA, binding per README.md note 1) condition, across the full PVT matrix -- new evidence, not a correction of any existing sim/ record (DR-0021 Consequences #4-#5). It could not be written before #174/DR-0021 promoted VREF to a top-level port, since there was no port to drive an AC stimulus from. This deck covers the 1 mA condition ONLY; the 50 mA condition is its own sibling experiment, sim/vref-transfer-50ma/, following the same split sim/psrr-vs-freq/ / sim/psrr-vs-freq-50ma/ (#99) already use for the ratified PSRR row's two load conditions, and for the identical reason (ngspice's per-.meas result vectors go out of scope once a second .ac becomes the current plot -- see sim/psrr-vs-freq/testbench/tb_psrr.spice's header). There is no ratified numeric threshold for this transfer itself (it is new evidence establishing one, not verifying against an existing spec line), so `checks` below is limited to the harness-integrity gates (dc_vout_v, dc_iload_ma) that confirm the .ac was linearized about the physical operating point with the sink delivering the commanded current -- the same convention sim/psrr-vs-freq/ uses. The derived tempco/noise/PSRR budget a real VREF driver must meet is written up in this bench's README.md, not asserted as a pass/fail gate here.",
+  "netlist": "tb_vref_transfer.spice",
+  "dut_netlist": "design/netlist/ldo_core.spice",
+  "nominal_supply_v": 3.3,
+  "supply_tolerance": 0.1,
+  "temperatures_c": [
+    -40,
+    27,
+    125
+  ],
+  "corners": [
+    "mos"
+  ],
+  "analyses": [
+    "op",
+    "ac dec 20 10 10meg",
+    "meas ac vref_10hz FIND vdb(vout) AT=10",
+    "meas ac vref_1k FIND vdb(vout) AT=1k",
+    "meas ac vref_100k FIND vdb(vout) AT=100k",
+    "meas ac vref_1meg FIND vdb(vout) AT=1meg"
+  ],
+  "operating_conditions": {
+    "load_current": "1 mA (binding light-load condition per README.md note 1), commanded through a compliance-limited sink (Vilc/Bload/Vlmeas) and verified by dc_iload_ma",
+    "output_cap": "1.0 uF nominal + 100 mOhm ESR (same output network as the ratified PSRR row's decks)",
+    "enable_state": "enabled (EN tied to VIN at instantiation)"
+  },
+  "measure": {
+    "vref_gain_dc_db": "vref_10hz",
+    "vref_gain_1k_db": "vref_1k",
+    "vref_gain_100k_db": "vref_100k",
+    "vref_gain_1meg_db": "vref_1meg",
+    "dc_vout_v": "op1.v(vout)",
+    "dc_iload_ma": "op1.i(vlmeas)*1e3"
+  },
+  "checks": {
+    "dc_iload_ma": {
+      "min": 0.999,
+      "max": 1.001,
+      "description": "Harness integrity, not a ratified spec line: the compliance-limited sink must deliver the commanded 1 mA at the operating point this .ac is expanded about"
+    },
+    "dc_vout_v": {
+      "min": 1.7,
+      "max": 1.9,
+      "description": "Harness integrity, not a ratified spec line: asserts the .ac was linearized about the physical operating point, not the sub-ground root #40 found"
+    }
+  }
+}

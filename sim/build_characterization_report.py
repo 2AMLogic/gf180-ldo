@@ -295,6 +295,8 @@ SUPPORTING_SLUGS_NOTE = {
     "op-point-sanity": "loop-closure sanity check, not a ratified spec row.",
     "smoke-bias": "harness self-verification (PVT plumbing), not a spec claim.",
     "devchar": "PDK device characterization feeding other rows' assumptions (e.g. divider-mismatch, README note 3); has no records/ directory of its own -- see sim/devchar/CONCLUSIONS.md.",
+    "vref-transfer": "VREF-to-VOUT small-signal transfer over frequency, light load (1 mA) -- issue #178 / DR-0021 Decision #3's 'accuracy / tempco / noise / its own PSRR' contract-table row; not itself a ratified spec row (no threshold exists for this transfer), but its measured gain feeds the reference accuracy-class budget derived in sim/vref-transfer/README.md.",
+    "vref-transfer-50ma": "VREF-to-VOUT small-signal transfer over frequency, full load (50 mA) -- the load-dependent sibling of vref-transfer, same role.",
 }
 
 

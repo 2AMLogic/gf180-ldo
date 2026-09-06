@@ -1,0 +1,42 @@
+* vref-transfer-50ma -- stimulus fragment for ldo_core (issue #178)
+*
+* The full-load (50 mA) half of the VREF-to-VOUT transfer campaign. Same
+* topology, same stimulus and same output network as
+* sim/vref-transfer/testbench/tb_vref_transfer.spice -- the ONLY circuit
+* difference is the commanded load current (Vilc: 50 mA here, 1 mA there).
+*
+* Why a second experiment slug instead of a second load point inside one
+* deck: this repo's harness runs one manifest per slug, and two DC bias
+* points cannot share one deck -- see
+* sim/psrr-vs-freq/testbench/tb_psrr.spice's header for the ngspice
+* limitation this mirrors (per-.meas result vectors go out of scope as soon
+* as a later analysis becomes the current plot, so an "alter"-and-re-.ac
+* deck silently re-reports the first .ac's numbers instead of erroring). A
+* sibling slug -- the same split sim/psrr-vs-freq/ and
+* sim/psrr-vs-freq-50ma/ (#99) already use for the ratified PSRR row's two
+* load conditions -- keeps each load condition on its own deck, its own
+* full PVT sweep and its own record with its own separate verdict.
+*
+* VREF-to-VOUT small-signal transfer over frequency: see
+* sim/vref-transfer/testbench/tb_vref_transfer.spice's header for the full
+* rationale (DR-0021 Decision #3's "Accuracy / tempco / noise / its own
+* PSRR" contract-table row, and why this bench is the follow-up campaign
+* that closes it). vdb(vout) reads the transfer directly in dB, since the
+* 1 V AC stimulus riding on VREF is 0 dB.
+Vsup VIN 0 DC {vdd_val}
+Vref VREF 0 DC 1.2 AC 1
+
+Xdut VIN VOUT VIN 0 LOOP LOOP VREF ldo_core
+
+* --- Compliance-limited load sink (#46), full-load 50 mA condition -------
+* Same rationale as sim/psrr-vs-freq-50ma/testbench/tb_psrr_50ma.spice: the
+* sub-ground unphysical root risk is strictly larger at 50 mA than at 1 mA
+* (a bigger demanded current biases the unphysical root harder), which is
+* why dc_vout_v / dc_iload_ma are gated at every corner here too. See
+* sim/harness/README.md, "Compliance-limited load sinks".
+Vilc ILC 0 DC 50m
+Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+Vlmeas NLOAD 0 DC 0
+
+Resr VOUT n_esr 0.1
+Cout n_esr 0 1u
