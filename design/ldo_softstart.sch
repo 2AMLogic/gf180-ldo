@@ -64,8 +64,10 @@ It also has three properties the reference-ramp version does not:
     Mclamp_ss carries a Vsg rather than none. That is measured, it is not
     what this note originally claimed, and it is adjudicated by
     sim/soft-start/testbench/summarize.py and written up as a caveat in
-    sim/soft-start/records/20260801-071013-6026a64.md. Cm_ss's 7.2 pF stays
-    on PASS_GATE unconditionally: see HOW THE CLAMP WORKS below.
+    sim/soft-start/records/20260801-071013-6026a64.md. (Post-DR-0015 that
+    count is 0 of 163 -- see sim/soft-start/records/20260906-012405-2a7caec.md.)
+    Cm_ss's 7.2 pF stays on PASS_GATE unconditionally, and since issue #43
+    it does so behind Rz_ss's 1.55 Mohm: see HOW THE CLAMP WORKS below.
   * It leaves ldo_core's existing nets alone. #8's Men still has its gate on
     EN, error_amp's INN is still VREF: ldo_core.sch's diff for this issue is
     purely the addition of one instance.
@@ -153,21 +155,100 @@ HOW THE CLAMP WORKS
   the limit clamp saturated and still unable to hold). See design/error_amp.sch's
   "BG IS A PORT" note.
 
-  Cm_ss is the clamp stage's local compensation, and it is deliberately the
-  same 60 um x 60 um plate as Css (7.2 pF). It sits gate-to-drain across
-  Mclamp_ss, i.e. it is a Miller capacitor around the clamp device: with
-  Rl2_ss's ~6.2 Mohm on CLG it puts this loop's dominant pole far below the
-  main loop's, which is the same reason ldo_ilimit's Cc exists -- a SECOND
-  feedback loop around the same pass device has to be slow relative to the
-  first or the two interact. It is sized against the pass device's own
-  Cgd = 3.02 pF (sim/devchar/CONCLUSIONS.md section 3): the compensation
-  capacitor has to dominate the pass gate's gate-drain capacitance for the
-  pole split to be set by this block rather than by Mpass, and 7.2 pF is
-  2.4x it. The cost is stated in design/README.md and repeated here because
-  it is the one part of this block that does NOT vanish after hand-over:
-  whatever Mclamp_ss ends up doing, Cm_ss is still 7.2 pF hanging on
-  PASS_GATE, and that is an added capacitance on a main-loop node that this
-  issue does not characterise in AC. Issue #10 owns that loop.
+  Cm_ss/Rz_ss are the clamp stage's local compensation: a Miller capacitor
+  gate-to-drain across Mclamp_ss, in SERIES with a nulling resistor. Issue
+  #38 built only the capacitor; issue #43 added Rz_ss and changed nothing
+  else in this cell. The reasoning behind the original choice, why it did
+  not survive measurement, and what was added are all worth stating because
+  they are the same argument in two directions.
+
+    #38's argument was pole-splitting: with Rl2_ss's ~6.2 Mohm on CLG a
+    large Miller cap puts this loop's dominant pole far below the main
+    loop's, which is the same reason ldo_ilimit's Cc exists -- a SECOND
+    feedback loop around the same pass device has to be slow relative to the
+    first or the two interact. 7.2 pF was picked to be 2.4x the pass
+    device's own Cgd (3.02 pF, sim/devchar/CONCLUSIONS.md section 3), so the
+    split would be set by this block rather than by Mpass.
+
+    What that argument missed is the OTHER pole. This clamp loop closes
+    through the output node, whose pole sits at 1/(2*pi*Rload*C_eff) -- and
+    at the top of DR-0001's capacitor window (4.7 uF into 36 ohm) that is
+    ~0.94 kHz, i.e. right on top of the ~3.6 kHz that Rl2_ss x 7.2 pF puts
+    at CLG. Two poles within a decade, with a bare Miller cap's RHP zero
+    also nearby, is a badly damped loop, and it shows up exactly where a
+    badly damped loop shows up: as a large-signal overshoot the first time
+    the loop has to acquire. Measured at ff/-40 C/2.97 V, 4.7 uF/500 mOhm,
+    50 mA, the clamp reached its operating point ~230 us after the enable
+    edge, by which time the ramp had run 0.145 V of output ahead of a pass
+    device still in cutoff, and the recovery slewed VOUT at 4.49 V/ms --
+    4.7 uF x 4.49 V/ms = 21 mA of capacitor current against a ratified 5 mA
+    inrush bound, at a steady ramp rate of only 0.65 V/ms.
+
+    Rz_ss is the standard fix and the same idiom error_amp already carries
+    (its XRz/XCc pair): a nulling resistor in series with the Miller cap
+    moves the RHP zero into the left half plane and damps the loop.
+
+    HOW Rz_ss WAS CHOSEN, AND THE TRAP IN CHOOSING IT. Every number below is
+    a full 9 ms transient -- the same window the bench runs, NOT a shortened
+    one. That matters more than it sounds. The acquisition transient this
+    resistor is being tuned against happens 220-570 us after the enable edge,
+    so a 1.2 ms screening window looks like it is enough, and it is not:
+    too much Rz_ss does not degrade the acquisition at all, it destabilises
+    the HAND-OVER, milliseconds later, where the clamp lets go of PASS_GATE.
+    Screened at 1.2 ms, Rz_ss = 1200 squares looks like the best value in the
+    sweep (10.9 mA); run to 9 ms it is 178 mA. Anything re-tuning this
+    network must run the whole window, at more than one output capacitor.
+
+    Rz_ss is squeezed between two measured cliffs, and the usable band is
+    narrow. All values are ppolyf_u_3k squares at W = 1 um (~3.1 kohm each);
+    all currents are peak capacitor current over the full 9 ms window.
+
+      Rz_ss     ff/-40C/2.97V     ff/-40C/2.97V    ff/-40C/2.97V    ss/-40C/3.63V
+                4.7uF/500mOhm     1uF/100mOhm      1uF/0mA          0.33uF/500mOhm
+      -------   -------------     -------------    -------------    --------------
+      none        20.75 mA          6.78 mA          7.63 mA           1.48 mA
+       250        16.98             4.85             5.34 FAIL         --
+       300        16.40             4.62             5.09 FAIL         0.84
+       400        15.50             4.26             4.65              0.75
+       500        14.57             3.90             4.23              0.68   <-- AS BUILT
+       600        13.88             3.63             3.92              0.62
+       700        13.21             3.40             3.69            279.5 FAIL (hand-over)
+       968        11.82             2.93             3.16            (also fails at
+      1200       178.0 FAIL          --               --              res_ss/-40C/3.63V
+      1500       172.9 FAIL          --               --              4.7uF: 223.9 mA)
+
+    The LOWER bound is the ratified 5 mA inrush clause itself, at the no-load
+    (0 mA) end of the matrix: below ~400 squares the damping is not enough
+    and that group goes back over the bound. The UPPER bound is hand-over
+    stability at the SMALL-capacitor end: 700 squares turns a clean 1.48 mA
+    hand-over at ss/-40 C/3.63 V, 0.33 uF/500 mOhm into a 279 mA excursion,
+    and this was found by measuring the whole 163-point matrix rather than
+    the corner the acquisition transient is worst at. 500 squares sits in the
+    middle of the 400-600 band with ~30 % margin to the value that is
+    measured to fail, which is why it is preferred over the 700 that buys a
+    further 5 % on the (still-failing) 4.7 uF group.
+
+    SHRINKING Cm_ss INSTEAD WAS TRIED AND REJECTED. It helps the 4.7 uF end
+    more per unit than Rz_ss does (60x60 -> 15x15 with no Rz_ss takes the
+    worst 4.7 uF point 20.75 -> 11.98 mA), but Cm_ss sits between CLG and
+    PASS_GATE, so it is also, incidentally, extra Cgd on the pass device --
+    compensation the MAIN loop has been getting for free since #38. Every
+    variant that shrinks it makes the already-unstable 0.33 uF/1 mOhm corner
+    (#51's territory, out of scope here) measurably worse, and it does NOT
+    fix the 4.7 uF group either way. So it buys a regression somewhere else
+    and no clause anywhere, and Cm_ss is left at 60 um x 60 um.
+
+  What this network costs the main loop CHANGES, and not only downwards.
+  Whatever Mclamp_ss ends up doing after hand-over, this network is still
+  hanging on PASS_GATE, and Rz_ss makes it frequency-dependent: below
+  1/(2*pi*Rz_ss*Cm_ss) ~ 14 kHz it is still the same 7.2 pF #38 put there,
+  and above it the series resistance takes over, so at the main loop's
+  crossover the pass gate sees ~1.5 Mohm instead of a capacitor 2.4x
+  its own Cgd. That is a real change to a main-loop node and it is NOT
+  characterised in AC here: sim/soft-start measures the large-signal startup
+  (including 163 points of settled ripple, which is what would show a newly
+  unstable main loop) and nothing else. The AC evidence is
+  sim/loop-stability/'s, and a re-run there belongs to #51/#176.
 
   Rl2_ss/Men_l are the common-source stage's load. The load is in SERIES with
   an EN-gated PMOS switch, not tied straight to VIN as ldo_ilimit's Rl2 is,
@@ -226,19 +307,19 @@ SIZING AS BUILT
   Rtail_ss  ppolyf_u_3k, 600 squares   ~1.86 Mohm -> tail 0.7..1.4 uA
   Rl2_ss    ppolyf_u_3k, 2000 squares  ~6.2 Mohm  (carries ~0 once handed over)
   Cc_ss     25 um x 20 um cap_mim_2f0  ~1.0 pF    CO to VSS
-  Cm_ss     60 um x 60 um cap_mim_2f0  ~7.2 pF    CLG to PASS_GATE
+  Cm_ss     60 um x 60 um cap_mim_2f0  ~7.2 pF    CLG to NZ_SS
+  Rz_ss     ppolyf_u_3k, 500 squares   ~1.55 Mohm NZ_SS to PASS_GATE (#43)
 
-  k_ss and Rl2_ss are the two values that moved during bring-up (from 0.0077
-  and 1000 squares). k_ss sets the ramp rate directly and was reduced to put
-  the fastest corner under the ratified 1 V/ms bound with margin -- the
-  measured fastest point is 0.867 V/ms. Rl2_ss is the common-source stage's
-  load, so it sets that stage's gain and the pull-up on CLG; it was doubled
-  to keep the clamp in control at the corners where Mg2_ss is strongest. Both
-  changes are upstream of every number in the record above: the 163 points
-  were run against the values printed here, from the frozen netlist snapshot
-  sim/soft-start/netlist-snapshots/20260801-071013-6026a64.spice, so the
-  record is the authority on what this sizing does and this block is only the
-  arithmetic that led to it.
+  k_ss and Rl2_ss are the two values that moved during #38's bring-up (from
+  0.0077 and 1000 squares). k_ss sets the ramp rate directly and was reduced
+  to put the fastest corner under the ratified 1 V/ms bound with margin --
+  the measured fastest point is 0.867 V/ms (0.836 V/ms in the post-DR-0015
+  re-measurement, 20260906-012405-2a7caec). Rl2_ss is the common-source
+  stage's load, so it sets that stage's gain and the pull-up on CLG; it was
+  doubled to keep the clamp in control at the corners where Mg2_ss is
+  strongest. Neither moved for #43: #43 ADDED Rz_ss and changed no existing
+  value in this cell at all, which is why the ramp rate and t_startup are
+  expected to be -- and are measured to be -- unmoved by it.
 
   Capacitor values use the 1.990 fF/um2 measured for cap_mim_2f0 in
   sim/devchar/CONCLUSIONS.md section 3, not the 2.0 fF/um2 of the model name:
@@ -247,11 +328,14 @@ SIZING AS BUILT
   Added enabled quiescent current is the tail plus the bias branch, ~1.5 uA
   at tt/27 C; the common-source stage's load carries no current in the
   settled enabled state because CO ends up at VSS and Mg2_ss ends up off.
+  Rz_ss adds no current at all -- it is in series with a capacitor, so its
+  DC current is exactly zero in every state.
   Added area is 7700 um2 of capacitor (Css 3600, Cm_ss 3600, Cc_ss 500) plus
-  3600 um2 of poly resistor (1000 + 600 + 2000 squares at W = 1 um), about
-  11300 um2 -- roughly 11% of the ratified 0.1 mm2 core-area row. That is a
-  real cost, it is dominated by the two 60 x 60 capacitors, and it is called
-  out here rather than discovered at layout.} -1200 -1470 0 0 0.28 0.28 {}
+  4100 um2 of poly resistor (1000 + 600 + 2000 + 500 squares at W = 1 um),
+  about 11800 um2 -- roughly 12% of the ratified 0.1 mm2 core-area row, up
+  500 um2 for #43's Rz_ss. That is a real cost, it is dominated by the two
+  60 x 60 capacitors, and it is called out here rather than discovered at
+  layout.} -1200 -1470 0 0 0.28 0.28 {}
 C {devices/iopin.sym} -1200 -100 0 0 {name=p_vin lab=VIN}
 C {devices/ipin.sym} -1000 -100 0 0 {name=p_fb lab=FB}
 C {devices/iopin.sym} -800 -100 0 0 {name=p_pass_gate lab=PASS_GATE}
@@ -345,7 +429,11 @@ C {devices/lab_pin.sym} 820 -230 0 0 {name=l_mclampss_s sig_type=std_logic lab=V
 C {devices/lab_pin.sym} 820 -200 0 0 {name=l_mclampss_b sig_type=std_logic lab=VIN}
 C {symbols/cap_mim_2f0fF.sym} 900 -200 0 0 {name=Cm_ss model=cap_mim_2f0_m2m3_noshield W=60u L=60u m=1}
 C {devices/lab_pin.sym} 900 -230 0 0 {name=l_cmss_g sig_type=std_logic lab=CLG}
-C {devices/lab_pin.sym} 900 -170 0 0 {name=l_cmss_b sig_type=std_logic lab=PASS_GATE}
+C {devices/lab_pin.sym} 900 -170 0 0 {name=l_cmss_b sig_type=std_logic lab=NZ_SS}
+C {symbols/ppolyf_u_3k.sym} 1600 -200 0 0 {name=Rz_ss model=ppolyf_u_3k W=1u L=500u m=1}
+C {devices/lab_pin.sym} 1600 -230 0 0 {name=l_rzss_p sig_type=std_logic lab=PASS_GATE}
+C {devices/lab_pin.sym} 1600 -170 0 0 {name=l_rzss_m sig_type=std_logic lab=NZ_SS}
+C {devices/lab_pin.sym} 1580 -200 0 0 {name=l_rzss_b sig_type=std_logic lab=VSS}
 C {symbols/pfet_03v3.sym} 1000 -200 0 0 {name=Minv_p model=pfet_03v3 L=0.5u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} 980 -200 0 0 {name=l_minvp_g sig_type=std_logic lab=EN}
 C {devices/lab_pin.sym} 1020 -170 0 0 {name=l_minvp_d sig_type=std_logic lab=ENB}

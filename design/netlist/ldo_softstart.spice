@@ -34,7 +34,8 @@ XMpark_ss CLG ENB VSS VSS nfet_03v3 L=0.5u W=10u nf=1 ad='int((nf+1)/2) * W/nf *
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XMclamp_ss PASS_GATE CLG VIN VIN pfet_03v3 L=0.5u W=20u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
-XCm_ss CLG PASS_GATE cap_mim_2f0_m2m3_noshield c_width=60u c_length=60u m=1
+XCm_ss CLG NZ_SS cap_mim_2f0_m2m3_noshield c_width=60u c_length=60u m=1
+XRz_ss NZ_SS PASS_GATE VSS ppolyf_u_3k r_width=1u r_length=500u m=1
 XMinv_p ENB EN VIN VIN pfet_03v3 L=0.5u W=4u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XMclamp_bg_ss BG CLG VIN VIN pfet_03v3 L=0.5u W=10u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
