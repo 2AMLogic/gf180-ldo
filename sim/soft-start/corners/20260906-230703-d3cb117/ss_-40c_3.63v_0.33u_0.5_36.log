@@ -1,0 +1,117 @@
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Note: No compatibility mode selected!
+
+
+Circuit: * soft-start -- controlled output ramp at enable, for ldo_core with
+
+Doing analysis at TEMP = -40.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+Initial Transient Solution
+--------------------------
+
+Node                                   Voltage
+----                                   -------
+vin                                       3.63
+en                                           0
+vref                                       1.2
+vout                               8.64423e-09
+pg                                        3.63
+xdut.fb                            1.76531e-06
+xdut.xerramp.nbias                 1.11225e-09
+xdut.xerramp.xrbias.11             1.98175e-09
+xdut.xerramp.xrbias.21             7.72493e-06
+xdut.xerramp.rbt                    7.7258e-06
+xdut.xerramp.tail                     0.583032
+xdut.xerramp.nd                           3.63
+xdut.xerramp.n1                           3.63
+xdut.xerramp.nz                           3.63
+xdut.xerramp.xrz.11                       3.63
+xdut.xerramp.xrz.21                       3.63
+eout                                      3.63
+xdut.bg                                   3.63
+xdut.xerramp.nrza                         3.63
+xdut.xerramp.xrza.11                      3.63
+xdut.xerramp.xrza.21                      3.63
+xdut.xerramp.nf                           3.63
+xdut.xerramp.nbp                          3.63
+xdut.xerramp.xrbufb.11                    3.63
+xdut.xerramp.xrbufb.21                    3.63
+xdut.xerramp.enb                          3.63
+xdut.xilimit.isns                   9.2623e-09
+xdut.xilimit.xrsns.11              8.65639e-09
+xdut.xilimit.xrsns.21              9.25014e-09
+xdut.xilimit.pb                        3.06224
+xdut.xilimit.vth                   6.06113e-07
+xdut.xilimit.xrref.11              8.84429e-09
+xdut.xilimit.xrref.21              6.05913e-07
+xdut.xilimit.bt                            1.2
+xdut.xilimit.bb                            1.2
+xdut.xilimit.xrbias.11                     1.2
+xdut.xilimit.xrbias.21                     1.2
+xdut.xilimit.cn                        0.43204
+xdut.xilimit.tail                       1.3796
+xdut.xilimit.co                    6.77331e-10
+xdut.xilimit.xrtail.11                  1.3796
+xdut.xilimit.xrtail.21                 1.37961
+xdut.xilimit.tailp                     1.37961
+xdut.xilimit.enb                          3.63
+xdut.xilimit.clg                          3.63
+xdut.xilimit.xrl2.11                      3.63
+xdut.xilimit.xrl2.21                      3.63
+xdut.xsoftstart.bt                         1.2
+xdut.xsoftstart.bb                     1.19999
+xdut.xsoftstart.xrss_bias.11           1.19999
+xdut.xsoftstart.xrss_bias.21               1.2
+xdut.xsoftstart.ssr                1.18014e-08
+xdut.xsoftstart.sd                        3.63
+xdut.xsoftstart.gmsa                      3.63
+xdut.xsoftstart.gmia                      3.63
+xdut.xsoftstart.gmvss                   2.4632
+xdut.xsoftstart.gmsb                      3.63
+xdut.xsoftstart.gmsum                     3.63
+xdut.xsoftstart.fbp                    1.33694
+xdut.xsoftstart.hg                           0
+xdut.xsoftstart.enb                       3.63
+xdut.xsoftstart.xrh_ss.11                    0
+xdut.xsoftstart.xrh_ss.21                    0
+xdut.xsoftstart.xrr_ss.11                 3.63
+xdut.xsoftstart.xrr_ss.21                 3.63
+n_esr                              8.64423e-09
+n_cap                                        0
+ln                                           0
+v.xdut.xsoftstart.vbsense_ss#branch     1.19905e-12
+v.xdut.xilimit.vbsense#branch      1.19906e-12
+vlmeas#branch                      2.40117e-10
+vcmeas#branch                                0
+vloop#branch                       1.37799e-11
+vref#branch                        4.63861e-12
+ven#branch                                   0
+vin#branch                         -3.3425e-10
+
+ Reference value :  1.10255e-04 Reference value :  8.63229e-04 Reference value :  1.63323e-03 Reference value :  2.44023e-03 Reference value :  3.20623e-03 Reference value :  3.98523e-03 Reference value :  4.74023e-03 Reference value :  5.51023e-03 Reference value :  6.25223e-03 Reference value :  7.04323e-03 Reference value :  7.81023e-03 Reference value :  8.49246e-03ft_polyfit @ 8060 failed
+
+No. of Data Rows : 9072
+m_t_v04             =  2.25297e-03
+m_t_v14             =  6.21663e-03
+
+Error: measure  m_t_startup  trig(TARG) : out of interval
+ meas tran m_t_startup trig v(en) val=1.4 rise=1 targ v(vout) val=1.764 rise=1 failed!
+
+m_vout_max_en       =  1.75469e+00 at=  8.00000e-03
+m_vout_settled      =  1.74137e+00
+m_icap_peak_ma      =  4.46910e-01 at=  8.05229e-04
+m_isup_peak_ma      =  4.88030e+01 at=  8.00000e-03
+m_dvout_max         =  1.10397e+00 at=  8.05229e-04
+m_dvout_min         =  -2.45671e-04 at=  8.02255e-04
+m_ssr_end           =  1.52701e+00
+m_hg_end            =  3.63000e+00
+m_vout_pp_late      =  6.59379e-02 from=  7.50000e-03 to=  7.90000e-03
+m_vout_off_tran     =  4.20461e-09
+m_pg_off_tran       =  3.63000e+00
+m_ssr_off_tran      =  1.33824e-08
+m_hg_off_tran       =  8.30092e-02
+Note: Simulation executed from .control section 
