@@ -1,0 +1,116 @@
+
+Note: No compatibility mode selected!
+
+
+Circuit: * soft-start -- controlled output ramp at enable, for ldo_core with
+
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+Initial Transient Solution
+--------------------------
+
+Node                                   Voltage
+----                                   -------
+vin                                       3.63
+en                                           0
+vref                                       1.2
+vout                               1.47103e-08
+pg                                        3.63
+xdut.fb                            1.97778e-06
+xdut.xerramp.nbias                 1.63133e-09
+xdut.xerramp.xrbias.11             2.26571e-09
+xdut.xerramp.xrbias.21             9.03591e-06
+xdut.xerramp.rbt                   9.03654e-06
+xdut.xerramp.tail                      0.78991
+xdut.xerramp.nd                           3.63
+xdut.xerramp.n1                           3.63
+xdut.xerramp.nz                           3.63
+xdut.xerramp.xrz.11                       3.63
+xdut.xerramp.xrz.21                       3.63
+eout                                      3.63
+xdut.bg                                   3.63
+xdut.xerramp.nrza                         3.63
+xdut.xerramp.xrza.11                      3.63
+xdut.xerramp.xrza.21                      3.63
+xdut.xerramp.nf                           3.63
+xdut.xerramp.nbp                          3.63
+xdut.xerramp.xrbufb.11                    3.63
+xdut.xerramp.xrbufb.21                    3.63
+xdut.xerramp.enb                          3.63
+xdut.xilimit.isns                  1.55942e-08
+xdut.xilimit.xrsns.11              1.47263e-08
+xdut.xilimit.xrsns.21              1.55782e-08
+xdut.xilimit.pb                        3.34837
+xdut.xilimit.vth                   6.71314e-07
+xdut.xilimit.xrref.11              1.49017e-08
+xdut.xilimit.xrref.21              6.71122e-07
+xdut.xilimit.bt                            1.2
+xdut.xilimit.bb                            1.2
+xdut.xilimit.xrbias.11                     1.2
+xdut.xilimit.xrbias.21                     1.2
+xdut.xilimit.cn                       0.160328
+xdut.xilimit.tail                      1.12091
+xdut.xilimit.co                    8.35942e-10
+xdut.xilimit.xrtail.11                 1.12091
+xdut.xilimit.xrtail.21                 1.12091
+xdut.xilimit.tailp                     1.12091
+xdut.xilimit.enb                          3.63
+xdut.xilimit.clg                          3.63
+xdut.xilimit.xrl2.11                      3.63
+xdut.xilimit.xrl2.21                      3.63
+xdut.xsoftstart.bt                         1.2
+xdut.xsoftstart.bb                     1.19999
+xdut.xsoftstart.xrss_bias.11           1.19999
+xdut.xsoftstart.xrss_bias.21               1.2
+xdut.xsoftstart.ssr                 1.4234e-08
+xdut.xsoftstart.sd                        3.63
+xdut.xsoftstart.gmsa                      3.63
+xdut.xsoftstart.gmia                      3.63
+xdut.xsoftstart.gmvss                  2.69677
+xdut.xsoftstart.gmsb                      3.63
+xdut.xsoftstart.gmsum                     3.63
+xdut.xsoftstart.fbp                    1.20026
+xdut.xsoftstart.hg                           0
+xdut.xsoftstart.enb                       3.63
+xdut.xsoftstart.xrh_ss.11                    0
+xdut.xsoftstart.xrh_ss.21                    0
+xdut.xsoftstart.xrr_ss.11                 3.63
+xdut.xsoftstart.xrr_ss.21                 3.63
+n_esr                              1.47103e-08
+n_cap                                        0
+ln                                           0
+v.xdut.xsoftstart.vbsense_ss#branch     1.34256e-12
+v.xdut.xilimit.vbsense#branch      1.34256e-12
+vlmeas#branch                      4.08619e-10
+vcmeas#branch                                0
+vloop#branch                        1.8326e-11
+vref#branch                        4.63808e-12
+ven#branch                                   0
+vin#branch                        -5.14449e-10
+
+ Reference value :  1.30327e-04 Reference value :  8.95327e-04 Reference value :  1.66733e-03 Reference value :  2.40132e-03 Reference value :  3.16932e-03 Reference value :  3.92732e-03 Reference value :  4.68232e-03 Reference value :  5.44132e-03 Reference value :  6.19832e-03 Reference value :  6.97432e-03 Reference value :  7.73132e-03 Reference value :  8.38995e-03ft_polyfit @ 8067 failed
+ft_polyfit @ 8068 failed
+
+No. of Data Rows : 9082
+m_t_v04             =  3.08942e-03
+m_t_v14             =  6.45709e-03
+
+Error: measure  m_t_startup  trig(TARG) : out of interval
+ meas tran m_t_startup trig v(en) val=1.4 rise=1 targ v(vout) val=1.764 rise=1 failed!
+
+m_vout_max_en       =  1.74814e+00 at=  8.00000e-03
+m_vout_settled      =  1.73323e+00
+m_icap_peak_ma      =  1.12276e+00 at=  1.87932e-03
+m_isup_peak_ma      =  4.87194e+01 at=  8.00000e-03
+m_dvout_max         =  1.06418e+00 at=  1.87832e-03
+m_dvout_min         =  -6.29284e-05 at=  1.87333e-03
+m_ssr_end           =  1.89289e+00
+m_hg_end            =  3.63000e+00
+m_vout_pp_late      =  7.51490e-02 from=  7.50000e-03 to=  7.90000e-03
+m_vout_off_tran     =  2.32843e-08
+m_pg_off_tran       =  3.62996e+00
+m_ssr_off_tran      =  4.14859e-08
+m_hg_off_tran       =  3.40110e-02
+Note: Simulation executed from .control section 
