@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -89,6 +90,36 @@ def ngspice_version() -> str:
         if "ngspice-" in line:
             return line.strip().lstrip("* ").strip()
     return out.strip().splitlines()[0] if out.strip() else "unknown"
+
+
+def ngspice_binary_sha256() -> str:
+    """SHA-256 of the ``ngspice`` executable currently resolved on ``PATH``.
+
+    ``ngspice_version()`` reports only the self-printed banner line (e.g.
+    ``"ngspice-46"``), which is the tool's own *claimed* identity, not a
+    fingerprint of what is actually on disk. Issue #182 found two installed
+    binaries on one development machine -- one at the resolved-first PATH
+    entry, one at an older, still-present install prefix -- that print the
+    identical ``"ngspice-46 ... Compiled with KLU Direct Linear Solver"``
+    banner yet differ byte-for-byte (a local rebuild silently replaced the
+    resolved one between two evidence-gathering passes a month apart). The
+    version string alone cannot detect that; a content hash can. Callers
+    that want this in a record's Environment section should treat it the
+    same way as the netlist/manifest hashes already recorded there: a
+    reproducibility fingerprint, not a claim about correctness.
+    """
+    exe = shutil.which(NGSPICE)
+    if not exe:
+        raise NgspiceMissing(
+            "ngspice not found on PATH.\n"
+            "  macOS:  brew install ngspice\n"
+            "  Debian: apt-get install ngspice"
+        )
+    digest = hashlib.sha256()
+    with open(exe, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:

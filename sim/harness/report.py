@@ -198,12 +198,28 @@ def evaluate_checks(
     return failures
 
 
-def environment(pdk: Pdk, ngspice: str, repo_root: Path, git: dict | None = None) -> dict:
+def environment(
+    pdk: Pdk,
+    ngspice: str,
+    repo_root: Path,
+    git: dict | None = None,
+    ngspice_sha256: str | None = None,
+) -> dict:
     """Reproducibility provenance for the record.
 
     ``git`` should be sampled *before* the run starts. The harness writes its
     own per-corner logs into the tracked evidence tree, so sampling afterwards
     would report every record as taken against a dirty tree.
+
+    ``ngspice_sha256`` is optional and defaults to ``None`` (rather than
+    computing it here) so this function stays usable with a fabricated
+    ``ngspice`` string in tests that need no real ngspice install (see
+    ``sim/tests/test_harness.py``'s "No PDK and no ngspice required"
+    contract). Real callers should pass ``runner.ngspice_binary_sha256()`` --
+    issue #182 found the self-reported version string alone insufficient to
+    detect a silent binary content change between two evidence-gathering
+    runs, since two differently-built binaries reported the identical
+    version banner.
     """
     try:
         user = getpass.getuser()
@@ -212,6 +228,7 @@ def environment(pdk: Pdk, ngspice: str, repo_root: Path, git: dict | None = None
     return {
         "harness_version": HARNESS_VERSION,
         "ngspice": ngspice,
+        "ngspice_sha256": ngspice_sha256,
         "python": sys.version.split()[0],
         "platform": platform.platform(),
         "host": socket.gethostname(),
@@ -278,6 +295,7 @@ def build_record(
     subset_reason: str = "",
     operating_conditions: dict[str, str] | None = None,
     git: dict | None = None,
+    ngspice_sha256: str | None = None,
 ) -> dict:
     measure_names = list(tb.measure)
     summary = summarize(results, measure_names)
@@ -323,7 +341,7 @@ def build_record(
         "subset_reason": subset_reason,
         "matrix": matrix_conformance(tb, points),
         "testbench": tb.provenance(repo_root),
-        "environment": environment(pdk, ngspice, repo_root, git),
+        "environment": environment(pdk, ngspice, repo_root, git, ngspice_sha256=ngspice_sha256),
         "grid": {
             "corners": corners,
             "temperatures_c": sorted({p.temp_c for p in points}),
@@ -531,6 +549,26 @@ def _result_lines(record: dict) -> list[str]:
     return lines
 
 
+def _ngspice_sha256_line(ngspice_sha256: str | None) -> str:
+    """Format the Environment section's ngspice-binary-content line.
+
+    See issue #182: the self-reported ``ngspice`` version string alone was
+    found insufficient to detect a silent binary content change between two
+    evidence-gathering runs a month apart (two differently-built binaries
+    reported the identical version banner). Recording the resolved binary's
+    sha256 makes that detectable in a future comparison; ``None`` means the
+    caller did not supply one (e.g. an older code path, or a test using a
+    fabricated environment), which is itself worth surfacing rather than
+    silently omitting.
+    """
+    if ngspice_sha256:
+        return f"`{ngspice_sha256}`"
+    return (
+        "not recorded (issue #182: pass runner.ngspice_binary_sha256() to "
+        "build_record() to close this gap)"
+    )
+
+
 def render_record(record: dict, experiment: str) -> str:
     """Render the ratified ``records/<record-id>.md`` summary.
 
@@ -607,6 +645,12 @@ def render_record(record: dict, experiment: str) -> str:
         f"- PDK: {pdk.get('variant')} @ open_pdks `{pdk.get('open_pdks_version')}`"
         f" ({pdk.get('path')}, found via {pdk.get('discovered_via')})",
         f"- ngspice: {env['ngspice']}",
+        f"- ngspice binary sha256: {_ngspice_sha256_line(env.get('ngspice_sha256'))}",
+        f"- Host: `{env.get('host', 'unknown')}` -- issue #182: this repo's evidence is"
+        " produced across a fleet of independently-provisioned builder hosts, each"
+        " with its own locally-installed ngspice; recording which host ran a given"
+        " record is what makes a cross-host toolchain divergence attributable rather"
+        " than looking like unexplained same-netlist drift.",
         f"- Harness: sim/harness {env['harness_version']}, python {env['python']}",
         f"- git: `{git['commit']}` on `{git['branch']}`"
         + (" (dirty)" if git["dirty"] else " (clean)"),

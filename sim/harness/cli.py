@@ -203,7 +203,8 @@ def cmd_check_env() -> int:
     status = EXIT_OK
     try:
         version = runner.ngspice_version()
-        print(f"ngspice : OK   {version}")
+        sha256 = runner.ngspice_binary_sha256()
+        print(f"ngspice : OK   {version}  (binary sha256 {sha256})")
     except NgspiceMissing as exc:
         print(f"ngspice : MISSING\n{exc}")
         status = EXIT_ENVIRONMENT
@@ -264,6 +265,11 @@ def run(args: argparse.Namespace) -> int:
     try:
         pdk = find_pdk()
         ngspice = runner.ngspice_version()
+        # Issue #182: the version string alone reported the identical banner
+        # for two differently-built binaries a month apart. A content hash
+        # makes a silent rebuild/replacement of the resolved binary
+        # detectable in a later record-to-record comparison.
+        ngspice_sha256 = runner.ngspice_binary_sha256()
     except (PdkNotFound, NgspiceMissing) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ENVIRONMENT
@@ -358,6 +364,7 @@ def run(args: argparse.Namespace) -> int:
         points=points,
         results=results,
         ngspice=ngspice,
+        ngspice_sha256=ngspice_sha256,
         repo_root=REPO_ROOT,
         record_id=record_id,
         started_utc=started.isoformat(timespec="seconds"),
