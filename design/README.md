@@ -313,11 +313,14 @@ Monte Carlo study).
   cap put those two within a decade of each other with an RHP zero nearby;
   the result was a badly damped loop whose first acquisition, ~230 µs after
   the enable edge, slewed `VOUT` at 4.5 V/ms against a 0.65 V/ms steady ramp
-  and drove the measured startup inrush. `Rz_ss` (3.7 MΩ, in series with a
-  re-sized 0.80 pF `Cm_ss`) is the standard nulling resistor for that, the
-  same `Rz`/`Cc` idiom `error_amp` already carries. The sweep that picked
-  those two values, including the measured instability boundary at
-  `Rz_ss ≈ 6 MΩ`, is tabulated in `design/ldo_softstart.sch`'s notes.
+  and drove the measured startup inrush. `Rz_ss` (1.55 MΩ, in series with the
+  unchanged 7.2 pF `Cm_ss`) is the standard nulling resistor for that, the
+  same `Rz`/`Cc` idiom `error_amp` already carries. Its usable range is
+  narrow and bounded on both sides by measurement — too little and the 0 mA
+  group goes back over the 5 mA inrush bound, too much and the hand-over
+  destabilises at the 0.33 µF end — and the sweep that picked the value, plus
+  why shrinking `Cm_ss` instead was rejected, is tabulated in
+  `design/ldo_softstart.sch`'s notes.
 - **The ramp is NOT applied to `error_amp`'s reference**, which is the obvious
   way to build a soft start and does not work on this amplifier. `error_amp`'s
   input pair is NMOS, so with `VOUT` near 0 both of its inputs are under the
@@ -336,11 +339,11 @@ Monte Carlo study).
   60 µm × 60 µm of `cap_mim_2f0` at the 1.990 fF/µm² measured in
   `sim/devchar/CONCLUSIONS.md` §3, the same plate as `Css`) — 2.4× the pass
   device's own `Cgd` (3.02 pF, same record) added to a main-loop node. Issue
-  #43 re-sized it to **0.80 pF in series with `Rz_ss`'s 3.7 MΩ nulling
-  resistor**, so what the main loop now sees at `PASS_GATE` is a few MΩ of
-  series impedance rather than a large bare capacitor. The change was made
-  for the clamp loop's own damping (see below), and it *reduces* this
-  footprint rather than adding to it — but it is still a change to a
+  #43 put it **behind `Rz_ss`, a 1.55 MΩ nulling resistor**, leaving `Cm_ss`
+  itself at 7.2 pF. What the main loop sees at `PASS_GATE` is therefore
+  unchanged below ~14 kHz and ~1.5 MΩ of series impedance above it,
+  rather than a bare capacitor at every frequency. The change was made for
+  the clamp loop's own damping (see below) — but it is a change to a
   main-loop node, and it has **not** been characterised in AC here.
   `sim/loop-stability/` owns that evidence, and a re-run there belongs to
   `#51`/`#176`.
@@ -351,19 +354,26 @@ Monte Carlo study).
   163** (`sim/soft-start/records/20260906-012405-2a7caec.md`).
   `sim/soft-start/testbench/summarize.py` adjudicates this invariant on every
   run.
-- Measured: peak supply current during a 50 mA startup, on the same 63-corner
-  enable/shutdown matrix at 1 µF / 100 mΩ, drops from **153.4–289.1 mA** to
-  **53.2–138.9 mA**; the soft-start bench's own 63-corner matrix at the same
-  load and output network gives **53.2–137.2 mA**. Across all 143 loaded
-  points, i.e. including DR-0001's full capacitor window, the spread is
-  **50.3–201.1 mA**, the top end at 0.33 µF / 1 mΩ
-  (`ff_-40c_3.63v_0.33u_0.001_36`) — the low-ESR edge the record calls out
-  separately — and the bottom at 0.33 µF / 500 mΩ. Overshoot drops from up
-  to **+6.5%** to within **+2%** at all but the hottest fast corners. What it
-  does **not** meet is the ratified 3 ms settling window at the slow end of
-  the ramp's own PVT spread, and peak (as opposed to steady) `dVout/dt`
-  during two short transients per startup. Both are recorded, with numbers,
-  in `spec/decision-records/DR-0006` and `sim/soft-start/records/`.
+- Measured, current state (`sim/soft-start/records/20260906-125202-f1096c9.md`,
+  163 points; the pre-#38 comparison is in issue #38's own record). On the
+  nominal **1 µF / 100 mΩ** matrix at the full 50 mA load, all 63 points meet
+  the ramp-rate (0.316–0.836 V/ms), overshoot (1.8005–1.8119 V),
+  inrush (2.06–3.90 mA) and peak-supply (50.47–50.91 mA) clauses; the 0 mA
+  case and the **0.33 µF / 500 mΩ** group likewise pass all four, 20/20 each.
+  What the block does **not** meet:
+  - the ratified 3 ms settling window at the slow end of the ramp's own
+    R × C PVT spread — 48 of the 63 main-matrix points, the subject of
+    `spec/decision-records/DR-0006`;
+  - inrush and peak supply current at the **4.7 µF** end of DR-0001's
+    capacitor window (8.78–14.86 mA against ≤ 5 mA, and 51.75–53.82 mA
+    against ≤ 52 mA). The second of those is arithmetic rather than dynamics:
+    the ramp's own steady `C_eff × dV/dt` is 1.5–3.9 mA and it rides on top
+    of the 50 mA load. Both are open, tracked by #43's follow-up;
+  - the peak (as opposed to steady) `dVout/dt` bound, at every point — the
+    acquisition transient still exceeds 1 V/ms even where the resulting
+    capacitor current is well inside the 5 mA inrush bound.
+  The **1 mΩ ESR** edge of the window is a main-loop problem, not a
+  soft-start one (`#51`), and is excluded from the statements above.
 - Added quiescent current: **+1.7 µA** enabled (24.1 µA vs 22.4 µA at the
   binding ff/125 °C/3.63 V corner, against the ratified < 30 µA) and
   **+1 nA** disabled (0.2037 µA vs 0.2026 µA, against < 3 µA). There is no
