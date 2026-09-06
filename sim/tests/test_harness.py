@@ -10,6 +10,7 @@ import contextlib
 import datetime
 import io
 import json
+import os
 import re
 import sys
 import tempfile
@@ -20,8 +21,8 @@ from pathlib import Path
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
-from harness import corners, report, runner, testbench  # noqa: E402
-from harness.pdk import Pdk  # noqa: E402
+from harness import cli, corners, report, runner, testbench  # noqa: E402
+from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
     read_measurements,
     report_flag,
@@ -1240,6 +1241,169 @@ class NgspiceBinaryFingerprintTests(unittest.TestCase):
         with unittest.mock.patch("shutil.which", return_value=None):
             with self.assertRaises(runner.NgspiceMissing):
                 runner.ngspice_binary_sha256()
+
+
+class NgspiceProvenanceTests(unittest.TestCase):
+    """Issue #184: a version-string match is not enough -- #182 found a
+    self-built ``ngspice`` shadowing the Homebrew install
+    ``docs/environment-setup.md`` documents, on PATH, ahead of it. These
+    cover the identity check that turns that into a loud, actionable
+    ``--check-env`` failure instead of a silent "OK".
+    """
+
+    def test_resolved_exe_under_expected_root_is_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "homebrew"
+            exe = root / "bin" / "ngspice"
+            exe.parent.mkdir(parents=True)
+            exe.write_bytes(b"fake\n")
+            # Should not raise.
+            runner.verify_ngspice_provenance(str(exe), str(root))
+
+    def test_resolved_exe_outside_expected_root_raises_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "homebrew"
+            shadow_root = Path(tmp) / "local-build"
+            exe = shadow_root / "bin" / "ngspice"
+            exe.parent.mkdir(parents=True)
+            exe.write_bytes(b"fake\n")
+            root.mkdir()
+            with self.assertRaises(runner.NgspiceIdentityMismatch) as ctx:
+                runner.verify_ngspice_provenance(str(exe), str(root))
+            message = str(ctx.exception)
+            self.assertIn(str(exe), message)
+            self.assertIn(str(root), message)
+            self.assertIn("GF180_LDO_NGSPICE_ROOT", message)
+
+    def test_expected_ngspice_root_prefers_env_override(self):
+        with unittest.mock.patch.dict(
+            "os.environ", {runner.NGSPICE_ROOT_ENV: "/blessed/root"}
+        ):
+            with unittest.mock.patch.object(
+                runner, "homebrew_prefix", return_value="/opt/homebrew"
+            ) as homebrew_prefix:
+                self.assertEqual(runner.expected_ngspice_root(), "/blessed/root")
+                homebrew_prefix.assert_not_called()
+
+    def _env_without_ngspice_root_override(self) -> dict:
+        env = dict(os.environ)
+        env.pop(runner.NGSPICE_ROOT_ENV, None)
+        return env
+
+    def test_expected_ngspice_root_falls_back_to_homebrew(self):
+        with unittest.mock.patch.dict(
+            os.environ, self._env_without_ngspice_root_override(), clear=True
+        ):
+            with unittest.mock.patch.object(
+                runner, "homebrew_prefix", return_value="/opt/homebrew"
+            ):
+                self.assertEqual(runner.expected_ngspice_root(), "/opt/homebrew")
+
+    def test_expected_ngspice_root_is_none_without_homebrew_or_override(self):
+        with unittest.mock.patch.dict(
+            os.environ, self._env_without_ngspice_root_override(), clear=True
+        ):
+            with unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None):
+                self.assertIsNone(runner.expected_ngspice_root())
+
+    def test_homebrew_prefix_returns_none_when_brew_missing(self):
+        with unittest.mock.patch("shutil.which", return_value=None):
+            self.assertIsNone(runner.homebrew_prefix("ngspice"))
+
+    def test_homebrew_prefix_returns_none_on_nonzero_exit(self):
+        fake_result = unittest.mock.Mock(returncode=1, stdout="")
+        with unittest.mock.patch("shutil.which", return_value="/opt/homebrew/bin/brew"):
+            with unittest.mock.patch("subprocess.run", return_value=fake_result):
+                self.assertIsNone(runner.homebrew_prefix("ngspice"))
+
+    def test_homebrew_prefix_returns_stripped_stdout_on_success(self):
+        fake_result = unittest.mock.Mock(returncode=0, stdout="/opt/homebrew/opt/ngspice\n")
+        with unittest.mock.patch("shutil.which", return_value="/opt/homebrew/bin/brew"):
+            with unittest.mock.patch("subprocess.run", return_value=fake_result):
+                self.assertEqual(
+                    runner.homebrew_prefix("ngspice"), "/opt/homebrew/opt/ngspice"
+                )
+
+
+class CheckEnvProvenanceTests(unittest.TestCase):
+    """Issue #184's own acceptance criterion: ``--check-env`` must exit
+    non-zero with an actionable message on a resolved/expected-root
+    mismatch, not just when ``ngspice`` is entirely missing, and must stay
+    ``OK`` on the happy path.
+    """
+
+    def _run_check_env(self):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            status = cli.cmd_check_env()
+        return status, buffer.getvalue()
+
+    def _env_without_ngspice_root_override(self) -> dict:
+        # These tests drive `expected_ngspice_root()` entirely through the
+        # mocked `homebrew_prefix()` below; strip any ambient
+        # GF180_LDO_NGSPICE_ROOT so a developer's/CI's own real environment
+        # cannot change which branch a given test exercises (the check this
+        # issue adds does not depend on any environment variable or state
+        # that isn't reproducible across hosts -- the original #182 defect).
+        env = dict(os.environ)
+        env.pop(runner.NGSPICE_ROOT_ENV, None)
+        return env
+
+    def test_matching_provenance_reports_ok_and_exits_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "homebrew"
+            exe = root / "bin" / "ngspice"
+            exe.parent.mkdir(parents=True)
+            exe.write_bytes(b"fake\n")
+            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
+                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
+                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
+                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
+                unittest.mock.patch.dict(
+                    os.environ, self._env_without_ngspice_root_override(), clear=True
+                ):
+                status, out = self._run_check_env()
+            self.assertIn("provenance OK", out)
+            self.assertNotIn("MISMATCH", out)
+            # PDK is deliberately missing in this test env; only ngspice's own
+            # branch of the exit status is under test here.
+            self.assertIn("ngspice : OK", out)
+
+    def test_shadowing_binary_fails_loudly_not_silently(self):
+        """The core #182/#184 repro: a different build resolves first on
+        PATH than the one the doc pins, both claiming to be ngspice-46."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "homebrew"
+            root.mkdir()
+            shadow_exe = Path(tmp) / "local-build" / "bin" / "ngspice"
+            shadow_exe.parent.mkdir(parents=True)
+            shadow_exe.write_bytes(b"fake shadowing build\n")
+            with unittest.mock.patch("shutil.which", return_value=str(shadow_exe)), \
+                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
+                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
+                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
+                unittest.mock.patch.dict(
+                    os.environ, self._env_without_ngspice_root_override(), clear=True
+                ):
+                status, out = self._run_check_env()
+            self.assertEqual(status, cli.EXIT_ENVIRONMENT)
+            self.assertIn("MISMATCH", out)
+            self.assertIn(str(shadow_exe), out)
+
+    def test_no_homebrew_and_no_override_reports_unverified_not_ok(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "ngspice"
+            exe.write_bytes(b"fake\n")
+            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
+                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
+                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
+                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
+                unittest.mock.patch.dict(
+                    os.environ, self._env_without_ngspice_root_override(), clear=True
+                ):
+                status, out = self._run_check_env()
+            self.assertIn("provenance not verified", out)
+            self.assertNotIn("MISMATCH", out)
 
 
 if __name__ == "__main__":

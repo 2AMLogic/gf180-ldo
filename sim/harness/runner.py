@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -120,6 +121,102 @@ def ngspice_binary_sha256() -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+class NgspiceIdentityMismatch(RuntimeError):
+    """Raised when the ``ngspice`` resolved on ``PATH`` is not the toolchain
+    ``docs/environment-setup.md`` pins.
+
+    Issue #184 (a fleet-wide-provisioning follow-up to #182's binary-hash
+    fingerprint): a content hash alone makes drift *attributable* after the
+    fact, but does not stop a self-built binary from silently shadowing the
+    Homebrew install the doc tells every host to use. This turns that into a
+    loud, actionable failure instead.
+    """
+
+
+NGSPICE_ROOT_ENV = "GF180_LDO_NGSPICE_ROOT"
+
+
+def homebrew_prefix(formula: str) -> str | None:
+    """``brew --prefix <formula>``'s output, or ``None`` if unavailable.
+
+    Returns ``None`` -- not an exception -- whenever this can't be answered
+    (no ``brew`` on ``PATH``, ``brew`` errors, the formula isn't installed via
+    it, or the call hangs): a host without Homebrew is not itself a fault
+    (``docs/environment-setup.md``'s Linux/apt fallback exists for exactly
+    this), it just means provenance can't be verified against the Homebrew
+    pin on that host.
+    """
+    brew = shutil.which("brew")
+    if not brew:
+        return None
+    try:
+        out = subprocess.run(
+            [brew, "--prefix", formula],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode != 0:
+        return None
+    path = out.stdout.strip()
+    return path or None
+
+
+def expected_ngspice_root() -> str | None:
+    """The toolchain root this host's ``ngspice`` is expected to resolve
+    under, per ``docs/environment-setup.md``.
+
+    Resolution order (mirrors ``pdk.py``'s override-before-discovery
+    convention):
+
+    1. ``GF180_LDO_NGSPICE_ROOT`` -- explicit override, for a host whose
+       validated toolchain docs/environment-setup.md does not (yet) describe
+       a portable discovery rule for (e.g. a Linux/apt install, or a pinned
+       from-source build per this issue's alternative), or to blot out the
+       Homebrew probe below in a test/CI environment.
+    2. ``brew --prefix ngspice`` -- the Homebrew-managed install
+       ``docs/environment-setup.md`` (S1) documents as the validated one.
+    3. ``None`` -- Homebrew is not on this host's ``PATH``; provenance is not
+       enforced there yet (only the version banner + sha256 fingerprint are
+       reported by ``--check-env``).
+    """
+    override = os.environ.get(NGSPICE_ROOT_ENV)
+    if override:
+        return override
+    return homebrew_prefix("ngspice")
+
+
+def verify_ngspice_provenance(resolved_exe: str, expected_root: str) -> None:
+    """Raise :class:`NgspiceIdentityMismatch` unless ``resolved_exe`` lives
+    under ``expected_root``.
+
+    Both paths are resolved with ``Path.resolve()`` (following symlinks) so a
+    Homebrew Cellar symlink and a self-built binary sitting at a different,
+    PATH-shadowing prefix (the exact #182 failure mode) cannot alias one
+    another.
+    """
+    resolved_real = Path(resolved_exe).resolve()
+    expected_real = Path(expected_root).resolve()
+    try:
+        resolved_real.relative_to(expected_real)
+    except ValueError:
+        raise NgspiceIdentityMismatch(
+            f"ngspice resolved on PATH ({resolved_exe} -> {resolved_real}) is not "
+            f"under the pinned toolchain root ({expected_root} -> {expected_real}).\n"
+            "  This is the #182 failure mode: a different ngspice build is "
+            "shadowing the documented one on PATH.\n"
+            "  Fix: `which -a ngspice` to see every candidate, then either "
+            "reorder PATH so the pinned install resolves first, or remove/rename "
+            "the shadowing binary.\n"
+            "  If this host intentionally uses a different, already-validated "
+            f"toolchain root, set {NGSPICE_ROOT_ENV}=<root> to bless it.\n"
+            "  See docs/environment-setup.md #1 for the pinned version."
+        ) from None
 
 
 def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:

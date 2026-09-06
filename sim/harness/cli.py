@@ -5,13 +5,14 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
 
 from . import HARNESS_VERSION, corners as corners_mod, report, runner, testbench as tb_mod
 from .pdk import PdkNotFound, find_pdk
-from .runner import NgspiceMissing
+from .runner import NgspiceIdentityMismatch, NgspiceMissing
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SIM_DIR = REPO_ROOT / "sim"
@@ -205,6 +206,27 @@ def cmd_check_env() -> int:
         version = runner.ngspice_version()
         sha256 = runner.ngspice_binary_sha256()
         print(f"ngspice : OK   {version}  (binary sha256 {sha256})")
+        # #184: a version-string match alone does not mean it's the same
+        # toolchain docs/environment-setup.md pins -- #182 found a self-built
+        # binary silently shadowing the documented Homebrew install on PATH.
+        # Verify identity against the pinned root (Homebrew, or an explicit
+        # GF180_LDO_NGSPICE_ROOT override) and fail loudly on a mismatch,
+        # rather than only reporting the fingerprint for later comparison.
+        exe = shutil.which(runner.NGSPICE)
+        expected_root = runner.expected_ngspice_root()
+        if expected_root and exe:
+            try:
+                runner.verify_ngspice_provenance(exe, expected_root)
+                print(f"          provenance OK (under {expected_root})")
+            except NgspiceIdentityMismatch as exc:
+                print(f"ngspice : MISMATCH\n{exc}")
+                status = EXIT_ENVIRONMENT
+        else:
+            print(
+                "          provenance not verified: no Homebrew on PATH and "
+                f"{runner.NGSPICE_ROOT_ENV} is unset -- see "
+                "docs/environment-setup.md #1"
+            )
     except NgspiceMissing as exc:
         print(f"ngspice : MISSING\n{exc}")
         status = EXIT_ENVIRONMENT

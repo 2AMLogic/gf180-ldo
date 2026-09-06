@@ -231,6 +231,13 @@ ratified spec bar: a record's own PASS/FAIL verdict against its stated bar
 stands as recorded regardless of this caveat; the caveat only qualifies
 what a *comparison across two records* is allowed to conclude.
 
+Recording the fingerprint makes drift *detectable after the fact*; it does
+not stop it. Issue #184 hardens `sim/run_corners.py --check-env` to enforce
+toolchain identity *before* a run, rather than only reporting the
+fingerprint for later comparison — see
+[`docs/environment-setup.md`](../docs/environment-setup.md)'s "A version
+banner is not a toolchain identity" section.
+
 ## Interim evidence note (for #4, device characterization)
 
 #4 (characterizing gf180mcu devices for the LDO — pass FETs, resistors,
