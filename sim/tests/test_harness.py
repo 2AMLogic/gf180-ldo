@@ -14,6 +14,7 @@ import re
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 SIM_DIR = Path(__file__).resolve().parents[1]
@@ -1200,6 +1201,45 @@ class TestStartupDeckStaysResistivelyLoaded(unittest.TestCase):
     def test_startup_enable_ramps_from_a_disabled_state(self):
         text = (SIM_DIR / "startup" / "testbench" / "tb_startup.spice").read_text()
         self.assertRegex(text, r"(?m)^Ven EN 0 PULSE\(0 ")
+
+
+class NgspiceBinaryFingerprintTests(unittest.TestCase):
+    """Issue #182: the self-reported ``ngspice --version`` banner was found
+
+    insufficient to detect a silent binary content change -- two
+    differently-built ``ngspice-46`` binaries on one machine printed the
+    identical version string. ``ngspice_binary_sha256()`` fingerprints the
+    binary ``ngspice_version()`` resolves via ``PATH``, so a later comparison
+    can tell a rebuild from a real change even when the version string does
+    not move. Uses a fake executable, not a real ngspice install, per this
+    file's own "No PDK and no ngspice required" contract.
+    """
+
+    def test_hashes_the_resolved_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_exe = Path(tmp) / "ngspice"
+            fake_exe.write_bytes(b"fake ngspice binary content, build A\n")
+            with unittest.mock.patch("shutil.which", return_value=str(fake_exe)):
+                digest = runner.ngspice_binary_sha256()
+            import hashlib
+            self.assertEqual(digest, hashlib.sha256(fake_exe.read_bytes()).hexdigest())
+
+    def test_a_content_change_moves_the_hash_even_with_the_same_path(self):
+        """The whole point: a rebuild at the same resolved path is detectable."""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_exe = Path(tmp) / "ngspice"
+            fake_exe.write_bytes(b"fake ngspice binary content, build A\n")
+            with unittest.mock.patch("shutil.which", return_value=str(fake_exe)):
+                before = runner.ngspice_binary_sha256()
+            fake_exe.write_bytes(b"fake ngspice binary content, build B (rebuilt)\n")
+            with unittest.mock.patch("shutil.which", return_value=str(fake_exe)):
+                after = runner.ngspice_binary_sha256()
+            self.assertNotEqual(before, after)
+
+    def test_missing_ngspice_raises_ngspice_missing(self):
+        with unittest.mock.patch("shutil.which", return_value=None):
+            with self.assertRaises(runner.NgspiceMissing):
+                runner.ngspice_binary_sha256()
 
 
 if __name__ == "__main__":

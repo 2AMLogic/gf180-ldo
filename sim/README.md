@@ -187,6 +187,50 @@ moment it is written) or left permanently interleaved with genuine records,
 where any rollup that globs `sim/*/records/*.md` would ingest its fabricated
 verdict. Illustrate the format in prose; only real runs write files.
 
+## Reproducibility caveat: a version string is not a content fingerprint (#182)
+
+The Environment section documents "everything needed to re-run this record",
+and lists the resolved `ngspice` **self-reported version string** (e.g.
+`ngspice-46`). Issue #182 found that string insufficient on its own: this
+repo's evidence is produced across a fleet of independently-provisioned
+builder hosts (see Loom's own per-host lease records), each with its own
+locally-installed toolchain, and even **on a single host over time** two
+differently-built binaries were found coexisting that both print the
+identical `"ngspice-46 ... Compiled with KLU Direct Linear Solver"` banner
+while differing byte-for-byte. At a numerically marginal operating point
+(within a couple of degrees of DR-0001's 45° phase-margin bar), that
+difference in binary content was directly observed to move the measured
+phase margin by ~2° and gain margin by ~1 dB on an otherwise byte-identical,
+unmodified netlist and PDK — see
+`sim/loop-stability/records/20260906-090647-3981d88.md` for the full
+investigation and ruling-out evidence.
+
+**Consequence for this convention**: "reproducible" for a `sim/` record does
+**not** mean "any host/session reporting the same `ngspice` version string
+will reproduce this record's numbers to the last digit" — it means
+"reproducible given a matching resolved binary and PDK content, which the
+record's Environment section must make checkable." Every record's
+Environment section now also carries (or should carry, for records minted by
+harness code that predates #182):
+
+- **ngspice binary sha256** — a content fingerprint of the resolved
+  executable (`sim.harness.runner.ngspice_binary_sha256()`), not just its
+  self-reported version string.
+- **Host** — the hostname that produced the record (`socket.gethostname()`),
+  since Loom's builder fleet spans multiple independently-provisioned
+  machines.
+
+When comparing two records for a claimed regression or an unexplained
+per-point delta near a spec bar, **check whether `ngspice binary sha256` and
+`Host` match before treating the delta as evidence about the design**. A
+mismatch on either field means the two records were not produced by the same
+toolchain, and a delta between them is toolchain provenance, not a design
+regression — file it as a toolchain-reproducibility question (as #182 did),
+not as a spec-line failure. This does **not** relax DR-0001 or any other
+ratified spec bar: a record's own PASS/FAIL verdict against its stated bar
+stands as recorded regardless of this caveat; the caveat only qualifies
+what a *comparison across two records* is allowed to conclude.
+
 ## Interim evidence note (for #4, device characterization)
 
 #4 (characterizing gf180mcu devices for the LDO — pass FETs, resistors,

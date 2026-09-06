@@ -62,6 +62,7 @@ import math
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -82,7 +83,7 @@ from harness.report import (  # noqa: E402
     git_provenance,
     write_markdown_record,
 )
-from harness.runner import FATAL_LOG_RE, ngspice_version  # noqa: E402
+from harness.runner import FATAL_LOG_RE, ngspice_binary_sha256, ngspice_version  # noqa: E402
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
 DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
@@ -834,6 +835,12 @@ def main() -> int:
 
     print(f"pdk       : {pdk.variant} @ {pdk.version}")
     print(f"ngspice   : {ngspice_version()}")
+    # Issue #182: the version string alone was found to be insufficient --
+    # two differently-built binaries reported the identical banner a month
+    # apart. Print (and record, below) the resolved binary's content hash
+    # too, so a future comparison can tell a rebuild from a real change.
+    print(f"ngspice sha256: {ngspice_binary_sha256()}")
+    print(f"host      : {socket.gethostname()}")
     print(f"record id : {record_id}{' (NOT WRITTEN: --no-write)' if args.no_write else ''}")
     print(f"grid      : {len(grid)} PVT points x "
           f"{len(iloads)}x{len(ceffs)}x{len(esrs)} load/cap/ESR = {n_points} loop-gain points")
@@ -1263,6 +1270,14 @@ Everything needed to re-run this record:
 
 - PDK: {pdk.variant} @ {pdk.version}
 - ngspice: {ngspice_version()}
+- ngspice binary sha256: `{ngspice_binary_sha256()}` (issue #182: the version
+  string alone does not guarantee the resolved binary's content is
+  unchanged between two evidence-gathering runs -- see `sim/README.md`'s
+  reproducibility note)
+- Host: `{socket.gethostname()}` (issue #182: this repo's evidence is
+  produced across a fleet of independently-provisioned builder hosts, each
+  with its own locally-installed ngspice -- recording the host is what
+  makes a cross-host toolchain divergence attributable)
 - git: `{prov['short']}` on `{prov['branch']}`
   ({'DIRTY' if dirty else 'clean'} at generation time)
 - Command: `./sim/loop-stability/testbench/run.sh`
