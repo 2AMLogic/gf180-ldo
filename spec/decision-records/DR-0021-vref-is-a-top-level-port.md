@@ -114,7 +114,44 @@ measurement lines compared field by field. This is a stronger comparison
 than reading the committed head records, which were minted on other days
 against other toolchain states.
 
-<!-- EVIDENCE_TABLE -->
+| Bench | Points | DC/AC benches | Result vs. pre-#174 baseline |
+|---|---|---|---|
+| `amp-selfosc` | 45 | transient | Byte-identical at every corner (record `20260905-200919-3093ea1`) |
+| `quiescent-current` | 45 | op-point | Byte-identical at every corner (record `20260905-200855-3093ea1`) |
+| `psrr-vs-freq` | 45 | `.ac` | Byte-identical at every corner (record `20260905-200801-3093ea1`) |
+| `psrr-vs-freq-50ma` | 45 | `.ac` | Byte-identical at every corner (record `20260905-200820-3093ea1`) |
+| `load-regulation` | 27 | `.dc` sweep | Byte-identical at every corner (record `20260905-200836-3093ea1`) |
+| `startup` | 81 | transient | 64/81 completed before the run was interrupted mid-session; re-run to 81/81 is `sim/startup/records/` (below), no record minted from the interrupted attempt (its incomplete corner logs were discarded, not committed) |
+| `dropout-vs-load` | 27 | `.dc` sweep | Byte-identical at every corner (record `20260905-202233-3093ea1`) |
+| `line-regulation` | 27 | nested `.dc` | Byte-identical at every corner (record `20260905-202532-3093ea1`) |
+| `load-transient` | 81 | transient | Sub-mV residuals only (e.g. 42.308 vs 42.307 mV), no verdict moved (record `20260905-202554-3093ea1`) |
+| `mc-output-accuracy` | 45 | Monte Carlo (no fixed seed) | Not a bit-for-bit comparison by construction (random draws); statistically consistent with the baseline's per-corner mean/sigma, same PASS verdict at all 45 corners (record `20260905-223503-3093ea1`) |
+| `current-limit` | 63 | `.op` V-I sweep | Byte-identical to 5-6 significant figures; 2/63 rows differ only in a non-gated column at the 6th digit (record `20260905-230521-3093ea1`) |
+| `enable-shutdown` | 63 | transient + op-point | Iq/leakage/disabled-Vout identical to every printed digit; `t_startup_us` agrees to 6 figures (record `20260905-232555-3093ea1`) |
+| `op-point-sanity` | 1 (x2 EN states) | `.op` | Surfaced and fixed a real bug (a hierarchical `v(xdut.vref)` probe broken by the port promotion, see `tb_op_point_sanity.spice.in`); its own baseline is a month stale (predates PR #78/DR-0015) so this is not a clean #174 A/B (record `20260905-233316-3093ea1`) |
+| `soft-start` | 163 | transient | Ramp-rate/`t_startup`/DR-0006 fail-count match the last baseline exactly; overshoot/inrush/ripple differ, but improve relative to that (month-stale) baseline in a way independently consistent with the already-landed Mrza/Rza shelf (DR-0015), not with #174 (record `20260905-234149-3093ea1`) |
+| `loop-stability` | 72 of 4536 | `.ac`, Tian dual-injection | Full 4536-point re-run not performed in this PR (see "Loop-stability: partial verification" below); the single-PVT-point (`tt/27C/3.30V`) 72-point load/cap/ESR slice matches the corresponding slice of the last full record exactly, including the worst-case point (PM 5.12°, GM 1.05 dB at `50mA_0.33uF_1mohm`) |
+
+### Loop-stability: partial verification, disclosed
+
+`loop-stability`'s full matrix is 4536 points (63 PVT x 6 load x 3 cap x 4 ESR),
+roughly 63x every other bench's PVT-only grid, and its own `.ac` analysis --
+while individually cheap -- made a full re-run take on the order of hours on
+the (shared, contended) host this evidence was produced on. Rather than
+either skip verification of this bench entirely or block this PR on a
+multi-hour re-run, `sim/loop-stability/testbench/sweep.py --explore` (the
+full 6x3x4 load/cap/ESR grid at the single nominal PVT corner `tt/27C/3.30V`,
+72 of the 4536 points) was run and diffed against the corresponding 72-row
+slice of the last full record (`20260807-103351-64249c6-matrix.csv`): every
+field matches, including the worst-margin point in the whole 4536-point grid
+(`PM 5.12 deg, GM 1.05 dB at 50mA_0.33uF_1mohm`, a pre-existing, already-
+ratified-against FAIL this record does not change). This is consistent with
+the DR-0021 argument -- `.ac` analysis is exactly the kind of small-signal
+measurement an ideal voltage source's relocation is proven inert against --
+but it is **not** a full-matrix re-run, and is disclosed as a bound
+verification rather than claimed as one. A full fresh 4536-point
+`loop-stability` record against the seven-port netlist is filed as a
+follow-up (see "Follow-up filed").
 
 **Reading of the residuals**: the DC and `.ac` benches are **byte-identical
 at every corner**, as the argument above predicts. The residuals that are
@@ -232,11 +269,23 @@ asserting it:
 
 ## Follow-up filed
 
-The reference-referred characterization this port makes possible for the
-first time -- `VREF`-to-`VOUT` transfer over frequency, and the tempco /
-noise / PSRR budget a real reference would have to meet for the ratified
-`Output` and `PSRR` rows to survive contact with it -- is filed as its own
-issue rather than attempted here. It is a genuinely new measurement campaign
-(new testbench, new claim, its own PVT matrix), not an increment on this
-interface change, and folding it in would have made this record's central
-claim -- *that nothing electrical moved* -- impossible to check.
+- **#178** -- the reference-referred characterization this port makes
+  possible for the first time: `VREF`-to-`VOUT` transfer over frequency, and
+  the tempco / noise / PSRR budget a real reference would have to meet for
+  the ratified `Output` and `PSRR` rows to survive contact with it. It is a
+  genuinely new measurement campaign (new testbench, new claim, its own PVT
+  matrix), not an increment on this interface change, and folding it in
+  would have made this record's central claim -- *that nothing electrical
+  moved* -- impossible to check.
+- **#176** -- a full 4536-point `sim/loop-stability/` re-run against the
+  seven-port netlist. This record's own evidence for that bench is a
+  72-point single-PVT-point subset (see "Evidence" above); the full matrix
+  was not run in this PR given its size (roughly 63x every other bench's
+  PVT-only grid) and the contended host available at the time.
+- **#177** -- `sim/soft-start/`'s last recorded baseline (2026-08-02)
+  predates PR #78 / DR-0015's `Mrza`/`Rza` adaptive-compensation shelf and
+  its overshoot/inrush/ripple sub-characterization looks obsolete-FAIL as a
+  result (this record's own re-run measured dramatically better numbers, but
+  did not perform the controlled bisection needed to attribute the
+  improvement to DR-0015 with the same rigor `#98` used for
+  `load-transient`).

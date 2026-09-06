@@ -68,7 +68,13 @@ let m_vout = v(vout)
 let m_vin = v(vin)
 let m_loop = v(loop)
 let m_fb = v(xdut.fb)
-let m_vref = v(xdut.vref)
+* VREF is now a direct top-level port wired 1:1 to this deck's own VREF
+* net (issue #174 / DR-0021) -- ngspice folds a straight-through port like
+* that into the top-level node during flattening rather than keeping a
+* distinct xdut.vref vector, so v(xdut.vref) is no longer resolvable (it
+* was, when VREF was genuinely internal, driven by Vref1). v(vref) reads
+* the same physical node.
+let m_vref = v(vref)
 let m_ivin_ma = -i(vin)*1e3
 let m_ien_ua = -i(ven)*1e6
 print m_vout
