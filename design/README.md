@@ -306,6 +306,18 @@ Monte Carlo study).
   the duration of the clamp). Structurally the same clamp idiom as
   `ldo_ilimit`; electrically it holds `VOUT` at `1.5 × ramp` until the ramp
   passes `VREF`, then disengages and hands the pass gate back to `error_amp`.
+- **The clamp stage is a compensated loop, not just a clamp** (issue #43).
+  It closes through the output node, so its loop gain carries the output pole
+  (`1/(2π·Rload·C_eff)` — 0.94 kHz at the 4.7 µF top of DR-0001's window into
+  36 Ω) as well as the pole `Rl2_ss` sets at `CLG`. #38's bare 7.2 pF Miller
+  cap put those two within a decade of each other with an RHP zero nearby;
+  the result was a badly damped loop whose first acquisition, ~230 µs after
+  the enable edge, slewed `VOUT` at 4.5 V/ms against a 0.65 V/ms steady ramp
+  and drove the measured startup inrush. `Rz_ss` (3.7 MΩ, in series with a
+  re-sized 0.80 pF `Cm_ss`) is the standard nulling resistor for that, the
+  same `Rz`/`Cc` idiom `error_amp` already carries. The sweep that picked
+  those two values, including the measured instability boundary at
+  `Rz_ss ≈ 6 MΩ`, is tabulated in `design/ldo_softstart.sch`'s notes.
 - **The ramp is NOT applied to `error_amp`'s reference**, which is the obvious
   way to build a soft start and does not work on this amplifier. `error_amp`'s
   input pair is NMOS, so with `VOUT` near 0 both of its inputs are under the
@@ -318,22 +330,27 @@ Monte Carlo study).
   MOS gate — so the divider ratio, the feedback factor β, #9's offset gain-up
   and #10's loop **gain** are unchanged by construction.
 - **Its AC footprint on `PASS_GATE` is not nothing, and is not claimed to
-  be.** `Cm_ss` (**7.2 pF** — 60 µm × 60 µm of `cap_mim_2f0` at the
-  1.990 fF/µm² measured in `sim/devchar/CONCLUSIONS.md` §3, the same plate as
-  `Css`; it is the clamp stage's Miller compensation across `Mclamp_ss`) sits
-  between `PASS_GATE` and `CLG`, and stays there after hand-over regardless of
-  what the clamp does. That is 2.4× the pass device's own `Cgd` (3.02 pF, same
-  record) added to a main-loop node. It has **not** been characterised in AC
-  here — issue #10 owns the loop's AC evidence — and the transient evidence
-  that does exist is mixed: at **16 of the 163 measured points** `CLG` ends
-  the enable window more than 0.2 V below `VIN` rather than at `VIN` (11 of
-  them by more than 0.3 V, worst 0.85 V), so `Mclamp_ss` is carrying a `Vsg`
-  there rather than sitting in cutoff. Twelve of the sixteen are at the 1 mΩ
-  ESR edge of DR-0001's window; the worst at the nominal 1 µF / 100 mΩ output
-  is `ff_125c_2.97v_1u_0.1_36`, `CLG` = 2.472 V against `VIN` = 2.97 V.
-  `sim/soft-start/testbench/summarize.py` now adjudicates this invariant, and
-  the caveat is recorded in
-  `sim/soft-start/records/20260801-071013-6026a64.md`.
+  be.** The clamp stage's Miller compensation across `Mclamp_ss` sits between
+  `PASS_GATE` and `CLG`, and stays there after hand-over regardless of what
+  the clamp does. Issue #38 built it as a bare **7.2 pF** cap (`Cm_ss`,
+  60 µm × 60 µm of `cap_mim_2f0` at the 1.990 fF/µm² measured in
+  `sim/devchar/CONCLUSIONS.md` §3, the same plate as `Css`) — 2.4× the pass
+  device's own `Cgd` (3.02 pF, same record) added to a main-loop node. Issue
+  #43 re-sized it to **0.80 pF in series with `Rz_ss`'s 3.7 MΩ nulling
+  resistor**, so what the main loop now sees at `PASS_GATE` is a few MΩ of
+  series impedance rather than a large bare capacitor. The change was made
+  for the clamp loop's own damping (see below), and it *reduces* this
+  footprint rather than adding to it — but it is still a change to a
+  main-loop node, and it has **not** been characterised in AC here.
+  `sim/loop-stability/` owns that evidence, and a re-run there belongs to
+  `#51`/`#176`.
+  The transient evidence on the same node is now clean: `Mclamp_ss` is
+  intended to sit in cutoff after hand-over (`CLG` parked at `VIN`), and at
+  **16 of 163 points** in issue #38's original record it did not (`CLG` more
+  than 0.2 V below `VIN`, worst 0.85 V). Post-DR-0015 that count is **0 of
+  163** (`sim/soft-start/records/20260906-012405-2a7caec.md`).
+  `sim/soft-start/testbench/summarize.py` adjudicates this invariant on every
+  run.
 - Measured: peak supply current during a 50 mA startup, on the same 63-corner
   enable/shutdown matrix at 1 µF / 100 mΩ, drops from **153.4–289.1 mA** to
   **53.2–138.9 mA**; the soft-start bench's own 63-corner matrix at the same
