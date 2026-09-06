@@ -16,21 +16,39 @@ instead of a property of how fast Mpass can dump charge into C_out (the #38
 finding: 153-289 mA of peak supply current and up to +6.5% overshoot at 62 of
 63 corners).
 
+HOW IT HOLDS VOUT THERE CHANGED IN #189. Issues #38/#43 built a second
+feedback loop -- a PMOS comparator on (FB, SSR) driving a PMOS clamp that
+sourced into PASS_GATE. #189 deleted that comparator and its clamp
+(Mca_ss/Mcb_ss/Mna_ss/Mnb_ss/Cc_ss/Men_l/Rl2_ss/Mg2_ss/Mpark_ss/Mclamp_ss/
+Cm_ss/Rz_ss/Mclamp_bg_ss, and the node CLG with them) and replaced it with
+CURRENT INJECTION INTO FB. Read the two "WHY" sections below in order: the
+first is why #38 did not ramp the amplifier's reference, and the second is
+why injecting into FB is not that idea and does not hit its floor.
+
 Port order (also the .sym pin order -- do not reorder either file without
 updating both, and without re-running design/netlist.py --check):
   VIN        supply, 3.3 V nominal
-  FB         ldo_core's feedback-divider midpoint, 2/3 * VOUT. SENSE ONLY:
-             this block puts nothing but a MOS gate on that node, so the
-             divider ratio, the loop's feedback factor beta and therefore
-             #9's offset gain-up and #10's loop gain are all unchanged.
-  PASS_GATE  the pass device's gate -- the node this block clamps
+  FB         ldo_core's feedback-divider midpoint, 2/3 * VOUT. As of #189
+             this block DRIVES that node (Binj_ss sources into it, and
+             Mpre_a_ss/Mpre_b_ss pre-charge it to VREF for the first tens of
+             microseconds after enable); before #189 it only sensed it. The
+             divider ratio, the loop's feedback factor beta and #10's loop
+             gain are still untouched in the SETTLED state, because both
+             elements are off there -- see "WHAT THIS COSTS THE MAIN LOOP".
+             (The .sym still annotates this pin dir=in; that annotation is
+             stale as of #189 and only affects the *.PININFO comment line.)
+  PASS_GATE  the pass device's gate -- held at VIN by Mhold_ss for the
+             startup-hold window, and owned by the main amplifier at all
+             other times
   EN         enable, active-high, CMOS level (0 / VIN); the SAME net
              ldo_core, error_amp and ldo_ilimit already gate from
-  VREF       the 1.2 V reference -- the ramp's finish line and this block's
-             own bias reference
+  VREF       the 1.2 V reference -- the ramp's finish line, the injection's
+             zero point, and this block's own bias reference
   VSS        ground
+  BG         error_amp's output-buffer gate -- held at VIN by Mhold_bg_ss
+             for the same window, for the reason #55 established
 
-WHY A CLAMP ON PASS_GATE AND NOT A RAMP ON THE AMPLIFIER'S REFERENCE
+WHY #38 DID NOT RAMP THE AMPLIFIER'S REFERENCE
 
 The obvious soft start is to feed error_amp's INN from a ramped copy of VREF
 and let the main loop follow it. It does not work on THIS amplifier, and the
@@ -43,38 +61,107 @@ prototype of exactly that topology, simulated at tt/27 C/3.3 V into the full
 about 2 us -- the pass device parks at whatever current the dead first stage
 happens to leave it at (~12 mA) rather than tracking the ramp, and VOUT jumps
 to ~0.4 V before the ramp reference has moved 20 mV. Peak dVout/dt was
-10.8 V/ms against the ratified 1 V/ms; the ramp only starts controlling
-anything once VOUT is high enough to wake the input pair.
+10.8 V/ms against the ratified 1 V/ms.
 
-A clamp on PASS_GATE does not have that floor, because the ramp comparison
-happens in THIS block, on a PMOS input pair whose common-mode range includes
-0 V. So the loop that sets dVout/dt is closed from VOUT = 0 -- which is the
-entire requirement.
+WHY INJECTING INTO FB IS NOT THAT IDEA (#189)
 
-It also has three properties the reference-ramp version does not:
+Injection moves the ramp to the OTHER input and keeps BOTH inputs at VREF:
 
-  * It adds no DC error term. The reference-ramp version puts a follower's
-    offset (a few mV) permanently in series with VREF, i.e. permanently
-    inside the +/-2% output-accuracy budget, at every corner, forever. This
-    block's steady-state footprint on the main loop is one MOS gate on FB,
-    plus Mclamp_ss and Cm_ss on PASS_GATE. Mclamp_ss is INTENDED to sit in
-    cutoff there (CLG parked at VIN, Vsg = 0) and does at 147 of the 163
-    measured points; at the other 16 CLG ends the enable window more than
-    0.2 V below VIN (11 of them by more than 0.3 V, worst 0.85 V), i.e.
-    Mclamp_ss carries a Vsg rather than none. That is measured, it is not
-    what this note originally claimed, and it is adjudicated by
-    sim/soft-start/testbench/summarize.py and written up as a caveat in
-    sim/soft-start/records/20260801-071013-6026a64.md. (Post-DR-0015 that
-    count is 0 of 163 -- see sim/soft-start/records/20260906-012405-2a7caec.md.)
-    Cm_ss's 7.2 pF stays on PASS_GATE unconditionally, and since issue #43
-    it does so behind Rz_ss's 1.55 Mohm: see HOW THE CLAMP WORKS below.
-  * It leaves ldo_core's existing nets alone. #8's Men still has its gate on
-    EN, error_amp's INN is still VREF: ldo_core.sch's diff for this issue is
-    purely the addition of one instance.
-  * It is the same idiom as ldo_ilimit -- PMOS pair, resistor tail, mirror
-    load, common-source stage, PMOS clamp sourcing into PASS_GATE -- so the
-    two clamps are structurally identical and behave the same way when they
-    hand the pass gate back to the main amplifier.
+  At node FB, with I_inj sourced in,  (VOUT - FB)/Rtop + I_inj = FB/Rbot.
+  The main loop drives FB to VREF, so
+      VOUT = 1.5 * VREF - I_inj * Rtop.
+  Choose  I_inj = (VREF - SSR) / (Rtop||Rbot) = (VREF - SSR) / 200 kohm
+  and this collapses to  VOUT = 1.5 * SSR,  with I_inj = 0 exactly when
+  SSR = VREF, i.e. exactly when VOUT = 1.8 V.
+
+So FB sits at 1.2 V for the whole ramp -- 1.2 V is INSIDE the NMOS pair's
+common-mode range, which is the entire objection above -- and the amplifier
+that regulates the ramp is the main one, already compensated for every
+output network in DR-0001's window. There is no second loop to acquire
+through the pass device's dead zone, which is the ~230 us acquisition lag
+#43 measured, could not shrink further, and could only damp (Rz_ss).
+
+The rectification is what makes hand-over clean: SSR finishes ABOVE VREF
+(Mtop_ss's ceiling, measured 1.53-2.16 V), so a source-only injection is
+hard off after hand-over and contributes exactly zero DC error to the +/-2 %
+output-accuracy budget. It does not need a comparator, a switch or a timer to
+disengage: it disengages because its own argument goes through zero.
+
+WHAT #189 HAD TO ADD, AND WHY (the enable edge is not free)
+
+Pinning FB is necessary and NOT sufficient. Measured on the injection-only
+prototype at ff/125 C/2.97 V, 4.7 uF/500 mOhm, 50 mA: 238 mA of capacitor
+current 4 us after the enable edge. Two mechanisms, both at the edge, both
+independent of the ramp:
+
+  (1) FB cannot slew instantly. Cff (15 pF, ldo_core) plus the input pair's
+      own gate capacitance sit on that node, and 6 uA into ~17 pF needs
+      several microseconds to cover 1.2 V. error_amp's bias is up ~0.5 us
+      after the edge. For those few microseconds the amplifier sees FB far
+      BELOW VREF and does what it should: turns the pass device fully on.
+  (2) Even with FB pinned, error_amp wakes from its disabled state with N1
+      and ND parked at VDD (Mn1_pu/Mnd_pu), so M2P is off, BG is pulled down
+      by M2N, and Mbuf -- #51's source follower -- slams PASS_GATE down
+      before the first stage has settled. Measured on its own (FB pre-charged,
+      no hold): 240 mA.
+
+The three elements below fix (1) and (2) and cost nothing in the settled
+state:
+
+  Mpre_a_ss/Mpre_b_ss PRE-CHARGE FB TO VREF through two series PMOS: one
+    gated by HG (on while HG is low, i.e. from the enable edge) and one gated
+    by ENB (on only while enabled, so the pair is a pulse, not a level, and
+    the disabled block still draws nothing). This kills (1) outright: FB is
+    at VREF within nanoseconds of the edge instead of microseconds. The
+    switch carries ZERO current at its own operating point -- with VOUT = 0
+    and SSR = 0 the injection's 6 uA is exactly the divider's draw at
+    FB = VREF -- so opening it is glitch-free by construction, not by tuning.
+
+  Mhold_ss/Mhold_bg_ss HOLD PASS_GATE AND BG AT VIN for the first tens of
+    microseconds, on the shared gate HG. This is the same idiom the #38 clamp
+    used (a PMOS from VIN onto PASS_GATE, plus #55's companion PMOS onto BG
+    so Mbuf is out of the contest) and it is here for the same reason #38
+    parked CLG low: there must be no window in which the pass gate is
+    ungoverned. It fixes (2).
+
+  Rh_ss/Ch_ss and Rr_ss/Cr_ss SEQUENCE THE STARTUP. HG is EN through an RC;
+    SD is ENB through an identical RC. Their ORDER is the load-bearing part:
+
+      t = 0          enable edge. Injection on, FB pre-charged to VREF,
+                     PASS_GATE and BG held at VIN, ramp held at 0 by Mdis_ss
+                     (whose gate is SD, not ENB, as of #189).
+      t ~ 1.3 * tau  HG has risen to VIN - |Vtp|: the hold releases, softly,
+                     because an RC's approach to its asymptote is slow where
+                     it matters.
+      t ~ 1.5 * tau  SD has fallen to Vtn: Mdis_ss lets go and the ramp
+                     starts -- AFTER the hold has released, so VOUT is not
+                     already behind its target when the main loop takes the
+                     pass gate.
+
+    The ramp must start after the hold releases or the lag accumulated during
+    the hold is recovered as an inrush edge. The two RCs are deliberately the
+    SAME R and the SAME C (both ppolyf_u_3k 4870 squares, both 70 x 70
+    cap_mim), so the ordering is a ratio of matched devices and holds at every
+    corner even though tau itself moves +/-25 % with the resistor corner.
+    That ordering, not the absolute delay, is what the design depends on.
+
+    HOW tau WAS CHOSEN (measured, at ff/125 C/2.97 V, 4.7 uF/500 mOhm, 50 mA,
+    full 9 ms window, ratified bound 5 mA):
+
+      tau        icap_peak    what limits it
+      ------     ---------    --------------------------------------------
+       3 us       105 mA      hold releases before FB is even up
+      15 us        23 mA      hold releases before error_amp has settled
+      50 us      4.87 mA      just inside the bound, no margin
+      146 us     3.77 mA      as built; also drops peak dVout/dt to
+                              0.80 V/ms, i.e. under the ratified ramp bound
+
+    Bigger tau is monotonically better for inrush and monotonically worse for
+    t_startup, because the ramp-release delay (~1.5 * tau) is dead time added
+    to every startup. 146 us buys 24 % margin on the ratified inrush clause
+    and costs ~0.2 ms of t_startup; that trade, and its effect on DR-0006's
+    already-failing 3 ms clause, is quantified in
+    sim/soft-start/records/20260906-200639-bfc4a0a.md.
 
 HOW THE RAMP IS GENERATED
 
@@ -100,242 +187,127 @@ HOW THE RAMP IS GENERATED
   settling point at ~7 ms. A constant current into a capacitor spends the
   entire ramp at the bound instead of only the first instant of it.
 
-  Mdis_ss (gate ENB) shorts SSR to VSS whenever the block is disabled, so
-  every enable starts from a known 0 V rather than from whatever charge Css
-  kept. It is W = 1 um / L = 1 um -- small on purpose: its off-state leakage
-  is subtracted from a 2.7 nA ramp current, so a wide reset device would be
-  a temperature-dependent error term on the ramp rate.
+  Mdis_ss shorts SSR to VSS whenever the block is disabled AND for the
+  startup-hold window on top of that (gate SD, above). It is W = 1 um /
+  L = 1 um -- small on purpose: its off-state leakage is subtracted from a
+  2.3 nA ramp current, so a wide reset device would be a temperature-dependent
+  error term on the ramp rate. That leakage is also why SD's slow decay is
+  visible as a small (~2-4 %) reduction in the measured ramp slope: while SD
+  is between Vtn and ~Vtn-0.2 V, Mdis_ss is still shunting a few percent of
+  the ramp current.
 
   Mtop_ss is the ramp's ceiling: a PMOS with its gate on VREF and its source
   on SSR, so it starts sinking the ramp current once SSR is about a Vsg above
   VREF and holds SSR there. Below VREF it is a cutoff device with picoamps in
   it, so it does not bend the part of the ramp that matters. The ceiling only
-  has to be ABOVE VREF (so the comparator stays hard-disengaged after
+  has to be ABOVE VREF (so the injection stays hard-rectified after
   handover) and BELOW VIN_min (so nothing floats), and it is between those
   two by a wide margin at every corner.
-
-HOW THE CLAMP WORKS
-
-  Mca_ss (gate FB) and Mcb_ss (gate SSR) are a PMOS pair with a resistor tail
-  (Rtail_ss via Men_t_ss), loaded by the Mna_ss/Mnb_ss NMOS mirror. PMOS
-  inputs are the point: FB and SSR both start at 0 V and this pair works
-  there.
-
-    FB > SSR (output ahead of the ramp)  -> I(Mcb_ss) > I(Mca_ss) -> CO rises
-      -> Mg2_ss pulls CLG down -> Mclamp_ss sources into PASS_GATE -> the
-      pass device backs off -> VOUT falls.
-    FB < SSR (output behind the ramp)    -> CO falls -> CLG rises -> the
-      clamp lets go -> the main amplifier, which is saturated on the
-      more-current side for the whole ramp, gets the pass gate.
-
-  So VOUT is held at 1.5 * SSR by negative feedback the entire time, at any
-  load in 0-50 mA and any C_out in DR-0001's window: the loop delivers
-  whatever current the load and the capacitor need in order for VOUT to move
-  at the ramp's rate, which is exactly what a soft start is.
-
-  Mclamp_bg_ss (issue #55) is the second half of "the clamp sources into
-  PASS_GATE". The sentence above quietly assumes the clamp can WIN that node,
-  which was true while error_amp's output stage sank ~4 uA into it and stopped
-  being true when #51 put a 150 um/1 um source follower there: the ramp was
-  bypassed outright (VOUT at 1.80 V by 0.3 ms with SSR still at 0.064 V,
-  366 mA of inrush, 63/63 corners over the +2 % overshoot bound --
-  sim/enable-shutdown/records/20260801-200827-84f67b8.md). Mclamp_bg_ss is a
-  10 um/0.5 um PMOS from VIN to error_amp's BG on the SAME gate as
-  Mclamp_ss, so CLG falling pulls the follower's own gate up and takes Mbuf
-  out of the contest; what Mclamp_ss then has to out-source is Mpgn's ~0.4 uA,
-  which is LESS than the pre-#51 stage it was sized against. It is a hard off
-  whenever the clamp is idle (CLG rests at VIN), so it adds nothing to the
-  settled loop but its own drain junction on a ~0.5 pF node.
-
-  It is an ADDITION, not a move. Steering BG alone does not work: Mbufb, the
-  only pull-up at error_amp's OUT, is off in exactly the regime this clamp
-  exists for, so with Mclamp_ss re-pointed at BG there is nothing left to
-  charge PASS_GATE and the clamp loses the node completely (measured at
-  tt/27 C/2.97 V: t_startup 32 us against 3683 us pre-#51, overshoot 2.045 V,
-  the limit clamp saturated and still unable to hold). See design/error_amp.sch's
-  "BG IS A PORT" note.
-
-  Cm_ss/Rz_ss are the clamp stage's local compensation: a Miller capacitor
-  gate-to-drain across Mclamp_ss, in SERIES with a nulling resistor. Issue
-  #38 built only the capacitor; issue #43 added Rz_ss and changed nothing
-  else in this cell. The reasoning behind the original choice, why it did
-  not survive measurement, and what was added are all worth stating because
-  they are the same argument in two directions.
-
-    #38's argument was pole-splitting: with Rl2_ss's ~6.2 Mohm on CLG a
-    large Miller cap puts this loop's dominant pole far below the main
-    loop's, which is the same reason ldo_ilimit's Cc exists -- a SECOND
-    feedback loop around the same pass device has to be slow relative to the
-    first or the two interact. 7.2 pF was picked to be 2.4x the pass
-    device's own Cgd (3.02 pF, sim/devchar/CONCLUSIONS.md section 3), so the
-    split would be set by this block rather than by Mpass.
-
-    What that argument missed is the OTHER pole. This clamp loop closes
-    through the output node, whose pole sits at 1/(2*pi*Rload*C_eff) -- and
-    at the top of DR-0001's capacitor window (4.7 uF into 36 ohm) that is
-    ~0.94 kHz, i.e. right on top of the ~3.6 kHz that Rl2_ss x 7.2 pF puts
-    at CLG. Two poles within a decade, with a bare Miller cap's RHP zero
-    also nearby, is a badly damped loop, and it shows up exactly where a
-    badly damped loop shows up: as a large-signal overshoot the first time
-    the loop has to acquire. Measured at ff/-40 C/2.97 V, 4.7 uF/500 mOhm,
-    50 mA, the clamp reached its operating point ~230 us after the enable
-    edge, by which time the ramp had run 0.145 V of output ahead of a pass
-    device still in cutoff, and the recovery slewed VOUT at 4.49 V/ms --
-    4.7 uF x 4.49 V/ms = 21 mA of capacitor current against a ratified 5 mA
-    inrush bound, at a steady ramp rate of only 0.65 V/ms.
-
-    Rz_ss is the standard fix and the same idiom error_amp already carries
-    (its XRz/XCc pair): a nulling resistor in series with the Miller cap
-    moves the RHP zero into the left half plane and damps the loop.
-
-    HOW Rz_ss WAS CHOSEN, AND THE TRAP IN CHOOSING IT. Every number below is
-    a full 9 ms transient -- the same window the bench runs, NOT a shortened
-    one. That matters more than it sounds. The acquisition transient this
-    resistor is being tuned against happens 220-570 us after the enable edge,
-    so a 1.2 ms screening window looks like it is enough, and it is not:
-    too much Rz_ss does not degrade the acquisition at all, it destabilises
-    the HAND-OVER, milliseconds later, where the clamp lets go of PASS_GATE.
-    Screened at 1.2 ms, Rz_ss = 1200 squares looks like the best value in the
-    sweep (10.9 mA); run to 9 ms it is 178 mA. Anything re-tuning this
-    network must run the whole window, at more than one output capacitor.
-
-    Rz_ss is squeezed between two measured cliffs, and the usable band is
-    narrow. All values are ppolyf_u_3k squares at W = 1 um (~3.1 kohm each);
-    all currents are peak capacitor current over the full 9 ms window.
-
-      Rz_ss     ff/-40C/2.97V     ff/-40C/2.97V    ff/-40C/2.97V    ss/-40C/3.63V
-                4.7uF/500mOhm     1uF/100mOhm      1uF/0mA          0.33uF/500mOhm
-      -------   -------------     -------------    -------------    --------------
-      none        20.75 mA          6.78 mA          7.63 mA           1.48 mA
-       250        16.98             4.85             5.34 FAIL         --
-       300        16.40             4.62             5.09 FAIL         0.84
-       400        15.50             4.26             4.65              0.75
-       500        14.57             3.90             4.23              0.68   <-- AS BUILT
-       600        13.88             3.63             3.92              0.62
-       700        13.21             3.40             3.69            279.5 FAIL (hand-over)
-       968        11.82             2.93             3.16            (also fails at
-      1200       178.0 FAIL          --               --              res_ss/-40C/3.63V
-      1500       172.9 FAIL          --               --              4.7uF: 223.9 mA)
-
-    The LOWER bound is the ratified 5 mA inrush clause itself, at the no-load
-    (0 mA) end of the matrix: below ~400 squares the damping is not enough
-    and that group goes back over the bound. The UPPER bound is hand-over
-    stability at the SMALL-capacitor end: 700 squares turns a clean 1.48 mA
-    hand-over at ss/-40 C/3.63 V, 0.33 uF/500 mOhm into a 279 mA excursion,
-    and this was found by measuring the whole 163-point matrix rather than
-    the corner the acquisition transient is worst at. 500 squares sits in the
-    middle of the 400-600 band with ~30 % margin to the value that is
-    measured to fail, which is why it is preferred over the 700 that buys a
-    further 5 % on the (still-failing) 4.7 uF group.
-
-    SHRINKING Cm_ss INSTEAD WAS TRIED AND REJECTED. It helps the 4.7 uF end
-    more per unit than Rz_ss does (60x60 -> 15x15 with no Rz_ss takes the
-    worst 4.7 uF point 20.75 -> 11.98 mA), but Cm_ss sits between CLG and
-    PASS_GATE, so it is also, incidentally, extra Cgd on the pass device --
-    compensation the MAIN loop has been getting for free since #38. Every
-    variant that shrinks it makes the already-unstable 0.33 uF/1 mOhm corner
-    (#51's territory, out of scope here) measurably worse, and it does NOT
-    fix the 4.7 uF group either way. So it buys a regression somewhere else
-    and no clause anywhere, and Cm_ss is left at 60 um x 60 um.
-
-  What this network costs the main loop CHANGES, and not only downwards.
-  Whatever Mclamp_ss ends up doing after hand-over, this network is still
-  hanging on PASS_GATE, and Rz_ss makes it frequency-dependent: below
-  1/(2*pi*Rz_ss*Cm_ss) ~ 14 kHz it is still the same 7.2 pF #38 put there,
-  and above it the series resistance takes over, so at the main loop's
-  crossover the pass gate sees ~1.5 Mohm instead of a capacitor 2.4x
-  its own Cgd. That is a real change to a main-loop node and it is NOT
-  characterised in AC here: sim/soft-start measures the large-signal startup
-  (including 163 points of settled ripple, which is what would show a newly
-  unstable main loop) and nothing else. The AC evidence is
-  sim/loop-stability/'s, and a re-run there belongs to #51/#176.
-
-  Rl2_ss/Men_l are the common-source stage's load. The load is in SERIES with
-  an EN-gated PMOS switch, not tied straight to VIN as ldo_ilimit's Rl2 is,
-  because this block's disabled state parks CLG LOW (below) and a bare
-  resistor to the rail would then burn VIN/Rl2 permanently -- issue #38's
-  clause 5 names that exact pattern as the easy way to regress the measured
-  0.20 uA shutdown Iq.
 
 ENABLE / SHUTDOWN
 
   Minv_p/Minv_n: the local EN -> ENB inverter, the same two-device idiom
   error_amp and ldo_ilimit each carry their own copy of.
   Mben_ss (gate EN): opens the bias branch -- Iref_ss and the ramp go to 0.
-  Men_t_ss (gate ENB): opens the comparator's tail.
-  Men_l (gate ENB): opens the common-source stage's load.
-  Mdis_ss (gate ENB): resets SSR to 0.
-  Mpark_ss (gate ENB): parks CLG at VSS.
-
-  Parking CLG at VSS means the clamp is ON before EN is ever asserted, and it
-  is what makes the handover from #8's Men clean: Men releases PASS_GATE
-  within a microsecond of the enable edge, and this clamp is already holding
-  that node at VIN when it does. There is no window in which the pass gate is
-  ungoverned -- which is the window the pre-#38 design fell through.
+  Mdis_ss (gate SD): resets SSR to 0 (SD is high whenever ENB is).
+  Mpre_b_ss (gate ENB): opens the FB pre-charge path.
+  Binj_ss: gated on EN in its own expression (see WHAT IS IDEALIZED HERE).
+  Mhold_ss/Mhold_bg_ss (gate HG): HG sits at 0 while disabled, so the hold
+  is ON before EN is ever asserted -- the same guarantee #38 got by parking
+  CLG at VSS. Men (ldo_core) releases PASS_GATE within a microsecond of the
+  enable edge and this hold is already on that node when it does.
 
   Every branch above is off in the disabled state and none of them is a
-  resistor to a rail, so the disabled block contributes device leakage only.
+  resistor to a rail: Rh_ss returns to EN (0 V when disabled) and Rr_ss to
+  ENB through Cr_ss, so both are capacitively terminated and carry no DC.
+  The disabled block contributes device leakage only.
+
+WHAT THIS COSTS THE MAIN LOOP
+
+  In the settled enabled state every element #189 added is off:
+  Mhold_ss/Mhold_bg_ss are in cutoff (HG at VIN -- adjudicated at every
+  corner by the bench's own hg_end predicate), Mpre_a_ss/Mpre_b_ss are open
+  (ENB high... low, and HG at VIN), and Binj_ss is rectified off because SSR
+  finishes above VREF. What remains on FB is two PMOS drain junctions and one
+  injection-source terminal, i.e. tens of femtofarads -- against Cff's 15 pF.
+  That is strictly LESS than what #38/#43 left behind, which was Cm_ss's
+  7.2 pF and Rz_ss's 1.55 Mohm permanently hanging on PASS_GATE.
+
+  The AC consequence of removing Cm_ss/Rz_ss from PASS_GATE is real and is
+  NOT characterised here: sim/soft-start measures the large-signal startup
+  (including 163 points of settled ripple, which is what would show a newly
+  unstable main loop) and nothing else. The AC evidence is
+  sim/loop-stability/'s, and a re-run there belongs to #51/#176.
 
 WHAT IS IDEALIZED HERE
 
-  Fss_ramp, as above: an ideal CCCS standing in for a large-ratio mirror off
-  a bias generator this repo has not designed. A real 1:130 mirror at these
-  currents runs in weak inversion, where ratio accuracy is more PVT-sensitive
-  than the strong-inversion mirrors elsewhere in this design
-  (sim/devchar/CONCLUSIONS.md, matching section). That is why the ramp rate
-  is MEASURED across the full 63-point corner matrix and across DR-0001's
-  capacitor window (sim/soft-start/records/) rather than asserted from the
-  nominal arithmetic here, and why the sizing below sits below the 1 V/ms
-  bound at nominal rather than on it.
+  Fss_ramp, as before: an ideal CCCS standing in for a large-ratio mirror off
+  a bias generator this repo has not designed.
+
+  Binj_ss, NEW IN #189 and the bigger idealization of the two: a behavioural
+  source implementing
+
+      I(VIN -> FB) = max(0, (VREF - SSR) * 5.0e-6) * (EN > 1.4 V)
+
+  i.e. a linear transconductor of 5 uA/V, a source-only rectifier, and an
+  enable gate, in one element. Each of those three is realizable and the
+  intended implementation is standard -- two VIN-referenced resistor-
+  degenerated PMOS branches whose gates are SSR and VREF, their difference
+  taken in a diode-connected PMOS (which IS the rectifier: it simply turns
+  off when SSR passes VREF) and mirrored into FB -- but it is not built here,
+  and this cell therefore does NOT yet characterise:
+    * the transconductor's own PVT spread and its Vgs-matching error, which
+      the two branches' unequal currents make ~3 % at SSR = 0 and zero at
+      hand-over;
+    * the quiescent current it adds (the settled Iq row has ~8 uA of headroom
+      at its binding corner, ff/125 C/3.63 V, per
+      sim/quiescent-current/records/);
+    * its area.
+  The device-level build is tracked by issue #191.
+
+  The 5.0e-6 coefficient is 1.5/Rtop, i.e. it is a RATIO to the feedback
+  divider, not an absolute transconductance. That is deliberate and is the
+  one property the eventual device-level build must preserve: if the
+  injection's reference resistor does not track Rtop, the VOUT/SSR gain moves
+  with the resistor corner, and at -25 % the ramp would START at +0.45 V
+  instead of 0. ldo_core's divider is itself modelled as two ideal resistors,
+  so expressing the injection as a ratio to it is consistent with how the
+  divider ratio is already treated (README.md note 3).
 
 SIZING AS BUILT
 
   Everything below is a read-back of the instances in this file after
-  bring-up, not a statement of intent, and every derived number is labelled
-  either "nominal" (arithmetic from the values above) or "MEASURED" (from the
-  163-point sweep in sim/soft-start/records/20260801-071013-6026a64.md).
-  Where the two disagree, the measurement wins and the arithmetic is the
-  thing that is wrong.
+  bring-up, not a statement of intent.
 
   Rss_bias  ppolyf_u_3k, 1000 squares  ~3.1 Mohm  -> Iref_ss ~ 0.39 uA
   k_ss      0.0060                                -> I_ramp  ~ 2.3 nA
   Css       60 um x 60 um cap_mim_2f0             ~7.2 pF
     => nominal dSSR/dt ~ 0.32 V/ms, so dVout/dt ~ 0.48 V/ms.
-       MEASURED at tt/27 C/3.30 V, 1 uF/100 mOhm, 50 mA (corner
-       tt_27c_3.30v_1u_0.1_36): 0.4936 V/ms, with startup to 1.764 V in
-       3.75 ms. Over all 163 points: 0.296 .. 0.867 V/ms.
-  Rtail_ss  ppolyf_u_3k, 600 squares   ~1.86 Mohm -> tail 0.7..1.4 uA
-  Rl2_ss    ppolyf_u_3k, 2000 squares  ~6.2 Mohm  (carries ~0 once handed over)
-  Cc_ss     25 um x 20 um cap_mim_2f0  ~1.0 pF    CO to VSS
-  Cm_ss     60 um x 60 um cap_mim_2f0  ~7.2 pF    CLG to NZ_SS
-  Rz_ss     ppolyf_u_3k, 500 squares   ~1.55 Mohm NZ_SS to PASS_GATE (#43)
+  Binj_ss   5.0e-6 A/V = 1.5 / Rtop (see above)
+  Rh_ss     ppolyf_u_3k, 4870 squares  ~15.1 Mohm  EN -> HG
+  Ch_ss     70 um x 70 um cap_mim_2f0  ~9.75 pF    HG -> VSS   (tau ~147 us)
+  Rr_ss     ppolyf_u_3k, 4870 squares  ~15.1 Mohm  ENB -> SD
+  Cr_ss     70 um x 70 um cap_mim_2f0  ~9.75 pF    SD -> VSS   (tau ~147 us)
+  Mhold_ss     pfet 20 um / 0.5 um   VIN -> PASS_GATE, gate HG
+  Mhold_bg_ss  pfet 10 um / 0.5 um   VIN -> BG,        gate HG
+  Mpre_a_ss    pfet 10 um / 0.5 um   VREF -> FBP,      gate HG
+  Mpre_b_ss    pfet 10 um / 0.5 um   FBP  -> FB,       gate ENB
 
-  k_ss and Rl2_ss are the two values that moved during #38's bring-up (from
-  0.0077 and 1000 squares). k_ss sets the ramp rate directly and was reduced
-  to put the fastest corner under the ratified 1 V/ms bound with margin --
-  the measured fastest point is 0.867 V/ms (0.836 V/ms in the post-DR-0015
-  re-measurement, 20260906-012405-2a7caec). Rl2_ss is the common-source
-  stage's load, so it sets that stage's gain and the pull-up on CLG; it was
-  doubled to keep the clamp in control at the corners where Mg2_ss is
-  strongest. Neither moved for #43: #43 ADDED Rz_ss and changed no existing
-  value in this cell at all, which is why the ramp rate and t_startup are
-  expected to be -- and are measured to be -- unmoved by it.
+  Added enabled quiescent current is the bias branch only, ~0.4 uA at
+  tt/27 C: the two RCs are capacitively terminated, the hold and pre-charge
+  devices end in cutoff, and Binj_ss rectifies to zero. (The transconductor
+  that will replace Binj_ss will NOT be free -- see WHAT IS IDEALIZED HERE.)
 
-  Capacitor values use the 1.990 fF/um2 measured for cap_mim_2f0 in
-  sim/devchar/CONCLUSIONS.md section 3, not the 2.0 fF/um2 of the model name:
-  3600 um2 -> 7.16 pF, quoted as 7.2 pF. Css and Cm_ss are the same plate.
-
-  Added enabled quiescent current is the tail plus the bias branch, ~1.5 uA
-  at tt/27 C; the common-source stage's load carries no current in the
-  settled enabled state because CO ends up at VSS and Mg2_ss ends up off.
-  Rz_ss adds no current at all -- it is in series with a capacitor, so its
-  DC current is exactly zero in every state.
-  Added area is 7700 um2 of capacitor (Css 3600, Cm_ss 3600, Cc_ss 500) plus
-  4100 um2 of poly resistor (1000 + 600 + 2000 + 500 squares at W = 1 um),
-  about 11800 um2 -- roughly 12% of the ratified 0.1 mm2 core-area row, up
-  500 um2 for #43's Rz_ss. That is a real cost, it is dominated by the two
-  60 x 60 capacitors, and it is called out here rather than discovered at
-  layout.} -1200 -1470 0 0 0.28 0.28 {}
+  Added area is 13 350 um2 of capacitor (Css 3600, Ch_ss 4900, Cr_ss 4900)
+  plus 10 740 um2 of poly resistor (1000 + 4870 + 4870 squares at W = 1 um),
+  about 24 100 um2 -- roughly 24 % of the ratified 0.1 mm2 core-area row,
+  against about 11 800 um2 for the #38/#43 clamp this replaces. That is a
+  real cost, it is dominated by the two delay RCs, and it is called out here
+  rather than discovered at layout. The delay RCs are at their minimum-area
+  R/C split for the tau they implement (equal resistor and capacitor area);
+  buying the tau back with a smaller area needs a current-source ramp or a
+  MOS pseudo-resistor in place of the RC, which is a follow-on, not this
+  issue's scope.} -1200 -1470 0 0 0.28 0.28 {}
 C {devices/iopin.sym} -1200 -100 0 0 {name=p_vin lab=VIN}
 C {devices/ipin.sym} -1000 -100 0 0 {name=p_fb lab=FB}
 C {devices/iopin.sym} -800 -100 0 0 {name=p_pass_gate lab=PASS_GATE}

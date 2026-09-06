@@ -109,7 +109,7 @@ path anywhere in the hierarchy:
 | `ldo_core` (#8) | `Men` | Pass-device gate clamped to `VIN`; pass device off |
 | `error_amp` (#11) | `Mbias_h`, `Mnb_pd`, `Mn1_pu`, `Mnd_pu` | Amplifier bias branch opened, mirror node grounded, both internal high-impedance nodes parked at `VDD` |
 | `ldo_ilimit` (#11) | `Mben`, `Men_t`, `Men_co`, `Mcoff` | Threshold bias opened, comparator tail opened and its output parked, clamp gate held at `VIN` |
-| `ldo_softstart` (#38) | `Mben_ss`, `Men_t_ss`, `Men_l`, `Mdis_ss`, `Mpark_ss` | Ramp bias branch opened, comparator tail opened, common-source load opened, ramp capacitor shorted to `VSS`, clamp gate parked at `VSS` (clamp **on**, so the pass gate is never ungoverned at the enable edge) |
+| `ldo_softstart` (#38, rebuilt by #189) | `Mben_ss`, `Mdis_ss` (via `SD`), `Mpre_b_ss`, `Binj_ss`, and `HG` resting at 0 | Ramp bias branch opened, ramp capacitor shorted to `VSS`, `FB` pre-charge path opened, injection gated off, and the startup hold **on** (`Mhold_ss` holding `PASS_GATE` at `VIN`, `Mhold_bg_ss` holding `BG` there) so the pass gate is never ungoverned at the enable edge |
 
 The disabled output state is **pass device off with no internal active
 discharge** -- nothing pulls `VOUT` down, which is what the ratified
@@ -148,12 +148,16 @@ different, non-overlapping piece:
   evidence is under `sim/current-limit/records/` and
   `sim/enable-shutdown/records/`, and the one ratified row it cannot meet
   (the +/-10 % current-limit window) is `spec/decision-records/DR-0005`.
-- **#38 (soft start -- landed)**: added `ldo_softstart`, a clamp on
-  `PASS_GATE` that holds `VOUT` to a linear internal ramp until that ramp
-  passes `VREF`. It changes no existing net in `ldo_core` and no other cell.
-  The one ratified clause it cannot meet -- the 3 ms settling window, at the
-  slow end of the ramp's own resistor x capacitor corner spread -- is
-  `spec/decision-records/DR-0006`; the evidence is `sim/soft-start/records/`.
+- **#38 (soft start -- landed; rebuilt by #189)**: added `ldo_softstart`,
+  which holds `VOUT` to a linear internal ramp until that ramp passes `VREF`.
+  #38/#43 did it with a *second feedback loop* -- a comparator on
+  (`FB`, ramp) driving a clamp on `PASS_GATE`; **#189 replaced that with
+  current injection into `FB`**, so the ramp is now regulated by the main
+  loop and there is no second loop to acquire. It still changes no existing
+  net in `ldo_core` and no other cell. The one ratified clause it cannot meet
+  -- the 3 ms settling window, at the slow end of the ramp's own resistor x
+  capacitor corner spread -- is `spec/decision-records/DR-0006`; the evidence
+  is `sim/soft-start/records/`.
 
 ## Error amplifier (`error_amp`)
 
@@ -296,90 +300,109 @@ Monte Carlo study).
 
 - Pinout: `VIN FB PASS_GATE EN VREF VSS BG`. No new `ldo_core` port, and —
   like `ldo_ilimit` — it only attaches to nets that already existed (`BG`,
-  appended by #55, is `error_amp`'s buffer-input node).
-- Topology: a linear voltage ramp (`Css` charged by a scaled copy of the same
-  `VREF`/`Rbias` current `ldo_ilimit` uses, with a `VREF`-referenced ceiling
-  device above it) compared against `FB` by a **PMOS**-input pair with a
-  resistor tail, driving a common-source stage and a PMOS clamp that sources
-  current into `PASS_GATE` (plus, since #55, a second small PMOS on the same
-  gate that pulls `error_amp`'s `BG` up to release the class-AB follower for
-  the duration of the clamp). Structurally the same clamp idiom as
-  `ldo_ilimit`; electrically it holds `VOUT` at `1.5 × ramp` until the ramp
-  passes `VREF`, then disengages and hands the pass gate back to `error_amp`.
-- **The clamp stage is a compensated loop, not just a clamp** (issue #43).
-  It closes through the output node, so its loop gain carries the output pole
-  (`1/(2π·Rload·C_eff)` — 0.94 kHz at the 4.7 µF top of DR-0001's window into
-  36 Ω) as well as the pole `Rl2_ss` sets at `CLG`. #38's bare 7.2 pF Miller
-  cap put those two within a decade of each other with an RHP zero nearby;
-  the result was a badly damped loop whose first acquisition, ~230 µs after
-  the enable edge, slewed `VOUT` at 4.5 V/ms against a 0.65 V/ms steady ramp
-  and drove the measured startup inrush. `Rz_ss` (1.55 MΩ, in series with the
-  unchanged 7.2 pF `Cm_ss`) is the standard nulling resistor for that, the
-  same `Rz`/`Cc` idiom `error_amp` already carries. Its usable range is
-  narrow and bounded on both sides by measurement — too little and the 0 mA
-  group goes back over the 5 mA inrush bound, too much and the hand-over
-  destabilises at the 0.33 µF end — and the sweep that picked the value, plus
-  why shrinking `Cm_ss` instead was rejected, is tabulated in
-  `design/ldo_softstart.sch`'s notes.
-- **The ramp is NOT applied to `error_amp`'s reference**, which is the obvious
-  way to build a soft start and does not work on this amplifier. `error_amp`'s
-  input pair is NMOS, so with `VOUT` near 0 both of its inputs are under the
-  pair's common-mode floor and the main loop is not closed over the bottom of
-  the ramp; a prototype of that topology free-runs to an 11 mA charging edge
-  in ~2 µs at tt/27 °C before the ramp reference has moved 20 mV. The full
-  argument, with the measurement, is in `design/ldo_softstart.sch`'s notes.
-- **Nothing in the settled loop's DC path moves.** `Men`'s gate is still `EN`,
-  `Xerramp`'s `INN` is still `VREF`, and this block's only touch on `FB` is a
-  MOS gate — so the divider ratio, the feedback factor β, #9's offset gain-up
-  and #10's loop **gain** are unchanged by construction.
-- **Its AC footprint on `PASS_GATE` is not nothing, and is not claimed to
-  be.** The clamp stage's Miller compensation across `Mclamp_ss` sits between
-  `PASS_GATE` and `CLG`, and stays there after hand-over regardless of what
-  the clamp does. Issue #38 built it as a bare **7.2 pF** cap (`Cm_ss`,
-  60 µm × 60 µm of `cap_mim_2f0` at the 1.990 fF/µm² measured in
-  `sim/devchar/CONCLUSIONS.md` §3, the same plate as `Css`) — 2.4× the pass
-  device's own `Cgd` (3.02 pF, same record) added to a main-loop node. Issue
-  #43 put it **behind `Rz_ss`, a 1.55 MΩ nulling resistor**, leaving `Cm_ss`
-  itself at 7.2 pF. What the main loop sees at `PASS_GATE` is therefore
-  unchanged below ~14 kHz and ~1.5 MΩ of series impedance above it,
-  rather than a bare capacitor at every frequency. The change was made for
-  the clamp loop's own damping (see below) — but it is a change to a
-  main-loop node, and it has **not** been characterised in AC here.
-  `sim/loop-stability/` owns that evidence, and a re-run there belongs to
-  `#51`/`#176`.
-  The transient evidence on the same node is now clean: `Mclamp_ss` is
-  intended to sit in cutoff after hand-over (`CLG` parked at `VIN`), and at
-  **16 of 163 points** in issue #38's original record it did not (`CLG` more
-  than 0.2 V below `VIN`, worst 0.85 V). Post-DR-0015 that count is **0 of
-  163** (`sim/soft-start/records/20260906-012405-2a7caec.md`).
-  `sim/soft-start/testbench/summarize.py` adjudicates this invariant on every
-  run.
-- Measured, current state (`sim/soft-start/records/20260906-125202-f1096c9.md`,
-  163 points; the pre-#38 comparison is in issue #38's own record). On the
-  nominal **1 µF / 100 mΩ** matrix at the full 50 mA load, all 63 points meet
-  the ramp-rate (0.316–0.836 V/ms), overshoot (1.8005–1.8119 V),
-  inrush (2.06–3.90 mA) and peak-supply (50.47–50.91 mA) clauses; the 0 mA
-  case and the **0.33 µF / 500 mΩ** group likewise pass all four, 20/20 each.
-  What the block does **not** meet:
-  - the ratified 3 ms settling window at the slow end of the ramp's own
-    R × C PVT spread — 48 of the 63 main-matrix points, the subject of
-    `spec/decision-records/DR-0006`;
-  - inrush and peak supply current at the **4.7 µF** end of DR-0001's
-    capacitor window (8.78–14.86 mA against ≤ 5 mA, and 51.75–53.82 mA
-    against ≤ 52 mA). The second of those is arithmetic rather than dynamics:
-    the ramp's own steady `C_eff × dV/dt` is 1.5–3.9 mA and it rides on top
-    of the 50 mA load. Both are open, tracked by #43's follow-up;
-  - the peak (as opposed to steady) `dVout/dt` bound, at every point — the
-    acquisition transient still exceeds 1 V/ms even where the resulting
-    capacitor current is well inside the 5 mA inrush bound.
-  The **1 mΩ ESR** edge of the window is a main-loop problem, not a
-  soft-start one (`#51`), and is excluded from the statements above.
-- Added quiescent current: **+1.7 µA** enabled (24.1 µA vs 22.4 µA at the
-  binding ff/125 °C/3.63 V corner, against the ratified < 30 µA) and
-  **+1 nA** disabled (0.2037 µA vs 0.2026 µA, against < 3 µA). There is no
-  resistor to a rail anywhere in the block: the common-source stage's load
-  resistor sits behind an `EN`-gated PMOS switch precisely because this
-  block's disabled state parks its clamp gate **low**.
+  appended by #55, is `error_amp`'s buffer-input node). #189 changed what the
+  cell *does* with `FB`: it drives that node now, where #38/#43 only sensed
+  it. (`ldo_softstart.sym` still annotates `FB` as `dir=in`; that annotation
+  is stale and affects only the `*.PININFO` comment line in the netlist.)
+- Topology **since #189**: a linear voltage ramp (`Css` charged by a scaled
+  copy of the same `VREF`/`Rbias` current `ldo_ilimit` uses, with a
+  `VREF`-referenced ceiling device above it) converted into a **current
+  injected into `FB`**, `I_inj = (V_REF − SSR)/(Rtop‖Rbot)`, which makes the
+  *main* loop hold `VOUT = 1.5 × SSR`. Solving the `FB` node with the loop
+  holding `FB` at `V_REF` gives `VOUT = 1.5·V_REF − I_inj·Rtop`, so that
+  choice of `I_inj` collapses to `1.5 × SSR` and reaches exactly 1.8 V as
+  `SSR` reaches `V_REF`. The injection is **source-only**, so it rectifies
+  hard off once `SSR` passes `V_REF` (which it always does — `Mtop_ss`'s
+  ceiling lands at 1.53–2.43 V over PVT) and leaves no DC error behind.
+- **This replaced a second feedback loop, and that is the point.** #38/#43
+  built the same behaviour as a PMOS comparator on (`FB`, `SSR`) driving a
+  clamp that sourced into `PASS_GATE`. That loop closes through the output
+  node, so it had to *acquire* through the pass device's dead zone; #43
+  measured the acquisition at ~230 µs and 4.5 V/ms, damped it with a nulling
+  resistor (`Rz_ss`) whose usable window was 400–600 squares wide, and still
+  could not bring the 4.7 µF end of DR-0001's capacitor window inside the
+  ratified 5 mA inrush bound (8.78–14.86 mA, 0/40 points). Injection deletes
+  the acquisition rather than damping it, because the loop that regulates the
+  ramp is the main one and it never opens. Measured effect at those same 40
+  points: **2.10–4.97 mA, 40/40 inside the bound**
+  (`sim/soft-start/records/20260906-202950-bfc4a0a.md`).
+- **It is *not* "ramp the amplifier's reference"**, which is the obvious way
+  to build a soft start and does not work on this amplifier: `error_amp`'s
+  input pair is NMOS, so with `VOUT` near 0 both inputs are under the pair's
+  common-mode floor and the loop is not closed over the bottom of the ramp (a
+  prototype of that topology free-runs to an 11 mA charging edge in ~2 µs at
+  tt/27 °C). Injection keeps **both** inputs at 1.2 V for the entire ramp,
+  which is inside that range by a wide margin — the objection does not apply.
+- **The enable edge needs three more elements, and they are measured, not
+  assumed.** Injection alone leaves two transients that have nothing to do
+  with the ramp: `Cff`'s 15 pF means 6 µA needs several microseconds to lift
+  `FB` to `V_REF` while the amplifier is already awake (238 mA measured), and
+  `error_amp` wakes with `N1`/`ND` parked at `VDD` so `Mbuf` slams
+  `PASS_GATE` down before its first stage settles (240 mA measured, even with
+  `FB` pinned). `Mpre_a_ss`/`Mpre_b_ss` pre-charge `FB` to `V_REF` through two
+  series PMOS (a pulse, gated by `HG` and `ENB`, carrying **zero** current at
+  its own operating point); `Mhold_ss`/`Mhold_bg_ss` hold `PASS_GATE` and `BG`
+  at `VIN` — the same idiom, and the same #55 companion device, the #38 clamp
+  used; and two matched RCs (`Rh_ss`/`Ch_ss`, `Rr_ss`/`Cr_ss`, τ ≈ 147 µs)
+  sequence them so the hold releases (≈1.3 τ) **before** the ramp starts
+  (≈1.5 τ). The ordering is a ratio of matched devices, so it survives the
+  ±25 % resistor corner; τ itself is a measured trade between inrush margin
+  and `t_startup`, tabulated in `design/ldo_softstart.sch`'s notes.
+- **What it now leaves on the main loop's nodes is strictly less than before.**
+  In the settled state the hold devices are in cutoff (adjudicated at every
+  corner: `hg_end` is flagged at **0 of 163** points), the pre-charge switch is
+  open and the injection is rectified off, so `FB` carries two PMOS drain
+  junctions and `PASS_GATE` carries nothing from this cell. #38/#43 left
+  `Cm_ss`'s 7.2 pF behind `Rz_ss`'s 1.55 MΩ on `PASS_GATE` permanently.
+  Removing them is a change to a main-loop node and it is **not**
+  characterised in AC here — `sim/loop-stability/` owns that evidence and a
+  re-run there belongs to `#51`/`#176`.
+- Measured, current state (`sim/soft-start/records/20260906-202950-bfc4a0a.md`,
+  163 points, superseding `20260906-125202-f1096c9`):
+  - **inrush ≤ 5 mA: 159/163**, from 119/163. Both 4.7 µF groups go 0/20 →
+    **20/20** (8.78–14.86 → 2.10–4.97 mA); the nominal 1 µF matrix, the 0 mA
+    group and 0.33 µF/500 mΩ stay 63/63 and 20/20 and improve 3–5×. The four
+    that remain are the 0.33 µF/1 mΩ group's ringing corners (`#51`).
+  - **overshoot ≤ +2 %:** every in-scope group holds its pass count and the
+    ranges collapse to 1.7988–1.7996 V — `VOUT` approaches 1.8 V from below
+    instead of ringing past it.
+  - **peak `dVout/dt` ≤ 1 V/ms: 148/163**, from **0/163** — the first record
+    in this bench's history where that predicate passes anywhere.
+  - **settled output inside ±2 %: 163/163**, from 161/163.
+  - **peak supply current ≤ 52 mA:** the 4.7 µF groups improve 2/20 →
+    **10/20**; the residue is the arithmetic DR-0022 owns
+    (`C_eff × dV/dt` riding on the 50 mA load), not a transient.
+  What the block still does **not** meet:
+  - the ratified 3 ms settling window, now at **131 of 163 points** against
+    118 before — the ramp-release delay adds ~150 µs and the slower `Mdis_ss`
+    release another ~4 % of ramp time, for +223 µs mean. All 13 newly-failing
+    points sat at 2.83–2.90 ms and now sit at 3.01–3.04 ms. This is
+    `spec/decision-records/DR-0006`'s clause, it is a regression against it,
+    and the record reconciles it point by point rather than absorbing it.
+  - the 0.33 µF/1 mΩ corners: 16 of those 20 points improve 4–6×, the pass
+    count holds at 16/20, and the group's worst point degrades 311.9 →
+    384.0 mA. That is `#51`'s unstable **main** loop, excluded from every
+    statement above.
+- **`Binj_ss` is idealized**, and it is the largest idealization in this cell:
+  a behavioural source implementing the transconductor, the rectifier and the
+  enable gate in one element. The intended device-level build (two
+  `VIN`-referenced resistor-degenerated PMOS branches on `SSR` and `VREF`,
+  differenced in a diode-connected PMOS that *is* the rectifier, mirrored into
+  `FB`) is standard, and the one property it must preserve is that the
+  transconductance is a **ratio to `Rtop`** rather than an absolute value —
+  otherwise the `VOUT`/`SSR` gain moves with the resistor corner and the ramp
+  no longer starts at 0. See the schematic's "WHAT IS IDEALIZED HERE"; the
+  device-level build is tracked by issue #191.
+- Added quiescent current: the bias branch only (~0.4 µA at tt/27 °C) in this
+  build — the two delay RCs are capacitively terminated, the hold and
+  pre-charge devices end in cutoff, and the injection rectifies to zero. The
+  device-level transconductor will not be free; the `Iq` row has ~8 µA of
+  headroom at its binding ff/125 °C/3.63 V corner.
+- Added area: ~24 100 µm² (13 350 µm² of capacitor, 10 740 µm² of poly
+  resistor) against ~11 800 µm² for the #38/#43 clamp it replaces, i.e. about
+  24 % of the ratified 0.1 mm² core-area row. It is dominated by the two
+  delay RCs, which sit at their minimum-area R/C split for the τ they
+  implement.
 
 ## Pass device sizing (a deliberate simplification for this issue)
 
