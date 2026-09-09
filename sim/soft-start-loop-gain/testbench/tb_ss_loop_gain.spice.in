@@ -1,0 +1,258 @@
+* soft-start-loop-gain -- Tian dual-injection loop-gain testbench for the LDO
+* main loop with design/ldo_softstart.sch's FB-injection element IN the loop,
+* at PINNED points of the soft-start ramp (issue #196).
+*
+* ---------------------------------------------------------------------------
+* What this deck is, and what it is not
+* ---------------------------------------------------------------------------
+* This is sim/loop-stability/testbench/tb_loop_stability.spice.in's deck --
+* same DUT cell, same break point, same Tian/Middlebrook dual injection, same
+* margin and gain-resurgence extraction idioms, same AC band and resolution --
+* with exactly one thing added: the soft-start ramp node SSR is brought out as
+* a port and PINNED, so a state the ramp only passes THROUGH in a transient
+* can be held still and measured in the frequency domain.
+*
+* Read the loop-stability deck for the derivations this one inherits verbatim:
+*   - why the loop is broken at ERRAMP_OUT -> PASS_GATE (two deliberately
+*     unconnected ports of design/ldo_core.sch),
+*   - why plain series-voltage injection is not accurate at this break and
+*     T = (Tv*Ti - 1)/(Tv + Ti + 2) is,
+*   - what phase margin / gain margin / resurgence_db mean here (DR-0001's
+*     45 deg / 10 dB bars and DR-0008's precondition check, issue #59),
+*   - why the resurgence scan starts a FIXED 5% above the first 0 dB crossing
+*     (issue #69) and why AC_DEC is 400 (issue #58),
+*   - why the ideal-current-source load is the conservative stability model,
+*   - why Dclamp is present and why it is inert at the operating point.
+* None of that is restated here; sim/soft-start-loop-gain/README.md says which
+* pieces are inherited and which are new.
+*
+* ---------------------------------------------------------------------------
+* Why SSR has to be pinned, and what pinning it costs
+* ---------------------------------------------------------------------------
+* design/ldo_softstart.sch ramps its internal node SSR from 0 V to above VREF
+* over milliseconds (Fss_ramp charging Css), and the FB-injection element it
+* drives is what holds the output down during that ramp. Every state of the
+* hand-over -- injection fully on, injection about to rectify off, injection
+* just off -- is therefore a TRANSIENT state, and a small-signal margin is a
+* statement about a fixed operating point. The only way to ask "what is the
+* loop's phase margin DURING the hand-over" is to hold the ramp still.
+*
+* SSR is a legitimate node to hold still, because nothing in the main loop
+* drives it: its only connections are Fss_ramp (a CCCS referred to VREF, an
+* ideal deck-level source here), Css to VSS, Mdis_ss's drain (off while
+* enabled), Mtop_ss's source (the ramp ceiling clamp) and Mgma_ss's GATE. The
+* loop reaches SSR only through Mgma_ss's and Mtop_ss's own overlap
+* capacitance, into Css (a 60u x 60u mim cap, ~7 pF) -- three orders of
+* magnitude larger -- so the node is already an AC ground in the real circuit.
+* Pinning it with an ideal source makes it exactly one.
+*
+* That claim is not left as prose: sweep.py runs one deck per PVT point with
+* the SSR port brought out and NOT pinned, which is electrically identical to
+* the unmodified design netlist, and its margins are compared point for point
+* against sim/loop-stability/'s own record. See the "anchor" phase in
+* sweep.py and the record's cross-check section.
+*
+* The SSR port itself is added by sweep.py, mechanically, to a COPY of
+* design/netlist/ldo_core.spice: one port name appended to two `.subckt` lines
+* and one instance line, nothing else. SSR is already a node of the cell, so
+* naming it in the port list renames nothing and connects nothing --
+* selftest.py asserts the transform is exactly that, and the unpinned deck
+* above measures that it is.
+*
+* ---------------------------------------------------------------------------
+* Load model
+* ---------------------------------------------------------------------------
+* Both a resistive load and an ideal current sink are instantiated; sweep.py
+* enables one and parks the other (RLOAD = 1e12 ohm, or ILOAD = 0). Which one
+* is used is part of the operating point and is reported in every ROW line:
+*
+*   - LOW on the ramp the load MUST be resistive. The soft-start mechanism
+*     works by injecting a current into FB, which forces the regulated output
+*     to VOUT = 1.5 * V(SSR) (FB = VREF and the 300k/600k divider); at the
+*     bottom of the ramp that is a fraction of a volt, and an ideal sink
+*     demanding the rated 50 mA from a 0.1 V output has no solution on the
+*     regulating branch at all. A 36 ohm resistor is what the rated load
+*     physically is (1.8 V / 50 mA) and it tracks the ramp, exactly as
+*     sim/soft-start/testbench/tb_soft_start.spice.in models it.
+*   - AT AND ABOVE the hand-over the ideal sink is used as well, because that
+*     is the model every sim/loop-stability record uses, and a margin measured
+*     against a different load model is not comparable with them. A resistive
+*     load adds 1/Rload of damping in parallel with the output pole and
+*     flatters the result; the sink is the conservative choice.
+*
+* Template: the at-sign-delimited placeholders are substituted by sweep.py
+* (PDK paths, corner sections, temperature, supply, the instrumented netlist,
+* the SSR pin and its list of values, and the load/output-network lists)
+* before the deck is handed to `ngspice -b`.
+
+.include "@DESIGN_INCLUDE@"
+.lib "@MODEL_LIB@" @MOS_CORNER@
+.lib "@MODEL_LIB@" @RES_CORNER@
+.lib "@MODEL_LIB@" @BJT_CORNER@
+.lib "@MODEL_LIB@" @DIODE_CORNER@
+.lib "@MODEL_LIB@" @MOSCAP_CORNER@
+.lib "@MODEL_LIB@" @MIMCAP_CORNER@
+
+.temp @TEMP_C@
+
+* --- model binning is per-FINGER, and that has to be said out loud ---------
+* gf180mcu's device models are binned, and the widest bin any of them has is
+* W <= 100.01 um (sm141064.ngspice's `wmax`). design/ldo_core.sch's pass
+* device is `W=2000u nf=40` -- 2 mm of total width in 40 fingers of 50 um --
+* so the bin it belongs in exists only if the binning divides W by nf.
+*
+* Whether ngspice does that is NOT a property of the netlist or the PDK: it
+* is ngspice's `wnflag` (src/spicelib/parser/inpgmod.c), which defaults to 1
+* only in HSPICE/Spectre compatibility mode and to 0 otherwise. On a host
+* whose ngspice starts with "No compatibility mode selected!" and no
+* `wnflag` in `spinit`/`.spiceinit`, EVERY deck in this repo that
+* instantiates the pass device dies at parse time with
+*
+*     could not find a valid modelname
+*
+* -- which is one of sim/harness/runner.py's FATAL_LOG_PATTERNS, so it is
+* correctly reported as a failure rather than silently mis-simulated. Setting
+* it here makes this deck give the same answer on both kinds of host instead
+* of depending on the host's ngspice startup files, which no record captures.
+* Verified on the host that produced this experiment's first record: with
+* this line, `sim/loop-stability/`'s own deck reproduces its committed record
+* `20260906-071437-fff0bf0` at tt/27C/3.30V/50mA/1uF/1mohm to within
+* 0.22 deg PM and 0.15 dB GM (the cross-invocation budget #182/#185
+* established is ~2 deg / ~1 dB), i.e. this setting is what that record was
+* taken under. See sim/soft-start-loop-gain/README.md's "Model binning"
+* section and the follow-up issue filed for the other benches.
+.options wnflag=1
+
+* The SSR-instrumented copy of design/netlist/ldo_core.spice for this DUT
+* variant -- see sweep.py's instrument_core() and the header above.
+.include "@LDO_NETLIST@"
+
+* --- stimulus ------------------------------------------------------------
+Vin VIN 0 DC @VIN_V@
+Ven EN 0 DC @VIN_V@
+
+* --- reference (issue #174 / DR-0021) ------------------------------------
+* Identical to the loop-stability and soft-start decks: VREF is a top-level
+* port of ldo_core, driven here by the same ideal 1.2 V source those decks
+* use, standing in for a bandgap block that does not exist yet.
+Vref VREF 0 DC 1.2
+
+* --- DUT, loop broken at ERRAMP_OUT -> PASS_GATE --------------------------
+* Port order: VIN VOUT EN VSS ERRAMP_OUT PASS_GATE VREF, plus the SSR port
+* sweep.py adds.
+Xdut VIN VOUT EN 0 AINJ BINJ VREF SSRPIN ldo_core
+
+* --- soft-start ramp node ------------------------------------------------
+* Either an ideal source pinning SSR at the operating point under test, or
+* nothing at all (the "anchor" phase, where SSR settles where the design puts
+* it and the deck is electrically the loop-stability deck).
+@SSR_SOURCE@
+
+* --- Tian dual-injection network -----------------------------------------
+* Vinj is a DC short: the operating point is the true closed-loop one.
+Vinj AINJ BINJ DC 0 AC 0
+Iinj 0 BINJ DC 0 AC 0
+
+* --- load + output network (swept below; these are the initial values) ----
+Iload VOUT 0 DC @ILOAD@
+Rload VOUT NLD @RLOAD@
+Vlmeas NLD 0 DC 0
+Resr VOUT NESR 0.001
+Cout NESR 0 1e-6
+
+* --- removing the non-physical DC branch ----------------------------------
+* Inherited verbatim from tb_loop_stability.spice.in, including the measured
+* evidence that it is inert at the operating point (reverse-biased by the
+* output voltage, cjo=0 tt=0 so it adds no AC capacitance at all). It matters
+* less here than there -- the resistive-load phases bound VOUT from below on
+* their own -- but the ideal-sink phases have exactly the unbounded-VOUT
+* branch it exists to deny, so it stays.
+.model dclamp d(is=1e-14 cjo=0 tt=0 n=1 rs=0)
+Dclamp 0 VOUT dclamp
+
+* DC branch seed, empty unless sweep.py is retrying this corner -- see
+* dc_seed_lines() in sweep.py.
+@DC_SEED@
+
+.control
+set noaskquit
+
+echo "* corner_id=@CORNER_ID@ corner=@CORNER_NAME@ temp_c=@TEMP_C@ vin_v=@VIN_V@"
+echo "* phase=@PHASE@ variant=@VARIANT@ iload_a=@ILOAD@ rload_ohm=@RLOAD@"
+echo "* ac sweep: dec @AC_DEC@ @F_START@ @F_STOP@ ; Tian dual injection at ERRAMP_OUT->PASS_GATE"
+echo "* columns: ROW ssr_cmd= ssr_v= fb_v= vout_v= isup_a= ceff_f= esr_ohm="
+echo "*          dcgain_db= f0_hz= phase_at_f0_deg= f180_hz= gain_at_f180_db="
+echo "*          f0_rising_hz= resurgence_db="
+echo "* (phase margin = 180 + phase_at_f0_deg ; gain margin = -gain_at_f180_db ;"
+echo "*  resurgence_db = max |T| in dB above the first 0 dB crossing, DR-0008 ;"
+echo "*  an empty f180/gain field means the phase never reaches -180 deg in band ;"
+echo "*  ssr_cmd is what this deck COMMANDED the ramp node to, or 'free' when it"
+echo "*  is not pinned; ssr_v/fb_v/vout_v are what the DC solve LANDED on)"
+echo "* Fields are written key=value BECAUSE a failed meas leaves its value"
+echo "* empty: with bare positional fields an empty one vanishes into the"
+echo "* whitespace and every field after it is read as the wrong quantity."
+
+foreach ss @SSR_LIST@
+  @SSR_ALTER@
+  foreach ce @CEFF_LIST@
+    foreach es @ESR_LIST@
+      destroy all
+      alter Cout = $ce
+      alter Resr = $es
+
+      * ---- DC operating point (closed loop; Vinj is a DC short) ----------
+      * Three landed quantities, not one. VOUT alone cannot tell the intended
+      * soft-start branch from a clamp latch low on the ramp, because low on
+      * the ramp the INTENDED VOUT is itself near zero. FB is what
+      * discriminates: the whole soft-start mechanism is "hold FB at VREF with
+      * an injected current and let the divider set VOUT", so FB ~ VREF is the
+      * signature of the branch this experiment is about, at every point of
+      * the ramp. sweep.py checks both, plus VOUT against 1.5*V(SSR).
+      op
+      let vout_dc = v(vout)
+      let fb_dc = v(xdut.fb)
+      let ssr_dc = v(ssrpin)
+      let isup_dc = -i(vin)
+      set vout_str = "$&vout_dc"
+      set fb_str = "$&fb_dc"
+      set ssr_str = "$&ssr_dc"
+      set isup_str = "$&isup_dc"
+
+      * ---- voltage injection --------------------------------------------
+      alter @Vinj[acmag] = 1
+      alter @Iinj[acmag] = 0
+      ac dec @AC_DEC@ @F_START@ @F_STOP@
+      let tv = -v(ainj)/v(binj)
+      set vplot = $curplot
+
+      * ---- current injection --------------------------------------------
+      alter @Vinj[acmag] = 0
+      alter @Iinj[acmag] = 1
+      ac dec @AC_DEC@ @F_START@ @F_STOP@
+      let ti = -i(vinj)/(i(vinj)+1)
+      let tvv = {$vplot}.tv
+
+      * ---- Tian loop gain, magnitude and unwrapped phase -----------------
+      let t = (tvv*ti - 1)/(tvv + ti + 2)
+      let tdb = db(t)
+      let tph = 180*cph(t)/pi
+
+      * ---- margins -------------------------------------------------------
+      meas ac dcg find tdb at=@F_START@
+      meas ac f0 when tdb=0 fall=1
+      meas ac phx find tph when tdb=0 fall=1
+      meas ac f180 when tph=-180 fall=1
+      meas ac gmx find tdb when tph=-180 fall=1
+      meas ac f0r when tdb=0 rise=1
+
+      * ---- gain resurgence above the first 0 dB crossing (#59, DR-0008) ---
+      let fres = f0*1.05
+      meas ac tres max tdb from=$&fres to=@F_STOP@
+
+      echo "ROW ssr_cmd=$ss ssr_v=$ssr_str fb_v=$fb_str vout_v=$vout_str isup_a=$isup_str ceff_f=$ce esr_ohm=$es dcgain_db=$&dcg f0_hz=$&f0 phase_at_f0_deg=$&phx f180_hz=$&f180 gain_at_f180_db=$&gmx f0_rising_hz=$&f0r resurgence_db=$&tres"
+    end
+  end
+end
+echo "* SWEEP COMPLETE @CORNER_ID@"
+.endc
+.end
