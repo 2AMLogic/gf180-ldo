@@ -53,6 +53,7 @@ HERE = Path(__file__).resolve().parent
 EXPDIR = HERE.parent                       # sim/soft-start-loop-gain
 REPO_ROOT = EXPDIR.parent.parent           # repo root
 TEMPLATE = HERE / "tb_ss_loop_gain.spice.in"
+HANDOVER_TEMPLATE = HERE / "tb_ss_handover.spice.in"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
@@ -125,7 +126,7 @@ PHASES: dict[str, dict] = {
     # (a)/(b)/(c) of issue #196, plus a mid-ramp point, with the load
     # resistive so the operating point exists all the way down the ramp.
     "ramp": {
-        "ssr": (0.0, 0.6, 1.15, 1.25),
+        "ssr": (0.0, 0.05, 0.15, 0.6, 1.15, 1.25),
         "iload_a": 0.0,
         "rload_ohm": RATED_LOAD_OHM,
         "load_model": "resistive-36ohm",
@@ -169,8 +170,68 @@ PHASES: dict[str, dict] = {
     },
 }
 
+# --- the DC hand-over transfer ----------------------------------------------
+# The margins above are measured at four or five pinned V(SSR). That is enough
+# to answer "is there a phase-margin problem", and not enough to answer "what
+# is this element's transfer function", which is the question a compensation
+# recommendation actually has to be built on. `tb_ss_handover.spice.in` sweeps
+# V(SSR) densely with an `op` at each point, on the same circuit with the same
+# loop break and the same resistive load as the `ramp` phase, and reports the
+# landed operating point. I_inj is then derived by the same KCL the margin
+# rows use, so a HOV point and a ROW point at the same V(SSR) are the same
+# measurement -- which `handover_consistency()` below checks rather than
+# assumes.
+#
+# 0 -> 2.4 V covers the whole ramp: 0 V is the start, VREF = 1.2 V is where
+# the element is SUPPOSED to rectify off, and 2.4 V is past where `Mtop_ss`'s
+# ceiling clamp can hold the ramp node (its gate is at VREF and its source is
+# SSR, with the bulk at VIN, so it needs roughly VREF + |Vth| + body effect).
+HANDOVER_SSR_V = tuple(round(0.025 * i, 3) for i in range(97))   # 0 .. 2.400 V
+
+# The ramp state the main loop is at when it takes the pass gate over.
+# `Rh_ss` (ppolyf_u_3k, 4870 um) and `Ch_ss` (a 70x70 um mim cap) release `HG`
+# with a time constant of order 100 us, and `design/ldo_softstart.sch`'s own
+# #191 regression note times the glitch it documents at "~300 us" into the
+# ramp. The ramp itself runs at `Fss_ramp`'s current over `Css`, of order
+# 170 V/s, so ~300 us into it puts `V(SSR)` at a few tens of mV. That is the
+# state the hand-over metrics below evaluate the acquisition step at, and it
+# is why 0.05 V is one of the pinned margin states as well.
+HANDOVER_ACQUISITION_SSR_V = 0.05
+
+# The design intent this element is measured against, from
+# `design/ldo_softstart.sch`'s own behavioural model (the `binj` variant):
+#
+#     I_inj = max(0, (V(VREF) - V(SSR)) * 5.0e-6)
+#
+# i.e. a 5 uA/V transconductance and a HARD rectification at V(SSR) = VREF.
+HANDOVER_INTENT_GM_UA_PER_V = 5.0
+HANDOVER_INTENT_RELEASE_V = VREF_V
+
+# "Released" = the element delivers less than this into FB. 50 nA is 1% of the
+# 5 uA the intent delivers at the bottom of the ramp, and 2.5% of the 2 uA the
+# feedback divider itself carries at the settled operating point -- i.e. small
+# enough that what is left cannot move the output by more than ~15 mV.
+HANDOVER_RELEASE_A = 50e-9
+
+# "In regulation" = the loop is holding FB at the reference at this ramp
+# state. Outside this band the loop is not closed at all: the injection
+# element is delivering more current than the divider can absorb with the
+# output at zero, so FB rises above VREF, the error amplifier rails and the
+# pass device is off. Such a state has no loop gain and therefore no phase
+# margin, which is why it has to be found by a DC sweep and cannot be found
+# by the margin deck. 5 mV is ~50x the largest departure the ideal element
+# produces anywhere in this grid and ~1/50 of the smallest the device chain
+# produces where it saturates, so nothing sits near the threshold.
+HANDOVER_REG_TOL_V = 0.005
+
 SSR_POINT_LABEL = {
     0.0: "(a) ramp start, injection at full tilt",
+    0.05: ("(a1) the hold-release acquisition state -- `Rh_ss`/`Ch_ss` release "
+           "`HG` with a ~150 us time constant and the #195 regression note "
+           "times its glitch at ~300 us into the ramp, which at the ramp's own "
+           "~170 V/s is where V(SSR) is when the main loop takes the pass gate "
+           "over"),
+    0.15: "(a1b) just above it, to bound how fast that state changes",
     0.6: "(a2) mid-ramp",
     1.15: "(b) VREF - 50 mV, just before the ideal element's hand-over",
     1.25: "(c) VREF + 50 mV, just after the ideal element's hand-over",
@@ -552,6 +613,354 @@ def parse_curve(path: Path) -> list[tuple[float, float, float]]:
 
 
 # ---------------------------------------------------------------------------
+# the DC hand-over transfer
+# ---------------------------------------------------------------------------
+HOV_FIELDS = ("ssr_cmd", "ssr_v", "fb_v", "vout_v", "pg_v", "erramp_v", "isup_a")
+HOV_OPTIONAL_FIELDS = ("gmsum_v",)
+
+
+def parse_hov_fields(line: str) -> dict[str, str]:
+    """``HOV k=v k=v ...`` -> dict, with the margin parser's strictness.
+
+    ``gmsum_v`` is optional because the node only exists in the device-level
+    variant; every other field is required, and an unknown one is an error
+    rather than something to ignore.
+    """
+    fields: dict[str, str] = {}
+    for tok in line.split()[1:]:
+        key, sep, val = tok.partition("=")
+        if not sep:
+            raise ValueError(f"HOV field {tok!r} is not key=value: {line!r}")
+        if key in fields:
+            raise ValueError(f"HOV field {key!r} repeated: {line!r}")
+        fields[key] = val
+    missing = [k for k in HOV_FIELDS if k not in fields]
+    unknown = [k for k in fields
+               if k not in HOV_FIELDS and k not in HOV_OPTIONAL_FIELDS]
+    if missing or unknown:
+        raise ValueError(
+            f"HOV line does not match the deck's field list "
+            f"(missing {missing}, unknown {unknown}): {line!r}"
+        )
+    return fields
+
+
+@dataclass
+class HovPoint:
+    """One pinned V(SSR) of the DC hand-over transfer."""
+
+    ssr_cmd: float
+    ssr_v: float
+    fb_v: float
+    vout_v: float
+    pg_v: float
+    erramp_v: float
+    isup_a: float
+    gmsum_v: float | None = None
+
+    @property
+    def iinj_a(self) -> float:
+        """The current the injection element delivers into FB.
+
+        Exactly `Row.iinj_a` -- KCL at the feedback node, whose only other DC
+        branches are the two divider resistors. It stays exact when the loop
+        is out of regulation, because it is a statement about the node's
+        branches and not about the loop being closed.
+        """
+        return self.fb_v / 600e3 - (self.vout_v - self.fb_v) / 300e3
+
+    @property
+    def in_regulation(self) -> bool:
+        return abs(self.fb_v - VREF_V) <= HANDOVER_REG_TOL_V
+
+
+@dataclass
+class HovCurve:
+    """One (PVT, variant) DC hand-over transfer."""
+
+    corner_id: str
+    corner: str
+    temp_c: float
+    vin_v: float
+    variant: str
+    points: list[HovPoint]
+
+    # -- derived metrics; every one of them is a number the recommendation
+    # -- in design/softstart_injection_compensation.md cites.
+    @property
+    def iinj_start_a(self) -> float:
+        """What the element delivers at the bottom of the ramp, V(SSR) = 0.
+
+        The hard ceiling this must stay under is what the divider can absorb
+        with the output at zero, VREF/600k + VREF/300k = 6.0 uA. Above it
+        there is no solution with FB at VREF, so the loop leaves regulation.
+        """
+        return self.points[0].iinj_a
+
+    def acquisition_step_v(self, ssr: float) -> float:
+        """The output voltage the main loop has to acquire at hold release.
+
+        Until `Mhold_ss` lets go, `PASS_GATE` is held at `VIN`, the pass
+        device is off and the output is at zero. The instant the main loop
+        owns the pass gate, the output it is being asked to hold is whatever
+        the injection element's current at the ramp state reached by then
+        implies -- so that voltage is a **step** the loop takes into `C_out`,
+        and `C_out * dV/dt` through it is a capacitor current.
+
+        The design intent makes this step zero at the bottom of the ramp by
+        construction: the ideal element delivers exactly
+        `VREF/600k + VREF/300k = 6.0 uA` at `V(SSR) = 0`, which is exactly the
+        current that puts the output at zero, and its transconductance then
+        walks the output up from there continuously. A device-level element
+        that delivers a different current at the same ramp state starts the
+        loop somewhere else.
+
+        This is a DC quantity and this experiment measures nothing else about
+        it: how much capacitor current a given step produces depends on the
+        loop's large-signal acquisition time, which is a transient property
+        `sim/soft-start/` owns and which nothing here re-runs.
+
+        It is read off the *landed* output voltage rather than recomputed from
+        `I_inj`, so it stays the measured truth at ramp states where the loop
+        is out of regulation (there the output is held at zero by a railed
+        error amplifier and the step is genuinely zero -- the failure at those
+        states is the recovery out of saturation, not a step).
+        """
+        return self.vout_at(ssr)
+
+    def vout_at(self, ssr: float) -> float:
+        """Linear interpolation of the landed output voltage at one V(SSR)."""
+        pts = self.points
+        if ssr <= pts[0].ssr_v:
+            return pts[0].vout_v
+        for a, b in zip(pts, pts[1:]):
+            if a.ssr_v <= ssr <= b.ssr_v:
+                if b.ssr_v == a.ssr_v:
+                    return a.vout_v
+                w = (ssr - a.ssr_v) / (b.ssr_v - a.ssr_v)
+                return a.vout_v + w * (b.vout_v - a.vout_v)
+        return pts[-1].vout_v
+
+    @property
+    def gm_a_per_v(self) -> float:
+        """Least-squares dI_inj/dV(SSR) over the element's live, linear range.
+
+        Fitted only over points that are in regulation and still delivering
+        at least 1 uA, i.e. the part of the ramp the element is actually
+        controlling -- not the saturated bottom (where the loop is open) and
+        not the sub-threshold tail (where the element is a decaying
+        exponential and a slope is not the right description).
+        """
+        sel = [p for p in self.points
+               if p.in_regulation and p.iinj_a >= 1e-6]
+        if len(sel) < 3:
+            return float("nan")
+        n = len(sel)
+        sx = sum(p.ssr_v for p in sel)
+        sy = sum(p.iinj_a for p in sel)
+        sxx = sum(p.ssr_v ** 2 for p in sel)
+        sxy = sum(p.ssr_v * p.iinj_a for p in sel)
+        den = n * sxx - sx * sx
+        if den == 0:
+            return float("nan")
+        return (n * sxy - sx * sy) / den
+
+    @property
+    def release_ssr_v(self) -> float | None:
+        """Lowest V(SSR) from which the element stays below HANDOVER_RELEASE_A.
+
+        "Stays below" and not "first drops below": the tail is monotone in
+        practice but a threshold crossing that is not final is not a release,
+        and reporting one would flatter the element.
+        """
+        for i, p in enumerate(self.points):
+            if all(q.iinj_a <= HANDOVER_RELEASE_A for q in self.points[i:]):
+                return p.ssr_v
+        return None
+
+    @property
+    def release_overshoot_v(self) -> float | None:
+        """How far past VREF the ramp has to go before the element lets go."""
+        r = self.release_ssr_v
+        return None if r is None else r - HANDOVER_INTENT_RELEASE_V
+
+    @property
+    def iinj_at_vref_a(self) -> float:
+        """What is still being injected where the intent says zero."""
+        return self.iinj_at(HANDOVER_INTENT_RELEASE_V)
+
+    def iinj_at(self, ssr: float) -> float:
+        """Linear interpolation of the measured transfer at one V(SSR)."""
+        pts = self.points
+        if ssr <= pts[0].ssr_v:
+            return pts[0].iinj_a
+        for a, b in zip(pts, pts[1:]):
+            if a.ssr_v <= ssr <= b.ssr_v:
+                if b.ssr_v == a.ssr_v:
+                    return a.iinj_a
+                w = (ssr - a.ssr_v) / (b.ssr_v - a.ssr_v)
+                return a.iinj_a + w * (b.iinj_a - a.iinj_a)
+        return pts[-1].iinj_a
+
+    @property
+    def saturated_to_ssr_v(self) -> float | None:
+        """Highest V(SSR) at which the loop is NOT in regulation, or None.
+
+        This is the over-injection region at the bottom of the ramp: the
+        element sources more into FB than the divider can absorb, FB is pushed
+        above VREF, the error amplifier rails and the pass device is off. The
+        loop is open there, so no small-signal margin describes it, and the
+        exit from it is a large-signal recovery rather than a regulated ramp.
+        """
+        out = [p.ssr_v for p in self.points if not p.in_regulation]
+        return max(out) if out else None
+
+    @property
+    def fb_max_v(self) -> float:
+        return max(p.fb_v for p in self.points)
+
+    @property
+    def vout_top_err_v(self) -> float:
+        """Output error at the top of the swept range, where the ramp ends."""
+        return self.points[-1].vout_v - VOUT_NOM_V
+
+    @property
+    def gmsum_span_v(self) -> tuple[float, float] | None:
+        g = [p.gmsum_v for p in self.points if p.gmsum_v is not None]
+        return (min(g), max(g)) if g else None
+
+
+def render_handover_deck(pvt, pdk, *, variant: str, netlist: Path,
+                         ssr_values=HANDOVER_SSR_V) -> str:
+    mos, res, bjt, diode, moscap, mimcap = pvt.corner.sections
+    has_gmsum = variant == "device"
+    subs = {
+        "DESIGN_INCLUDE": str(pdk.design_include),
+        "MODEL_LIB": str(pdk.model_lib),
+        "LDO_NETLIST": str(netlist),
+        "MOS_CORNER": mos, "RES_CORNER": res, "BJT_CORNER": bjt,
+        "DIODE_CORNER": diode, "MOSCAP_CORNER": moscap, "MIMCAP_CORNER": mimcap,
+        "TEMP_C": f"{pvt.temp_c:g}",
+        "VIN_V": f"{pvt.vdd:g}",
+        "CORNER_ID": pvt.corner_id,
+        "CORNER_NAME": pvt.corner.name,
+        "VARIANT": variant,
+        "SSR_LIST": " ".join(f"{v:g}" for v in ssr_values),
+        # The mirror node exists only in the device-level chain; the pre-#195
+        # ideal source has no such node, so its decks do not name it and do
+        # not emit the column. Emitting a zero instead would put a number in
+        # the record that is not a measurement.
+        "GMSUM_COL": " gmsum_v=" if has_gmsum else "",
+        "GMSUM_LET": ("  let gmsum_dc = v(xdut.xsoftstart.gmsum)"
+                      if has_gmsum else
+                      "* (no mirror node in this variant)"),
+        "GMSUM_ECHO": " gmsum_v=$&gmsum_dc" if has_gmsum else "",
+    }
+    text = HANDOVER_TEMPLATE.read_text()
+    missing = {m for m in TOKEN_RE.findall(text) if m not in subs}
+    if missing:
+        raise SystemExit(
+            f"hand-over template has unsubstituted tokens: {sorted(missing)}")
+    return TOKEN_RE.sub(lambda m: subs[m.group(1)], text)
+
+
+def run_handover(pvt, pdk, *, variant: str, netlist: Path, workdir: Path,
+                 logdir: Path):
+    """Run one (PVT, variant) hand-over transfer. -> (curve, error-or-None)."""
+    stem = f"{pvt.corner_id}_{variant}_handover"
+    deck = workdir / f"{stem}.spice"
+    deck.write_text(render_handover_deck(pvt, pdk, variant=variant,
+                                         netlist=netlist))
+    log = logdir / f"{stem}.log"
+    try:
+        text = _ngspice(deck, log, workdir)
+    except RuntimeError as exc:
+        return None, str(exc)
+
+    pts: list[HovPoint] = []
+    for line in text.splitlines():
+        if not line.startswith("HOV "):
+            continue
+        try:
+            f = parse_hov_fields(line)
+        except ValueError as exc:
+            return None, f"{exc} (see {log})"
+        gm = f.get("gmsum_v")
+        pts.append(HovPoint(
+            ssr_cmd=float(f["ssr_cmd"]),
+            ssr_v=ls._f(f["ssr_v"]),
+            fb_v=ls._f(f["fb_v"]),
+            vout_v=ls._f(f["vout_v"]),
+            pg_v=ls._f(f["pg_v"]),
+            erramp_v=ls._f(f["erramp_v"]),
+            isup_a=ls._f(f["isup_a"]),
+            gmsum_v=None if gm is None else ls._f(gm),
+        ))
+    if len(pts) != len(HANDOVER_SSR_V):
+        return None, (f"expected {len(HANDOVER_SSR_V)} HOV points, parsed "
+                      f"{len(pts)} (see {log})")
+    if any(p.ssr_v is None or p.fb_v is None or p.vout_v is None for p in pts):
+        return None, f"a HOV point has an unparsable operating point (see {log})"
+    return HovCurve(corner_id=pvt.corner_id, corner=pvt.corner.name,
+                    temp_c=pvt.temp_c, vin_v=pvt.vdd, variant=variant,
+                    points=pts), None
+
+
+def handover_consistency(curves: list[HovCurve], rows: list[Row]):
+    """Worst |dVOUT| between a HOV point and the ROW at the same ramp state.
+
+    The two decks are different files running different analyses; they are
+    only comparable because they are deliberately the same circuit at the same
+    operating point. This measures that rather than asserting it. Compared
+    only against the `ramp` phase (the shared resistive load model) at the
+    1 uF / 100 mOhm output network.
+    """
+    by_key = {(c.corner_id, c.variant): c for c in curves}
+    worst = None
+    n = 0
+    for r in rows:
+        if r.phase != "ramp":
+            continue
+        if abs(r.ceff_f - 1e-6) > 1e-15 or abs(r.esr_ohm - 0.1) > 1e-12:
+            continue
+        c = by_key.get((r.corner_id, r.variant))
+        if c is None:
+            continue
+        hov = min(c.points, key=lambda p: abs(p.ssr_v - r.ssr_v))
+        if abs(hov.ssr_v - r.ssr_v) > 1e-6:
+            continue
+        d = abs(hov.vout_v - r.vout_v)
+        n += 1
+        if worst is None or d > worst[0]:
+            worst = (d, r, hov)
+    return worst, n
+
+
+HANDOVER_CSV_HEADER = [
+    "corner_id", "corner", "temp_c", "vin_v", "variant", "ssr_cmd_v", "ssr_v",
+    "fb_v", "vout_v", "iinj_ua", "pass_gate_v", "erramp_out_v", "isup_a",
+    "gmsum_v", "in_regulation",
+]
+
+
+def write_handover_csv(path: Path, curves: list[HovCurve]) -> None:
+    with path.open("w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(HANDOVER_CSV_HEADER)
+        for c in curves:
+            for p in c.points:
+                w.writerow([
+                    c.corner_id, c.corner, f"{c.temp_c:g}", f"{c.vin_v:.2f}",
+                    c.variant, f"{p.ssr_cmd:g}", f"{p.ssr_v:.6f}",
+                    f"{p.fb_v:.6f}", f"{p.vout_v:.6f}",
+                    f"{p.iinj_a * 1e6:.5f}", f"{p.pg_v:.6f}",
+                    f"{p.erramp_v:.6f}", f"{p.isup_a:.6e}",
+                    "" if p.gmsum_v is None else f"{p.gmsum_v:.6f}",
+                    "yes" if p.in_regulation else "no",
+                ])
+
+
+# ---------------------------------------------------------------------------
 # reporting helpers
 # ---------------------------------------------------------------------------
 CSV_HEADER = [
@@ -632,6 +1041,45 @@ ATTRIBUTIONS = (
     ("acopen-hold", "XMhold_ss's drain AC-opened from PASS_GATE",
      lambda t: nv.ac_open(t, "XMhold_ss", "PASS_GATE", "acopenhold")),
 )
+
+
+# --- how much capacitance the feedback node actually tolerates --------------
+# `design/ldo_softstart.sch`'s regression note states a hypothesis: "ANY
+# nonzero parasitic capacitance the real transconductor adds to FB (the 'tens
+# of femtofarads' already called out under WHAT THIS COSTS THE MAIN LOOP) is
+# enough to destabilize the main loop's hold-release transient". That is a
+# falsifiable claim about a margin, and the way to test it is not to remove
+# the element's parasitic and find the delta small -- that only says THIS
+# element is cheap. It is to ADD known capacitance to `FB` until the margin
+# bar is crossed, which turns the answer into a budget the next injection
+# element can be designed against.
+#
+# Every value is a capacitor, so every one is DC-inert and the operating point
+# is bit-identical across the whole ladder -- the record prints the landed
+# VOUT for each so that is checkable rather than asserted.
+FB_CAP_LADDER_F = (10e-15, 100e-15, 1e-12, 3e-12, 10e-12, 30e-12, 100e-12,
+                   300e-12, 1e-9)
+
+# The budget is stated RELATIVE to the same point with no added capacitance,
+# not against DR-0001's 45 deg / 10 dB reference lines. Two reasons, and the
+# second one is the load-bearing one:
+#
+#  - a mid-ramp state is not a DR-0001 operating point, so the absolute bars
+#    are reference lines here and not a criterion (this record says so
+#    throughout); and
+#  - the worst device-variant point in this grid is at a corner where the MAIN
+#    loop is already below 45 deg with either injection element and with no
+#    added capacitance at all (`sim/loop-stability/`'s own open 1-50 mA gap,
+#    #51). Against an absolute bar every rung of the ladder "fails" there and
+#    the ladder says nothing. Against its own baseline it says exactly what
+#    was asked: how much capacitance this node takes before the margin moves.
+#
+# Both margins are checked, because they fail in different places: adding
+# capacitance at FB first RAISES the phase margin (it rolls the loop off
+# earlier) and only later collapses it, while the gain margin goes first --
+# by tens of dB, which is what "the loop is now unstable" looks like.
+FB_CAP_PM_TOL_DEG = 2.0     # the #182/#185 cross-invocation movement class
+FB_CAP_GM_TOL_DB = 1.0
 
 
 def _sub(curve: list[tuple[float, float, float]], n: int = 160):
@@ -891,6 +1339,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--skip-crosscheck", action="store_true",
                     help="do not re-run sim/loop-stability/ for the anchor "
                          "cross-check (implies the record cannot claim it)")
+    ap.add_argument("--skip-handover", action="store_true",
+                    help="do not run the dense DC hand-over transfer sweep "
+                         "(implies the record cannot report the injection "
+                         "element's transfer, only its margins)")
     ap.add_argument("--subset-reason", default="",
                     help="required (and copied into the record) if the grid is "
                          "narrower than the CLAUDE.md-mandated PVT matrix")
@@ -1082,6 +1534,62 @@ def main() -> int:
         return 2
     rows.sort(key=sort_key)
 
+    # --- the DC hand-over transfer -----------------------------------------
+    # Run after the margins, because it is the margins' operating point drawn
+    # densely rather than a second experiment: every HOV point is the same
+    # circuit, the same loop break and the same load model as the `ramp`
+    # phase, and handover_consistency() below checks that the two decks land
+    # on the same place where they overlap.
+    curves: list[HovCurve] = []
+    hov_consistency = None
+    if not args.skip_handover:
+        print(f"\n=== DC hand-over transfer: {len(HANDOVER_SSR_V)} pinned "
+              f"V(SSR) from {HANDOVER_SSR_V[0]:g} to {HANDOVER_SSR_V[-1]:g} V, "
+              f"{len(grid)} PVT x {len(args.variants)} variant ===")
+        hov_jobs = [(pvt, variant) for pvt in grid for variant in args.variants]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            futs = {pool.submit(run_handover, pvt, pdk, variant=variant,
+                                netlist=netlists[variant], workdir=workdir,
+                                logdir=logdir): (pvt, variant)
+                    for pvt, variant in hov_jobs}
+            for done in concurrent.futures.as_completed(futs):
+                pvt, variant = futs[done]
+                curve, err = done.result()
+                if err:
+                    failures.append(f"{pvt.corner_id}/{variant}/handover: {err}")
+                    print(f"  {pvt.corner_id:<18} {variant:<7} SIM ERROR {err}")
+                    continue
+                curves.append(curve)
+        if failures:
+            print("\nFATAL: hand-over transfer failures:", file=sys.stderr)
+            for f in failures:
+                print(f"  {f}", file=sys.stderr)
+            return 2
+        curves.sort(key=lambda c: (c.variant, c.corner_id))
+        for variant in args.variants:
+            sel = [c for c in curves if c.variant == variant]
+            if not sel:
+                continue
+            rel = [c for c in sel if c.release_ssr_v is not None]
+            sat = [c for c in sel if c.saturated_to_ssr_v is not None]
+            gms = [c.gm_a_per_v for c in sel if math.isfinite(c.gm_a_per_v)]
+            print(f"  {variant:<7} I_inj(0) "
+                  f"{min(c.iinj_start_a for c in sel) * 1e6:.3f}.."
+                  f"{max(c.iinj_start_a for c in sel) * 1e6:.3f} uA; "
+                  f"gm {min(gms) * 1e6:.3f}..{max(gms) * 1e6:.3f} uA/V; "
+                  f"release V(SSR) "
+                  + (f"{min(c.release_ssr_v for c in rel):.3f}.."
+                     f"{max(c.release_ssr_v for c in rel):.3f} V"
+                     if len(rel) == len(sel) else
+                     f"never, at {len(sel) - len(rel)}/{len(sel)} corners")
+                  + f"; out of regulation at {len(sat)}/{len(sel)} corners")
+        hov_consistency = handover_consistency(curves, rows)
+        if hov_consistency[0] is not None:
+            d, r, hov = hov_consistency[0]
+            print(f"  cross-deck consistency: worst |dVOUT| between a HOV point "
+                  f"and the margin ROW at the same V(SSR) is {d * 1e6:.3f} uV "
+                  f"over {hov_consistency[1]} shared points")
+
     # --- cross-check -------------------------------------------------------
     anchor_rows = [r for r in rows if r.phase == "anchor" and r.variant == "device"]
     xcheck: dict = {"skipped": args.skip_crosscheck or not anchor_rows}
@@ -1147,16 +1655,23 @@ def main() -> int:
         shutil.copyfile(path, snap_dir / f"{record_id}-{variant}.spice")
     csv_path = records_dir / f"{record_id}-matrix.csv"
     write_matrix_csv(csv_path, rows)
+    hov_csv_path = None
+    if curves:
+        hov_csv_path = records_dir / f"{record_id}-handover.csv"
+        write_handover_csv(hov_csv_path, curves)
 
     md = render_record(record_id=record_id, rows=rows, grid=grid, ceffs=ceffs,
                        esrs=esrs, pdk=pdk, prov=prov, args=args,
                        xcheck=xcheck, attribution=attribution, seeded=seeded,
-                       voided=voided)
+                       voided=voided, curves=curves,
+                       hov_consistency=hov_consistency)
     record_path = write_markdown_record(record_id, md, records_dir)
 
     print()
     print(f"record           : {record_path}")
     print(f"matrix csv       : {csv_path}")
+    if hov_csv_path:
+        print(f"hand-over csv    : {hov_csv_path}")
     print(f"netlist snapshots: {snap_dir}/{record_id}-*.spice")
     print(f"raw logs         : {logdir}/")
     return 0
@@ -1244,7 +1759,123 @@ def run_attribution(worst: Row, grid, pdk, netlists, args, workdir: Path,
                 k_db, fz, fp, resid = fit
                 print(f"      fitted zero {fz:.4g} Hz, pole {fp:.4g} Hz, "
                       f"DC offset {k_db:+.3f} dB, residual {resid:.3f}")
+
+    # --- the FB capacitance budget ----------------------------------------
+    # Run at TWO points: the worst device-variant point (which is at a corner
+    # where the main loop is already thin with either injection element), and
+    # the design's own nominal operating point at the hold-release ramp state
+    # (which is not). One alone would be arguable; together they bracket.
+    base_row = next((c["row"] for c in out["cases"]
+                     if c["tag"] == "as-committed" and "row" in c), None)
+    out["fb_cap"] = []
+    if base_row is not None:
+        out["fb_cap"].append(run_fb_cap_ladder(
+            "worst measured device-variant point in this record",
+            worst, base_row, device_text, grid, pdk, args, workdir, logdir))
+    nominal = next(
+        (r for r in rows
+         if r.variant == "device" and r.phase == "ramp"
+         and r.corner_id == "tt_27c_3.30v"
+         and r.ssr_cmd == f"{HANDOVER_ACQUISITION_SSR_V:g}"
+         and abs(r.ceff_f - 1e-6) < 1e-15 and abs(r.esr_ohm - 0.1) < 1e-12
+         and r.pm_deg is not None),
+        None)
+    if nominal is not None and key_of(nominal) != key_of(worst):
+        out["fb_cap"].append(run_fb_cap_ladder(
+            "the nominal corner at the hold-release ramp state",
+            nominal, nominal, device_text, grid, pdk, args, workdir, logdir))
     return out
+
+
+def run_fb_cap_ladder(label: str, point: Row, base_row: Row, device_text: str,
+                      grid, pdk, args, workdir: Path, logdir: Path) -> dict:
+    """Add known capacitance from FB to VSS at ``point`` and watch the margins.
+
+    The inverse of the element-removal sensitivity above. Removing this
+    element's coupling says that THIS element is cheap; adding capacitance
+    until the margins move says what any future injection element has to stay
+    under. Every rung is a capacitor, so every rung is DC-inert and the landed
+    VOUT column is there for a reader to check that.
+    """
+    pvt = next(p for p in grid if p.corner_id == point.corner_id)
+    ssr_values = None if PHASES[point.phase]["ssr"] is None else [point.ssr_cmd]
+    out = {"label": label, "point": point, "base": base_row, "rungs": []}
+    print(f"\n=== feedback-node capacitance ladder at {point.corner_id} / "
+          f"{point.state_id} / {point.cfg_id} ({label}) ===")
+    print(f"  {'C(FB->VSS)':<14} {'PM (deg)':>9} {'dPM':>8} {'GM (dB)':>9} "
+          f"{'dGM':>8} {'f0 (Hz)':>11}  landed VOUT")
+    print(f"  {'(none)':<14} {pm_str(base_row):>9} {'-':>8} "
+          f"{gm_str(base_row):>9} {'-':>8} {_hz(base_row.f0_hz):>11}  "
+          f"{base_row.vout_v:.5f} V")
+    for cf in FB_CAP_LADDER_F:
+        tag = f"fbcap-{cf:g}"
+        try:
+            text = nv.ac_load(device_text, "FB", "VSS", cf, "fbcap")
+        except nv.TransformError as exc:
+            print(f"  fb-cap {cf:g} F skipped: {exc}", file=sys.stderr)
+            continue
+        nl = workdir / f"attr_{tag}.spice"
+        nl.write_text(text)
+        _, prows, err = run_point(
+            pvt, pdk, phase=point.phase, variant=tag, netlist=nl,
+            ceffs=[point.ceff_f], esrs=[point.esr_ohm], ac_dec=args.ac_dec,
+            workdir=workdir, logdir=logdir, ssr_values=ssr_values,
+            stem=f"{point.corner_id}_{point.phase}_{point.ssr_cmd}_attr_{tag}",
+        )
+        if err or not prows:
+            print(f"  fb-cap {cf:g} F FAILED: {err}", file=sys.stderr)
+            out["rungs"].append({"c_f": cf, "error": err})
+            continue
+        r = prows[0]
+        out["rungs"].append({"c_f": cf, "row": r})
+        dpm = ("-" if r.pm_deg is None or base_row.pm_deg is None
+               else f"{r.pm_deg - base_row.pm_deg:+.2f}")
+        dgm = ("-" if math.isinf(r.gm_db) or math.isinf(base_row.gm_db)
+               else f"{r.gm_db - base_row.gm_db:+.2f}")
+        print(f"  {cf:<14g} {pm_str(r):>9} {dpm:>8} {gm_str(r):>9} {dgm:>8} "
+              f"{_hz(r.f0_hz):>11}  {r.vout_v:.5f} V")
+    out["budget"] = fb_cap_budget(out)
+    b = out["budget"]
+    print(f"  -> budget: "
+          + (f"{b['ok_f'] * 1e12:g} pF still within "
+             f"{FB_CAP_PM_TOL_DEG:g} deg / {FB_CAP_GM_TOL_DB:g} dB of the "
+             f"baseline" if b["ok_f"] is not None else "no rung is within "
+             "tolerance of the baseline")
+          + (f"; first rung outside it is {b['bad_f'] * 1e12:g} pF "
+             f"({b['bad_why']})" if b["bad_f"] is not None
+             else "; no rung on this ladder leaves the tolerance"))
+    return out
+
+
+def fb_cap_budget(ladder: dict) -> dict:
+    """Largest rung whose margins are still within tolerance of the baseline.
+
+    Both margins, because they fail in different places: capacitance at FB
+    first RAISES the phase margin (the loop rolls off earlier) and only later
+    collapses it, while the gain margin goes first and by tens of dB.
+    """
+    base = ladder["base"]
+    ok_f = None
+    bad_f = None
+    bad_why = ""
+    for rung in ladder["rungs"]:
+        r = rung.get("row")
+        if r is None:
+            continue
+        why = []
+        if r.pm_deg is None or base.pm_deg is None:
+            why.append("no 0 dB crossing")
+        elif r.pm_deg < base.pm_deg - FB_CAP_PM_TOL_DEG:
+            why.append(f"PM {r.pm_deg - base.pm_deg:+.2f} deg vs baseline")
+        if not math.isinf(r.gm_db) and not math.isinf(base.gm_db) \
+                and r.gm_db < base.gm_db - FB_CAP_GM_TOL_DB:
+            why.append(f"GM {r.gm_db - base.gm_db:+.2f} dB vs baseline")
+        if why:
+            if bad_f is None:
+                bad_f, bad_why = rung["c_f"], "; ".join(why)
+        elif bad_f is None:
+            ok_f = rung["c_f"]
+    return {"ok_f": ok_f, "bad_f": bad_f, "bad_why": bad_why}
 
 
 # ---------------------------------------------------------------------------
@@ -1344,6 +1975,254 @@ def handover_table(rows: list[Row], corner_id: str) -> list[str]:
     return out
 
 
+def _ua(a: float | None, digits: int = 4) -> str:
+    return "n/a" if a is None or not math.isfinite(a) else f"{a * 1e6:+.{digits}f}"
+
+
+def handover_extremes_table(curves: list[HovCurve]) -> list[str]:
+    """Per variant, the PVT extremes of every metric, with the corner named."""
+    out = [
+        "| metric | design intent (`Binj_ss`) | variant | min over PVT | max over PVT | worst corner |",
+        "|---|---|---|---|---|---|",
+    ]
+
+    def block(label, intent, getter, fmt, worst_is_max=True, corner_of=None):
+        for variant in sorted({c.variant for c in curves}):
+            sel = [c for c in curves if c.variant == variant]
+            vals = [(getter(c), c) for c in sel]
+            live = [(v, c) for v, c in vals
+                    if v is not None and math.isfinite(v)]
+            if not live:
+                out.append(f"| {label} | {intent} | `{variant}` | *never* | "
+                           f"*never* | - |")
+                continue
+            lo = min(live, key=lambda t: t[0])
+            hi = max(live, key=lambda t: t[0])
+            worst = hi if worst_is_max else lo
+            miss = len(vals) - len(live)
+            note = f" ({miss}/{len(vals)} corners: *never*)" if miss else ""
+            out.append(
+                f"| {label} | {intent} | `{variant}` | {fmt(lo[0])} | "
+                f"{fmt(hi[0])}{note} | `{worst[1].corner_id}` |")
+
+    block("`I_inj` at `V(SSR) = 0` (uA)", "+6.0000 exactly, PVT-invariant",
+          lambda c: c.iinj_start_a, lambda v: _ua(v))
+    block(f"output the loop must acquire at hold release, `V(SSR)` = "
+          f"{HANDOVER_ACQUISITION_SSR_V:g} V (mV)",
+          f"{1e3 * max(0.0, VREF_V - 300e3 * ((VREF_V - HANDOVER_ACQUISITION_SSR_V) * 5e-6 - VREF_V / 600e3)):.1f}"
+          f" (= 1.5 x {HANDOVER_ACQUISITION_SSR_V:g} V, the ramp's own value)",
+          lambda c: c.acquisition_step_v(HANDOVER_ACQUISITION_SSR_V),
+          lambda v: f"{v * 1e3:.2f}")
+    block("transconductance over the live range (uA/V)",
+          "5.000 exactly, PVT-invariant",
+          lambda c: c.gm_a_per_v, lambda v: f"{v * 1e6:.3f}", worst_is_max=False)
+    block("`I_inj` still flowing at `V(SSR) = VREF` (uA)", "0 exactly",
+          lambda c: c.iinj_at_vref_a, lambda v: _ua(v))
+    block(f"`V(SSR)` at which `I_inj` falls below {HANDOVER_RELEASE_A * 1e9:g} nA and stays there (V)",
+          f"{HANDOVER_INTENT_RELEASE_V:g} exactly",
+          lambda c: c.release_ssr_v, lambda v: f"{v:.3f}")
+    block("highest `V(SSR)` at which the loop is OUT of regulation (V)",
+          "none: the ideal element never leaves the loop in regulation",
+          lambda c: c.saturated_to_ssr_v, lambda v: f"{v:.3f}")
+    block("largest `V(FB)` anywhere on the ramp (V)",
+          f"{VREF_V:g} + a fraction of a mV",
+          lambda c: c.fb_max_v, lambda v: f"{v:.5f}")
+    block("`VOUT` error at the top of the swept ramp (mV)", "0",
+          lambda c: c.vout_top_err_v, lambda v: f"{v * 1e3:+.2f}",
+          worst_is_max=False)
+    return out
+
+
+def handover_curve_table(curves: list[HovCurve], corner_id: str,
+                         step_v: float = 0.2) -> list[str]:
+    """One worked transfer, both variants side by side, every `step_v`."""
+    sel = {c.variant: c for c in curves if c.corner_id == corner_id}
+    if not sel:
+        return []
+    variants = sorted(sel)
+    head = ["| `V(SSR)` (V) | intent `I_inj` (uA) |"]
+    sep = ["|---|---|"]
+    for v in variants:
+        head.append(f" `{v}` `I_inj` (uA) | `{v}` `VOUT` (V) | `{v}` `V(FB)` (V) |")
+        sep.append("---|---|---|")
+    out = ["".join(head), "".join(sep)]
+    ref = sel[variants[0]]
+    n = 0
+    for p in ref.points:
+        if abs(p.ssr_v / step_v - round(p.ssr_v / step_v)) > 1e-6:
+            continue
+        n += 1
+        intent = max(0.0, (VREF_V - p.ssr_v) * HANDOVER_INTENT_GM_UA_PER_V)
+        line = [f"| {p.ssr_v:.2f} | {intent:+.4f} |"]
+        for v in variants:
+            q = min(sel[v].points, key=lambda x: abs(x.ssr_v - p.ssr_v))
+            flag = "" if q.in_regulation else " **(open loop)**"
+            line.append(f" {_ua(q.iinj_a)} | {q.vout_v:.5f} | "
+                        f"{q.fb_v:.5f}{flag} |")
+        out.append("".join(line))
+    return out if n else []
+
+
+def handover_section(curves: list[HovCurve], consistency, args) -> str:
+    if not curves:
+        return ("  **Not run** (`--skip-handover`). This record therefore "
+                "reports the injection element's margins but not its "
+                "transfer.\n")
+    lines: list[str] = [
+        f"  `tb_ss_handover.spice.in`, {len(HANDOVER_SSR_V)} pinned `V(SSR)` "
+        f"from {HANDOVER_SSR_V[0]:g} V to {HANDOVER_SSR_V[-1]:g} V in "
+        f"{1e3 * (HANDOVER_SSR_V[1] - HANDOVER_SSR_V[0]):g} mV steps, on the",
+        "  same circuit with the same loop break and the same resistive 36 ohm",
+        "  load as the `ramp` phase above, one `op` per point. `I_inj` is the",
+        "  same KCL-at-`FB` expression the margin rows use, so a point here and",
+        "  a margin row at the same `V(SSR)` are the same measurement -- which",
+        "  is checked below, not assumed. Every point of every corner is in the",
+        "  `-handover.csv` beside this record; what follows is its extremes.",
+        "",
+    ]
+    lines += ["  " + l for l in handover_extremes_table(curves)]
+    lines += [
+        "",
+        "  The `design intent` column is not an aspiration: it is what the",
+        "  pre-#195 behavioural source `Binj_ss` computes,",
+        "  `I = max(0, (V(VREF) - V(SSR)) * 5.0e-6)`, which the `binj` rows",
+        "  reproduce to the digits shown and which is therefore also a check",
+        "  that the derivation of `I_inj` from the landed operating point is",
+        "  right.",
+        "",
+    ]
+    ct = handover_curve_table(curves, "tt_27c_3.30v")
+    if ct:
+        lines += [
+            "  One worked transfer at `tt_27c_3.30v`, both variants side by",
+            "  side (the full 0.025 V grid, every PVT corner, is in the CSV):",
+            "",
+        ]
+        lines += ["  " + l for l in ct]
+        lines.append("")
+
+    # The supply dependence, computed rather than asserted: the release point
+    # against VIN at fixed process and temperature.
+    dev = [c for c in curves if c.variant == "device"]
+    supply_lines = []
+    for key in sorted({(c.corner, c.temp_c) for c in dev}):
+        sel = sorted((c for c in dev if (c.corner, c.temp_c) == key),
+                     key=lambda c: c.vin_v)
+        rel = [(c.vin_v, c.release_ssr_v) for c in sel]
+        if len(rel) < 2 or any(r is None for _, r in rel):
+            continue
+        dv = rel[-1][0] - rel[0][0]
+        dr = rel[-1][1] - rel[0][1]
+        supply_lines.append((key, dv, dr, rel))
+    if supply_lines:
+        worst = max(supply_lines, key=lambda t: abs(t[2]))
+        slopes = [t[2] / t[1] for t in supply_lines if t[1]]
+        lines += [
+            f"  **The release point tracks the supply**, which is the shape of",
+            f"  the defect rather than its size. Over the {len(supply_lines)}",
+            f"  (process, temperature) pairs where the device-level chain",
+            f"  releases at all three supplies, moving `VIN` from 2.97 V to",
+            f"  3.63 V moves the `V(SSR)` at which it releases by",
+            f"  **{min(t[2] for t in supply_lines):+.3f} V to "
+            f"{max(t[2] for t in supply_lines):+.3f} V**",
+            f"  (mean {sum(slopes) / len(slopes):.3f} V of ramp node per volt of",
+            f"  supply; the ideal element's is 0 by construction). Worst:",
+            f"  `{worst[0][0]}` at {worst[0][1]:g} degC -- "
+            + ", ".join(f"{v:.2f} V -> {r:.3f} V" for v, r in worst[3]) + ".",
+            "",
+        ]
+
+    # The acquisition step, per variant, against the ideal element at the
+    # SAME ramp state -- the DC quantity that is the closest thing this
+    # record has to a handle on #191's transient, stated as arithmetic
+    # rather than as a story.
+    acq = {}
+    for variant in sorted({c.variant for c in curves}):
+        sel = [c for c in curves if c.variant == variant]
+        w = max(sel, key=lambda c: abs(
+            c.acquisition_step_v(HANDOVER_ACQUISITION_SSR_V)
+            - 1.5 * HANDOVER_ACQUISITION_SSR_V))
+        acq[variant] = w
+    if len(acq) == 2 and "device" in acq and "binj" in acq:
+        pair_lines = []
+        for c in curves:
+            if c.variant != "device":
+                continue
+            mate = next((d for d in curves
+                         if d.variant == "binj" and d.corner_id == c.corner_id),
+                        None)
+            if mate is None:
+                continue
+            a = c.acquisition_step_v(HANDOVER_ACQUISITION_SSR_V)
+            b = mate.acquisition_step_v(HANDOVER_ACQUISITION_SSR_V)
+            pair_lines.append((a - b, a, b, c.corner_id))
+        if pair_lines:
+            worst = max(pair_lines, key=lambda t: abs(t[0]))
+            lines += [
+                f"  **The acquisition step.** Until `Mhold_ss` lets go, the pass",
+                f"  device is off and the output is at zero; the instant the main",
+                f"  loop owns the pass gate, the output it is asked to hold is",
+                f"  whatever the injection element's current at the ramp state",
+                f"  reached by then implies. That voltage is a step into `C_out`.",
+                f"  At `V(SSR)` = {HANDOVER_ACQUISITION_SSR_V:g} V (see the",
+                f"  constant's comment for why that state), over the",
+                f"  {len(pair_lines)} corners where both variants are measured,",
+                f"  the device-level chain asks for",
+                f"  **{min(t[0] for t in pair_lines) * 1e3:+.1f} mV to "
+                f"{max(t[0] for t in pair_lines) * 1e3:+.1f} mV** more output",
+                f"  than the ideal element does at the identical ramp state.",
+                f"  Worst: `{worst[3]}` -- {worst[1] * 1e3:.2f} mV against",
+                f"  {worst[2] * 1e3:.2f} mV, a factor of "
+                f"{(worst[1] / worst[2]) if worst[2] else float('inf'):.1f}.",
+                "",
+                f"  **This is a DC statement, and it does not on its own account",
+                f"  for #191's transient.** How much capacitor current a given",
+                f"  step produces depends on the loop's large-signal acquisition",
+                f"  time, which is `sim/soft-start/`'s to measure and which",
+                f"  nothing here re-runs. And the arithmetic does not close on",
+                f"  its own: at `tt_-40c_2.97v`, the corner #191's own A/B used,",
+                f"  that A/B reads 0.468 mA with the ideal element against",
+                f"  166.7 mA with the device chain -- a factor of 356 -- while",
+                f"  the acquisition step measured here at the same corner differs",
+                f"  by a factor of "
+                + (lambda t: f"{(t[1] / t[2]):.1f}" if t and t[2] else "n/a")(
+                    next((t for t in pair_lines if t[3] == "tt_-40c_2.97v"), None))
+                + f". A ~2x difference in the",
+                f"  voltage the loop is asked to acquire cannot by itself produce",
+                f"  a ~350x difference in the current it acquires it with, so the",
+                f"  step is at most a contributing term and there is a mechanism",
+                f"  this record does not measure. What this record *does* settle",
+                f"  is that the missing mechanism is **not** a small-signal margin",
+                f"  deficit at any pinned ramp state, and not the injection",
+                f"  element's loading of `FB`: sections 3 and 6 measure both, and",
+                f"  both are small. The remaining candidates are large-signal and",
+                f"  live in `sim/soft-start/`'s domain -- the recovery out of the",
+                f"  out-of-regulation region this section finds at "
+                f"{sum(1 for c in curves if c.variant == 'device' and c.saturated_to_ssr_v is not None)}"
+                f" of "
+                f"{sum(1 for c in curves if c.variant == 'device')} corners is",
+                f"  the first one to look at, because the loop is *open* there",
+                f"  and no small-signal margin describes it at all.",
+                "",
+            ]
+
+    if consistency and consistency[0] is not None:
+        d, r, hov = consistency[0]
+        lines += [
+            f"  **Cross-deck consistency.** Over the {consistency[1]} points "
+            f"where a hand-over sweep point and a margin row share a "
+            f"(corner, variant, `V(SSR)`), the largest disagreement in the "
+            f"landed output voltage is **{d * 1e6:.3f} uV** "
+            f"(at `{r.corner_id}` / {r.state_id}). The two decks are separate "
+            f"files running separate analyses; this is the measurement that "
+            f"they are nevertheless the same circuit at the same operating "
+            f"point, so the transfer above and the margins below describe one "
+            f"thing and not two.",
+            "",
+        ]
+    return "\n".join(lines) + "\n"
+
+
 def xcheck_section(xcheck: dict, anchor_rows: list[Row]) -> str:
     if xcheck.get("skipped"):
         return ("  **Not run** (`--skip-crosscheck`, or no anchor phase in this "
@@ -1392,6 +2271,26 @@ def xcheck_section(xcheck: dict, anchor_rows: list[Row]) -> str:
                 f"({dpm:+.3f} deg)")
         lines.append(f"  - **verdict: {'AGREES' if ok else 'DISAGREES'}**")
         lines.append(f"\n  {caveat}\n")
+    lines.append(
+        f"  **Why the comparison is against `20260906-071437-fff0bf0` and not\n"
+        f"  against `{LS_DIAGNOSTIC_RECORD}`, which is `sim/loop-stability/`'s\n"
+        f"  latest record.** `{LS_DIAGNOSTIC_RECORD}` is a *diagnostic* record\n"
+        f"  (issue #182's toolchain-provenance investigation): its own\n"
+        f"  \"Netlist provenance\" field says **diagnostic -- no new full-matrix\n"
+        f"  simulation**, it has no `-matrix.csv`, and its evidence is\n"
+        f"  re-simulations of a single control point, `ff_125c_2.97v` at\n"
+        f"  I_load = 1 mA / C_eff = 0.33 uF / ESR = 0.2 ohm. That point shares no\n"
+        f"  (load, C_eff) coordinate with this experiment, which measures the\n"
+        f"  rated 50 mA load at 1 uF and 4.7 uF because that is the operating\n"
+        f"  point `sim/soft-start/` runs and therefore the one the #191\n"
+        f"  regression is about. There is consequently **no shared grid point**\n"
+        f"  between the two records to compare, and the honest statement is that\n"
+        f"  this is a discrepancy of coverage, not of result. The most recent\n"
+        f"  loop-stability record that *does* have shared points is\n"
+        f"  `20260906-071437-fff0bf0`, compared above; and the same-host re-run\n"
+        f"  above is a stronger check than either, because it removes the\n"
+        f"  toolchain term `{LS_DIAGNOSTIC_RECORD}` exists to document.\n"
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -1478,11 +2377,124 @@ def attribution_section(attribution: dict | None) -> str:
             dm = ", ".join(f"{d[1]:+.3f}" for d in f["deltas"])
             dp = ", ".join(f"{d[2]:+.3f}" for d in f["deltas"])
             lines.append(f"| `as-committed / {f['tag']}` | {dm} | {dp} |")
+
+    base_case = next((c for c in attribution["cases"]
+                      if c["tag"] == "as-committed" and "row" in c), None)
+    cut_case = next((c for c in attribution["cases"]
+                     if c["tag"] == "acopen-fb-inj" and "row" in c), None)
+    ss_only_note = None
+    if (base_case and cut_case and base_case["row"].pm_deg is not None
+            and cut_case["row"].pm_deg is not None):
+        ss_only_note = (f"{base_case['row'].pm_deg - cut_case['row'].pm_deg:+.3f}"
+                        f" deg of phase margin")
+    ladders = [l for l in attribution.get("fb_cap", []) if l.get("rungs")]
+    if ladders:
+        lines += [
+            "",
+            "  **How much capacitance the feedback node actually tolerates.**",
+            "  `design/ldo_softstart.sch`'s regression note states a hypothesis:",
+            "  *\"ANY nonzero parasitic capacitance the real transconductor adds",
+            "  to FB ... is enough to destabilize the main loop's hold-release",
+            "  transient\"*. Removing this element's own coupling (the table",
+            "  above) only says that **this** element is cheap. Adding known",
+            "  capacitance to `FB` until the margins move says what any future",
+            "  injection element has to stay under, and is what tests the",
+            "  hypothesis as stated. Every rung is a capacitor, so every rung is",
+            "  an open at DC and the landed `VOUT` column is there to show the",
+            "  bias point did not move.",
+            "",
+            f"  The budget is stated against **the same point with no added",
+            f"  capacitance**, not against DR-0001's {PM_MIN_DEG:g} deg /",
+            f"  {GM_MIN_DB:g} dB reference lines. A mid-ramp state is not a",
+            f"  DR-0001 operating point, so those bars are reference lines here",
+            f"  and not a criterion"
+            + ("; and the worst-point ladder below starts from a baseline of "
+               f"{pm_str(ladders[0]['base'])} deg with no added capacitance at "
+               f"all -- already under the {PM_MIN_DEG:g} deg line, with "
+               f"*either* injection element, because that corner is "
+               f"`sim/loop-stability/`'s own open 1-50 mA gap (#51). Against an "
+               f"absolute bar every rung there would \"fail\" and the ladder "
+               f"would say nothing about capacitance"
+               if (ladders[0]["base"].pm_deg is not None
+                   and ladders[0]["base"].pm_deg < PM_MIN_DEG) else "")
+            + f". Against its own baseline it answers the",
+            f"  question that was asked. Tolerance: PM within "
+            f"{FB_CAP_PM_TOL_DEG:g} deg and GM within {FB_CAP_GM_TOL_DB:g} dB",
+            f"  of the baseline -- the #182/#185 movement class. Both, because",
+            f"  they fail in different places.",
+        ]
+        for lad in ladders:
+            p, b = lad["point"], lad["base"]
+            lines += [
+                "",
+                f"  *{lad['label']}* -- `{p.corner_id}` at {p.state_id}, "
+                f"{p.cfg_id}:",
+                "",
+                "| C(FB -> VSS) | PM (deg) | dPM vs baseline | GM (dB) | dGM vs baseline | f0 (Hz) | landed VOUT (V) |",
+                "|---|---|---|---|---|---|---|",
+                f"| *none (baseline)* | {pm_str(b)} | - | {gm_str(b)} | - | "
+                f"{_hz(b.f0_hz)} | {b.vout_v:.5f} |",
+            ]
+            for rung in lad["rungs"]:
+                r = rung.get("row")
+                if r is None:
+                    lines.append(f"| {rung['c_f'] * 1e12:g} pF | *failed: "
+                                 f"{rung.get('error', 'unknown')}* | | | | | |")
+                    continue
+                dpm = ("-" if r.pm_deg is None or b.pm_deg is None
+                       else f"{r.pm_deg - b.pm_deg:+.3f}")
+                dgm = ("-" if math.isinf(r.gm_db) or math.isinf(b.gm_db)
+                       else f"{r.gm_db - b.gm_db:+.3f}")
+                lines.append(
+                    f"| {rung['c_f'] * 1e12:g} pF | {pm_str(r)} | {dpm} | "
+                    f"{gm_str(r)} | {dgm} | {_hz(r.f0_hz)} | {r.vout_v:.5f} |")
+            bud = lad["budget"]
+            lines.append("")
+            if bud["ok_f"] is not None and bud["bad_f"] is not None:
+                lines.append(
+                    f"  This node carries **{bud['ok_f'] * 1e12:g} pF** with "
+                    f"both margins still inside the tolerance, and leaves it "
+                    f"at {bud['bad_f'] * 1e12:g} pF ({bud['bad_why']}).")
+            elif bud["ok_f"] is not None:
+                lines.append(
+                    f"  Every rung, up to **{bud['ok_f'] * 1e12:g} pF**, "
+                    f"leaves both margins inside the tolerance -- so this "
+                    f"ladder bounds the budget from below only: it is at "
+                    f"least its top rung.")
+            else:
+                lines.append(
+                    f"  Even the bottom rung "
+                    f"({lad['rungs'][0]['c_f'] * 1e12:g} pF) moves a margin "
+                    f"outside the tolerance ({bud['bad_why']}), so the budget "
+                    f"is below the ladder and the ladder needs extending "
+                    f"downwards before it can state one.")
+        budgets = [l["budget"]["ok_f"] for l in ladders
+                   if l["budget"]["ok_f"] is not None]
+        if budgets:
+            tight = min(budgets)
+            lines += [
+                "",
+                f"  Taking the tighter of the two, the feedback node tolerates "
+                f"at least **{tight * 1e12:g} pF** before either margin moves "
+                f"by the #182/#185 movement class. `design/ldo_softstart.sch`'s "
+                f"own estimate of what the device-level chain adds to `FB` is "
+                f"\"tens of femtofarads\" -- call it 30 fF -- which is a factor "
+                f"of **{tight / 30e-15:.0f}** below that budget, and `Cff`'s "
+                f"15 pF already sits across `Rtop` on the same node for scale. "
+                f"That is the same conclusion the `acopen-fb-inj` row above "
+                f"reaches from the opposite direction and by an independent "
+                f"measurement -- removing the element's coupling entirely is "
+                f"worth {'' if ss_only_note is None else ss_only_note} -- and "
+                f"it is what the schematic note's hypothesis, *\"ANY nonzero "
+                f"parasitic capacitance ... is enough\"*, has to be read "
+                f"against.",
+            ]
     return "\n".join(lines) + "\n"
 
 
 def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
-                  xcheck, attribution, seeded, voided=()) -> str:
+                  xcheck, attribution, seeded, voided=(), curves=(),
+                  hov_consistency=None) -> str:
     now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     dirty = prov["dirty"]
     variants = sorted({r.variant for r in rows})
@@ -1500,6 +2512,35 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
     worst_all = worst_of(measured) if measured else None
     resurging = [r for r in rows if r.resurges]
     worst_res = worst_resurgence_of(rows)
+
+    # Why the no-crossover points have no crossover: computed, not asserted.
+    # If the loop's DC gain is below 0 dB the magnitude never reaches unity
+    # and there is nothing for a margin to be read at -- which is a property
+    # of the ramp state (the pass device is not conducting yet), not a
+    # measurement failure. Anything else in that set would be a different
+    # phenomenon and has to be named rather than swept into the same sentence.
+    if no_cross:
+        nc_gains = [r.dcgain_db for r in no_cross if math.isfinite(r.dcgain_db)]
+        nc_states = sorted({(r.variant, r.phase, r.ssr_cmd) for r in no_cross})
+        nc_positive = [r for r in no_cross
+                       if math.isfinite(r.dcgain_db) and r.dcgain_db > 0.0]
+        no_cross_reading = (
+            f" Their DC loop gain runs "
+            f"{min(nc_gains):.1f} dB to {max(nc_gains):.1f} dB, i.e. "
+            + ("**every one of them is below unity at DC**, so the magnitude "
+               "never reaches 0 dB and there is nothing for a margin to be read "
+               "at. All of them are at "
+               if not nc_positive else
+               f"**{len(nc_positive)} of them are above unity at DC and still "
+               f"never cross**, which is not the ramp-state explanation and is "
+               f"flagged here rather than folded in. The set spans ")
+            + ", ".join(f"`{v}/{p}/ssr={s}`" for v, p, s in nc_states[:6])
+            + (", ..." if len(nc_states) > 6 else "")
+            + " -- ramp states where the pass device is not yet conducting."
+            " The `dc_loop_gain_db` column of the CSV carries the number for"
+            " every point.")
+    else:
+        no_cross_reading = ""
 
     # The A/B reading, computed rather than asserted.
     dpms = [p[2] for p in pairs if p[2] is not None]
@@ -1532,7 +2573,12 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
         lo, mid = sel[0], sel[1]
         slope = ((mid.iinj_a - lo.iinj_a) / (mid.ssr_v - lo.ssr_v)
                  if mid.ssr_v != lo.ssr_v else float("nan"))
-        worst_track = max(sel, key=lambda r: abs(r.vout_v - 1.5 * r.ssr_v))
+        # Only below VREF: the intended output is 1.5*V(SSR) while the element
+        # is still injecting, and the regulation target once it has rectified
+        # off. Comparing a post-hand-over point against 1.5*V(SSR) would score
+        # the ideal element as being 75 mV "off" for doing exactly its job.
+        below = [r for r in sel if r.ssr_v <= VREF_V] or sel
+        worst_track = max(below, key=lambda r: abs(r.vout_v - 1.5 * r.ssr_v))
         dc_lines.append(
             f"  - `{variant}`: I_inj = {lo.iinj_a * 1e6:+.4f} uA at "
             f"V(SSR) = {lo.ssr_cmd} V, falling at "
@@ -1758,6 +2804,13 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
 
 {chr(10).join(dc_lines)}
 
+  **1a. The same hand-over, swept densely, over the whole PVT grid.** Four
+  pinned ramp states are enough to ask whether there is a phase-margin
+  problem. They are not enough to say what the injection element's transfer
+  *is*, which is the question a compensation recommendation has to be built
+  on, so the transfer is measured directly:
+
+{handover_section(list(curves), hov_consistency, args)}
   **1b. What each element leaves behind once the ramp is over** (the `anchor`
   phase: SSR wherever `Mtop_ss`'s ceiling clamp puts it, 50 mA, over every PVT
   corner). An injection element that does not rectify fully off is a standing
@@ -1773,9 +2826,7 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
 
   {'' if worst_all is None else f'Worst measured point anywhere in this record: `{worst_all.corner_id}` at {worst_all.state_id}, {worst_all.cfg_id} -- PM {pm_str(worst_all)} deg, GM {gm_str(worst_all)} dB, crossover {_hz(worst_all.f0_hz)} Hz.'}
   {len(no_cross)}/{len(rows)} points have no 0 dB crossing in
-  0.01 Hz - 1 GHz at all; every one of them is a ramp state where the pass
-  device is not conducting, so there is no loop to have a margin (the
-  `dc_loop_gain_db` column of the CSV shows the loop gain at those points).
+  0.01 Hz - 1 GHz at all.{no_cross_reading}
 
   **3. The A/B: what the injection element costs the loop.**
 
@@ -1820,7 +2871,9 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
     (#187, operator-held).
 
 - **Links**:
-  - Testbench: `sim/soft-start-loop-gain/testbench/tb_ss_loop_gain.spice.in`,
+  - Testbench: `sim/soft-start-loop-gain/testbench/tb_ss_loop_gain.spice.in`
+    (margins), `sim/soft-start-loop-gain/testbench/tb_ss_handover.spice.in`
+    (the DC transfer),
     `sim/soft-start-loop-gain/testbench/sweep.py`,
     `sim/soft-start-loop-gain/testbench/netlist_variants.py`,
     `sim/soft-start-loop-gain/testbench/run.sh`
@@ -1833,6 +2886,9 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
     cross-check runs): `sim/soft-start-loop-gain/corners/{record_id}/`
   - Full {len(rows)}-point matrix, machine-readable:
     `sim/soft-start-loop-gain/records/{record_id}-matrix.csv`
+{f'''  - Full {sum(len(c.points) for c in curves)}-point DC hand-over transfer,
+    machine-readable:
+    `sim/soft-start-loop-gain/records/{record_id}-handover.csv`''' if curves else '  - (no hand-over transfer in this run)'}
   - The experiment this one is built from and cross-checked against:
     `sim/loop-stability/` (record `20260906-071437-fff0bf0`, and the
     toolchain-provenance investigation `{LS_DIAGNOSTIC_RECORD}`)

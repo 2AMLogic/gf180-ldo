@@ -256,6 +256,82 @@ def main() -> int:
           f"{r.iinj_a * 1e6:.4f} uA = V(FB)/600k - (V(VOUT)-V(FB))/300k, the "
           f"same expression for both DUT variants")
 
+    # (e2) the hand-over transfer's metrics have a known answer
+    # The pre-#195 element is a closed-form transconductor,
+    #     I_inj = max(0, (VREF - V(SSR)) * 5 uA/V),
+    # so a synthetic curve carrying exactly that is a known-answer test of
+    # every metric the compensation recommendation cites -- and, because the
+    # curve is built by solving KCL at FB for VOUT and the metrics read it
+    # back out, it also tests that the derivation is inverted correctly.
+    def hov_curve(gm=5e-6, release=1.2, variant="binj"):
+        pts = []
+        for ssr in sweep.HANDOVER_SSR_V:
+            i = max(0.0, (release - ssr) * gm)
+            fb = sweep.VREF_V
+            pts.append(sweep.HovPoint(
+                ssr_cmd=ssr, ssr_v=ssr, fb_v=fb,
+                vout_v=fb - 300e3 * (i - fb / 600e3),
+                pg_v=2.0, erramp_v=2.0, isup_a=1e-3, gmsum_v=None))
+        return sweep.HovCurve(corner_id="tt_27c_3.30v", corner="tt",
+                              temp_c=27.0, vin_v=3.3, variant=variant,
+                              points=pts)
+
+    ideal = hov_curve()
+    check("the hand-over metrics recover the ideal element's known transfer",
+          (abs(ideal.iinj_start_a * 1e6 - 6.0) < 1e-6
+           and abs(ideal.gm_a_per_v * 1e6 + 5.0) < 1e-6
+           and abs(ideal.release_ssr_v - sweep.VREF_V) < 1e-9
+           and abs(ideal.iinj_at_vref_a) < 1e-12
+           and ideal.saturated_to_ssr_v is None),
+          f"I_inj(0) = {ideal.iinj_start_a * 1e6:.4f} uA (analytic 6.0000), "
+          f"gm = {ideal.gm_a_per_v * 1e6:.4f} uA/V (analytic -5.0000), "
+          f"releases at V(SSR) = {ideal.release_ssr_v:.4f} V (analytic "
+          f"{sweep.VREF_V:g}), leaves {ideal.iinj_at_vref_a * 1e9:.3g} nA at "
+          f"VREF, never takes the loop out of regulation -- i.e. the "
+          f"measurement the record reports for the `binj` variant is the "
+          f"behavioural model's own arithmetic read back through the landed "
+          f"operating point")
+
+    never = hov_curve(release=99.0)
+    dipped = hov_curve()
+    _i = next(k for k, p in enumerate(dipped.points) if abs(p.ssr_v - 2.0) < 1e-9)
+    dipped.points[_i].vout_v = (dipped.points[_i].fb_v
+                                - 300e3 * (1e-6 - dipped.points[_i].fb_v / 600e3))
+    check("a soft tail that comes back is not reported as a release",
+          (never.release_ssr_v is None
+           and abs(dipped.release_ssr_v - dipped.points[_i + 1].ssr_v) < 1e-9),
+          "an element that still injects everywhere reports 'never' rather "
+          "than its last sample, and one that dips below the threshold and "
+          "comes back is only released after the LAST crossing -- the first "
+          "crossing would flatter it by the width of the dip")
+
+    sat = hov_curve()
+    for _p in sat.points[:8]:
+        _p.fb_v, _p.vout_v = 1.45, 0.0
+    check("an over-injecting element is reported as taking the loop out of "
+          "regulation, and does not contaminate the fitted transconductance",
+          (abs(sat.saturated_to_ssr_v - sat.points[7].ssr_v) < 1e-9
+           and abs(sat.gm_a_per_v * 1e6 + 5.0) < 1e-6),
+          f"out of regulation up to V(SSR) = {sat.saturated_to_ssr_v:.3f} V "
+          f"(FB pushed to {sat.fb_max_v:.3f} V, i.e. the error amp railed and "
+          f"the pass device off -- a state with no loop gain and therefore no "
+          f"phase margin, which is why it has to be found by a DC sweep and "
+          f"cannot be found by the margin deck), and the transconductance is "
+          f"still fitted over the live range only: "
+          f"{sat.gm_a_per_v * 1e6:.4f} uA/V")
+
+    check("the hand-over deck is the same circuit and the same loop break as "
+          "the margin deck",
+          all(ln in sweep.HANDOVER_TEMPLATE.read_text()
+              and ln in sweep.TEMPLATE.read_text()
+              for ln in ("Xdut VIN VOUT EN 0 AINJ BINJ VREF SSRPIN ldo_core",
+                         "Vinj AINJ BINJ DC 0 AC 0")),
+          "same DUT instantiation, same break at ERRAMP_OUT->PASS_GATE with "
+          "the injection source a DC short -- so a hand-over point and a "
+          "margin row at the same V(SSR) are the same operating point, which "
+          "the sweep then measures rather than assumes "
+          "(handover_consistency())")
+
     # (f) the bars and the AC band are loop-stability's OBJECTS, not copies
     check("the DR-0001 bars, the resurgence bar and the AC band are imported "
           "from sim/loop-stability, not restated",

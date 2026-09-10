@@ -254,6 +254,11 @@ WHAT THIS COSTS THE MAIN LOOP
   unstable main loop) and nothing else. The AC evidence is
   sim/loop-stability/'s, and a re-run there belongs to #51/#176.
 
+  UPDATE (#196): that AC evidence now exists, for the hand-over state and not
+  only the settled one --
+  sim/soft-start-loop-gain/records/20260910-015601-2387ece.md, and the
+  recommendation it feeds, design/softstart_injection_compensation.md.
+
 HOW THE INJECTION IS GENERATED, AS DEVICES (#191)
 
   #189 built the injection as one behavioural source:
@@ -404,6 +409,24 @@ THE HOLD-RELEASE TRANSIENT AT MOST OF THE PVT MATRIX
   scope note under WHAT THIS COSTS THE MAIN LOOP, but #191 shows that note's
   premise (soft-start evidence stands in for AC evidence) no longer holds once
   Binj_ss is gone.
+
+  UPDATE (#196) -- THAT WORKING HYPOTHESIS IS MEASURED AND NOT SUPPORTED.
+  sim/soft-start-loop-gain/records/20260910-015601-2387ece.md puts this cell
+  inside a Tian dual-injection loop-gain deck at pinned ramp states, over the
+  full 63-point PVT grid, against a frozen pre-#195 Binj_ss netlist. Opening
+  Mgmo_ss's drain from FB in AC only (DC operating point bit-identical) is
+  worth +0.053 deg of phase margin at the worst corner, and FB is measured to
+  tolerate at least 1 pF before either margin moves by the #182/#185
+  cross-invocation class -- against the "tens of femtofarads" this cell adds.
+  What the same record does find is a DC transfer defect: I_inj(SSR=0) is
+  +5.32...+8.88 uA against the 6.00 uA the divider can absorb, so the loop is
+  OUT of regulation low on the ramp at 37 of 63 corners; the rectification
+  point moves ~0.92 V of SSR per volt of VIN, traced to the Mgmr_ss->Mgmo_ss
+  mirror seeing 0.95...1.61 V of drain-voltage mismatch; and the 467 nA it
+  still injects when settled is exactly the -141 mV of settled output error
+  measured here. See design/softstart_injection_compensation.md for the
+  numeric targets and why a Cm_ss/Rz_ss-class network is NOT the fix. Nothing
+  in this cell is changed by #196.
 
   This cell ships, for now, at the ORIGINAL documented sizing (pfet/nfet
   4u/1u throughout the transconductor, Mtop_ss unchanged) with the body-tie

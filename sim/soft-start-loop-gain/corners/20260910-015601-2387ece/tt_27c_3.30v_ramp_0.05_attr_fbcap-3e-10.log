@@ -1,0 +1,55 @@
+
+Note: No compatibility mode selected!
+
+
+Circuit: * soft-start-loop-gain -- tian dual-injection loop-gain testbench for the ldo
+
+* corner_id=tt_27c_3.30v corner=tt temp_c=27 vin_v=3.3
+* phase=ramp variant=fbcap-3e-10 iload_a=0 rload_ohm=36
+* ac sweep: dec 400 0.01 1e9 ; Tian dual injection at ERRAMP_OUT->PASS_GATE
+* columns: ROW ssr_cmd= ssr_v= fb_v= vout_v= isup_a= ceff_f= esr_ohm=
+*          dcgain_db= f0_hz= phase_at_f0_deg= f180_hz= gain_at_f180_db=
+*          f0_rising_hz= resurgence_db=
+* (phase margin = 180 + phase_at_f0_deg ; gain margin = -gain_at_f180_db ;
+*  resurgence_db = max |T| in dB above the first 0 dB crossing, DR-0008 ;
+*  an empty f180/gain field means the phase never reaches -180 deg in band ;
+*  ssr_cmd is what this deck COMMANDED the ramp node to, or 'free' when it
+*  is not pinned; ssr_v/fb_v/vout_v are what the DC solve LANDED on)
+* Fields are written key=value BECAUSE a failed meas leaves its value
+* empty: with bare positional fields an empty one vanishes into the
+* whitespace and every field after it is read as the wrong quantity.
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  2.16272e+04
+No. of Data Rows : 4401
+Doing analysis at TEMP = 27.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 4401
+dcg                 =  9.48720e+01
+f0                  =  1.37098e+04
+phx                 =  -1.68183e+02
+f180                =  8.73430e+05
+gmx                 =  -5.89607e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -9.37326e-01 at=  1.44544e+04
+ROW ssr_cmd=0.05 ssr_v=0.05 fb_v=1.19957 vout_v=0.0111997 isup_a=0.000348416 ceff_f=1e-06 esr_ohm=0.1 dcgain_db=94.872 f0_hz=13709.8 phase_at_f0_deg=-168.183 f180_hz=873430 gain_at_f180_db=-58.9607 f0_rising_hz= resurgence_db=-0.937326
+* SWEEP COMPLETE tt_27c_3.30v
+Note: Simulation executed from .control section 
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.

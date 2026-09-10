@@ -1,0 +1,79 @@
+* `sim/loop-stability/testbench/sweep.py` run unmodified on this host,
+* in this session, for this record's cross-check. Command:
+*   /usr/bin/python3 /home/ubuntu/GitHub/gf180-ldo/.loom/worktrees/issue-196/sim/loop-stability/testbench/sweep.py --corners tt ff ss fs sf res_ff res_ss --temps -40 27 125 --supply-tol 0.1 --loads-ma 50 --caps-uf 1 4.7 --esrs 0.001 0.05 0.1 0.2 0.5 --ac-dec 400 --no-write -j 8
+* (cwd = this run's work directory, so the same .spiceinit applies)
+
+pdk       : gf180mcuD @ c6d73a35f524070e85faff4a6a9eef49553ebc2b
+ngspice   : ngspice-46 : Circuit level simulation program
+ngspice sha256: 555e04b8ddf17a382fe28d409251ce8968ba983b8c82396fb78e1ff542aa5dd5
+host      : ip-172-31-74-176
+record id : 20260910-023846-2387ece (NOT WRITTEN: --no-write)
+grid      : 63 PVT points x 1x2x5 load/cap/ESR = 630 loop-gain points
+
+  tt_125c_3.30v          worst PM   49.72 deg  GM   25.89 dB  at 50mA_4.7uF_1mohm
+  tt_27c_3.63v           worst PM   43.46 deg  GM   10.77 dB  at 50mA_1uF_1mohm
+  tt_125c_2.97v          worst PM   47.70 deg  GM   25.98 dB  at 50mA_4.7uF_1mohm
+  tt_27c_2.97v           worst PM   47.39 deg  GM   10.96 dB  at 50mA_1uF_1mohm
+  tt_-40c_3.63v          worst PM   36.67 deg  GM    9.61 dB  at 50mA_1uF_1mohm
+  tt_-40c_3.30v          worst PM   38.68 deg  GM    9.68 dB  at 50mA_1uF_1mohm
+  tt_27c_3.30v           worst PM   45.33 deg  GM   10.85 dB  at 50mA_1uF_1mohm
+  tt_-40c_2.97v          worst PM   41.09 deg  GM    9.78 dB  at 50mA_1uF_1mohm
+  tt_125c_3.63v          worst PM   50.18 deg  GM   12.18 dB  at 50mA_1uF_1mohm
+  ff_27c_2.97v           worst PM   48.04 deg  GM   12.22 dB  at 50mA_1uF_1mohm
+  ff_-40c_3.63v          worst PM   39.06 deg  GM   10.86 dB  at 50mA_1uF_1mohm
+  ff_-40c_2.97v          worst PM   42.88 deg  GM   11.06 dB  at 50mA_1uF_1mohm
+  ff_-40c_3.30v          worst PM   40.85 deg  GM   10.95 dB  at 50mA_1uF_1mohm
+  ff_27c_3.63v           worst PM   44.97 deg  GM   12.01 dB  at 50mA_1uF_1mohm
+  ff_27c_3.30v           worst PM   46.48 deg  GM   12.10 dB  at 50mA_1uF_1mohm
+  ff_125c_2.97v          worst PM   43.99 deg  GM   27.27 dB  at 50mA_4.7uF_1mohm
+  ff_125c_3.63v          DC branch miss, retrying with the regulating-branch seed
+  ff_125c_3.30v          worst PM   45.84 deg  GM   27.15 dB  at 50mA_4.7uF_1mohm
+  ss_-40c_3.63v          worst PM   35.06 deg  GM    8.71 dB  at 50mA_1uF_1mohm
+  ss_-40c_3.30v          worst PM   37.21 deg  GM    8.75 dB  at 50mA_1uF_1mohm
+  ss_-40c_2.97v          worst PM   39.85 deg  GM    8.84 dB  at 50mA_1uF_1mohm
+  ss_27c_3.30v           worst PM   44.55 deg  GM    9.94 dB  at 50mA_1uF_1mohm
+  ss_27c_2.97v           worst PM   47.06 deg  GM   10.05 dB  at 50mA_1uF_1mohm
+  ss_27c_3.63v           worst PM   42.42 deg  GM    9.89 dB  at 50mA_1uF_1mohm
+  ss_125c_3.30v          worst PM   51.82 deg  GM   11.39 dB  at 50mA_1uF_1mohm
+  ss_125c_2.97v          worst PM   50.53 deg  GM   25.08 dB  at 50mA_4.7uF_1mohm
+  fs_-40c_2.97v          worst PM   41.76 deg  GM    9.94 dB  at 50mA_1uF_1mohm
+  ss_125c_3.63v          worst PM   50.17 deg  GM   11.32 dB  at 50mA_1uF_1mohm
+  fs_-40c_3.63v          worst PM   37.48 deg  GM    9.79 dB  at 50mA_1uF_1mohm
+  fs_125c_2.97v          worst PM   47.74 deg  GM   26.16 dB  at 50mA_4.7uF_1mohm
+  fs_-40c_3.30v          worst PM   39.44 deg  GM    9.84 dB  at 50mA_1uF_1mohm
+  fs_27c_3.63v           worst PM   44.21 deg  GM   10.95 dB  at 50mA_1uF_1mohm
+  fs_125c_3.30v          worst PM   49.72 deg  GM   26.05 dB  at 50mA_4.7uF_1mohm
+  fs_27c_3.30v           worst PM   46.01 deg  GM   11.01 dB  at 50mA_1uF_1mohm
+  fs_27c_2.97v           worst PM   48.03 deg  GM   11.13 dB  at 50mA_1uF_1mohm
+  fs_125c_3.63v          worst PM   50.82 deg  GM   12.36 dB  at 50mA_1uF_1mohm
+  sf_-40c_3.63v          worst PM   35.91 deg  GM    9.44 dB  at 50mA_1uF_1mohm
+  sf_27c_2.97v           worst PM   46.80 deg  GM   10.80 dB  at 50mA_1uF_1mohm
+  sf_-40c_2.97v          worst PM   40.43 deg  GM    9.62 dB  at 50mA_1uF_1mohm
+  sf_125c_3.30v          worst PM   49.71 deg  GM   25.73 dB  at 50mA_4.7uF_1mohm
+  sf_-40c_3.30v          worst PM   38.01 deg  GM    9.53 dB  at 50mA_1uF_1mohm
+  sf_27c_3.63v           worst PM   42.72 deg  GM   10.61 dB  at 50mA_1uF_1mohm
+  sf_125c_2.97v          worst PM   47.62 deg  GM   25.83 dB  at 50mA_4.7uF_1mohm
+  sf_27c_3.30v           worst PM   44.65 deg  GM   10.69 dB  at 50mA_1uF_1mohm
+  sf_125c_3.63v          worst PM   49.49 deg  GM   11.98 dB  at 50mA_1uF_1mohm
+  res_ff_-40c_2.97v      worst PM   46.49 deg  GM   11.57 dB  at 50mA_1uF_1mohm
+  res_ff_27c_3.63v       worst PM   48.35 deg  GM   12.56 dB  at 50mA_1uF_1mohm
+  res_ff_-40c_3.30v      worst PM   44.37 deg  GM   11.46 dB  at 50mA_1uF_1mohm
+  res_ff_125c_2.97v      worst PM   44.37 deg  GM   27.78 dB  at 50mA_4.7uF_1mohm
+  res_ff_-40c_3.63v      worst PM   42.51 deg  GM   11.39 dB  at 50mA_1uF_1mohm
+  res_ff_27c_3.30v       worst PM   49.79 deg  GM   12.64 dB  at 50mA_1uF_1mohm
+  res_ff_27c_2.97v       worst PM   49.27 deg  GM   26.40 dB  at 50mA_4.7uF_1mohm
+  res_ff_125c_3.30v      worst PM   46.30 deg  GM   27.68 dB  at 50mA_4.7uF_1mohm
+  res_ff_125c_3.63v      worst PM   47.95 deg  GM   27.62 dB  at 50mA_4.7uF_1mohm
+  res_ss_-40c_2.97v      worst PM   35.83 deg  GM    8.31 dB  at 50mA_1uF_1mohm
+  res_ss_27c_3.63v       worst PM   38.62 deg  GM    9.32 dB  at 50mA_1uF_1mohm
+  res_ss_27c_2.97v       worst PM   43.07 deg  GM    9.50 dB  at 50mA_1uF_1mohm
+  res_ss_125c_2.97v      worst PM   50.25 deg  GM   10.96 dB  at 50mA_1uF_1mohm
+  res_ss_27c_3.30v       worst PM   40.67 deg  GM    9.40 dB  at 50mA_1uF_1mohm
+  res_ss_125c_3.30v      worst PM   48.38 deg  GM   10.84 dB  at 50mA_1uF_1mohm
+  res_ss_-40c_3.30v      worst PM   33.38 deg  GM    8.21 dB  at 50mA_1uF_1mohm
+  res_ss_-40c_3.63v      worst PM   31.42 deg  GM    8.16 dB  at 50mA_1uF_1mohm
+  res_ss_125c_3.63v      worst PM   46.62 deg  GM   10.75 dB  at 50mA_1uF_1mohm
+  ff_125c_3.63v          SIM ERROR  10/10 points did not settle on the regulating DC solution (|VOUT - 1.8 V| > 10%); first is 50mA_1uF_1mohm at VOUT = 1.56863 V. A loop-gain margin about a non-regulating bias point is meaningless, so this run is void (see /home/ubuntu/GitHub/gf180-ldo/.loom/worktrees/issue-196/sim/.work/loop-stability/20260910-023846-2387ece/ff_125c_3.63v_dcseed.log)
+
+FATAL: simulation failures:
+  ff_125c_3.63v (with DC seed): 10/10 points did not settle on the regulating DC solution (|VOUT - 1.8 V| > 10%); first is 50mA_1uF_1mohm at VOUT = 1.56863 V. A loop-gain margin about a non-regulating bias point is meaningless, so this run is void (see /home/ubuntu/GitHub/gf180-ldo/.loom/worktrees/issue-196/sim/.work/loop-stability/20260910-023846-2387ece/ff_125c_3.63v_dcseed.log)

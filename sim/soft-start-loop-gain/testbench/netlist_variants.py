@@ -6,7 +6,7 @@ netlists this experiment needs. It never writes anything under ``design/``:
 every variant is a *derived copy* the sweep freezes into
 ``netlist-snapshots/`` alongside the record it produced.
 
-Four kinds of transform, each deliberately as small as it can be:
+Five kinds of transform, each deliberately as small as it can be:
 
 1. **SSR port promotion** (every variant). ``ldo_softstart``'s ramp node
    ``SSR`` is appended to ``ldo_softstart``'s port list, to ``ldo_core``'s,
@@ -37,10 +37,16 @@ Four kinds of transform, each deliberately as small as it can be:
    bit-identical; in band the node is a short to that rail, so whatever pole
    sat on it is removed.
 
+5. **AC-load budget**: the inverse of (3). A *known* capacitance is hung on a
+   node -- same code path as (4), because a capacitor is an open at DC at any
+   value -- so the question becomes "how much can this node take" rather than
+   "what was this element worth". That turns a verdict about one injection
+   element into a budget any future one can be checked against.
+
 Every transform is a pure text operation on the netlist, asserts that it
 matched exactly what it expected to match, and raises rather than silently
 producing a netlist that is not what the caller asked for. ``selftest.py``
-and ``sim/tests/test_soft_start_loop_gain.py`` exercise all four.
+and ``sim/tests/test_soft_start_loop_gain.py`` exercise all five.
 """
 
 from __future__ import annotations
@@ -229,6 +235,23 @@ def ac_open(text: str, instance: str, node: str, tag: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def add_cap(text: str, node: str, rail: str, farads: str, tag: str) -> str:
+    """Put a capacitor from ``node`` to ``rail`` inside ``ldo_softstart``.
+
+    A capacitor is an open at DC, so the operating point cannot move whatever
+    the value is -- which is what makes this usable both as an AC short (a
+    huge value, ``ac_short()``) and as a deliberate parasitic load (a small
+    one, ``ac_load()``), with the same guarantee in both directions.
+    """
+    lines = text.splitlines()
+    marker = ".subckt ldo_softstart"
+    for i, ln in enumerate(lines):
+        if ln.startswith(marker):
+            lines.insert(i + 1, f"C{tag} {node} {rail} {farads}")
+            return "\n".join(lines) + "\n"
+    raise TransformError("add_cap: no ldo_softstart subckt to insert into")
+
+
 def ac_short(text: str, node: str, rail: str, tag: str) -> str:
     """Tie ``node`` to ``rail`` in AC only, with a 1 F capacitor.
 
@@ -237,10 +260,17 @@ def ac_short(text: str, node: str, rail: str, tag: str) -> str:
     in this circuit, so the node is an AC short to the rail across the whole
     band. Used to ask "is the pole on this node the one that matters?".
     """
-    lines = text.splitlines()
-    marker = f".subckt ldo_softstart"
-    for i, ln in enumerate(lines):
-        if ln.startswith(marker):
-            lines.insert(i + 1, f"C{tag} {node} {rail} {AC_SHORT_F}")
-            return "\n".join(lines) + "\n"
-    raise TransformError("ac_short: no ldo_softstart subckt to insert into")
+    return add_cap(text, node, rail, AC_SHORT_F, tag)
+
+
+def ac_load(text: str, node: str, rail: str, farads: float, tag: str) -> str:
+    """Hang a deliberate parasitic capacitance on ``node``.
+
+    The inverse question to ``ac_open()``. Instead of removing an element's
+    coupling and asking what it was worth, this ADDS a known capacitance and
+    asks how much the node can take before the margin bar is crossed -- i.e.
+    it turns "the injection element's parasitics are negligible" from a
+    verdict about one element into a budget any future injection element can
+    be checked against. DC-inert for the same reason ``ac_short()`` is.
+    """
+    return add_cap(text, node, rail, f"{farads:g}", tag)

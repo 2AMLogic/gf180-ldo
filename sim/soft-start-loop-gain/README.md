@@ -163,6 +163,41 @@ is retried once with `.nodeset` cards that start Newton on the intended branch,
 held to the identical check, and any deck that needed the seed is named in the
 record.
 
+## The DC hand-over transfer, and why the margins are not the whole answer
+
+Four pinned ramp states are enough to ask *"is there a phase-margin problem
+here"*. They are not enough to say what the injection element's transfer **is**
+— and that is the question a compensation recommendation actually has to be
+built on, because a compensation network is a fix for a margin deficit and
+nothing else. So the transfer is measured directly, by a second deck
+(`tb_ss_handover.spice.in`): 97 pinned `V(SSR)` from 0 V to 2.4 V in 25 mV
+steps, one `op` per point, over the **same** PVT grid and both DUT variants.
+
+It is deliberately the same circuit as the margin deck — same DUT
+instantiation, same loop break at `ERRAMP_OUT → PASS_GATE` with the injection
+source a DC short, same resistive 36 Ω load as the `ramp` phase — so a
+hand-over point and a margin row at the same `V(SSR)` are the *same*
+measurement. `sweep.py`'s `handover_consistency()` checks exactly that (worst
+`|ΔVOUT|` over every shared state) and the record prints the result, so the
+transfer and the margins are known to describe one circuit rather than two.
+
+What it reports per (corner, variant), all of it derived from the landed
+operating point by the same KCL as `iinj_ua`:
+
+| metric | what it is for |
+|---|---|
+| `I_inj` at `V(SSR) = 0` | the design's own hard ceiling is `VREF/600k + VREF/300k = 6.0 µA` — above it there is **no** solution with `FB` at `VREF`, so the loop leaves regulation, the error amp rails and the pass device parks off |
+| transconductance over the live range | least squares over the in-regulation, `I_inj ≥ 1 µA` part only — a railed loop is not part of the element's linear range and would drag the slope |
+| `I_inj` still flowing at `V(SSR) = VREF` | the intent is exactly 0; what is left is the rectification error |
+| `V(SSR)` at which `I_inj` drops below 50 nA **and stays there** | where the element actually lets go. "and stays there" matters: a threshold crossing that is not final is a dip, not a release |
+| highest `V(SSR)` at which the loop is out of regulation | the over-injection region at the bottom of the ramp. It has no loop gain and therefore no phase margin, which is why it can only be found this way |
+| `V(GMSUM)` | device variant only. `VIN − V(GMSUM)` is `Mgmo_ss`'s source–gate drive, i.e. whether the element has turned **off** or has merely gone weak |
+
+The `binj` variant is the known answer for all of it: `Binj_ss` computes
+`I = max(0, (V(VREF) − V(SSR)) · 5 µA/V)` in closed form, so its measured
+transconductance, start current and release point have analytic values that
+`selftest.py` checks the metric code against before any sweep runs.
+
 ## The injection current is derived, not measured
 
 Every row carries `iinj_ua`, the DC current the injection element delivers into
@@ -190,7 +225,15 @@ through one netlist per **AC-only** removal of a single coupling:
 | `acshort-gmsum` | the `GMSUM` mirror node, AC-shorted to `VIN` — whatever pole sits on `Mgmo_ss`'s gate |
 | `acopen-hold` | `XMhold_ss`'s drain, AC-opened from `PASS_GATE` |
 
-Each is a 1 GH inductor in series with a device terminal, or a 1 F capacitor
+and then, in the other direction, **adds** known capacitance from `FB` to `VSS`
+on a ladder from 10 fF to 1 nF. Removing this element's coupling only says
+that *this* element is cheap; adding capacitance until the 45° reference line
+is crossed says what any future injection element has to stay under, and is
+what actually tests the schematic regression note's hypothesis that *"ANY
+nonzero parasitic capacitance the real transconductor adds to FB … is enough
+to destabilize the main loop's hold-release transient"*.
+
+Each is a 1 GH inductor in series with a device terminal, or a capacitor
 from a node to a rail. **An inductor is a short at DC and a capacitor is an open
 at DC**, so the operating point is bit-identical and the margin delta is
 attributable to that coupling and to nothing else — this is the difference
@@ -246,7 +289,8 @@ filed separately rather than fixed here.
 ```
 sim/soft-start-loop-gain/
   testbench/
-    tb_ss_loop_gain.spice.in   the deck template
+    tb_ss_loop_gain.spice.in   the margin deck template (AC, Tian dual injection)
+    tb_ss_handover.spice.in    the DC hand-over transfer deck template
     sweep.py                   the driver: grid, variants, landing rule, record
     netlist_variants.py        the DUT netlist transforms (SSR port, A/B, AC-only removals)
     selftest.py                validates the method before any sweep runs
@@ -256,11 +300,17 @@ sim/soft-start-loop-gain/
     <record-id>-device.spice   frozen DUT netlist, post-#195 chain
     <record-id>-binj.spice     frozen DUT netlist, pre-#195 ideal source
   corners/<record-id>/         raw ngspice logs: one per PVT point x variant x phase,
+                               one per PVT point x variant for the hand-over transfer,
                                plus the attribution curves and the loop-stability re-run
   records/
     <record-id>.md             the append-only summary record
-    <record-id>-matrix.csv     every point, machine-readable
+    <record-id>-matrix.csv     every margin point, machine-readable
+    <record-id>-handover.csv   every hand-over transfer point, machine-readable
 ```
+
+The recommendation this experiment exists to feed is
+`design/softstart_injection_compensation.md`; it cites this experiment's
+records and nothing else.
 
 Records are **append-only** per `sim/README.md`: a re-run mints a new record-id
 and references the one it supersedes; nothing here is ever edited in place.

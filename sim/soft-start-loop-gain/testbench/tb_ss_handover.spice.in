@@ -1,0 +1,127 @@
+* soft-start-loop-gain -- the DC hand-over transfer of the FB-injection
+* element: what current it actually delivers into FB as a function of the
+* ramp node SSR, and what that does to the loop's operating point (issue #196).
+*
+* ---------------------------------------------------------------------------
+* Why this deck exists next to tb_ss_loop_gain.spice.in
+* ---------------------------------------------------------------------------
+* A phase margin is a statement about ONE operating point. tb_ss_loop_gain
+* measures margins at a handful of pinned ramp states; this deck measures the
+* operating point itself, densely, all the way along the ramp, so the margins
+* have a curve to sit on rather than four isolated points.
+*
+* It is the SAME circuit, the SAME loop break (ERRAMP_OUT -> PASS_GATE with
+* Vinj a DC short, so the DC solve is the true closed-loop one), the SAME
+* resistive 36 ohm load model as the `ramp` phase, and the SAME SSR-port
+* instrumented netlists. That is deliberate: at every V(SSR) the two decks
+* share, they must land on the same DC operating point, and sweep.py checks
+* exactly that before the transfer is allowed into the record.
+*
+* The sweep is a `foreach` over an explicit list of V(SSR) with an `op` at
+* each, not a `.dc` analysis, for one reason: `op` is the analysis the margin
+* deck uses, so a HOV line here and a ROW line there are the same computation
+* at the same point and are directly comparable. Ops are milliseconds; the
+* density costs nothing.
+*
+* ---------------------------------------------------------------------------
+* What is reported, and why each field
+* ---------------------------------------------------------------------------
+*   fb_v      The feedback node. The soft-start mechanism is "hold FB at VREF
+*             with an injected current and let the divider set VOUT", so
+*             FB == VREF is the signature of the loop being IN REGULATION at
+*             this ramp state, and FB above VREF means the injection element
+*             is delivering more current than the divider can absorb with the
+*             output at zero -- i.e. the loop is SATURATED, the error amp is
+*             railed and the pass device is off. That state has no loop gain
+*             and therefore no phase margin, which is precisely why it has to
+*             be found here and not there.
+*   vout_v    With FB at VREF the divider gives VOUT, and I_inj follows by KCL
+*             (see sweep.py's Row.iinj_a -- the identical expression for both
+*             DUT variants, so the A/B is like for like).
+*   pg_v      The pass gate. Its distance from VIN is the direct, non-inferred
+*             statement of whether the pass device is on at this ramp state.
+*   erramp_v  The error amplifier's output, i.e. the far side of the loop
+*             break. It equals pg_v at DC (Vinj is a 0 V source) and is
+*             reported so a reader can see the break is a short, not a gap.
+*   isup_a    Supply current, the same quantity every other bench here reports.
+*   gmsum_v   ONLY for the device-level variant: the mirror node
+*             Mgmr_ss/Mgmo_ss share as a gate. VIN - V(GMSUM) is Mgmo_ss's
+*             source-gate drive, so this column is what says whether the
+*             element has actually turned off or has merely gone weak. The
+*             pre-#195 ideal-source variant has no such node and does not
+*             emit the field.
+*
+* Template: the at-sign-delimited placeholders are substituted by sweep.py.
+
+.include "@DESIGN_INCLUDE@"
+.lib "@MODEL_LIB@" @MOS_CORNER@
+.lib "@MODEL_LIB@" @RES_CORNER@
+.lib "@MODEL_LIB@" @BJT_CORNER@
+.lib "@MODEL_LIB@" @DIODE_CORNER@
+.lib "@MODEL_LIB@" @MOSCAP_CORNER@
+.lib "@MODEL_LIB@" @MIMCAP_CORNER@
+
+.temp @TEMP_C@
+
+* Per-finger model binning -- see tb_ss_loop_gain.spice.in's header and the
+* README's "Model binning" section. Without this the deck does not parse.
+.options wnflag=1
+
+.include "@LDO_NETLIST@"
+
+* --- stimulus ------------------------------------------------------------
+Vin VIN 0 DC @VIN_V@
+Ven EN 0 DC @VIN_V@
+Vref VREF 0 DC 1.2
+
+* --- DUT, loop broken at ERRAMP_OUT -> PASS_GATE (Vinj is a DC short) -----
+Xdut VIN VOUT EN 0 AINJ BINJ VREF SSRPIN ldo_core
+Vinj AINJ BINJ DC 0 AC 0
+
+* --- the ramp node, pinned and swept -------------------------------------
+Vssr SSRPIN 0 DC 0
+
+* --- load + output network: the `ramp` phase's model ---------------------
+* Resistive, because low on the ramp the regulated output is a fraction of a
+* volt and an ideal sink demanding 50 mA from it has no solution on the
+* regulating branch at all. 36 ohm is 1.8 V / 50 mA.
+Rload VOUT NLD 36.0
+Vlmeas NLD 0 DC 0
+Resr VOUT NESR 0.001
+Cout NESR 0 1e-6
+
+* Same non-physical-DC-branch clamp as every other deck here; reverse-biased
+* at the operating point and carries no AC (cjo=0 tt=0). There is no AC
+* analysis in this deck at all.
+.model dclamp d(is=1e-14 cjo=0 tt=0 n=1 rs=0)
+Dclamp 0 VOUT dclamp
+
+.control
+set noaskquit
+
+echo "* corner_id=@CORNER_ID@ corner=@CORNER_NAME@ temp_c=@TEMP_C@ vin_v=@VIN_V@"
+echo "* variant=@VARIANT@ analysis=dc-handover-transfer load=resistive-36ohm"
+echo "* columns: HOV ssr_cmd= ssr_v= fb_v= vout_v= pg_v= erramp_v= isup_a=@GMSUM_COL@"
+echo "* (I_inj into FB is DERIVED from fb_v/vout_v by KCL in sweep.py, not"
+echo "*  measured, so the identical expression reads both DUT variants;"
+echo "*  fb_v away from VREF means the loop is not in regulation at that ramp"
+echo "*  state and neither VOUT nor I_inj is a regulating-branch quantity)"
+echo "* Fields are key=value for the same reason the margin deck's are: an"
+echo "* empty positional field vanishes into the whitespace."
+
+foreach ss @SSR_LIST@
+  destroy all
+  alter Vssr dc = $ss
+  op
+  let fb_dc = v(xdut.fb)
+  let vout_dc = v(vout)
+  let pg_dc = v(binj)
+  let ea_dc = v(ainj)
+  let isup_dc = -i(vin)
+  let ssr_dc = v(ssrpin)
+@GMSUM_LET@
+  echo "HOV ssr_cmd=$ss ssr_v=$&ssr_dc fb_v=$&fb_dc vout_v=$&vout_dc pg_v=$&pg_dc erramp_v=$&ea_dc isup_a=$&isup_dc@GMSUM_ECHO@"
+end
+echo "* SWEEP COMPLETE @CORNER_ID@"
+.endc
+.end
