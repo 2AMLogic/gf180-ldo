@@ -278,7 +278,7 @@ rediscovering it.
 
 ## 4. What this does *not* explain, stated plainly
 
-The record does not close #191's transient arithmetic, and it says so:
+The record does not settle #191's transient arithmetic, and it says so:
 
 - At `tt_-40c_2.97v` — the corner #191's own A/B used — the output the loop is
   asked to acquire at hold release (`V(SSR)` ≈ 0.05 V) is **74.5 mV** with the
