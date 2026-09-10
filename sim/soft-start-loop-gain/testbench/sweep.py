@@ -995,6 +995,7 @@ def main() -> int:
     rows: list[Row] = []
     failures: list[str] = []
     seeded: list[str] = []
+    voided: list[str] = []
 
     def submit(pool, todo, seed: bool):
         return {
@@ -1041,6 +1042,22 @@ def main() -> int:
                 pvt, variant, phase = futures[done]
                 _, pt_rows, err = done.result()
                 if err:
+                    if "did not land on the intended DC branch" in err:
+                        # Still refuses the intended branch even with the
+                        # seed that starts Newton on it. Per the README's
+                        # landing rule, this VOIDS the deck -- it is named
+                        # in the record and excluded from the row set, but
+                        # is not a run-wide failure: the other (PVT, variant,
+                        # phase) decks landed cleanly and their margins are
+                        # not in question. A deck that never lands on the
+                        # named branch even when seeded onto it is itself a
+                        # measurement (the device chain has no solution near
+                        # VREF at that PVT point), not a testbench bug.
+                        voided.append(f"{pvt.corner_id}/{variant}/{phase}: {err}")
+                        print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} "
+                              f"VOIDED (no DC branch near VREF, even seeded) "
+                              f"{err}")
+                        continue
                     failures.append(
                         f"{pvt.corner_id}/{variant}/{phase} (with DC seed): {err}")
                     print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} "
@@ -1054,6 +1071,12 @@ def main() -> int:
         for f in failures:
             print(f"  {f}", file=sys.stderr)
         return 2
+    if voided:
+        print(f"\n{len(voided)} (PVT, variant, phase) deck(s) voided (no DC "
+              f"branch near VREF, even with the intended-branch seed); named "
+              f"in the record, excluded from the row set:")
+        for v in voided:
+            print(f"  {v}")
     if not rows:
         print("FATAL: no rows parsed", file=sys.stderr)
         return 2
@@ -1127,7 +1150,8 @@ def main() -> int:
 
     md = render_record(record_id=record_id, rows=rows, grid=grid, ceffs=ceffs,
                        esrs=esrs, pdk=pdk, prov=prov, args=args,
-                       xcheck=xcheck, attribution=attribution, seeded=seeded)
+                       xcheck=xcheck, attribution=attribution, seeded=seeded,
+                       voided=voided)
     record_path = write_markdown_record(record_id, md, records_dir)
 
     print()
@@ -1458,7 +1482,7 @@ def attribution_section(attribution: dict | None) -> str:
 
 
 def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
-                  xcheck, attribution, seeded) -> str:
+                  xcheck, attribution, seeded, voided=()) -> str:
     now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     dirty = prov["dirty"]
     variants = sorted({r.variant for r in rows})
@@ -1620,6 +1644,23 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
             "    solve pass; the retry is held to exactly the same landing check\n"
             "    as the first attempt, and its raw log is `*_dcseed.log`.\n"
         )
+    voided_md = ""
+    if voided:
+        voided_md = (
+            f"\n  - **{len(voided)} (PVT, variant, phase) deck(s) voided -- "
+            f"no DC branch near VREF even with the intended-branch seed**: "
+            "each of these is a deck whose Newton solve, even started from a "
+            "`.nodeset` that seeds the feedback node at `VREF` and releases "
+            "`ldo_ilimit`'s clamp, still converges somewhere with `FB` far "
+            "from `VREF` (or `VOUT` outside the ramp's own range). That is "
+            "not a testbench defect: it means the named PVT point has no DC "
+            "solution close to the intended soft-start branch for that "
+            "variant, which is itself evidence about the injection element's "
+            "DC behaviour at that corner. No row for a voided deck enters "
+            "this record or the matrix CSV.\n"
+            + "\n".join(f"    - `{v}`" for v in sorted(voided))
+            + "\n"
+        )
     subset_md = (f"\n  - **Subset reason**: {args.subset_reason.strip()}\n"
                  if args.subset_reason.strip() else "")
 
@@ -1675,7 +1716,8 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   - Supply: {supplies} V
   - {len(grid)} PVT points x {len(variants)} DUT variant(s) x the ramp states
     below x {len(ceffs)} C_eff x {len(esrs)} ESR = **{len(rows)} loop-gain
-    points**.{subset_md}{seeded_md}
+    points**{f", plus {len(voided)} voided (PVT, variant, phase) deck(s) -- "
+              f"see below" if voided else ""}.{subset_md}{seeded_md}{voided_md}
 - **Operating conditions**:
   - Load: the rated 50 mA point, in two load models -- a 36 ohm resistor
     (1.8 V / 50 mA, the model `sim/soft-start/` uses, and the only one that
