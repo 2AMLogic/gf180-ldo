@@ -1,0 +1,352 @@
+
+Note: No compatibility mode selected!
+
+
+Circuit: * soft-start-loop-gain -- tian dual-injection loop-gain testbench for the ldo
+
+* corner_id=ss_125c_3.63v corner=ss temp_c=125 vin_v=3.63
+* phase=anchor variant=device iload_a=0.05 rload_ohm=1e+12
+* ac sweep: dec 400 0.01 1e9 ; Tian dual injection at ERRAMP_OUT->PASS_GATE
+* columns: ROW ssr_cmd= ssr_v= fb_v= vout_v= isup_a= ceff_f= esr_ohm=
+*          dcgain_db= f0_hz= phase_at_f0_deg= f180_hz= gain_at_f180_db=
+*          f0_rising_hz= resurgence_db=
+* (phase margin = 180 + phase_at_f0_deg ; gain margin = -gain_at_f180_db ;
+*  resurgence_db = max |T| in dB above the first 0 dB crossing, DR-0008 ;
+*  an empty f180/gain field means the phase never reaches -180 deg in band ;
+*  ssr_cmd is what this deck COMMANDED the ramp node to, or 'free' when it
+*  is not pinned; ssr_v/fb_v/vout_v are what the DC solve LANDED on)
+* Fields are written key=value BECAUSE a failed meas leaves its value
+* empty: with bare positional fields an empty one vanishes into the
+* whitespace and every field after it is read as the wrong quantity.
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  3.80189e-01
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  4.46684e+04
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  2.35415e+05
+phx                 =  -1.29828e+02
+f180                =  6.54225e+05
+gmx                 =  -1.13203e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -5.09892e-01 at=  2.48313e+05
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=1e-06 esr_ohm=0.001 dcgain_db=135.685 f0_hz=235415 phase_at_f0_deg=-129.828 f180_hz=654225 gain_at_f180_db=-11.3203 f0_rising_hz= resurgence_db=-0.509892
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  9.06776e+02
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  4.89779e+06
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  2.35969e+05
+phx                 =  -1.25734e+02
+f180                =  7.73449e+05
+gmx                 =  -1.35579e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -4.84947e-01 at=  2.48313e+05
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=1e-06 esr_ohm=0.05 dcgain_db=135.685 f0_hz=235969 phase_at_f0_deg=-125.734 f180_hz=773449 gain_at_f180_db=-13.5579 f0_rising_hz= resurgence_db=-0.484947
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  7.41310e+03
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  1.48765e+07
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  2.37723e+05
+phx                 =  -1.21671e+02
+f180                =  9.36473e+05
+gmx                 =  -1.57406e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -4.62316e-01 at=  2.49747e+05
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=1e-06 esr_ohm=0.1 dcgain_db=135.685 f0_hz=237723 phase_at_f0_deg=-121.671 f180_hz=936473 gain_at_f180_db=-15.7406 f0_rising_hz= resurgence_db=-0.462317
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  4.49262e+03
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  2.61517e+08
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  2.45180e+05
+phx                 =  -1.13863e+02
+f180                =  1.24587e+06
+gmx                 =  -1.73168e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -4.67475e-01 at=  2.58523e+05
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=1e-06 esr_ohm=0.2 dcgain_db=135.685 f0_hz=245180 phase_at_f0_deg=-113.863 f180_hz=1.24587E+06 gain_at_f180_db=-17.3168 f0_rising_hz= resurgence_db=-0.467475
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  3.67282e+05
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  3.21236e+05
+phx                 =  -9.45813e+01
+f180                =  1.54469e+06
+gmx                 =  -1.37464e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -3.01866e-01 at=  3.38844e+05
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=1e-06 esr_ohm=0.5 dcgain_db=135.685 f0_hz=321236 phase_at_f0_deg=-94.5813 f180_hz=1.54469E+06 gain_at_f180_db=-13.7464 f0_rising_hz= resurgence_db=-0.301866
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  0.00000e+00
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  1.00000e-02
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  5.79512e+04
+phx                 =  -1.25427e+02
+f180                =  6.61652e+05
+gmx                 =  -2.49140e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -5.29852e-01 at=  6.09537e+04
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=4.7e-06 esr_ohm=0.001 dcgain_db=135.685 f0_hz=57951.2 phase_at_f0_deg=-125.427 f180_hz=661652 gain_at_f180_db=-24.914 f0_rising_hz= resurgence_db=-0.529852
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  1.00000e-02
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  5.46387e+01
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  5.81172e+04
+phx                 =  -1.20576e+02
+f180                =  1.31833e+06
+gmx                 =  -3.05646e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -5.55992e-01 at=  6.13056e+04
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=4.7e-06 esr_ohm=0.05 dcgain_db=135.685 f0_hz=58117.2 phase_at_f0_deg=-120.576 f180_hz=1.31833E+06 gain_at_f180_db=-30.5646 f0_rising_hz= resurgence_db=-0.555992
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  1.90546e-01
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  2.27772e+03
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  5.86423e+04
+phx                 =  -1.15517e+02
+f180                =  1.53500e+06
+gmx                 =  -2.75676e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -5.11286e-01 at=  6.16595e+04
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=4.7e-06 esr_ohm=0.1 dcgain_db=135.685 f0_hz=58642.3 phase_at_f0_deg=-115.516 f180_hz=1.535E+06 gain_at_f180_db=-27.5676 f0_rising_hz= resurgence_db=-0.511286
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  1.26619e+00
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  5.88844e+03
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  6.09068e+04
+phx                 =  -1.04990e+02
+f180                =  1.64176e+06
+gmx                 =  -2.27757e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -4.89364e-01 at=  6.41948e+04
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=4.7e-06 esr_ohm=0.2 dcgain_db=135.685 f0_hz=60906.8 phase_at_f0_deg=-104.99 f180_hz=1.64176E+06 gain_at_f180_db=-22.7757 f0_rising_hz= resurgence_db=-0.489364
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+
+No. of Data Rows : 1
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  3.01995e+00
+No. of Data Rows : 4401
+Doing analysis at TEMP = 125.000000 and TNOM = 27.000000
+
+Using SPARSE 1.3 as Direct Linear Solver
+ Reference value :  2.33077e+03
+No. of Data Rows : 4401
+dcg                 =  1.35685e+02
+f0                  =  8.96301e+04
+phx                 =  -6.80613e+01
+f180                =  1.70181e+06
+gmx                 =  -1.54678e+01
+ meas ac f0r when tdb=0 rise=1 failed!
+
+tres                =  -2.05999e-01 at=  9.44061e+04
+ROW ssr_cmd=free ssr_v=2.34843 fb_v=1.19939 vout_v=1.79904 isup_a=0.0500171 ceff_f=4.7e-06 esr_ohm=0.5 dcgain_db=135.685 f0_hz=89630.2 phase_at_f0_deg=-68.0613 f180_hz=1.70181E+06 gain_at_f180_db=-15.4678 f0_rising_hz= resurgence_db=-0.205999
+* SWEEP COMPLETE ss_125c_3.63v
+Note: Simulation executed from .control section 
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+Note: Starting dynamic gmin stepping
+Note: Dynamic gmin stepping completed
+
+Error: measure  f0r  when(WHEN) : out of interval
+Error: &f0r: no such variable.
