@@ -79,7 +79,7 @@ testbench computes when it claims to have measured "dropout" changes.
 | Thermal | 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 290 mW into a Vout = 0 short at the 80 mA limit ceiling; specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec | — |
 | Output noise | not specified — explicitly waived (note 7) | 10 Hz–100 kHz µVrms row if a consumer asks for one |
 | Area | < 0.1 mm² total core area, pass FET included, excluding pads and sealring | — |
-| Stability | stable 0–50 mA with C_out 0.33–4.7 µF effective (1 µF nominal X5R/X7R), ESR 0–500 mΩ; PM ≥ 45°, GM ≥ 10 dB worst corner | capless variant (separate design fork) |
+| Stability | stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 55.44 deg / 11.96 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1584/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and issue #147. 0 mA (no external load) remains outside the envelope per DR-0007. | capless variant (separate design fork) |
 
 Notes — these are part of the ratified spec, not commentary:
 

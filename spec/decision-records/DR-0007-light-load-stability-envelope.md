@@ -29,6 +29,32 @@
   operator's call — it only records that the hold's own stated prerequisite
   is satisfied and the evidence is ready for a ratification decision.
 
+  **DR-0018's own hold-condition finding ratified 2026-09-12, pending this
+  pull request's merge.** Per the 2026-08-19 ratification-via-PR policy
+  (2AMLogic/2am#357, the same mechanism issue #149 routed this decision
+  through), `spec/decision-records/DR-0018-narrow-stability-envelope-to-1uf-nominal.md`'s
+  `Status` line flips to `ratified` (pending this PR) in the same pull
+  request as this note — its Decision item 2 above, that this hold's own
+  stated prerequisite is met, is what that flip carries into force. **This
+  does not itself ratify DR-0007** — whether the 0 mA column stays out of
+  the verified envelope permanently remains a separate operator call on
+  this record as a whole — it only records that the hold condition is
+  discharged and re-confirms the discharge against the current head
+  loop-stability record
+  (`sim/loop-stability/records/20260906-071437-fff0bf0-matrix.csv`, which
+  supersedes the `20260807-103351-64249c6` record cited two paragraphs
+  above per issue #15's 2026-09-07 re-check): re-derived independently
+  against that fresher matrix, 0 mA is still 0/126 at the `C_eff` = 1 uF /
+  ESR ≥ 200 mΩ point the ratified `Stability` row now claims, and DR-0008
+  resurgence stays clean. The blanket "every cap, every ESR" 0 mA count
+  moves from 0/756 to 1/756 — one point at 0.33 µF / 0.5 Ω ESR (well below
+  the 200 mΩ floor and outside the claimed envelope) passes at exactly
+  45.01° PM, on the bar to two decimal places — which
+  `sim/loop-stability/records/20260906-090647-3981d88.md`'s own
+  toolchain-identity investigation already documents as the class of
+  boundary-point noise this bench exhibits near the spec line, not a
+  substantive change to this record's 0 mA conclusion.
+
   Original status line follows.
 
 - **Status (original)**: proposed — ratification is the operator's (issue #1's process,

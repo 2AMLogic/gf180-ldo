@@ -1,11 +1,35 @@
 # DR-0018: With compensation-network tuning exhausted, propose closing issue #51's residual gap by spec decision (DR-0016's Candidates 1 and 3), not a further circuit change
 
-- **Status**: proposed -- ratification is the operator's, the same process
-  DR-0001, DR-0007, DR-0008, DR-0012 through DR-0017 went through. **Nothing
-  in this record is in force until an operator ratifies it, and it proposes
+- **Status**: ratified 2026-09-12 (issue #149 / this pull request) --
+  **pending**: this status line states the diff this record's ratifying
+  pull request proposes; per the 2026-08-19 ratification-via-PR policy
+  (2AMLogic/2am#357), the operator's review and approval **of that pull
+  request** is the ratification act itself -- no separate ratification
+  comment is expected. Until the pull request merges, this line is a
+  proposal, not yet true of `main`, and `README.md`'s `Stability` row keeps
+  its originally ratified text (DR-0001's 0.33-4.7 uF / no-minimum-ESR
+  window). **Nothing in this record is in force until then, and it proposes
   no `design/` change.** Every count below is re-derived directly from the
   already-committed matrix CSV of the current head loop-stability record --
-  no new simulation was run to produce it.
+  no new simulation was run to produce it. **Independent re-verification
+  against the current head record**
+  (`sim/loop-stability/records/20260906-071437-fff0bf0-matrix.csv`, which
+  supersedes this record's original citation,
+  `20260807-103351-64249c6-matrix.csv`, per issue #15's 2026-09-07
+  re-check): the narrowed 0.1-50 mA / `C_eff` = 1 uF / ESR >= 200 mOhm
+  envelope is unchanged at **630/630**, worst PM 55.44 deg
+  (`res_ss_-40c_3.63v`, 50 mA) and worst GM 11.96 dB
+  (`res_ss_-40c_2.97v`, 50 mA), DR-0008 resurgence clean 0/630 -- every
+  digit this record cites for that claim reproduces exactly. The blanket
+  0 mA count moves by one point out of 756 (0/756 -> 1/756: a single
+  `ss_-40c_3.63v` / 0.33 uF / 0.5 ohm ESR point now passes at exactly
+  45.01 deg PM, sitting on the bar to two decimal places), which is outside
+  the proposed 1 uF / ESR >= 200 mOhm envelope this record actually claims
+  (still 0/126 there, unchanged) and reads as the same
+  boundary-point noise `sim/loop-stability/records/20260906-090647-3981d88.md`
+  already documents for this bench, not a substantive reopening of DR-0007's
+  0 mA conclusion. See this pull request's own body for the full
+  verification note.
 - **Date**: 2026-08-21
 - **Decided by**: Builder agent, issue #51 (recommendation only)
 - **Builds on**: DR-0016 (the four-candidate trade study this record acts
