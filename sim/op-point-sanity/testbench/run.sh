@@ -20,10 +20,11 @@
 # the harness's testbench-fragment convention forbids `.include` in tb.json
 # netlists, but the whole point of this check is to `.include` the exact
 # netlist design/netlist.py exported from design/ldo_core.sch. This script
-# instead substitutes @TOKENS@ in tb_op_point_sanity.spice.in directly
-# (the same template-substitution style as sim/devchar/lib/devchar.sh) and
-# runs the result with a plain `ngspice -b`, then writes the evidence
-# record by hand in the sim/README.md format.
+# instead substitutes @TOKENS@ in tb_op_point_sanity.spice.in and runs the
+# result with a plain `ngspice -b` via sim/harness/lib/run_point.sh -- the
+# same shared substitute/run/fatal-check driver the current-limit,
+# enable-shutdown and soft-start testbenches use (issues #193, #202) -- then
+# writes the evidence record by hand in the sim/README.md format.
 
 set -euo pipefail
 
@@ -55,10 +56,10 @@ PDK_VARIANT="$(sed -n '3p' <<<"$PDK_INFO")"
 PDK_VERSION="$(sed -n '4p' <<<"$PDK_INFO")"
 NGSPICE_VERSION="$(sed -n '5p' <<<"$PDK_INFO")"
 # Fatal-condition sentinel: single source of truth is
-# sim/harness/runner.py's FATAL_LOG_PATTERN (issue #157). This also fixes
-# this file's own gate-vs-diagnostic-dump inconsistency: line 94's `-q` gate
-# and the old line 96 `-n` dump used to carry two different (drifted)
-# copies of this pattern -- now both use the one string.
+# sim/harness/runner.py's FATAL_LOG_PATTERN (issue #157). Exported because
+# harness_run_point() reads it from the environment (its documented
+# contract) rather than taking it as an argument.
+export FATAL_LOG_PATTERN
 FATAL_LOG_PATTERN="$(sed -n '6p' <<<"$PDK_INFO")"
 
 # --- committed, current netlist (fail loud if stale) ----------------------
@@ -73,36 +74,33 @@ mkdir -p "$LOG_DIR"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
+# Shared substitute/run/fatal-check driver (issue #202): the corner tokens
+# below are this experiment's one hardcoded nominal point rather than a swept
+# PVT triple, but the substitute/run/fatal-check body is the same one the
+# three PVT-sweep testbenches use, so it lives in one place.
+source "$REPO_ROOT/sim/harness/lib/run_point.sh"
+
 run_point() {
   local en_v="$1" corner_id="$2"
   local deck="$WORKDIR/${corner_id}.spice"
   local log="$LOG_DIR/${corner_id}.log"
 
-  sed \
-    -e "s|@DESIGN_INCLUDE@|$DESIGN_INCLUDE|g" \
-    -e "s|@MODEL_LIB@|$MODEL_LIB|g" \
-    -e "s|@LDO_NETLIST@|$LDO_NETLIST|g" \
-    -e "s|@MOS_CORNER@|typical|g" \
-    -e "s|@RES_CORNER@|res_typical|g" \
-    -e "s|@BJT_CORNER@|bjt_typical|g" \
-    -e "s|@DIODE_CORNER@|diode_typical|g" \
-    -e "s|@MOSCAP_CORNER@|moscap_typical|g" \
-    -e "s|@MIMCAP_CORNER@|mimcap_typical|g" \
-    -e "s|@TEMP_C@|27|g" \
-    -e "s|@VIN_V@|3.3|g" \
-    -e "s|@EN_V@|$en_v|g" \
-    "$HERE/tb_op_point_sanity.spice.in" > "$deck"
-
-  if ! ngspice -b "$deck" > "$log" 2>&1; then
-    echo "FATAL: ngspice failed on $corner_id (see $log)" >&2
-    tail -40 "$log" >&2
-    exit 1
-  fi
-  if grep -qE "$FATAL_LOG_PATTERN" "$log"; then
-    echo "FATAL: ngspice reported an error on $corner_id (see $log)" >&2
-    grep -nE "$FATAL_LOG_PATTERN" "$log" >&2
-    exit 1
-  fi
+  # harness_run_point echoes the corner id on success (the sweep testbenches'
+  # fan-out progress line); this script reports the point itself below, so
+  # that echo is discarded. FATAL diagnostics go to stderr and are unaffected.
+  harness_run_point "$HERE/tb_op_point_sanity.spice.in" "$corner_id" "$deck" "$log" \
+    "DESIGN_INCLUDE=$DESIGN_INCLUDE" \
+    "MODEL_LIB=$MODEL_LIB" \
+    "LDO_NETLIST=$LDO_NETLIST" \
+    "MOS_CORNER=typical" \
+    "RES_CORNER=res_typical" \
+    "BJT_CORNER=bjt_typical" \
+    "DIODE_CORNER=diode_typical" \
+    "MOSCAP_CORNER=moscap_typical" \
+    "MIMCAP_CORNER=mimcap_typical" \
+    "TEMP_C=27" \
+    "VIN_V=3.3" \
+    "EN_V=$en_v" >/dev/null || exit 1
 
   local vout vin_m loop fb vref_m ivin_ma ien_ua
   vout="$(grep -E '^m_vout = ' "$log" | tail -1 | awk '{print $3}')"
