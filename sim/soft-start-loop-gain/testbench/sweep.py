@@ -62,6 +62,7 @@ from harness.report import (  # noqa: E402
     allocate_record_id,
     format_record_id,
     git_provenance,
+    parse_row_fields as _harness_parse_row_fields,
     write_markdown_record,
 )
 from harness.runner import FATAL_LOG_RE, ngspice_binary_sha256, ngspice_version  # noqa: E402
@@ -371,29 +372,15 @@ ROW_FIELDS = (
 
 
 def parse_row_fields(line: str) -> dict[str, str]:
-    """``ROW k=v k=v ...`` -> dict, with the same strictness as loop-stability's.
+    """``ROW k=v k=v ...`` -> dict, against this module's own ``ROW_FIELDS``.
 
-    Key=value rather than positional for the reason its docstring records: a
-    failed `meas` leaves its value empty, and an empty positional field
-    vanishes into the whitespace so every later field is read as the wrong
-    quantity. Missing or unknown keys are an error, never a default.
+    The parsing/validation itself is ``harness.report.parse_row_fields()``,
+    shared with ``sim/loop-stability/testbench/sweep.py`` so the two
+    experiments' strictness (missing/unknown keys are a hard error, never a
+    default) cannot drift apart. This wrapper just binds it to this
+    experiment's own field list.
     """
-    fields: dict[str, str] = {}
-    for tok in line.split()[1:]:
-        key, sep, val = tok.partition("=")
-        if not sep:
-            raise ValueError(f"ROW field {tok!r} is not key=value: {line!r}")
-        if key in fields:
-            raise ValueError(f"ROW field {key!r} repeated: {line!r}")
-        fields[key] = val
-    missing = [k for k in ROW_FIELDS if k not in fields]
-    unknown = [k for k in fields if k not in ROW_FIELDS]
-    if missing or unknown:
-        raise ValueError(
-            f"ROW line does not match the deck's field list "
-            f"(missing {missing}, unknown {unknown}): {line!r}"
-        )
-    return fields
+    return _harness_parse_row_fields(line, ROW_FIELDS)
 
 
 # ---------------------------------------------------------------------------

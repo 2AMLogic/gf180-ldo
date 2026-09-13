@@ -81,6 +81,7 @@ from harness.report import (  # noqa: E402
     allocate_record_id,
     format_record_id,
     git_provenance,
+    parse_row_fields as _harness_parse_row_fields,
     write_markdown_record,
 )
 from harness.runner import FATAL_LOG_RE, ngspice_binary_sha256, ngspice_version  # noqa: E402
@@ -300,34 +301,14 @@ ROW_FIELDS = (
 
 
 def parse_row_fields(line: str) -> dict[str, str]:
-    """Parse one ``ROW k=v k=v ...`` line into its fields.
+    """Parse one ``ROW k=v k=v ...`` line against this module's ``ROW_FIELDS``.
 
-    The deck writes key=value rather than bare positional fields for a
-    load-bearing reason: a failed ``meas`` (no such crossing in band) leaves
-    its value empty, and an empty *positional* field vanishes into the
-    whitespace, so every field after it is read as the wrong quantity. That
-    is not hypothetical -- record ``20260801-191742-84f67b8`` has 387 rows
-    whose ``f0_rising_hz`` was read as ``f180_hz`` for exactly this reason,
-    which is why its multiple-crossing self-check reported 14 points instead
-    of 401. Missing keys are an error rather than a default, so a deck/driver
-    drift can never again be silently absorbed as a plausible number.
+    The parsing/validation itself is ``harness.report.parse_row_fields()``,
+    shared with ``sim/soft-start-loop-gain/testbench/sweep.py`` (see that
+    shared function's docstring for why key=value rather than positional).
+    This wrapper just binds it to this experiment's own field list.
     """
-    fields: dict[str, str] = {}
-    for tok in line.split()[1:]:
-        key, sep, val = tok.partition("=")
-        if not sep:
-            raise ValueError(f"ROW field {tok!r} is not key=value: {line!r}")
-        if key in fields:
-            raise ValueError(f"ROW field {key!r} repeated: {line!r}")
-        fields[key] = val
-    missing = [k for k in ROW_FIELDS if k not in fields]
-    unknown = [k for k in fields if k not in ROW_FIELDS]
-    if missing or unknown:
-        raise ValueError(
-            f"ROW line does not match the deck's field list "
-            f"(missing {missing}, unknown {unknown}): {line!r}"
-        )
-    return fields
+    return _harness_parse_row_fields(line, ROW_FIELDS)
 
 
 def nonregulating(rows: list[Row]) -> list[Row]:
