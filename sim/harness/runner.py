@@ -67,13 +67,60 @@ FATAL_LOG_PATTERN = "|".join(FATAL_LOG_PATTERNS)
 # Case-insensitive: ngspice's own capitalization of these phrases is not
 # consistent, and case-insensitivity only widens the match, never narrows
 # it relative to any prior case-sensitive bash copy. Direct-import Python
-# call sites (e.g. sim/loop-stability/testbench/sweep.py) call
-# `FATAL_LOG_RE.search()` themselves rather than going through a wrapper.
+# call sites (e.g. sim/loop-stability/testbench/sweep.py and
+# sim/soft-start-loop-gain/testbench/sweep.py) go through
+# `run_ngspice_deck()` below, which wraps `FATAL_LOG_RE.search()` alongside
+# the other two run+validate checks (issue #209).
 FATAL_LOG_RE = re.compile(FATAL_LOG_PATTERN, re.IGNORECASE)
 
 
 class NgspiceMissing(RuntimeError):
     pass
+
+
+def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
+    """Run one ngspice deck to completion and validate its output.
+
+    Shared "run one deck, then validate it" wrapper for the sweep
+    testbenches (``loop-stability``, ``soft-start-loop-gain``) that drive
+    ngspice directly rather than going through :func:`run_point` -- issue
+    #209 deduped this out of ``soft-start-loop-gain/testbench/sweep.py``'s
+    own ``_ngspice()`` helper and an inlined copy in ``loop-stability``'s
+    ``run_point()``, which had drifted to differ only in raise-vs-return
+    error handling.
+
+    Writes ngspice's combined stdout+stderr to ``log`` unconditionally (so
+    the log is available for diagnosis even on failure), then raises
+    :class:`RuntimeError` unless all three checks pass:
+
+    1. ``ngspice`` exited 0.
+    2. The output does not match :data:`FATAL_LOG_RE` (a fatal condition
+       ngspice can report to stdout/stderr while still exiting 0).
+    3. The output contains the ``SWEEP COMPLETE`` marker the caller's own
+       deck template prints at the end of a successful run.
+
+    Returns the combined stdout+stderr text on success, for the caller to
+    parse further (e.g. for ``ROW ...`` / ``HOV ...`` lines). Callers that
+    want a non-raising, tuple-returning contract instead should catch
+    ``RuntimeError`` at the call site (as ``loop-stability``'s
+    ``run_point()`` does).
+    """
+    proc = subprocess.run(
+        [NGSPICE, "-b", str(deck)],
+        capture_output=True,
+        text=True,
+        cwd=str(workdir),
+    )
+    text = proc.stdout + proc.stderr
+    log.write_text(text)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ngspice exited {proc.returncode} (see {log})")
+    if FATAL_LOG_RE.search(text):
+        bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
+        raise RuntimeError(f"ngspice reported a fatal condition: {bad} (see {log})")
+    if "SWEEP COMPLETE" not in text:
+        raise RuntimeError(f"sweep did not complete (see {log})")
+    return text
 
 
 def ngspice_version() -> str:

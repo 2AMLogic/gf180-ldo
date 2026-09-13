@@ -84,7 +84,11 @@ from harness.report import (  # noqa: E402
     parse_row_fields as _harness_parse_row_fields,
     write_markdown_record,
 )
-from harness.runner import FATAL_LOG_RE, ngspice_binary_sha256, ngspice_version  # noqa: E402
+from harness.runner import (  # noqa: E402
+    ngspice_binary_sha256,
+    ngspice_version,
+    run_ngspice_deck,
+)
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
 DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
@@ -395,18 +399,10 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
     deck = workdir / f"{pvt.corner_id}{suffix}.spice"
     deck.write_text(render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec, dc_seed))
     log = logdir / f"{pvt.corner_id}{suffix}.log"
-    proc = subprocess.run(
-        ["ngspice", "-b", str(deck)], capture_output=True, text=True
-    )
-    log.write_text(proc.stdout + proc.stderr)
-    text = log.read_text()
-    if proc.returncode != 0:
-        return pvt, [], f"ngspice exited {proc.returncode} (see {log})"
-    if FATAL_LOG_RE.search(text):
-        bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
-        return pvt, [], f"ngspice reported a fatal condition: {bad} (see {log})"
-    if "SWEEP COMPLETE" not in text:
-        return pvt, [], f"sweep did not complete (see {log})"
+    try:
+        text = run_ngspice_deck(deck, log, workdir)
+    except RuntimeError as exc:
+        return pvt, [], str(exc)
 
     rows: list[Row] = []
     for line in text.splitlines():
