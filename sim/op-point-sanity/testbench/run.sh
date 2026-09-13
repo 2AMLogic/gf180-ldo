@@ -32,35 +32,18 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPDIR="$(cd "$HERE/.." && pwd)"           # sim/op-point-sanity
 REPO_ROOT="$(cd "$EXPDIR/../.." && pwd)"
 
-# --- PDK / ngspice discovery (single implementation: sim/harness/pdk.py,
-# sim/harness/runner.py) -- ngspice_version() also fails loud with an
+# Shared PDK / ngspice discovery (single implementation:
+# sim/harness/lib/pdk_discover.sh, issue #207) -- wraps sim/harness/pdk.py
+# and sim/harness/runner.py; ngspice_version() also fails loud with an
 # actionable message if ngspice is missing, replacing a bare `command -v`
 # guard. --------------------------------------------------------------------
-PDK_INFO="$(python3 - "$REPO_ROOT" <<'EOF'
-import sys
-sys.path.insert(0, sys.argv[1] + "/sim")
-from harness.pdk import find_pdk
-from harness.runner import FATAL_LOG_PATTERN, ngspice_version
-pdk = find_pdk()
-print(pdk.design_include)
-print(pdk.model_lib)
-print(pdk.variant)
-print(pdk.version)
-print(ngspice_version().split()[0])
-print(FATAL_LOG_PATTERN)
-EOF
-)"
-DESIGN_INCLUDE="$(sed -n '1p' <<<"$PDK_INFO")"
-MODEL_LIB="$(sed -n '2p' <<<"$PDK_INFO")"
-PDK_VARIANT="$(sed -n '3p' <<<"$PDK_INFO")"
-PDK_VERSION="$(sed -n '4p' <<<"$PDK_INFO")"
-NGSPICE_VERSION="$(sed -n '5p' <<<"$PDK_INFO")"
+source "$REPO_ROOT/sim/harness/lib/pdk_discover.sh"
+harness_discover_pdk "$REPO_ROOT"
 # Fatal-condition sentinel: single source of truth is
 # sim/harness/runner.py's FATAL_LOG_PATTERN (issue #157). Exported because
 # harness_run_point() reads it from the environment (its documented
 # contract) rather than taking it as an argument.
 export FATAL_LOG_PATTERN
-FATAL_LOG_PATTERN="$(sed -n '6p' <<<"$PDK_INFO")"
 
 # --- committed, current netlist (fail loud if stale) ----------------------
 python3 "$REPO_ROOT/design/netlist.py" --check >/dev/null

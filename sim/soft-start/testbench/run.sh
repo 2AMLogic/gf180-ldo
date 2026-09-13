@@ -45,53 +45,19 @@ EXTRA_SUPPLIES="${EXTRA_SUPPLIES:-2.97 3.63}"
 EXTRA_CAPS="${EXTRA_CAPS:-0.33u/0.001/36 0.33u/0.5/36 4.7u/0.001/36 4.7u/0.5/36 1u/0.1/1e9}"
 JOBS="${JOBS:-8}"
 
-# corner name -> "mos res bjt diode moscap mimcap" model sections. Single
-# source of truth: sim/harness/corners.py's CORNERS. Generated once, up
-# front (like PDK_INFO below) rather than shelled out to python per lookup,
-# since corner_sections() runs inside the parallel `xargs -P "$JOBS"`
-# fan-out in run_point() -- one python3 startup per script run, not one per
-# PVT point.
-eval "$(python3 - "$REPO_ROOT" <<'EOF'
-import sys
-sys.path.insert(0, sys.argv[1] + "/sim")
-from harness.corners import CORNERS
+# Shared corner name -> "mos res bjt diode moscap mimcap" model-section
+# codegen (single implementation: sim/harness/lib/corner_sections.sh,
+# issue #207). Single source of truth: sim/harness/corners.py's CORNERS.
+source "$REPO_ROOT/sim/harness/lib/corner_sections.sh"
+harness_load_corner_sections "$REPO_ROOT"
 
-print("corner_sections() {")
-print('  case "$1" in')
-for name, corner in CORNERS.items():
-    print(f'    {name}) echo "{" ".join(corner.sections)}" ;;')
-print('    *) echo "FATAL: unknown corner $1" >&2; exit 1 ;;')
-print("  esac")
-print("}")
-EOF
-)"
-
-# --- PDK / ngspice discovery (single implementation: sim/harness/pdk.py,
-# sim/harness/runner.py) -- ngspice_version() also fails loud with an
+# Shared PDK / ngspice discovery (single implementation:
+# sim/harness/lib/pdk_discover.sh, issue #207) -- wraps sim/harness/pdk.py
+# and sim/harness/runner.py; ngspice_version() also fails loud with an
 # actionable message if ngspice is missing, replacing a bare `command -v`
 # guard. --------------------------------------------------------------------
-PDK_INFO="$(python3 - "$REPO_ROOT" <<'EOF'
-import sys
-sys.path.insert(0, sys.argv[1] + "/sim")
-from harness.pdk import find_pdk
-from harness.runner import FATAL_LOG_PATTERN, ngspice_version
-pdk = find_pdk()
-print(pdk.design_include)
-print(pdk.model_lib)
-print(pdk.variant)
-print(pdk.version)
-print(ngspice_version().split()[0])
-print(FATAL_LOG_PATTERN)
-EOF
-)"
-DESIGN_INCLUDE="$(sed -n '1p' <<<"$PDK_INFO")"
-MODEL_LIB="$(sed -n '2p' <<<"$PDK_INFO")"
-PDK_VARIANT="$(sed -n '3p' <<<"$PDK_INFO")"
-PDK_VERSION="$(sed -n '4p' <<<"$PDK_INFO")"
-NGSPICE_VERSION="$(sed -n '5p' <<<"$PDK_INFO")"
-# Fatal-condition sentinel: single source of truth is
-# sim/harness/runner.py's FATAL_LOG_PATTERN (issue #157).
-FATAL_LOG_PATTERN="$(sed -n '6p' <<<"$PDK_INFO")"
+source "$REPO_ROOT/sim/harness/lib/pdk_discover.sh"
+harness_discover_pdk "$REPO_ROOT"
 
 python3 "$REPO_ROOT/design/netlist.py" --check >/dev/null
 LDO_NETLIST="$REPO_ROOT/design/netlist/ldo_core.spice"
