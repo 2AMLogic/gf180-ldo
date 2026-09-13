@@ -65,7 +65,11 @@ from harness.report import (  # noqa: E402
     parse_row_fields as _harness_parse_row_fields,
     write_markdown_record,
 )
-from harness.runner import FATAL_LOG_RE, ngspice_binary_sha256, ngspice_version  # noqa: E402
+from harness.runner import (  # noqa: E402
+    ngspice_binary_sha256,
+    ngspice_version,
+    run_ngspice_deck,
+)
 
 sys.path.insert(0, str(HERE))
 import netlist_variants as nv  # noqa: E402
@@ -467,23 +471,6 @@ def render_deck(pvt, pdk, *, phase: str, variant: str, netlist: Path,
     return TOKEN_RE.sub(lambda m: subs[m.group(1)], text)
 
 
-def _ngspice(deck: Path, log: Path, workdir: Path) -> str:
-    proc = subprocess.run(
-        ["ngspice", "-b", str(deck)], capture_output=True, text=True,
-        cwd=str(workdir),
-    )
-    text = proc.stdout + proc.stderr
-    log.write_text(text)
-    if proc.returncode != 0:
-        raise RuntimeError(f"ngspice exited {proc.returncode} (see {log})")
-    if FATAL_LOG_RE.search(text):
-        bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
-        raise RuntimeError(f"ngspice reported a fatal condition: {bad} (see {log})")
-    if "SWEEP COMPLETE" not in text:
-        raise RuntimeError(f"sweep did not complete (see {log})")
-    return text
-
-
 def run_point(pvt, pdk, *, phase: str, variant: str, netlist: Path, ceffs, esrs,
               ac_dec, workdir: Path, logdir: Path, dc_seed: str = "",
               ssr_values=None, stem: str | None = None):
@@ -497,7 +484,7 @@ def run_point(pvt, pdk, *, phase: str, variant: str, netlist: Path, ceffs, esrs,
                                 ssr_values=ssr_values))
     log = logdir / f"{stem}.log"
     try:
-        text = _ngspice(deck, log, workdir)
+        text = run_ngspice_deck(deck, log, workdir)
     except RuntimeError as exc:
         return pvt, [], str(exc)
 
@@ -860,7 +847,7 @@ def run_handover(pvt, pdk, *, variant: str, netlist: Path, workdir: Path,
                                          netlist=netlist))
     log = logdir / f"{stem}.log"
     try:
-        text = _ngspice(deck, log, workdir)
+        text = run_ngspice_deck(deck, log, workdir)
     except RuntimeError as exc:
         return None, str(exc)
 
