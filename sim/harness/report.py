@@ -720,3 +720,38 @@ def write_record(record: dict, experiment_dir: Path) -> Path:
     path = reserve_record_path(record["record_id"], experiment_dir / RECORDS_DIR)
     path.write_text(render_record(record, experiment_dir.name))
     return path
+
+
+def parse_row_fields(line: str, fields: tuple[str, ...]) -> dict[str, str]:
+    """Parse one ``ROW k=v k=v ...`` line into its fields.
+
+    The deck writes key=value rather than bare positional fields for a
+    load-bearing reason: a failed ``meas`` (no such crossing in band) leaves
+    its value empty, and an empty *positional* field vanishes into the
+    whitespace, so every field after it is read as the wrong quantity. That
+    is not hypothetical -- record ``20260801-191742-84f67b8`` has 387 rows
+    whose ``f0_rising_hz`` was read as ``f180_hz`` for exactly this reason,
+    which is why its multiple-crossing self-check reported 14 points instead
+    of 401. Missing keys are an error rather than a default, so a deck/driver
+    drift can never again be silently absorbed as a plausible number.
+
+    ``fields`` is the caller's own expected-field tuple (e.g. its module's
+    ``ROW_FIELDS``) rather than something this module hardcodes, since
+    different experiments' decks echo different field lists.
+    """
+    result: dict[str, str] = {}
+    for tok in line.split()[1:]:
+        key, sep, val = tok.partition("=")
+        if not sep:
+            raise ValueError(f"ROW field {tok!r} is not key=value: {line!r}")
+        if key in result:
+            raise ValueError(f"ROW field {key!r} repeated: {line!r}")
+        result[key] = val
+    missing = [k for k in fields if k not in result]
+    unknown = [k for k in result if k not in fields]
+    if missing or unknown:
+        raise ValueError(
+            f"ROW line does not match the deck's field list "
+            f"(missing {missing}, unknown {unknown}): {line!r}"
+        )
+    return result
