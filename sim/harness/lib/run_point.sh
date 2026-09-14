@@ -57,3 +57,42 @@ harness_run_point() {
   fi
   echo "$corner_id"
 }
+
+# Shared per-PVT-point wrapper for the two testbenches whose `corner_id`
+# computation is identical -- current-limit and enable-shutdown (issue
+# #211). Both take just (corner, temp, vin) with the same
+# `<corner>_<temp>c_<vin>v` corner_id format and the same 10-key
+# harness_run_point() argument list, differing only in which deck template
+# they substitute into. soft-start folds an extra cap/ESR/Rload triple into
+# its corner_id (see the file header above) and op-point-sanity does its
+# own log-parsing on top, so neither can be folded in here -- this covers
+# only the pair that is genuinely identical.
+#
+# Usage from a testbench's run.sh:
+#
+#   harness_run_pvt_point <template> <corner> <temp> <vin>
+#
+# Requires the same exported context as harness_run_point(), plus:
+#   WORKDIR, LOG_DIR   -- deck/log output directories
+#   corner_sections()  -- sourced from sim/harness/lib/corner_sections.sh
+harness_run_pvt_point() {
+  local tmpl="$1" corner="$2" temp="$3" vin="$4"
+  local sections; sections="$(corner_sections "$corner")"
+  read -r s_mos s_res s_bjt s_dio s_mosc s_mimc <<<"$sections"
+  local corner_id; corner_id="$(printf '%s_%sc_%.2fv' "$corner" "$temp" "$vin")"
+  local deck="$WORKDIR/${corner_id}.spice"
+  local log="$LOG_DIR/${corner_id}.log"
+
+  harness_run_point "$tmpl" "$corner_id" "$deck" "$log" \
+    "DESIGN_INCLUDE=$DESIGN_INCLUDE" \
+    "MODEL_LIB=$MODEL_LIB" \
+    "LDO_NETLIST=$LDO_NETLIST" \
+    "MOS_CORNER=$s_mos" \
+    "RES_CORNER=$s_res" \
+    "BJT_CORNER=$s_bjt" \
+    "DIODE_CORNER=$s_dio" \
+    "MOSCAP_CORNER=$s_mosc" \
+    "MIMCAP_CORNER=$s_mimc" \
+    "TEMP_C=$temp" \
+    "VIN_V=$vin"
+}
