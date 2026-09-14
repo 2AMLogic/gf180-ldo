@@ -65,28 +65,11 @@ echo
 # Shared substitute/run/fatal-check body (single implementation: issue #193).
 source "$REPO_ROOT/sim/harness/lib/run_point.sh"
 
+# One ngspice invocation per PVT point (shared wrapper: issue #211).
 run_point() {
-  local corner="$1" temp="$2" vin="$3"
-  local sections; sections="$(corner_sections "$corner")"
-  read -r s_mos s_res s_bjt s_dio s_mosc s_mimc <<<"$sections"
-  local corner_id; corner_id="$(printf '%s_%sc_%.2fv' "$corner" "$temp" "$vin")"
-  local deck="$WORKDIR/${corner_id}.spice"
-  local log="$LOG_DIR/${corner_id}.log"
-
-  harness_run_point "$HERE/tb_enable_shutdown.spice.in" "$corner_id" "$deck" "$log" \
-    "DESIGN_INCLUDE=$DESIGN_INCLUDE" \
-    "MODEL_LIB=$MODEL_LIB" \
-    "LDO_NETLIST=$LDO_NETLIST" \
-    "MOS_CORNER=$s_mos" \
-    "RES_CORNER=$s_res" \
-    "BJT_CORNER=$s_bjt" \
-    "DIODE_CORNER=$s_dio" \
-    "MOSCAP_CORNER=$s_mosc" \
-    "MIMCAP_CORNER=$s_mimc" \
-    "TEMP_C=$temp" \
-    "VIN_V=$vin"
+  harness_run_pvt_point "$HERE/tb_enable_shutdown.spice.in" "$1" "$2" "$3"
 }
-export -f run_point corner_sections harness_run_point
+export -f run_point corner_sections harness_run_point harness_run_pvt_point
 export WORKDIR LOG_DIR HERE DESIGN_INCLUDE MODEL_LIB LDO_NETLIST FATAL_LOG_PATTERN
 
 points=()
