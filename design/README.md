@@ -398,11 +398,27 @@ Monte Carlo study).
   pre-charge devices end in cutoff, and the injection rectifies to zero. The
   device-level transconductor will not be free; the `Iq` row has ~8 µA of
   headroom at its binding ff/125 °C/3.63 V corner.
-- Added area: ~24 100 µm² (13 350 µm² of capacitor, 10 740 µm² of poly
-  resistor) against ~11 800 µm² for the #38/#43 clamp it replaces, i.e. about
-  24 % of the ratified 0.1 mm² core-area row. It is dominated by the two
-  delay RCs, which sit at their minimum-area R/C split for the τ they
-  implement.
+- Added area (as of the #189/`bfc4a0a` record above): ~24 100 µm² (13 350 µm²
+  of capacitor, 10 740 µm² of poly resistor) against ~11 800 µm² for the
+  #38/#43 clamp it replaces, i.e. about 24 % of the ratified 0.1 mm²
+  core-area row. It was dominated by the two delay RCs, which sat at their
+  minimum-area R/C split for the τ they implemented.
+- **Update, issue #212 / `spec/decision-records/DR-0024` (proposed, not yet
+  ratified)**: `Css`, `Ch_ss` and `Cr_ss` (the ramp capacitor and both delay
+  RCs' capacitors) are cut 5× in area — `τ ≈ 147 µs` above is now
+  `τ ≈ 29.4 µs`, and added capacitor area falls from 13 350 µm² to
+  2 630 µm², total added area from ~24 100 µm² to ~13 400 µm² (~13 % of the
+  ratified 0.1 mm² row, a net area *win* over the #189-era build). No
+  resistor or bias element moved, so the quiescent-current statement above
+  is unaffected by construction. Measured, 163-point re-run: ramp rate
+  1.24–2.95 V/ms (155/155 inside DR-0024's proposed ≤ 5 V/ms bound) and
+  worst-corner settling 1.72525 ms (155/155 inside DR-0024's proposed
+  ≤ 1.8 ms bound) — see `sim/soft-start/records/20260915-103035-18f664f.md`
+  for the full result, including the pre-existing #191 acquisition-transient
+  regression's effect on inrush/clearance/monotonicity, which this resize
+  does not move either way. `README.md`'s ratified Startup row is unchanged
+  until DR-0024 is ratified; every number above this bullet describes the
+  design's state before this resize and is left as originally recorded.
 
 ## Pass device sizing (a deliberate simplification for this issue)
 

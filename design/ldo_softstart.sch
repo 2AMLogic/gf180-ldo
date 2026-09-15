@@ -343,6 +343,20 @@ THE HOLD-RELEASE TRANSIENT AT MOST OF THE PVT MATRIX
   transconductor) makes it WORSE, not better, and that cost real time to
   discover.
 
+  Corroborated again by issue #212/DR-0024's 163-point sweep (resizing only
+  Css/Ch_ss/Cr_ss -- this section's transconductor is untouched): the same
+  A/B check, re-run at sf/-40 C/2.97 V/1 uF/100 mOhm/50 mA, reads
+  icap_peak = 231.1 mA against `main`'s own committed (pre-#212) netlist and
+  271.9 mA against this record's resized one -- both wildly over the 5 mA
+  budget, at the SAME order of magnitude, confirming (not merely repeating)
+  that this transient is a #191 property this issue's ramp-rate resize does
+  not move. The same sweep's nominal corner (tt/27 C/3.30 V) stays clean on
+  both netlists (1.19 mA pre-resize, 4.76 mA post-resize, both under the
+  5 mA/1 uF bound), matching "clean at nominal, not at most other points"
+  above. See sim/soft-start/records/20260915-103035-18f664f.md's own
+  "Pre-existing #191 regression" section for the full corner-by-corner
+  breakdown this issue's record carries.
+
   Binj_ss (the #189 behavioural source) is electrically a ZERO-CAPACITANCE,
   ZERO-DELAY current source: it has no drain/gate/source junctions and no
   propagation lag through a bias node. Every device-level replacement tried
@@ -499,8 +513,26 @@ SIZING AS BUILT
 
   Rss_bias  ppolyf_u_3k, 1000 squares  ~3.1 Mohm  -> Iref_ss ~ 0.39 uA
   k_ss      0.0060                                -> I_ramp  ~ 2.3 nA
-  Css       60 um x 60 um cap_mim_2f0             ~7.2 pF
-    => nominal dSSR/dt ~ 0.32 V/ms, so dVout/dt ~ 0.48 V/ms.
+  Css       60 um x 12 um cap_mim_2f0             ~1.44 pF  (issue #212,
+            DR-0024: was 60 um x 60 um / ~7.2 pF -- a 5x area cut, I_ramp
+            and every other element on this bias branch UNCHANGED, so the
+            re-centring touches only this ramp block's own time constant
+            and adds/removes no DC current anywhere -- Iq is unaffected by
+            construction, not merely by measurement, and the branch's own
+            +/-25% (poly resistor) / +/-10% (mim cap) PVT spread and the
+            2.93:1 corner-to-corner ratio DR-0006 measured are preserved
+            exactly, just riding on a 5x smaller absolute time constant)
+    => measured dVout/dt (163-point PVT sweep, sim/soft-start/records/
+       20260915-103035-18f664f.md): 1.24 -- 2.95 V/ms, a 2.38:1
+       corner-to-corner spread (looser than the 2.93:1 the raw R*C alone
+       would give, because Ch_ss/Cr_ss's own hold-release delay -- scaled
+       by the identical 5x factor, see "WHY Ch_ss/Cr_ss MOVE WITH Css"
+       below -- rides on top of the ramp in the same measurement and does
+       not track the ramp's own PVT corner one-for-one). Comfortably inside
+       DR-0024's proposed 5 V/ms bound at every one of the 155 points that
+       converged; the analytic ~1.6 V/ms nominal estimate this line
+       previously carried undercounted real device/loop effects by roughly
+       20%, which is why the record's measured range is cited here instead.
   Rgma_ss/Rgmb_ss  200 kohm ideal (see WHAT IS IDEALIZED HERE) -> 1/R =
                    5.0e-6 A/V = 1.5 / Rtop, matching Binj_ss's coefficient
   Mgma_ss/Mgmb_ss  pfet 4 um / 1 um    the two input branches, gates SSR/VREF
@@ -508,9 +540,37 @@ SIZING AS BUILT
   Mgmr_ss/Mgmo_ss  pfet 4 um / 1 um    differencer/rectifier + output mirror
   Mgme_ss          nfet 20 um / 0.5 um enable switch, gate EN
   Rh_ss     ppolyf_u_3k, 4870 squares  ~15.1 Mohm  EN -> HG
-  Ch_ss     70 um x 70 um cap_mim_2f0  ~9.75 pF    HG -> VSS   (tau ~147 us)
+  Ch_ss     70 um x 14 um cap_mim_2f0  ~1.95 pF    HG -> VSS   (tau ~29.4 us;
+            issue #212/DR-0024, also a 5x area cut from 70x70/~9.75pF/147us
+            -- see why below)
   Rr_ss     ppolyf_u_3k, 4870 squares  ~15.1 Mohm  ENB -> SD
-  Cr_ss     70 um x 70 um cap_mim_2f0  ~9.75 pF    SD -> VSS   (tau ~147 us)
+  Cr_ss     70 um x 14 um cap_mim_2f0  ~1.95 pF    SD -> VSS   (tau ~29.4 us;
+            same #212/DR-0024 5x cut, kept EXACTLY equal to Ch_ss -- the two
+            RCs stay matched to EACH OTHER, which is the property the
+            ordering (hold-releases-before-ramp-starts) depends on, not on
+            any particular absolute tau)
+
+  WHY Ch_ss/Cr_ss MOVE WITH Css (issue #212/DR-0024). Speeding up ONLY the
+  ramp (Css) and leaving the hold-release delay (~1.5 * tau, previously
+  ~220 us) fixed turns a small tax on a ~2-6 ms ramp into a LARGE fraction
+  of tax on a sub-2-ms one -- and at the corner that sets the hold delay's
+  own worst case (res_ss/ss, cold, high Vin -- poly resistance moves the
+  SAME direction as it does for Rss_bias, i.e. up), the untouched-Ch_ss
+  build measured t_v04 (first 0.4 V crossing) alone past 1 ms, which by
+  itself would blow most of any settling target this record could propose,
+  regardless of how fast the ramp afterward is. Measured, same corner
+  (res_ss_-40c_3.63v_1u_0.1_36): t_startup 2.033 ms with only Css cut 5x,
+  vs. 1.72525 ms (this record's own worst measured point, same PVT corner)
+  once Ch_ss/Cr_ss are ALSO cut 5x -- see
+  sim/soft-start/records/20260915-103035-18f664f.md and DR-0024, which
+  proposes a 1.8 ms settling bound (the measured 1.72525 ms worst point plus
+  ~4% headroom, the same margin convention DR-0006 used) rather than the
+  1.2 ms this note originally targeted before the sweep existed to check it
+  against. Scaling the two delay RCs by the identical factor keeps their
+  ratio to the (now faster) ramp the same as the as-built ratio was to the
+  old one, and does not touch their own mutual matching (both are still
+  70 um x 14 um, i.e. still exactly equal to each other) -- so the ordering
+  invariant this cell's correctness depends on is unaffected by the resize.
   Mhold_ss     pfet 20 um / 0.5 um   VIN -> PASS_GATE, gate HG
   Mhold_bg_ss  pfet 10 um / 0.5 um   VIN -> BG,        gate HG
   Mpre_a_ss    pfet 10 um / 0.5 um   VREF -> FBP,      gate HG
@@ -537,16 +597,21 @@ SIZING AS BUILT
   sizing-and-matching plan) -- at that point Rgma_ss/Rgmb_ss must track
   whatever real device Rtop/Rbot become, per WHAT IS IDEALIZED HERE above.
 
-  Added area otherwise unchanged from #189: 13 350 um2 of capacitor (Css
-  3600, Ch_ss 4900, Cr_ss 4900) plus 10 740 um2 of poly resistor (1000 +
-  4870 + 4870 squares at W = 1 um), about 24 100 um2 -- roughly 24 % of the
-  ratified 0.1 mm2 core-area row, against about 11 800 um2 for the #38/#43
-  clamp this replaces. That is a real cost, it is dominated by the two delay
-  RCs, and it is called out here rather than discovered at layout. The delay
-  RCs are at their minimum-area R/C split for the tau they implement (equal
-  resistor and capacitor area); buying the tau back with a smaller area
-  needs a current-source ramp or a MOS pseudo-resistor in place of the RC,
-  which is a follow-on, not this issue's scope.} -1200 -1470 0 0 0.28 0.28 {}
+  Added area, #212/DR-0024 update: 2 630 um2 of capacitor (Css 720, Ch_ss
+  980, Cr_ss 980 -- all three down 5x from the #189-era 3600/4900/4900) plus
+  10 740 um2 of poly resistor (1000 + 4870 + 4870 squares at W = 1 um,
+  unchanged), about 13 400 um2 -- down from the #189-era 24 100 um2 (the
+  three caps' 5x area cut is a net area WIN, not a cost, unlike every other
+  change this note has recorded), roughly 13 % of the ratified 0.1 mm2
+  core-area row, against about 11 800 um2 for the #38/#43 clamp this
+  replaces. The two delay RCs (Rh_ss/Ch_ss, Rr_ss/Cr_ss) are no longer at
+  the minimum-area R/C split for their (now 5x smaller) tau -- Rh_ss/Rr_ss
+  were left untouched on purpose (see "WHY Ch_ss/Cr_ss MOVE WITH Css"
+  above: shrinking the resistor instead would have raised its own bias
+  current, which the ramp side deliberately avoided) -- so this split is no
+  longer minimum-area for its tau; buying it back needs a current-source
+  ramp or a MOS pseudo-resistor in place of the RC, which is a follow-on,
+  not this issue's scope.} -1200 -1470 0 0 0.28 0.28 {}
 C {devices/iopin.sym} -1200 -100 0 0 {name=p_vin lab=VIN}
 C {devices/ipin.sym} -1000 -100 0 0 {name=p_fb lab=FB}
 C {devices/iopin.sym} -800 -100 0 0 {name=p_pass_gate lab=PASS_GATE}
@@ -569,7 +634,7 @@ C {devices/lab_pin.sym} 420 -1000 0 0 {name=l_mbenss_b sig_type=std_logic lab=VS
 C {devices/cccs.sym} 600 -1000 0 0 {name=Fss_ramp vnam=Vbsense_ss value=0.0060}
 C {devices/lab_pin.sym} 600 -1030 0 0 {name=l_fssramp_p sig_type=std_logic lab=VIN}
 C {devices/lab_pin.sym} 600 -970 0 0 {name=l_fssramp_m sig_type=std_logic lab=SSR}
-C {symbols/cap_mim_2f0fF.sym} 800 -1000 0 0 {name=Css model=cap_mim_2f0_m2m3_noshield W=60u L=60u m=1}
+C {symbols/cap_mim_2f0fF.sym} 800 -1000 0 0 {name=Css model=cap_mim_2f0_m2m3_noshield W=60u L=12u m=1}
 C {devices/lab_pin.sym} 800 -1030 0 0 {name=l_css_g sig_type=std_logic lab=SSR}
 C {devices/lab_pin.sym} 800 -970 0 0 {name=l_css_b sig_type=std_logic lab=VSS}
 C {symbols/nfet_03v3.sym} 1000 -1000 0 0 {name=Mdis_ss model=nfet_03v3 L=1u W=1u nf=1 m=1}
@@ -637,7 +702,7 @@ C {symbols/ppolyf_u_3k.sym} 600 -600 0 0 {name=Rh_ss model=ppolyf_u_3k W=1u L=48
 C {devices/lab_pin.sym} 600 -630 0 0 {name=l_rhss_p sig_type=std_logic lab=EN}
 C {devices/lab_pin.sym} 600 -570 0 0 {name=l_rhss_m sig_type=std_logic lab=HG}
 C {devices/lab_pin.sym} 580 -600 0 0 {name=l_rhss_b sig_type=std_logic lab=VSS}
-C {symbols/cap_mim_2f0fF.sym} 800 -600 0 0 {name=Ch_ss model=cap_mim_2f0_m2m3_noshield W=70u L=70u m=1}
+C {symbols/cap_mim_2f0fF.sym} 800 -600 0 0 {name=Ch_ss model=cap_mim_2f0_m2m3_noshield W=70u L=14u m=1}
 C {devices/lab_pin.sym} 800 -630 0 0 {name=l_chss_g sig_type=std_logic lab=HG}
 C {devices/lab_pin.sym} 800 -570 0 0 {name=l_chss_b sig_type=std_logic lab=VSS}
 C {symbols/pfet_03v3.sym} 1000 -600 0 0 {name=Mhold_ss model=pfet_03v3 L=0.5u W=20u nf=1 m=1}
@@ -654,7 +719,7 @@ C {symbols/ppolyf_u_3k.sym} 0 -200 0 0 {name=Rr_ss model=ppolyf_u_3k W=1u L=4870
 C {devices/lab_pin.sym} 0 -230 0 0 {name=l_rrss_p sig_type=std_logic lab=ENB}
 C {devices/lab_pin.sym} 0 -170 0 0 {name=l_rrss_m sig_type=std_logic lab=SD}
 C {devices/lab_pin.sym} -20 -200 0 0 {name=l_rrss_b sig_type=std_logic lab=VSS}
-C {symbols/cap_mim_2f0fF.sym} 200 -200 0 0 {name=Cr_ss model=cap_mim_2f0_m2m3_noshield W=70u L=70u m=1}
+C {symbols/cap_mim_2f0fF.sym} 200 -200 0 0 {name=Cr_ss model=cap_mim_2f0_m2m3_noshield W=70u L=14u m=1}
 C {devices/lab_pin.sym} 200 -230 0 0 {name=l_crss_g sig_type=std_logic lab=SD}
 C {devices/lab_pin.sym} 200 -170 0 0 {name=l_crss_b sig_type=std_logic lab=VSS}
 C {symbols/pfet_03v3.sym} 1000 -200 0 0 {name=Minv_p model=pfet_03v3 L=0.5u W=4u nf=1 m=1}

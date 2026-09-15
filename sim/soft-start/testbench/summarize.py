@@ -30,14 +30,37 @@ SCALARS = [
     "m_ssr_off_tran", "m_hg_off_tran",
 ]
 
-# Ratified bounds (README.md "Startup" row) plus the two measured references
-# the row is written against.
+# Bounds (README.md "Startup" row) plus the two measured references the row
+# is written against.
+#
+# issue #212 / DR-0024 (proposed, not yet ratified): restates the ramp,
+# inrush and current-limit-clearance clauses as a startup-current BUDGET AT
+# C_eff = 1 uF, not at DR-0001's 4.7 uF ceiling -- the same move DR-0022
+# already made for the clearance sub-clause alone. RAMP_MAX_VPMS moves
+# 1.0 -> 5.0 V/ms and SETTLE_MAX_S moves 3 ms -> DR-0024's measured-envelope
+# figure (see the record this constant is committed alongside). INRUSH_MAX_MA
+# and the current-limit-clearance flag below are now checked ONLY at the
+# C_eff = 1 uF corners -- above 1 uF both are characterized, not bound, per
+# DR-0022/DR-0024's shared "characterized, not bound" posture. Until DR-0024
+# is ratified (human merge, per CLAUDE.md's spec-change policy) these
+# constants describe the PROPOSED budget, not the ratified one; the ratified
+# README.md Startup row is still the ≤ 1 V/ms / 3 ms row until that PR lands.
 VOUT_LO = 1.764          # -2%
 VOUT_HI = 1.836          # +2%
-RAMP_MAX_VPMS = 1.0      # ratified controlled-ramp bound
-INRUSH_MAX_MA = 5.0      # ratified inrush bound (at C_eff = 4.7 uF)
+RAMP_MAX_VPMS = 5.0      # DR-0024 proposed controlled-ramp bound (was 1.0)
+INRUSH_MAX_MA = 5.0      # DR-0024 proposed inrush bound, at C_eff = 1 uF only
+                         # (was 4.7 uF; see COUT_BOUND_UF below)
 ILIMIT_MIN_MA = 62.0     # worst-corner measured limit, sim/current-limit/records/
-SETTLE_MAX_S = 3e-3      # ratified "+/-2% within 3 ms of enable"
+SETTLE_MAX_S = 1.8e-3    # DR-0024 proposed settling bound (was 3e-3, then
+                         # DR-0006's 6e-3; 1.8 ms is the record's own
+                         # measured-worst-point (1.72525 ms) plus ~4%
+                         # headroom -- NOT the 1.2 ms issue #212 guessed
+                         # before the sweep existed to check it, see
+                         # DR-0024 "Why 1.8 ms, not 1.2 ms")
+COUT_BOUND_UF = "1u"     # cout token (CORNER_RE's group) the inrush and
+                         # current-limit-clearance clauses are bound at;
+                         # every other C_eff in DR-0001's window is
+                         # characterized only, per DR-0022/DR-0024.
 
 # Hand-over invariant, per tb_soft_start.spice.in's own comment: the node that
 # gates the soft-start block's PMOS onto PASS_GATE must finish at VIN, or that
@@ -81,6 +104,11 @@ def main() -> None:
         # Vsg(Mhold_ss) at the end of the enable window. Derived for the
         # hand-over predicate only, and deliberately NOT a CSV column.
         v["m_hg_end_below_vin"] = float(m.group("vin")) - v["m_hg_end"]
+        # 1.0 at the C_eff = 1 uF corners the inrush/clearance clauses are
+        # bound at (COUT_BOUND_UF), 0.0 elsewhere (DR-0022/DR-0024:
+        # characterized, not bound, above 1 uF). Derived for the flag
+        # predicates only, and deliberately NOT a CSV column.
+        v["m_cout_is_bound"] = 1.0 if m.group("cout") == COUT_BOUND_UF else 0.0
         rows.append((cid, m.groupdict(), v))
 
     cols = SCALARS + ["m_slope_vpms", "m_t_startup_ms"]
@@ -108,19 +136,22 @@ def main() -> None:
         report_flag(rows, label, pred)
 
     print()
-    flag(f"steady ramp rate above the ratified {RAMP_MAX_VPMS} V/ms:",
+    flag(f"steady ramp rate above the proposed {RAMP_MAX_VPMS} V/ms (DR-0024):",
          lambda v: v["m_slope_vpms"] > RAMP_MAX_VPMS)
     flag("peak dVout/dt above the same bound (incl. transients):",
          lambda v: v["m_dvout_max"] > RAMP_MAX_VPMS)
     flag("non-monotonic ramp (dVout/dt went negative):",
          lambda v: v["m_dvout_min"] < -RAMP_MAX_VPMS)
-    flag(f"inrush (capacitor current) above {INRUSH_MAX_MA} mA:",
-         lambda v: v["m_icap_peak_ma"] > INRUSH_MAX_MA)
-    flag(f"peak supply current within 10 mA of the {ILIMIT_MIN_MA} mA limit:",
-         lambda v: v["m_isup_peak_ma"] > ILIMIT_MIN_MA - 10.0)
+    flag(f"inrush above {INRUSH_MAX_MA} mA at C_eff = {COUT_BOUND_UF} "
+         "(characterized only above that, DR-0022/DR-0024):",
+         lambda v: v["m_cout_is_bound"] and v["m_icap_peak_ma"] > INRUSH_MAX_MA)
+    flag(f"peak supply current within 10 mA of the {ILIMIT_MIN_MA} mA limit, "
+         f"at C_eff = {COUT_BOUND_UF} (characterized only above that):",
+         lambda v: v["m_cout_is_bound"] and v["m_isup_peak_ma"] > ILIMIT_MIN_MA - 10.0)
     flag(f"startup overshoot above +2% ({VOUT_HI} V):",
          lambda v: v["m_vout_max_en"] > VOUT_HI)
-    flag(f"failed to reach {VOUT_LO} V within the ratified 3 ms:",
+    flag(f"failed to reach {VOUT_LO} V within the proposed {SETTLE_MAX_S * 1e3:g} ms "
+         "(DR-0024):",
          lambda v: not (0 < v["m_t_startup"] < SETTLE_MAX_S))
     flag("failed to reach 1.764 V at all inside the enable window:",
          lambda v: not (v["m_t_startup"] > 0))
