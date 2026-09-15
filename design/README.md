@@ -419,6 +419,17 @@ Monte Carlo study).
   does not move either way. `README.md`'s ratified Startup row is unchanged
   until DR-0024 is ratified; every number above this bullet describes the
   design's state before this resize and is left as originally recorded.
+  **Follow-up (issue #212, second increment)**: the quiescent-current
+  no-op above is now measured, not just argued —
+  `sim/quiescent-current/records/20260915-115046-60785b1.md` re-runs the
+  full 45-point PVT grid against this resize and reproduces the prior
+  (pre-resize) record's numbers exactly, corner for corner. Loop-stability
+  is likewise unaffected: `sim/loop-stability/records/
+  20260915-123255-60785b1.md` re-runs three corners at full resolution
+  against both netlists and finds bit-for-bit identical worst-case PM/GM,
+  and confirms the one corner (`ff_125c_3.63v`) where a full-matrix re-run
+  cannot currently be minted fails identically on the pre-resize netlist —
+  the pre-existing #191 regression, not this resize.
 
 ## Pass device sizing (a deliberate simplification for this issue)
 

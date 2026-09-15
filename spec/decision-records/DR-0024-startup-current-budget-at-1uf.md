@@ -265,6 +265,19 @@ own market-key finding established.
   `sim/startup` record at 1 µF, or a decision about what (if anything) the
   4.7 µF settling behavior should be bound to post-resize, is a follow-on,
   not part of this record.
+- **Update (issue #212, second increment)**: the two items PR #223 left
+  "not verified" — `sim/quiescent-current` and `sim/loop-stability` — are
+  now measured. `sim/quiescent-current/records/
+  20260915-115046-60785b1.md` re-runs the full 45-point grid against this
+  resize and reproduces the pre-resize record's numbers exactly, corner for
+  corner (confirming the "no resistor or bias element moved" argument
+  above empirically, not just by construction). `sim/loop-stability/
+  records/20260915-123255-60785b1.md` does the same for three loop-gain
+  corners at full resolution (bit-for-bit identical worst-case PM/GM
+  pre/post-resize) and additionally confirms that the one corner
+  (`ff_125c_3.63v`) blocking a fresh full 4536-point record fails
+  identically on the pre-resize netlist — the pre-existing #191 regression,
+  not this record's resize.
 
 ## Cross-consequences (other records)
 
