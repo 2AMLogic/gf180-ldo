@@ -10,6 +10,12 @@ name: CI
 #                                       needed -- covers layout/drclvs.py's
 #                                       record-writing path only, not the
 #                                       DRC/LVS stages themselves)
+#   - sim/build_characterization_report.py (regenerated and diffed against
+#                                       the committed sim/CHARACTERIZATION.md
+#                                       -- fails the build if they diverge,
+#                                       enforcing README.md's "regenerate
+#                                       after any sim/ record lands" rule; no
+#                                       PDK/ngspice needed, see issue #216)
 #
 # CLAUDE.md's "headless only" flow keeps the default PR path free of any PDK
 # or GUI dependency: `harness-selftest` below runs on every push/PR and never
@@ -59,6 +65,18 @@ jobs:
 
       - name: Run layout/tests (no PDK/klayout/xschem required)
         run: python3 -m unittest discover -s layout/tests -t layout/tests -v
+
+      - name: Verify sim/CHARACTERIZATION.md is up to date
+        run: |
+          python3 sim/build_characterization_report.py > /tmp/CHARACTERIZATION.md
+          if ! diff -u sim/CHARACTERIZATION.md /tmp/CHARACTERIZATION.md; then
+            echo "::error::sim/CHARACTERIZATION.md is stale relative to the committed sim/*/records/ and design/netlist/*.spice -- regenerate with 'python3 sim/build_characterization_report.py > sim/CHARACTERIZATION.md' and commit the result (see README.md's rule)."
+            exit 1
+          fi
+        # No PDK/ngspice needed: the generator only reads committed evidence
+        # under sim/*/records/, design/netlist/*.spice, and README.md's own
+        # spec table, and its own module docstring documents byte-identical
+        # output on an unchanged tree.
 
   pvt-smoke:
     name: PVT smoke run against gf180mcu (ngspice + PDK)
