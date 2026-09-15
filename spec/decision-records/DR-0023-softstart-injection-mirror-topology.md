@@ -1,6 +1,32 @@
 # DR-0023: cascode the soft-start injection mirror (`Mgmo_ss` against `Mgmr_ss`) rather than restore an output-side clamp
 
-- **Status**: proposed
+- **Status**: ratified 2026-09-15 (issue #191 / this pull request) --
+  **pending**: this status line states the diff this record's ratifying
+  pull request proposes; per the 2026-08-19 ratification-via-PR policy
+  (2AMLogic/2am#357, the same mechanism used for DR-0005/PR #137,
+  DR-0006/PR #127, and DR-0018/PR #199), the operator's review and
+  approval **of that pull request** is the ratification act itself -- no
+  separate ratification comment is expected. Until the pull request
+  merges, this line is a proposal, not yet true of `main`. **This record
+  still changes no `design/` file** -- unlike DR-0005/DR-0006/DR-0018,
+  DR-0023 does not itself flip any `README.md` row (see "Consequences"
+  below, unchanged); ratifying the topology only unblocks issue #191's
+  remaining acceptance-criteria work (the device-level implementation
+  PR), which is a separate, later pull request and is not opened by this
+  one. **Independent re-verification against the current head evidence**
+  (full derivation in this pull request's own body): every number this
+  record cites -- the four-corner \|V_ds\| mismatch table, the 63-corner
+  `I_inj` / release-point / out-of-regulation / settled-residual
+  consequence table, and the Iq-adder and area arithmetic -- was
+  re-derived directly from `sim/soft-start-loop-gain/records/
+  20260910-015601-2387ece*` and `sim/quiescent-current/records/
+  20260906-231405-d3cb117.md` / `20260905-200855-3093ea1.md`, the same
+  records this record originally cited, and reproduces to the digit; no
+  newer record supersedes either bench as of this pull request. One
+  citation drift was found and is corrected in place below (the "34 um2
+  total for six devices" area figure conflated the mirror's six devices
+  with the schematic's larger seven-device total, which also includes the
+  enable switch `Mgme_ss`).
 - **Date**: 2026-09-15
 - **Decided by**: agent-builder (issue #191) — **proposing**; the ratified
   spec is a human gate, and nothing in this record changes `design/
@@ -128,11 +154,14 @@ requirement at these single-digit-µA currents.
   re-measure and attribute, not something this record asserts as final.
 - **Area.** Two additional small-geometry MOS devices in the same class as
   the six the transconductor already carries (4 µm² each per `design/
-  ldo_softstart.sch`'s SIZING AS BUILT section, 34 µm² total for six
-  devices) — call it ~10 µm² added. Against the ratified < 0.1 mm²
-  (100 000 µm²) core-area row, of which this block's existing addition
-  already accounts for ~24 100 µm² (~24 %, per the same section), ten more
-  µm² is not separately significant.
+  ldo_softstart.sch`'s SIZING AS BUILT section — 24 µm² for those six
+  devices; the section's stated 34 µm² total additionally includes the
+  enable switch `Mgme_ss` at 10 µm², which is not part of the mirror being
+  cascoded here and is corrected in this citation) — call it ~10 µm²
+  added. Against the ratified < 0.1 mm² (100 000 µm²) core-area row, of
+  which this block's existing addition already accounts for ~24 100 µm²
+  (~24 %, per the same section), ten more µm² is not separately
+  significant.
 
 Both figures are estimates stated here for the ratification record; issue
 #191's implementation PR re-measures Iq against `sim/quiescent-current` and
