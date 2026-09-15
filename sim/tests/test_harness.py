@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import datetime
 import io
 import json
@@ -364,11 +365,34 @@ class DeckTests(unittest.TestCase):
             self.deck.index(".options wnflag=1"), self.deck.index("x.spice")
         )
 
-    def test_manifest_options_can_still_override_the_harness_pin(self):
-        """Harness-owned `.options` come first, so a manifest's win."""
-        self.assertLess(
-            self.deck.index(".options wnflag=1"), self.deck.index(".options reltol=1e-5")
-        )
+    def test_model_bin_pin_is_the_first_options_card(self):
+        """Earliest-wins: the pin has to precede every manifest `.options`.
+
+        ngspice keeps the FIRST card for a duplicate `.options` key and
+        silently discards later ones (measured on ngspice-46 -- pinned by
+        `sim/tests/test_ngspice_options_precedence.py`). Emitting the
+        harness pin first is therefore what makes it authoritative, not a
+        cosmetic choice: this ordering is load-bearing.
+        """
+        pin_at = self.deck.index(f".options {runner.MODEL_BINNING_OPTION}")
+        for option in self.tb.options:
+            self.assertLess(pin_at, self.deck.index(f".options {option}"))
+
+    def test_manifest_cannot_silently_redefine_the_model_bin_pin(self):
+        """A manifest `wnflag=` card is rejected, not silently ignored.
+
+        Because ngspice keeps the first card, a manifest `.options wnflag=0`
+        placed after the harness pin would have no effect at all and print no
+        warning -- the "silently wrong" outcome DR-0024 exists to remove. The
+        harness fails loud at deck composition instead.
+        """
+        for bad in ("wnflag=0", "WNFLAG = 0", "wnflag=1"):
+            with self.subTest(option=bad):
+                tb = dataclasses.replace(self.tb, options=(bad, "reltol=1e-5"))
+                with self.assertRaises(ValueError) as ctx:
+                    runner.compose_deck(tb, self.pdk, self.point)
+                self.assertIn("wnflag", str(ctx.exception))
+                self.assertIn(".spiceinit", str(ctx.exception))
 
     def test_deck_emits_one_measurement_vector_per_measure_entry(self):
         self.assertIn("let m_vout = v(out)", self.deck)

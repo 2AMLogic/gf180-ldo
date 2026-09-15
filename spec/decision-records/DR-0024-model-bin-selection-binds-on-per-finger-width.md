@@ -346,6 +346,18 @@ directory and into the deck, where it is reviewable.
   Nothing in `sim/` can therefore be a silently mis-binned result — which is
   the property decision 4 rests on.
 
+- **A testbench manifest cannot override the pin, and is refused rather than
+  ignored.** The "first setting wins" rule of E5 is not specific to
+  `.spiceinit` vs. deck: measured on `ngspice-46`, two `.options` cards naming
+  the same key resolve to the **first** card, silently, with no warning —
+  `.options wnflag=1` followed by `.options wnflag=0` runs with binning on,
+  and the reverse order dies with `could not find a valid modelname`. The
+  harness therefore emits its pin as the first `.options` card (that ordering
+  is what makes it authoritative) and rejects a manifest `options` entry that
+  sets `wnflag` at all, instead of emitting a card ngspice would discard
+  without telling anyone. `sim/tests/test_ngspice_options_precedence.py` pins
+  this simulator behaviour with a real run so the claim cannot rot.
+
 - **Inert where it matters, by measurement.** On a host that already had
   `wnflag=1`, adding the card changes nothing: E7's 45-point re-run of the
   committed record is the control, and it lands bit-identical on the settling
