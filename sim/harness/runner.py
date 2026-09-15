@@ -19,6 +19,36 @@ from .testbench import Testbench
 NGSPICE = "ngspice"
 DEFAULT_TIMEOUT_S = 300
 
+# Model-bin selection, pinned in the deck (issue #214, DR-0025).
+#
+# gf180mcu's `pfet_03v3`/`nfet_03v3` cards are binned on (L, W) and the widest
+# declared bin stops at `wmax = 100.001 um`. `design/netlist/ldo_core.spice`'s
+# pass device is `W=2000u nf=40` -- 40 fingers of 50 um each -- so it lands in
+# a declared bin (`pfet_03v3.12`) only if bin selection divides W by NF.
+#
+# Whether ngspice does that is neither a netlist nor a PDK property: it is
+# ngspice's own `wnflag`, which is 1 only under HSPICE/Spectre compatibility
+# and 0 otherwise. At `wnflag=0` the deck does not even parse -- every
+# instantiation of the pass device dies with "could not find a valid
+# modelname" (one of FATAL_LOG_PATTERNS below). ngspice never clamps or
+# extrapolates to a neighbouring bin; measured, the only two outcomes are
+# "the declared bin" and "hard parse error".
+#
+# Before this pin, which of those two a run got was a property of whichever
+# host's `~/.spiceinit`/`spinit` happened to be in play, and no record
+# captured it. Pinning it in the deck makes bin selection a property of this
+# repo's decks. It is provably not a thumb on the scale: on a host that
+# already had `wnflag=1`, adding the card changes nothing (the setting is
+# what every successful run in `sim/` was already taken under -- DR-0025's
+# Evidence section reproduces a committed record field-for-field to show it).
+MODEL_BINNING_OPTION = "wnflag=1"
+MODEL_BINNING_KEY = MODEL_BINNING_OPTION.split("=", 1)[0]
+
+
+def _option_key(option: str) -> str:
+    """The key half of an ``.options`` card body (``reltol=1e-5`` -> ``reltol``)."""
+    return option.split("=", 1)[0].strip().lower()
+
 # `print` output for a length-1 vector: "m_vout = 6.9043645202e-01"
 _MEAS_RE = re.compile(r"^\s*m_(\w+)\s*=\s*([-+]?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*$")
 _ERROR_RE = re.compile(r"^\s*(?:Error|ERROR|Fatal|fatal error|doAnalyses:)", re.MULTILINE)
@@ -293,6 +323,47 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
         "",
         f".temp {point.temp_c!r}",
     ]
+    # Model-bin selection is harness-owned and deliberately NOT
+    # manifest-overridable.
+    #
+    # For two `.options` cards naming the *same* key, ngspice keeps the FIRST
+    # occurrence and silently discards every later one -- no warning, no
+    # diagnostic. Measured on ngspice-46 (the pinned toolchain), both at the
+    # cp-variable level and at the level of the effect that actually matters
+    # here:
+    #
+    #   `.options wnflag=1` then `.options wnflag=0` -> wnflag reads 1;
+    #       a `W=2000u nf=40` pfet_03v3 resolves to `pfet_03v3.12` and runs.
+    #   `.options wnflag=0` then `.options wnflag=1` -> wnflag reads 0;
+    #       the same device dies with "could not find a valid modelname".
+    #
+    # So card order *is* precedence order, earliest-wins, and the harness pin
+    # is emitted first precisely so that it is the authoritative one. (An
+    # earlier revision of this comment claimed the opposite -- that a later
+    # manifest card would override the pin. That was never true; see
+    # `sim/tests/test_ngspice_options_precedence.py`, which pins the real
+    # ngspice behaviour so the claim cannot silently rot again.)
+    #
+    # A manifest `wnflag=` card would therefore be a card that ngspice
+    # silently ignores -- the exact "silently wrong" failure mode this pin
+    # exists to remove -- so reject it here instead of emitting it. The real
+    # escape hatch, per DR-0025's Consequences, is an explicit `set wnflag=0`
+    # in a `spinit`/`.spiceinit`: that is read *before* the deck, so it wins
+    # by this same earliest-wins rule, and it fails loud (hard parse error)
+    # on any deck instantiating the pass device.
+    conflicting = sorted({o for o in tb.options if _option_key(o) == MODEL_BINNING_KEY})
+    if conflicting:
+        raise ValueError(
+            f"{tb.directory}: manifest 'options' may not set "
+            f"{MODEL_BINNING_KEY!r} (found {', '.join(repr(o) for o in conflicting)}). "
+            f"The harness pins '.options {MODEL_BINNING_OPTION}' (issue #214, "
+            "DR-0025) and ngspice keeps the FIRST card for a duplicate key, so a "
+            "manifest card here would be silently ignored rather than applied. "
+            "To run with model binning off, set it where it actually takes "
+            "precedence -- `set wnflag=0` in a `.spiceinit` -- and expect the "
+            "deck to fail loud."
+        )
+    lines.append(f".options {MODEL_BINNING_OPTION}")
     for option in tb.options:
         lines.append(f".options {option}")
     if tb.nodeset:

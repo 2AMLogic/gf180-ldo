@@ -284,6 +284,17 @@ it is what that record was taken under.
 The other benches in this repo have the same exposure and no such pin; that is
 filed separately rather than fixed here.
 
+**Update (#214, `spec/decision-records/DR-0025`):** that separate filing is
+resolved. `sim/harness/runner.py`'s `compose_deck` now pins
+`.options wnflag=1` in every harness-generated deck, so the exposure is closed
+for every bench that goes through `sim/run_corners.py`. #214 also confirmed
+directly what this section inferred: the bin ngspice selects with the setting
+is `pfet_03v3.12`, a normally declared bin, and ngspice never clamps or
+extrapolates — without `wnflag` it hard-errors rather than quietly picking a
+neighbour. This experiment's own two-place pin is left as-is: its driver
+invokes `ngspice` outside `compose_deck` (including on `sim/loop-stability/`'s
+deck, used unmodified), so it still needs the setting out of band.
+
 ## Files
 
 ```

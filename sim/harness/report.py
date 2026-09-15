@@ -41,7 +41,7 @@ from .corners import (
     PvtPoint,
 )
 from .pdk import Pdk
-from .runner import PointResult
+from .runner import MODEL_BINNING_OPTION, PointResult
 from .testbench import Testbench
 
 #: Subdirectories of ``sim/<experiment-slug>/`` defined by ``sim/README.md``.
@@ -664,6 +664,12 @@ def render_record(record: dict, experiment: str) -> str:
     for entry in other_includes:
         lines.append(f"- Included design netlist `{entry['path']}` sha256: `{entry['sha256']}`")
     lines += [
+        f"- Model binning: deck pins `.options {MODEL_BINNING_OPTION}`"
+        " -- gf180mcu bins on the per-finger width W/NF, and the pass device"
+        " (`W=2000u nf=40`) resolves to a declared bin only with it; without it"
+        " ngspice hard-errors rather than clamping, so a record either carries"
+        " this setting or does not exist (issue #214,"
+        " spec/decision-records/DR-0025)",
         f"- Wall time: {record['wall_seconds']} s",
         "",
         "Per-corner model sections used:",
