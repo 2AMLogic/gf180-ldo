@@ -346,6 +346,30 @@ class DeckTests(unittest.TestCase):
         self.assertIn(".param cload=1p", self.deck)
         self.assertIn(".options reltol=1e-5", self.deck)
 
+    def test_deck_pins_model_bin_selection(self):
+        """#214 / DR-0024: bin selection must not be a host property.
+
+        gf180mcu bins on the per-finger width; the pass device (`W=2000u
+        nf=40`) resolves to a declared bin only when ngspice divides W by NF,
+        which is `wnflag`, which is off by default. Without the card in the
+        deck the setting comes from whichever host's `~/.spiceinit` is in
+        play -- and a host that does not have it cannot run any deck in this
+        repo that instantiates the pass device at all.
+        """
+        self.assertIn(".options wnflag=1", self.deck)
+
+    def test_model_bin_pin_precedes_every_design_include(self):
+        """The card has to be parsed before the devices it governs."""
+        self.assertLess(
+            self.deck.index(".options wnflag=1"), self.deck.index("x.spice")
+        )
+
+    def test_manifest_options_can_still_override_the_harness_pin(self):
+        """Harness-owned `.options` come first, so a manifest's win."""
+        self.assertLess(
+            self.deck.index(".options wnflag=1"), self.deck.index(".options reltol=1e-5")
+        )
+
     def test_deck_emits_one_measurement_vector_per_measure_entry(self):
         self.assertIn("let m_vout = v(out)", self.deck)
         self.assertIn("let m_iq = -i(v1)", self.deck)

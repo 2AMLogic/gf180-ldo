@@ -199,6 +199,37 @@ probe. On a host with no Homebrew on `PATH` and no override set,
 -- version and sha256 are still reported, but identity cannot be checked
 against a pin there yet.
 
+### `could not find a valid modelname` on the pass device (#214 / DR-0024)
+
+If a deck dies at parse time with
+
+```
+m.xdut_full.xmpass.m0 ... pfet_03v3 w=2.0e-03 ... nf=4.0e+01 ...
+could not find a valid modelname
+```
+
+this is **not** a broken PDK fetch or a shadowed binary -- it is ngspice's
+model-bin selection rule. gf180mcu's `pfet_03v3`/`nfet_03v3` cards are binned
+on `(L, W)` and the widest declared bin stops at `wmax = 100.001 µm`, while
+`design/netlist/ldo_core.spice`'s pass device is `W=2000u nf=40`: 40 fingers
+of 50 µm. It lands in a declared bin (`pfet_03v3.12`) only if bin selection
+divides `W` by `NF`, which is ngspice's `wnflag` -- 1 under HSPICE/Spectre
+compatibility, 0 otherwise. `W` stays the *total* width in the model
+evaluation either way; `wnflag` affects selection only. ngspice never clamps
+or extrapolates to a neighbouring bin: the only two outcomes are the declared
+bin and this hard error.
+
+**The harness handles this for you.** `sim/harness/runner.py`'s
+`compose_deck` pins `.options wnflag=1` in every generated deck, so anything
+run through `sim/run_corners.py` (or `sim/selftest.sh`) works on a
+default-configured ngspice with no `~/.spiceinit` at all. You only need the
+setting by hand when invoking `ngspice` directly on a hand-written deck that
+instantiates the pass device -- add `.options wnflag=1` to the deck, or
+`set wnflag=1` to the `.spiceinit` in the directory you run from. Note that a
+`.spiceinit` in the current directory **replaces** `~/.spiceinit` rather than
+adding to it, so anything else you rely on there (e.g. `set num_threads=1`)
+has to be repeated.
+
 ## 6. Next: the PVT corner harness
 
 Everything above establishes the *install*. The evidence-producing harness
