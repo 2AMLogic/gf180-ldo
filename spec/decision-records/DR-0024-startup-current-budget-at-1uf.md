@@ -2,7 +2,7 @@
 
 - **Status**: ratified 2026-09-15 (issue #212 / this pull request) —
   **pending**: this status line states the diff this record's ratifying
-  pull request (#{{PR}}) proposes; per the 2026-08-19 ratification-via-PR
+  pull request (#228) proposes; per the 2026-08-19 ratification-via-PR
   policy (2AMLogic/2am#357), the operator's review and approval **of that
   pull request** is the ratification act itself — no separate ratification
   comment is expected. Until the pull request merges, this line is a

@@ -76,7 +76,7 @@ The Startup row's ramp, inrush/clearance anchor and settling clauses are
 further amended by
 [`spec/decision-records/DR-0024-startup-current-budget-at-1uf.md`](spec/decision-records/DR-0024-startup-current-budget-at-1uf.md)
 (notes 5a, 8) — **ratified 2026-09-15** by the operator's approval of pull
-request #{{PR}} (issue #212) per the 2026-08-19 ratification-via-PR policy
+request #228 (issue #212) per the 2026-08-19 ratification-via-PR policy
 (2AMLogic/2am#357); the row below reflects DR-0024's ≤ 5 V/ms ramp, C_eff =
 1 µF inrush/clearance anchor, and 1.8 ms settling window. **This
 ratification does not certify the inrush, current-limit-clearance or
@@ -176,7 +176,7 @@ Notes — these are part of the ratified spec, not commentary:
     pre-DR-0024 netlist) — not a new circuit debt this anchor move
     introduces, and not evidence that the bound itself is arithmetically
     wrong. **Ratified 2026-09-15** by the operator's approval of pull request
-    #{{PR}} (issue #212) per the 2026-08-19 ratification-via-PR policy
+    #228 (issue #212) per the 2026-08-19 ratification-via-PR policy
     (2AMLogic/2am#357). Above 1 µF, both sub-clauses remain characterized,
     not bound, up to DR-0001's 4.7 µF ceiling.
 6. **Provisional rows.** The line-regulation, load-transient, PSRR 100 kHz,
@@ -231,7 +231,7 @@ Notes — these are part of the ratified spec, not commentary:
    hold the old 4.7 µF-anchored inrush bound at all, by the same C×dV/dt
    arithmetic DR-0022 first raised for the clearance sub-clause alone.
    **Ratified 2026-09-15** by the operator's approval of pull request
-   #{{PR}} (issue #212) per the 2026-08-19 ratification-via-PR policy
+   #228 (issue #212) per the 2026-08-19 ratification-via-PR policy
    (2AMLogic/2am#357). **Unlike DR-0006's ratification, this one does not
    leave every other clause of the row passing**: inrush, current-limit-
    clearance and monotonicity remain failing at the majority of 1 µF points,
