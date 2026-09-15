@@ -143,7 +143,7 @@ pre-resize, 4.76 mA post-resize), matching the #191 note's own "clean at
 nominal, not at most other points" characterization. This record does not
 claim the inrush/clearance/monotonicity clauses pass — they do not, exactly
 as they did not before this issue, for a cause this issue's own component
-resize does not touch and is not scoped to fix (tracked by #198).
+resize does not touch and is not scoped to fix (tracked by #191).
 
 ### Why 1.8 ms, not 1.2 ms
 
@@ -212,7 +212,7 @@ own market-key finding established.
   without also moving its C_eff anchor would reopen that conflict at the
   faster rate, not close it.
 - **Fix the #191 regression first, then re-measure.** Rejected as a
-  precondition: #191/#198 is tracked separately, is orthogonal to the ramp
+  precondition: #191 is tracked separately, is orthogonal to the ramp
   block this record resizes (the regression lives in the FB-injection
   transconductor, not `Css`/`Ch_ss`/`Cr_ss`), and gating this record on it
   would block a real, independently-verifiable improvement on an unrelated
@@ -237,7 +237,7 @@ own market-key finding established.
 - **The #191 acquisition-transient/settled-leakage regression is untouched
   and unresolved.** It dominates this record's inrush, clearance,
   monotonicity, and 4/155 overshoot pass counts, at C_eff = 1 µF and every
-  other capacitor point alike, and is tracked by #198, not this record.
+  other capacitor point alike, and is tracked by #191, not this record.
   Anyone reading this record's evidence table as "the Startup row now
   passes" is reading it wrong for those four sub-clauses; the ramp-rate and
   settling clauses are the ones this record's evidence supports.
@@ -281,7 +281,7 @@ own market-key finding established.
 - **DR-0001**: unaffected as a decision; its capacitor window remains the
   axis this record's C_eff = 1 µF anchor sits inside, exactly as DR-0022
   already established.
-- **#191 / #198**: this record's evidence corroborates, with a fresh A/B
+- **#191**: this record's evidence corroborates, with a fresh A/B
   data point, that the acquisition-transient/settled-leakage regression
-  those issues track is unrelated to the ramp/delay-RC sizing this record
-  changes. It does not discharge #198's own scope.
+  that issue tracks is unrelated to the ramp/delay-RC sizing this record
+  changes. It does not discharge #191's own scope.
