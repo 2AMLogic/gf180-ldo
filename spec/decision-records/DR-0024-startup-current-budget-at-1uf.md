@@ -161,6 +161,35 @@ exactly this shape of error for the original 3 ms bound, and this record
 declines to repeat it against the sweep's own evidence. 1.8 ms retains
 ~4.3% headroom over the worst measured point, comparable to DR-0006's ~3%.
 
+### Against TI's TLV774/TLV700 typicals
+
+Comparison table, per issue #212's own acceptance criteria. TI's figures are
+**typical**, at 1 µF, unbound (see issue #212's own sourcing — TLV774
+SBVS456B §6.5, TLV700 SLVSA00E — neither datasheet states a maximum). This
+record's figures are **worst-corner, measured, bound** — the two are not the
+same statistical quantity, and the gap below is not closed by this record's
+own "typ vs. untrimmed worst case" caveat.
+
+| | TLV774 (typ, 1 µF) | TLV700 (typ, 1 µF) | gf180-ldo, pre-DR-0024 (worst, ratified) | gf180-ldo, DR-0024 proposed (worst, measured) |
+|---|---|---|---|---|
+| t_startup | 400 µs | 100 µs | 5.82788 ms (DR-0006, C_eff = 4.7 µF) | **1.72525 ms** (this record, C_eff = 1 µF) |
+| Implied ratio vs. TLV774 typ | 1x | 0.25x | ~14.6x | **~4.3x** |
+| Implied ratio vs. TLV700 typ | 4x | 1x | ~58.3x | **~17.3x** |
+| Ramp bound | none stated | none stated | ≤ 1 V/ms | ≤ 5 V/ms |
+| Inrush bound at 1 µF | none stated | none stated | 1 mA (unused headroom under the old 4.7 µF-anchored bound) | ≤ 5 mA |
+
+This record's resize takes the worst-corner gap from ~58x (against TLV700
+typ, using DR-0006's 6 ms figure) to ~17x, and from the ~60x issue #212's
+own title cites (a mixed comparison across both parts) to a comparable
+single-digit-to-low-teens range depending on which TI part and which of
+its own typ/max the reader anchors to. It does not close the gap to 1x:
+doing so would need either a typical-not-worst-case claim (which this
+design's untrimmed PVT spread does not support making) or a trim
+provision (DR-0004/DR-0005/DR-0006 all declined this for the same reason:
+a mask/test-time commitment outside this block's charter). The remaining
+gap is disclosed here, not claimed away, per the same posture DR-0006's
+own market-key finding established.
+
 ## Alternatives considered
 
 - **Keep the 1.2 ms figure from issue #212's own estimate.** Rejected: the
