@@ -23,7 +23,12 @@ name: CI
 # and relies on sim/selftest.sh's own env-check to skip (not fail) the PVT
 # stage. The PDK-backed run of the *same* self-test lives in the separate
 # `pvt-smoke` job, gated to a nightly schedule / manual dispatch / opt-in PR
-# label so it never blocks a normal PR.
+# label so it never blocks a normal PR. `pvt-smoke` also runs one nominal
+# point of `sim/startup` (which, unlike `sim/smoke-bias`, has a `dut_netlist`
+# and so instantiates the pass device) -- a standing check, on the apt
+# `ngspice` this job installs, that DR-0025's (issue #214) deck-level
+# `.options wnflag=1` model-bin pin is still honoured on that build (issue
+# #221).
 #
 # Explicitly excluded from CI (not "checks", so nothing to wire up):
 #   - sim/devchar/**/run.sh, sim/devchar/run_all.sh, sim/devchar/lib/summarize.py
@@ -111,3 +116,23 @@ jobs:
           export PDK_ROOT="$(volare path)"
           export PDK="gf180mcuD"
           bash sim/selftest.sh --require-pdk
+
+      - name: Smoke a pass-device-bearing corner (model-bin selection, issue #221)
+        run: |
+          export PDK_ROOT="$(volare path)"
+          export PDK="gf180mcuD"
+          # sim/smoke-bias (above) has no dut_netlist, so it never instantiates
+          # the pass device and never exercises the '.options wnflag=1' pin
+          # DR-0025 (issue #214) added to compose_deck(). This runner's apt
+          # `ngspice` is ngspice-42 (Ubuntu 24.04/noble's package as of this
+          # writing) -- a different build than the ngspice-46 DR-0025's own
+          # evidence was gathered on -- so this step is also the standing
+          # portability check issue #221 asked for: one nominal point of
+          # 'startup' (which does instantiate the pass device via its
+          # 'dut_netlist') on a build DR-0025 did not itself cover. A build
+          # that stopped honouring the deck-level pin would fail loud here
+          # (parse error: "could not find a valid modelname"), never silently.
+          # --supply-tol 0 collapses the PVT sweep to a single nominal point
+          # (mirrors sim/selftest.sh's own --quick); --no-write means this
+          # never mints or touches evidence under sim/startup/records/.
+          python3 sim/run_corners.py startup --corners tt --temps 27 --supply-tol 0 --no-write
