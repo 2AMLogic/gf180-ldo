@@ -72,6 +72,18 @@ The Current limit and Thermal rows are amended by
 #137 (issue #105) per the 2026-08-19 ratification-via-PR policy
 (2AMLogic/2am#357); the rows below reflect DR-0005's 62–95 mA / ≤ 346 mW
 untrimmed window.
+The Startup row's ramp, inrush/clearance anchor and settling clauses are
+further amended by
+[`spec/decision-records/DR-0024-startup-current-budget-at-1uf.md`](spec/decision-records/DR-0024-startup-current-budget-at-1uf.md)
+(notes 5a, 8) — **ratified 2026-09-15** by the operator's approval of pull
+request #{{PR}} (issue #212) per the 2026-08-19 ratification-via-PR policy
+(2AMLogic/2am#357); the row below reflects DR-0024's ≤ 5 V/ms ramp, C_eff =
+1 µF inrush/clearance anchor, and 1.8 ms settling window. **This
+ratification does not certify the inrush, current-limit-clearance or
+monotonicity sub-clauses as passing** — they remain failing at the majority
+of C_eff = 1 µF points today, attributed entirely to the pre-existing,
+separately-tracked issue #191 acquisition-transient/settled-leakage
+regression (see notes 5a, 8).
 
 | Parameter | Target | Stretch |
 |---|---|---|
@@ -85,7 +97,7 @@ untrimmed window.
 | PSRR | > 50 dB @ 1 kHz and > 20 dB @ 100 kHz, at I_load = 1 mA (binding — light load) and at 50 mA, C_eff = 1 µF nominal, verified across the stability window | > 60 dB @ 1 kHz, > 30 dB @ 100 kHz, 1 MHz point characterized |
 | Iq (excluding load current) | < 30 µA at no load **and** at full load — binds ff / 125 °C / 3.63 V | < 10 µA — subordinate to DR-0001's ESR window; not to be bought back by reintroducing a minimum ESR |
 | Current limit | 62–95 mA over PVT untrimmed, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5, note 9) | — |
-| Startup | monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 1 V/ms, so inrush ≤ 5 mA at C_eff = 4.7 µF and startup at full rated load stays ≥ 10 mA below the current limit; inside ±2% within 6 ms of enable (note 8); overshoot ≤ +2% of the final value | — |
+| Startup | monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 5 V/ms, so inrush ≤ 5 mA and startup at full rated load stays ≥ 10 mA below the current limit, both at C_eff = 1 µF (nominal) — above 1 µF both clauses are characterized, not bound, up to DR-0001's 4.7 µF ceiling (note 5a); inside ±2% within 1.8 ms of enable (note 8); overshoot ≤ +2% of the final value | — |
 | Enable / shutdown | shutdown Iq < 3 µA at ff / 125 °C / 3.63 V; disabled output state is pass device fully off with no internal active discharge; Vin→Vout leakage ≤ 1 µA at the same corner | — |
 | Thermal | 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 346 mW into a Vout = 0 short at the untrimmed 95 mA limit ceiling (note 9); specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec | — |
 | Output noise | not specified — explicitly waived (note 7) | 10 Hz–100 kHz µVrms row if a consumer asks for one |
@@ -136,17 +148,53 @@ Notes — these are part of the ratified spec, not commentary:
    the full ≤ 346 mW of the Thermal row, which is an integration constraint —
    if an integration cannot absorb it, adding foldback or thermal shutdown is a
    superseding decision record, not an implementation choice.
+5a. **Current-limit-clearance and inrush bound only to C_eff = 1 µF.** The
+    Startup row's inrush (≤ 5 mA) and current-limit-clearance (≥ 10 mA below
+    the limit) sub-clauses are verified only up to C_eff = 1 µF (DR-0001's
+    nominal value), not to its 4.7 µF ceiling: the ramp's steady dV/dt is a
+    process/temperature quantity, not a C_eff-conditioned one (measured — the
+    same 1.24–2.95 V/ms spread recurs at every capacitor value), so one fixed
+    ramp rate cannot hold a current-headroom bound at the wide end of
+    DR-0001's 14.2:1 capacitor window and a rate bound at the narrow end at
+    once.
+    [`DR-0022`](spec/decision-records/DR-0022-startup-clearance-narrows-above-1uf.md)
+    first proposed this move for the clearance sub-clause alone, against the
+    pre-resize (≤ 1 V/ms) ramp; DR-0022 itself remains `proposed`, not
+    ratified, and its own "passes cleanly at 1 µF" measurement (63/63 main
+    matrix, 20/20 at 0 mA,
+    `sim/soft-start/records/20260906-125202-f1096c9.md`) is superseded for
+    this purpose by the fresher evidence below, not cited here as current
+    fact.
+    [`DR-0024`](spec/decision-records/DR-0024-startup-current-budget-at-1uf.md)
+    extends the C_eff = 1 µF anchor to inrush as well and is the record this
+    note ratifies, against
+    `sim/soft-start/records/20260915-103035-18f664f.md`'s 155-point sweep:
+    inrush and clearance both **fail** at the majority of 1 µF points today
+    (18/79 and 46/79 respectively), entirely attributable to the
+    pre-existing, separately-tracked issue #191 acquisition-transient/
+    settled-leakage regression (same-corner A/B confirmed against the
+    pre-DR-0024 netlist) — not a new circuit debt this anchor move
+    introduces, and not evidence that the bound itself is arithmetically
+    wrong. **Ratified 2026-09-15** by the operator's approval of pull request
+    #{{PR}} (issue #212) per the 2026-08-19 ratification-via-PR policy
+    (2AMLogic/2am#357). Above 1 µF, both sub-clauses remain characterized,
+    not bound, up to DR-0001's 4.7 µF ceiling.
 6. **Provisional rows.** The line-regulation, load-transient, PSRR 100 kHz,
    current-limit, startup and enable/shutdown numbers were set at ratification
    from measured device data plus the architecture survey's loop budget, before
    any loop-level simulation exists. Each carries a falsifiable revisit trigger
    in DR-0004; a row that proves unmeetable is superseded by a new record, never
    silently relaxed. The startup row's settling-clause trigger fired and is
-   discharged by DR-0006 (note 8), and the current-limit row's ±10% window
-   trigger fired and is discharged by DR-0005 (note 9); the startup row's
-   other clauses remain provisional in this sense, and the current-limit
-   row's other clauses (never-engages floor, brickwall behaviour,
-   short-circuit survivability) remain as originally ratified and passing.
+   discharged by DR-0006, further superseded by DR-0024 (note 8); DR-0024
+   also discharges the ramp-rate clause and moves the inrush/clearance anchor
+   to C_eff = 1 µF (note 5a); the current-limit row's ±10% window trigger
+   fired and is discharged by DR-0005 (note 9). The startup row's inrush,
+   current-limit-clearance, monotonicity and overshoot clauses remain
+   provisional in this sense — currently failing at the majority of C_eff =
+   1 µF points, tracked by issue #191, not by this note's own trigger
+   mechanism — and the current-limit row's other clauses (never-engages
+   floor, brickwall behaviour, short-circuit survivability) remain as
+   originally ratified and passing.
 7. **Output-noise waiver.** No consumer of this block has stated a noise
    requirement, and no reference or amplifier design exists yet against which a
    µVrms number could be substantiated — so a number here would be a claim
@@ -170,6 +218,31 @@ Notes — these are part of the ratified spec, not commentary:
    clause, so 6 ms corrects a spec error rather than papering over a design
    shortfall — the startup-time gap versus public parts is disclosed here,
    not claimed away. See DR-0006 §Market-key finding.
+   [`DR-0024`](spec/decision-records/DR-0024-startup-current-budget-at-1uf.md)
+   supersedes DR-0006's 6 ms figure and re-centres the ramp bound itself,
+   ≤ 1 V/ms → ≤ 5 V/ms: the settling bound moves to **1.8 ms**, the slowest
+   measured point among the 155/163 points that converged (1.72525 ms,
+   `res_ss_-40c_3.63v`,
+   `sim/soft-start/records/20260915-103035-18f664f.md`) plus ~4% headroom,
+   and the ramp-rate bound's own measured evidence (1.24–2.95 V/ms, 0/155
+   over 5 V/ms) replaces DR-0006's original ≤ 1 V/ms sizing rather than
+   merely amending it. This is a joint move with the inrush/clearance anchor
+   (note 5a), not an independent one — a 5× faster global ramp rate cannot
+   hold the old 4.7 µF-anchored inrush bound at all, by the same C×dV/dt
+   arithmetic DR-0022 first raised for the clearance sub-clause alone.
+   **Ratified 2026-09-15** by the operator's approval of pull request
+   #{{PR}} (issue #212) per the 2026-08-19 ratification-via-PR policy
+   (2AMLogic/2am#357). **Unlike DR-0006's ratification, this one does not
+   leave every other clause of the row passing**: inrush, current-limit-
+   clearance and monotonicity remain failing at the majority of 1 µF points,
+   and 4/155 overshoot points remain failing — all attributed to the
+   pre-existing, separately-tracked issue #191 acquisition-transient/
+   settled-leakage regression (same-corner A/B confirmed against the
+   pre-DR-0024 netlist, not introduced or worsened by this resize), not to
+   this record's ramp/delay-RC resize. TI's TLV774/TLV700 typicals remain
+   4–18× faster depending on which figure is compared (down from the ~60×
+   DR-0006 disclosed) — see DR-0024 §Against TI's TLV774/TLV700 typicals, a
+   gap this record narrows, not closes.
 9. **Current-limit window and thermal ceiling, amended by DR-0005.** The
    ±10% current-limit window (65–80 mA) and its ≤ 290 mW thermal consequence
    were originally ratified before issue #11's full PVT sweep existed;
