@@ -722,7 +722,7 @@ _check_champion_hold_state_staleness() {
   # Mirrors champion-pr-merge.md's own extraction (same marker, same capture
   # group); "last" match wins in case of multiple hold episodes on one PR.
   hold_head="$(printf '%s\n' "$comments" \
-    | { grep -o 'champion:hold-state head=[0-9a-f]*' || true; } \
+    | grep -o 'champion:hold-state head=[0-9a-f]*' \
     | tail -1 \
     | sed -n 's/.*head=\([0-9a-f]*\)/\1/p')"
   [[ -n "$hold_head" ]] || return 0
