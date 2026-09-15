@@ -1,6 +1,7 @@
 # DR-0024: gf180mcu model-bin selection binds on the per-finger width `W/NF`; this repo pins it in the deck rather than inheriting it from the host
 
-- **Status**: proposed -- ratification is the operator's, the same process
+- **Status**: proposed (ratification tracked in **#219**) -- ratification is
+  the operator's, the same process
   DR-0001, DR-0007, DR-0008 and DR-0012 through DR-0023 went through.
   This record proposes **no** `design/` change and **no** spec-value change:
   it ratifies a simulation convention and records the evidence that the
@@ -168,14 +169,31 @@ extrapolation path exists), the host that produced the committed record — and
 #204's host, which ran the same pinned PDK and ngspice-46 with no crash —
 resolved `pfet_03v3.12`, exactly as this host does.
 
-**E8 — no other device in `design/` is near a bin edge.** Every FET in
-`design/netlist/*.spice` was enumerated with its `W`, `L` and `nf`. The
-largest per-finger width anywhere is **50 µm**, at exactly two devices:
-`XMpass` (`W=2000u nf=40`) and `Xilimit`'s `XMsense` (`W=50u nf=1`), the 1/40
-current-sense replica DR-0005's limit window depends on. They are the same
-finger geometry and resolve to the same bin — which is what a replica has to
-do. Everything else is ≤ 25 µm per finger. There is no second instance of
-this exposure to find.
+**E8 — `XMpass` is the only device whose raw `W` leaves the bin table, and no
+other device is near a bin edge.** All 104 FET instantiations across
+`design/netlist/*.spice` were enumerated with their `W`, `L` and `nf`, sorted
+by per-finger width `W/NF`:
+
+| `W/NF` | device | `W` | `L` | `nf` | resolved bin |
+|---|---|---|---|---|---|
+| 50 µm | `XMpass` | 2000 µm | 0.28 µm | 40 | `pfet_03v3.12` |
+| 50 µm | `XMsense` (`Xilimit`) | 50 µm | 0.28 µm | 1 | `pfet_03v3.12` |
+| 50 µm | `XMclamp` (`Xilimit`) | 50 µm | 0.5 µm | 1 | `pfet_03v3.13` |
+| 25 µm | `XMen` | 50 µm | 0.28 µm | 2 | `pfet_03v3.12` |
+| ≤ 20 µm | everything else (100 instances) | — | — | — | — |
+
+**Zero devices have `W/NF > 100.001 µm`**, so under the `W/NF` rule ratified
+below every device in the design lands in a declared bin. `XMpass` is the
+only instance anywhere whose *raw* `W` (2000 µm) exceeds the widest bin's
+`wmax`, because it is the only multi-finger device with `nf > 2`. There is no
+second instance of this exposure to find.
+
+The two devices that share `XMpass`'s exact finger geometry are `XMsense`
+(`W=50u nf=1`, `L=0.28u`) — the 1/40 current-sense replica DR-0005's limit
+window depends on — and `XMen`, and all three resolve to `pfet_03v3.12`,
+which is what a replica needs. (`XMclamp` is the same 50 µm finger at a
+longer `L=0.5u` and therefore bins one cell over, at `pfet_03v3.13`; it is
+not a replica of anything and nothing depends on it matching.)
 
 **E9 — the deck-level pin fixes the failure and changes nothing else.** Two
 harness-generated `startup` decks for `tt_27c_3.30v` against the identical DUT
@@ -202,6 +220,37 @@ could not find a valid modelname
 The pinned deck's numbers are identical to the same deck run on this host's
 `wnflag=1` `~/.spiceinit`, to every printed digit. The pin is a provenance
 fix, not a numerical one.
+
+**E10 — reconciling #204: the "does not reproduce" hosts were the
+misconfigured ones.** Issue #204 reported this exact error on the
+`.include`-based benches, was downgraded when a peer host ran the same benches
+end to end against the same pinned PDK and `ngspice-46`, and was closed
+2026-09-13 as "environment-specific" — attributed to a stale `volare fetch` or
+a shadowing `ngspice` on `PATH` (the #182/#184 toolchain-identity theme). E1
+through E9 invert that verdict without contradicting the observations.
+
+The host this record was produced on is one of the hosts where the benches
+*do* run, and its `~/.spiceinit` — mtime 2026-09-09, i.e. four days before
+#204 was closed — contains:
+
+```
+* Restore per-finger model binning for the gf180mcu PDK.
+* ... ngspice only divides W by NF for bin selection when the cp variable
+* `wnflag` is 1 (see src/spicelib/parser/inpgmod.c, INPgetModBin) ...
+set wnflag=1
+set num_threads=1
+```
+
+An earlier agent had already root-caused this correctly and fixed it **in a
+home-directory file that is not in this repository**, where no record, no
+document, and no reviewer could see it. That is the entire discrepancy: the
+PDK fetch was never stale and no binary was ever shadowed. The hosts that
+"reproduced #204" were running a stock ngspice; the hosts that "did not
+reproduce" were carrying an undocumented, uncommitted `wnflag=1` out of band.
+Every committed record was produced by the latter kind of host — correctly
+binned, as E7 proves digit for digit, but for a reason nothing in the
+evidence trail captured. Decision 3 moves that setting out of the home
+directory and into the deck, where it is reviewable.
 
 ## Decision
 
@@ -285,6 +334,18 @@ fix, not a numerical one.
   older records interpretable is this record's E4/E7 argument, not a field in
   the file.
 
+- **The pin is defeatable by a host that sets `wnflag=0` explicitly — and that
+  case fails loud, never silently wrong.** `.options wnflag=1` cannot override
+  an explicit `set wnflag=0` in a `spinit`/`.spiceinit` that is read first;
+  measured, the pinned `startup` deck run from a directory whose `.spiceinit`
+  contains `set wnflag=0` dies with `could not find a valid modelname`,
+  identically to the unpinned deck of E9. This is the residual hole in
+  "bin selection is now a property of the deck", and it is the harmless half
+  of the failure space: by E4 there is no third outcome, so such a host
+  produces **no record**, rather than a record taken against a different bin.
+  Nothing in `sim/` can therefore be a silently mis-binned result — which is
+  the property decision 4 rests on.
+
 - **Inert where it matters, by measurement.** On a host that already had
   `wnflag=1`, adding the card changes nothing: E7's 45-point re-run of the
   committed record is the control, and it lands bit-identical on the settling
@@ -300,8 +361,8 @@ fix, not a numerical one.
   `ss_-40c_3.63v` corner moved by anything like that factor it would land well
   above 6 ms. **This record does not resolve that**, and deliberately does not:
   it is a consequence of the soft-start compensation work, not of model
-  binning, and it needs its own evidence run and its own record. It is filed as
-  a follow-on issue. Nothing here should be read as clearing DR-0006 against
+  binning, and it needs its own evidence run and its own record. Filed as
+  **#220**. Nothing here should be read as clearing DR-0006 against
   the current design — only against the accusation that its evidence used the
   wrong device model.
 
@@ -310,13 +371,14 @@ fix, not a numerical one.
   `W=2000u` identically, so all four implement the same bin check; but only
   `ngspice-46` is installed on the host that produced this record, so the
   deck-level `.options wnflag=1` pin is confirmed working on `46` alone. Filed
-  as a follow-on issue rather than asserted.
+  as **#221** rather than asserted. Note that by E4 the downside of a build
+  that ignored the card would be a *broken run*, never a mis-binned record.
 
 ## Cross-consequences (other records)
 
 - **DR-0006**: its evidence is confirmed to have used the ratified bin, so the
   model-binning objection against it is withdrawn. A separate re-evaluation
-  against the current DUT is warranted and is filed as a follow-on; the 6 ms
+  against the current DUT is warranted and is filed as **#220**; the 6 ms
   number is not touched by this record.
 - **DR-0005**: unaffected, and mildly reinforced. `Msense` is one finger of
   `Mpass`'s geometry, and under `W/NF` binning the two devices land in the same
