@@ -9,6 +9,25 @@
   current-limit-clearance sub-clause as **failing** at the top of DR-0001's
   capacitor window.
 
+  **Cited pass-count at `C_eff = 1 µF` is stale as of 2026-09-15 (noted per
+  issue #227).** This record's "Consequences" section below cites
+  `sim/soft-start/records/20260906-125202-f1096c9.md`'s 63/63 (main matrix)
+  + 20/20 (0 mA group) pass count for the current-limit-clearance sub-clause
+  at the 1 µF anchor this record proposes. A fresher record of the same
+  testbench, `sim/soft-start/records/20260915-103035-18f664f.md` (produced
+  under issue #212's soft-start ramp/delay-RC resize, after issue #191's
+  acquisition-transient/settled-leakage regression was characterized), shows
+  that same sub-clause failing at 46/79 points at the same 1 µF anchor
+  (also reported in DR-0024's evidence table). The gap is attributable to
+  issue #191's regression, not to issue #212's resize — same-corner A/B
+  confirmed in the `18f664f` record and in DR-0024 itself. This record's
+  underlying arithmetic (why no single global ramp rate can satisfy the
+  clearance clause at 4.7 µF, and why 1 µF is the correct anchor) is
+  unaffected — only the cited pass-count is stale. This note does not
+  change this record's own ratification status; it exists so a future
+  ratification pass does not cite the 63/63+20/20 figure without
+  re-verifying against the current head `sim/soft-start` record first.
+
 ## Context
 
 DR-0006 already found one arithmetic conflict inside the Startup row (the
@@ -179,9 +198,16 @@ this record does not reopen DR-0006's classification of it as circuit debt.
 ## Consequences
 
 - **The Startup row's current-limit-clearance clause becomes verifiable.**
-  With the bound restated at 1 µF, the design passes it there (63/63 main
-  matrix, 20/20 at 0 mA) and the remainder of DR-0001's window is
-  characterized rather than silently claimed.
+  With the bound restated at 1 µF, the design passed it there at the time
+  this record was written (63/63 main matrix, 20/20 at 0 mA, from
+  `sim/soft-start/records/20260906-125202-f1096c9.md`) and the remainder of
+  DR-0001's window is characterized rather than silently claimed. **That
+  pass-count is now stale (see the Status note above)**: a fresher record of
+  the same testbench, `sim/soft-start/records/20260915-103035-18f664f.md`,
+  shows the sub-clause failing at 46/79 points at the same 1 µF anchor,
+  attributable to issue #191's acquisition-transient/settled-leakage
+  regression, not to this record's own arithmetic or to issue #212's
+  soft-start resize.
 - **Inrush at 4.7 µF remains open circuit debt**, exactly as DR-0006 already
   classified it, and is tracked by issue #189 rather than by this record.
   Getting it under 5 mA needs the acquisition lag itself to
