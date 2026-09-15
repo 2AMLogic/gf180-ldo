@@ -109,9 +109,9 @@ requirement at these single-digit-µA currents.
   already on record: `sim/quiescent-current/records/
   20260906-231405-d3cb117.md`, taken against this same chain, reads
   `iq_en_ua` = 25.3658 µA at the binding ff/125 °C/3.63 V corner, against the
-  pre-#191 baseline's 22.0256 µA
+  pre-#191 baseline's 22.0048 µA
   (`sim/quiescent-current/records/20260905-200855-3093ea1.md`) — an adder of
-  **~3.34 µA**, leaving ~4.6 µA of headroom under the ratified < 30 µA row at
+  **~3.36 µA**, leaving ~4.6 µA of headroom under the ratified < 30 µA row at
   that corner. (That record's overall verdict is FAIL, on the row's
   `vout_full_v` clause at `ff_125c_3.63v` and `sf_125c_3.63v` — not on the Iq
   clause, which passes at every corner. Both failing corners are at
