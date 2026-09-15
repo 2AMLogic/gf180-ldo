@@ -199,7 +199,7 @@ probe. On a host with no Homebrew on `PATH` and no override set,
 -- version and sha256 are still reported, but identity cannot be checked
 against a pin there yet.
 
-### `could not find a valid modelname` on the pass device (#214 / DR-0024)
+### `could not find a valid modelname` on the pass device (#214 / DR-0025)
 
 If a deck dies at parse time with
 

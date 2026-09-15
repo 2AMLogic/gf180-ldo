@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pin ngspice's duplicate-``.options``-key precedence with a real run.
 
-Issue #214 / DR-0024 pin ``.options wnflag=1`` into every generated deck, and
+Issue #214 / DR-0025 pin ``.options wnflag=1`` into every generated deck, and
 ``sim/harness/runner.compose_deck`` emits that card *before* any manifest
 ``options``. Whether "first" or "last" is the winning position is not a style
 question -- it decides whether the pin is authoritative or decorative, and it
@@ -20,7 +20,7 @@ installs ngspice and the PDK, actually runs them.
 Each run happens in a temporary working directory carrying its own
 ``.spiceinit``. ngspice reads ``./.spiceinit`` *instead of* ``~/.spiceinit``
 when the former exists, so this shadows whatever the host happens to set --
-including the ``set wnflag=1`` that DR-0024's E10 found on the reference host.
+including the ``set wnflag=1`` that DR-0025's E10 found on the reference host.
 Without that shadow these tests would measure the host, not ngspice.
 """
 
@@ -177,7 +177,7 @@ class DuplicateOptionKeyBinSelectionTests(unittest.TestCase):
     """The effect: same precedence, observed through real gf180mcu binning.
 
     The cp-variable readback above is the mechanism; this is the consequence
-    that DR-0024 actually cares about. A ``W=2000u nf=40`` ``pfet_03v3`` is
+    that DR-0025 actually cares about. A ``W=2000u nf=40`` ``pfet_03v3`` is
     50 um per finger: it resolves to the declared bin ``pfet_03v3.12`` under
     ``wnflag=1`` and hard-errors under ``wnflag=0``, so the run's outcome
     reports which card won without needing to trust the readback.

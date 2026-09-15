@@ -1,4 +1,4 @@
-# DR-0024: gf180mcu model-bin selection binds on the per-finger width `W/NF`; this repo pins it in the deck rather than inheriting it from the host
+# DR-0025: gf180mcu model-bin selection binds on the per-finger width `W/NF`; this repo pins it in the deck rather than inheriting it from the host
 
 - **Status**: proposed (ratification tracked in **#219**) -- ratification is
   the operator's, the same process

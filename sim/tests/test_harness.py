@@ -348,7 +348,7 @@ class DeckTests(unittest.TestCase):
         self.assertIn(".options reltol=1e-5", self.deck)
 
     def test_deck_pins_model_bin_selection(self):
-        """#214 / DR-0024: bin selection must not be a host property.
+        """#214 / DR-0025: bin selection must not be a host property.
 
         gf180mcu bins on the per-finger width; the pass device (`W=2000u
         nf=40`) resolves to a declared bin only when ngspice divides W by NF,
@@ -383,7 +383,7 @@ class DeckTests(unittest.TestCase):
 
         Because ngspice keeps the first card, a manifest `.options wnflag=0`
         placed after the harness pin would have no effect at all and print no
-        warning -- the "silently wrong" outcome DR-0024 exists to remove. The
+        warning -- the "silently wrong" outcome DR-0025 exists to remove. The
         harness fails loud at deck composition instead.
         """
         for bad in ("wnflag=0", "WNFLAG = 0", "wnflag=1"):

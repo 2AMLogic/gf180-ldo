@@ -669,7 +669,7 @@ def render_record(record: dict, experiment: str) -> str:
         " (`W=2000u nf=40`) resolves to a declared bin only with it; without it"
         " ngspice hard-errors rather than clamping, so a record either carries"
         " this setting or does not exist (issue #214,"
-        " spec/decision-records/DR-0024)",
+        " spec/decision-records/DR-0025)",
         f"- Wall time: {record['wall_seconds']} s",
         "",
         "Per-corner model sections used:",

@@ -19,7 +19,7 @@ from .testbench import Testbench
 NGSPICE = "ngspice"
 DEFAULT_TIMEOUT_S = 300
 
-# Model-bin selection, pinned in the deck (issue #214, DR-0024).
+# Model-bin selection, pinned in the deck (issue #214, DR-0025).
 #
 # gf180mcu's `pfet_03v3`/`nfet_03v3` cards are binned on (L, W) and the widest
 # declared bin stops at `wmax = 100.001 um`. `design/netlist/ldo_core.spice`'s
@@ -39,7 +39,7 @@ DEFAULT_TIMEOUT_S = 300
 # captured it. Pinning it in the deck makes bin selection a property of this
 # repo's decks. It is provably not a thumb on the scale: on a host that
 # already had `wnflag=1`, adding the card changes nothing (the setting is
-# what every successful run in `sim/` was already taken under -- DR-0024's
+# what every successful run in `sim/` was already taken under -- DR-0025's
 # Evidence section reproduces a committed record field-for-field to show it).
 MODEL_BINNING_OPTION = "wnflag=1"
 MODEL_BINNING_KEY = MODEL_BINNING_OPTION.split("=", 1)[0]
@@ -347,7 +347,7 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
     # A manifest `wnflag=` card would therefore be a card that ngspice
     # silently ignores -- the exact "silently wrong" failure mode this pin
     # exists to remove -- so reject it here instead of emitting it. The real
-    # escape hatch, per DR-0024's Consequences, is an explicit `set wnflag=0`
+    # escape hatch, per DR-0025's Consequences, is an explicit `set wnflag=0`
     # in a `spinit`/`.spiceinit`: that is read *before* the deck, so it wins
     # by this same earliest-wins rule, and it fails loud (hard parse error)
     # on any deck instantiating the pass device.
@@ -357,7 +357,7 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
             f"{tb.directory}: manifest 'options' may not set "
             f"{MODEL_BINNING_KEY!r} (found {', '.join(repr(o) for o in conflicting)}). "
             f"The harness pins '.options {MODEL_BINNING_OPTION}' (issue #214, "
-            "DR-0024) and ngspice keeps the FIRST card for a duplicate key, so a "
+            "DR-0025) and ngspice keeps the FIRST card for a duplicate key, so a "
             "manifest card here would be silently ignored rather than applied. "
             "To run with model binning off, set it where it actually takes "
             "precedence -- `set wnflag=0` in a `.spiceinit` -- and expect the "
