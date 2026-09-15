@@ -24,7 +24,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3d481db80c01e6ef6
 | Load reg (0–50 mA) | PASS | STALE | `sim/load-regulation/records/20260905-200836-3093ea1.md` |
 | Load transient | PASS | STALE | `sim/load-transient/records/20260905-202554-3093ea1.md` |
 | PSRR | PASS | STALE | `sim/psrr-dc/records/20260807-105159-64249c6.md` (+ 2 more, see detail) |
-| Iq (excluding load current) | FAIL | STALE | `sim/quiescent-current/records/20260906-231405-d3cb117.md` (+ 1 more, see detail) |
+| Iq (excluding load current) | FAIL | STALE | `sim/quiescent-current/records/20260915-115046-60785b1.md` (+ 1 more, see detail) |
 | Current limit | FAIL | STALE | `sim/current-limit/records/20260905-230521-3093ea1.md` |
 | Startup | FAIL | STALE | `sim/startup/records/20260906-004356-3093ea1.md` (+ 1 more, see detail) |
 | Enable / shutdown | PASS | STALE | `sim/enable-shutdown/records/20260905-232555-3093ea1.md` |
@@ -117,7 +117,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `3d481db80c01e6ef6
 
 **Verdict**: FAIL  **Fresh**: STALE
 
-- `quiescent-current`: `sim/quiescent-current/records/20260906-231405-d3cb117.md` — **FAIL**, stale
+- `quiescent-current`: `sim/quiescent-current/records/20260915-115046-60785b1.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 - `enable-shutdown` — same run also substantiates this row's full-load enabled-state clause: `sim/enable-shutdown/records/20260905-232555-3093ea1.md` — **PASS**, stale
   - Overall (Enable/shutdown, ratified bounds): PASS / Overall (Iq, ratified < 30 µA at full load): PASS
