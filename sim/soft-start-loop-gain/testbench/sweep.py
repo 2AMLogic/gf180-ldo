@@ -1005,20 +1005,40 @@ def group(rows: list[Row], keyfn) -> dict:
 # element-removal sensitivity the record's attribution rests on; it is a
 # measurement, not a reading of the schematic.
 #
-# NOTE (issue #231): this comment and `acshort-gmsum` below were written
-# against the device-level Mgm* transconductor chain, including its GMSUM
-# mirror node, that #231 reverted back to the ideal `Binj_ss` behavioural
-# source. `acshort-gmsum` still runs without raising -- `GMSUM` is just a
-# name at that point, floating and coupled to nothing else in the circuit --
-# but it no longer isolates a real mechanism, so its margin delta is not
-# attributable to anything physical. Left as-is pending a decision on
-# whether this attribution case still has a home.
+# NOTE (issue #231, tracked by issue #234): this comment, `acopen-fb-inj` and
+# `acshort-gmsum` were written against the device-level Mgm* transconductor
+# chain, including its GMSUM mirror node, that #231 reverted back to the ideal
+# `Binj_ss` behavioural source. Both rows still RUN without raising against
+# the reverted netlist -- which is why the harness self-test is green -- but
+# neither one measures anything any more:
+#
+#   * `acopen-fb-inj` puts a 1 GH inductor in series with `Binj_ss`. For a
+#     MOSFET drain that removes the device's small-signal loading of FB; for
+#     an IDEAL CURRENT SOURCE it removes nothing, because KCL at the private
+#     node forces the inductor current to equal the source current exactly.
+#     FB sees the identical current at every frequency, so the row is a
+#     structural no-op and its delta is zero by construction, not by
+#     measurement.
+#   * `acshort-gmsum` names a node that no longer exists in `ldo_softstart`,
+#     so it hangs a capacitor on a floating node coupled to nothing.
+#
+# A zero delta from either row must NOT be read as "this coupling is
+# negligible" -- it means the transform did not do anything. #234 decides
+# whether these two cases still have a home (and, if they do, adds the
+# transform that actually nulls a behavioural source's AC contribution plus
+# the unit test that fails a structurally-zero attribution loudly). Until
+# then their `desc` strings below carry the caveat into any record minted
+# from this sweep.
 ATTRIBUTIONS = (
-    ("acopen-fb-inj", "Binj_ss AC-opened from FB",
+    ("acopen-fb-inj",
+     "Binj_ss AC-opened from FB -- NO-OP for an ideal current source, "
+     "delta is zero by construction (see #234)",
      lambda t: nv.ac_open(t, "Binj_ss", "FB", "acopeninj")),
     ("acopen-fb-pre", "XMpre_b_ss's drain AC-opened from FB",
      lambda t: nv.ac_open(t, "XMpre_b_ss", "FB", "acopenpre")),
-    ("acshort-gmsum", "the GMSUM mirror node AC-shorted to VIN",
+    ("acshort-gmsum",
+     "the GMSUM mirror node AC-shorted to VIN -- GMSUM no longer exists "
+     "post-#231, delta is zero by construction (see #234)",
      lambda t: nv.ac_short(t, "GMSUM", "VIN", "acshortgmsum")),
     ("acopen-hold", "XMhold_ss's drain AC-opened from PASS_GATE",
      lambda t: nv.ac_open(t, "XMhold_ss", "PASS_GATE", "acopenhold")),
