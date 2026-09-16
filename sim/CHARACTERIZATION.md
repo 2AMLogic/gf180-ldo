@@ -26,7 +26,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `85d4bd2342f486305
 | PSRR | PASS | STALE | `sim/psrr-dc/records/20260807-105159-64249c6.md` (+ 2 more, see detail) |
 | Iq (excluding load current) | FAIL | STALE | `sim/quiescent-current/records/20260915-234352-077e15b.md` (+ 1 more, see detail) |
 | Current limit | FAIL | STALE | `sim/current-limit/records/20260905-230521-3093ea1.md` |
-| Startup | MIXED | STALE | `sim/startup/records/20260916-020328-7de7f8b.md` (+ 1 more, see detail) |
+| Startup | MIXED | STALE | `sim/startup/records/20260916-112114-8b551ab.md` (+ 1 more, see detail) |
 | Enable / shutdown | PASS | STALE | `sim/enable-shutdown/records/20260905-232555-3093ea1.md` |
 | Thermal | FAIL | STALE | `sim/current-limit/records/20260905-230521-3093ea1.md` |
 | Output noise | N/A | N/A | see note below |
@@ -137,7 +137,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `85d4bd2342f486305
 
 **Verdict**: MIXED  **Fresh**: STALE
 
-- `startup`: `sim/startup/records/20260916-020328-7de7f8b.md` — **PASS**, fresh (matches current `ldo_core`)
+- `startup`: `sim/startup/records/20260916-112114-8b551ab.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall: PASS
 - `soft-start`: `sim/soft-start/records/20260915-103035-18f664f.md` — **MIXED**, stale
   - Overall (Startup, ratified row, DR-0006): FAIL on ramp rate (155/155 points now exceed the ratified ≤ 1 V/ms bound — this resize's deliberate purpose, pending DR-0024's ratification) and unchanged/FAIL on inrush, clearance and monotonicity (pre-existing #191 regression, not attributable to this resize). PASS on the ratified ≤ 6 ms settling clause (155/155, superseded in ambition but not violated by the 1.8 ms figure this record proposes). / Overall (Startup, DR-0024 proposed bounds, not yet ratified): PASS on ramp rate (155/155 ≤ 5 V/ms) and settling (155/155 ≤ 1.8 ms) — the two clauses this record's resize targets. FAIL on inrush, current-limit clearance and monotonicity — the pre-existing, already-tracked issue #191 regression this record's A/B test (below) confirms is not attributable to the resize.
