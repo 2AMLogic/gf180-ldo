@@ -25,20 +25,25 @@ CURRENT INJECTION INTO FB. Read the two "WHY" sections below in order: the
 first is why #38 did not ramp the amplifier's reference, and the second is
 why injecting into FB is not that idea and does not hit its floor.
 
-#189 BUILT THE INJECTION AS ONE BEHAVIOURAL SOURCE (Binj_ss); #191 REPLACES
-IT WITH DEVICES. The transconductor, the rectifier and the enable gate are
-now Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss
--- see "HOW THE INJECTION IS GENERATED, AS DEVICES" below for the topology
-and "WHAT IS IDEALIZED HERE" for what is still not built.
-
-READ "KNOWN, UNRESOLVED REGRESSION (#191)" BEFORE TRUSTING THIS CELL AGAINST
-THE RATIFIED STARTUP ROW. Replacing Binj_ss with real devices, even correctly
-sized, destabilizes the main loop's hold-release transient at most of the PVT
-matrix (inrush fails 81/163 points, by 6-77x the ratified bound, per
-sim/soft-start/records/20260906-230703-d3cb117.md) -- Binj_ss's zero
-parasitic capacitance was apparently load-bearing for a margin #189 never
-characterised. This is a #191 regression, confirmed against main's own
-committed netlist, not a #189 defect.
+#189 BUILT THE INJECTION AS ONE BEHAVIOURAL SOURCE (Binj_ss). #191 (open)
+replaced it, for one release, with a device-level transconductor --
+Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss --
+and #231 REVERTED that back to Binj_ss below. Both the topology tried and
+why it is reverted are kept as a historical record under "#191'S
+DEVICE-LEVEL ATTEMPT (REVERTED BY #231)": #191 already knew of one PVT-wide
+failure mode (an acquisition-transient inrush spike) before #231 started;
+#231 found a SECOND, independent one (a persistent settled-accuracy leak
+into FB, at exactly the corners sim/startup's full/min-load branches check
+and sim/soft-start's own settled-read point does not reach), and every
+sizing either issue tried made one or both failures worse, not better.
+#191 stays open. It is NOT starting from zero: `spec/decision-records/
+DR-0023-softstart-injection-mirror-topology.md` already root-caused both
+failure modes to the mirror's drain-voltage mismatch and proposes cascoding
+Mgmo_ss against Mgmr_ss as the fix -- but DR-0023 is `status: proposed`,
+gated on human ratification (PR #217) before any implementation PR may
+touch this schematic, and that PR has not merged as of #231. Until it does,
+this cell ships with the same zero-parasitic idealization #189 committed --
+see "WHAT IS IDEALIZED HERE" below.
 
 Port order (also the .sym pin order -- do not reorder either file without
 updating both, and without re-running design/netlist.py --check):
@@ -259,6 +264,19 @@ WHAT THIS COSTS THE MAIN LOOP
   sim/soft-start-loop-gain/records/20260910-015601-2387ece.md, and the
   recommendation it feeds, design/softstart_injection_compensation.md.
 
+#191'S DEVICE-LEVEL ATTEMPT (REVERTED BY #231) -- HISTORICAL RECORD
+
+  Everything under this heading, down to "WHAT IS IDEALIZED HERE", describes
+  Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss, a
+  device-level implementation of the injection that #191 landed (dce8d73)
+  and #231 removed from this schematic. It is kept, in full, as a record of
+  what was tried and why it failed -- both for the two PVT-wide failure
+  modes #191 itself already found (below) and the additional one #231 found
+  (last subsection) -- so a future attempt at a real (non-behavioural)
+  injection element does not have to rediscover any of them. None of the
+  named devices exist in this file any more; the live implementation is
+  Binj_ss, below "WHAT IS IDEALIZED HERE".
+
 HOW THE INJECTION IS GENERATED, AS DEVICES (#191)
 
   #189 built the injection as one behavioural source:
@@ -266,7 +284,7 @@ HOW THE INJECTION IS GENERATED, AS DEVICES (#191)
       I(VIN -> FB) = max(0, (VREF - SSR) * 5.0e-6) * (EN > 1.4 V)
 
   i.e. a linear transconductor of 5 uA/V, a source-only rectifier, and an
-  enable gate, in one element. #191 replaces it with the device-level
+  enable gate, in one element. #191 replaced it with the device-level
   implementation #189 already named as the intended one: two VIN-referenced,
   resistor-degenerated PMOS branches with SSR and VREF on their gates,
   differenced in a diode-connected PMOS (which IS the rectifier), mirrored
@@ -442,69 +460,112 @@ THE HOLD-RELEASE TRANSIENT AT MOST OF THE PVT MATRIX
   numeric targets and why a Cm_ss/Rz_ss-class network is NOT the fix. Nothing
   in this cell is changed by #196.
 
-  This cell ships, for now, at the ORIGINAL documented sizing (pfet/nfet
-  4u/1u throughout the transconductor, Mtop_ss unchanged) with the body-tie
-  fix above, because every other sizing tried made the acquisition transient
-  no better and sometimes worse. sim/soft-start's own record for this issue
-  reports the resulting inrush failures in full, by corner, rather than
-  narrowing the swept matrix to hide them.
+  This cell SHIPPED, for one release, at the ORIGINAL documented sizing
+  (pfet/nfet 4u/1u throughout the transconductor, Mtop_ss unchanged) with
+  the body-tie fix above, because every other sizing tried made the
+  acquisition transient no better and sometimes worse. sim/soft-start's own
+  record for that period reports the resulting inrush failures in full, by
+  corner, rather than narrowing the swept matrix to hide them. #231 (below)
+  is why it no longer ships that way.
 
 WHAT IS IDEALIZED HERE
 
   Fss_ramp, as before: an ideal CCCS standing in for a large-ratio mirror off
   a bias generator this repo has not designed.
 
-  The transconductor above is now built from devices, not idealized as a
-  behavioural source, but it still does NOT model:
-    * matching / layout-induced mismatch beyond what SPICE's own device
-      models capture at a given corner (i.e. no explicit sigma is added to
-      Mgma_ss vs Mgmb_ss, or to the two 200 kohm resistors) -- a layout-phase
-      concern per design/error_amp.md's offset-table precedent, not a
-      schematic-phase one;
-    * flicker/thermal noise contribution to the ramp (out of this issue's
-      scope; the ramp's own noise budget is not separately ratified).
-  Both are the same category of simplification design/ldo_core.sch's Rtop/
-  Rbot and design/error_amp.sch's input pair already carry.
+  Binj_ss, NEW IN #189 and the bigger idealization of the two: a behavioural
+  source implementing
 
-  Rgma_ss and Rgmb_ss are 200 kohm IDEAL resistors (devices/res.sym, not the
-  PDK's ppolyf_u_3k poly resistor), and that is a deliberate, load-bearing
-  choice, not a shortcut. The coefficient the injection must hit is
-  1/(Rtop||Rbot) = 1.5/Rtop = 5.0e-6 A/V (200 kohm = 300k||600k, ldo_core's
-  divider). ldo_core's Rtop/Rbot are THEMSELVES ideal, fixed-value resistors
-  (design/ldo_core.sch's own note 3) -- they carry NO process-corner spread
-  at all, on any corner this repo's harness sweeps. If Rgma_ss/Rgmb_ss were
-  built from ppolyf_u_3k instead (as Rss_bias/Rh_ss/Rr_ss are, elsewhere in
-  this same cell), they would move +/-25 % on the res_ff/res_ss corners while
-  Rtop/Rbot stayed exactly fixed, and the VOUT/SSR gain would move with them
-  -- at -25 % the ramp would START at +0.45 V instead of 0, a step into
-  C_out, i.e. exactly the failure #189 removed (see #191's issue text). Using
-  the SAME ideal-resistor primitive as Rtop/Rbot, at the value that makes the
-  ratio exact, is how this build tracks the divider rather than merely
-  approximating it: the two are locked together by construction (both always
-  exactly their nominal value, at every corner), not by a coincidence of
-  typical-corner sizing. If Rtop/Rbot's values or types ever change, this
-  200 kohm MUST change with them (300k||600k, not a fixed 200k).
+      I(VIN -> FB) = max(0, (VREF - SSR) * 5.0e-6) * (EN > 1.4 V)
 
-  Mgmr_ss/Mgmo_ss's off-state subthreshold leakage is NOT modelled as zero,
-  and it is measurably worse than the "3 % of the injection" residual the
-  #189-era estimate above budgeted: at ff/125 C/3.63 V (this bench's hottest,
-  highest-VIN corner), Mgmo_ss alone was measured sourcing ~0.8 uA into FB
-  well after SSR has cleared VREF by ~0.9 V, which is enough to pull
-  vout_settled to ~1.56-1.62 V against the ratified 1.764-1.836 V window --
-  a real settled-accuracy failure, not just a quiescent-current cost. This
-  was root-caused to Mgmo_ss's own Vgs-deficit-driven subthreshold
-  conduction, not to Mpre_a_ss/Mpre_b_ss (measured leakage <1 pA at the same
-  corner) and not to insufficient settling time (SSR and GMSUM are both
-  flat well before the bench's 7.9 ms settled-read point). Resizing
-  Mgmr_ss/Mgmo_ss to trade active-region accuracy for a bigger Vgs deficit
-  (see the KNOWN, UNRESOLVED REGRESSION section above) reduces this leakage
-  somewhat but destabilizes the acquisition transient far more than it
-  helps, so it was not kept. This is left unresolved for the same reason:
-  fixing it needs either a bandgap-independent hard-cutoff structure (a
-  cascode did not help empirically -- Mgmo_ss's Vds is already fairly
-  fixed regardless of FB, so cascoding barely changes its subthreshold
-  current) or accepting the settled-accuracy cost at the hottest/highest-VIN
-  corners, and #191 did not have room to design the former.
+  i.e. a linear transconductor of 5 uA/V, a source-only rectifier, and an
+  enable gate, in one element. Each of those three is realizable and the
+  intended implementation is standard -- two VIN-referenced resistor-
+  degenerated PMOS branches whose gates are SSR and VREF, their difference
+  taken in a diode-connected PMOS (which IS the rectifier: it simply turns
+  off when SSR passes VREF) and mirrored into FB -- but it is not built here,
+  and this cell therefore does NOT characterise:
+    * the transconductor's own PVT spread and its Vgs-matching error, which
+      the two branches' unequal currents make ~3 % at SSR = 0 and zero at
+      hand-over;
+    * the quiescent current it adds (the settled Iq row has ~8 uA of headroom
+      at its binding corner, ff/125 C/3.63 V, per
+      sim/quiescent-current/records/);
+    * its area.
+  #191 built exactly that device-level implementation once (dce8d73) and
+  #231 reverted it (see the historical section above and "#231:" below) --
+  both of its independent PVT-wide failure modes (an acquisition-transient
+  inrush spike, and the settled-accuracy leakage sim/startup measures) are
+  properties of a REAL device implementation Binj_ss's own zero-parasitic,
+  hard-rectifying idealization does not have. A future device-level build is
+  still tracked by #191, against the cascoded-mirror topology
+  DR-0023 proposes (root-causing both failures to Mgmr_ss/Mgmo_ss's
+  drain-voltage mismatch) once its ratification PR (#217) merges -- not a
+  further resize of the uncascoded topology tried here, which #191's own
+  sizing sweeps already exhausted.
+
+  The 5.0e-6 coefficient is 1.5/Rtop, i.e. it is a RATIO to the feedback
+  divider, not an absolute transconductance. That is deliberate and is the
+  one property any eventual device-level build must preserve: if the
+  injection's reference resistor does not track Rtop, the VOUT/SSR gain moves
+  with the resistor corner, and at -25 % the ramp would START at +0.45 V
+  instead of 0. ldo_core's divider is itself modelled as two ideal resistors,
+  so expressing the injection as a ratio to it is consistent with how the
+  divider ratio is already treated (README.md note 3).
+
+#231: THIS LEAKAGE IS WHAT sim/startup's FULL/MIN-LOAD BRANCHES ALSO
+MEASURE, AND WHY THIS CELL IS REVERTED
+
+  #128 re-ran sim/startup's 81-point full PVT matrix (unchanged since
+  before #191) and found four corners -- ff_27c_3.63v, ff_125c_3.63v,
+  ff_125c_3.30v, sf_125c_3.63v -- that no longer reach the ratified +/-2 %
+  settling threshold within the bench's 6 ms window AT ALL, even though
+  they were the FASTEST-settling corners (2.3-2.6 ms) in the pre-#191
+  baseline (sim/startup/records/20260816-100018-af4d1f9.md). This is the
+  exact defect the historical section above already root-caused (Mgmo_ss subthreshold
+  leakage, persisting because Mtop_ss's own body effect -- B=VIN on a device
+  sourcing off SSR, which sits up to a body-source drop below VIN -- clamps
+  SSR ~1 V above VREF instead of at it, so the transconductor's two branches
+  never rebalance), measured independently and from the opposite direction:
+  design/netlist/ldo_core.spice's own tsettle_full/tsettle_min bench, not
+  sim/soft-start's vout_settled bench. `git bisect`-by-hand across
+  design/netlist/ldo_core.spice's history (swapping in each commit's netlist
+  against the current testbench) placed the regression's start EXACTLY at
+  dce8d73 (#195, this cell's own device-level landing) -- d3cb117 (Binj_ss)
+  passes the same corner, every commit from dce8d73 onward fails it
+  identically. At ff_27c_3.63v isolated (`python3 sim/run_corners.py startup
+  --corners ff --temps 27 --supply 3.63 --supply-tol 0 -j 1 --no-write`),
+  vout_full is flat (not slow -- unmoving, from ~1 ms to the 6 ms window's
+  end) at 1.77317 V against the 1.782 V threshold, traced to SSR settling at
+  2.2415 V (VREF is 1.2 V) and a ~220-290 nA residual injection current this
+  cell's own topology cannot rectify away at that offset (see "GMSUM's KCL"
+  above -- the KCL argument for an exact zero assumed SSR settles AT VREF,
+  which Mtop_ss's body effect falsifies).
+
+  #191 already knew this cell was not ready (KNOWN, UNRESOLVED REGRESSION,
+  in the historical section above) on inrush grounds and every sizing fix
+  tried there made the settled-accuracy leakage no better either (that
+  section is dated before #231 and reaches the same "no lever" conclusion
+  independently).
+  With two independent PVT-wide failure modes and no untried lever on the
+  UNCASCODED topology, #231 reverted this cell to Binj_ss (below) as an
+  interim fix rather than wait on the real one: `spec/decision-records/
+  DR-0023-softstart-injection-mirror-topology.md` already proposes the
+  cascoded-mirror redesign that root-causes and fixes both failures
+  (Mgmr_ss/Mgmo_ss's drain-voltage mismatch), but it is `status: proposed`
+  and its ratification PR (#217) was still open, held for a human merge, as
+  of #231 -- CLAUDE.md's ratification-via-PR rule means no implementation PR
+  may land it before then. The full 81-point sim/startup matrix passes
+  cleanly against Binj_ss (see the record this issue superseded
+  20260816-100018-af4d1f9.md's replacement), which is expected: Binj_ss is
+  exactly what that baseline was measured against. #191 stays open, now
+  targeting DR-0023's cascoded topology once #217 merges -- not a further
+  resize of the topology reverted here, which #191's own sweeps (and #231's
+  independent confirmation) already showed has no fix left to try. This
+  section, and the device-level topology above, are left in place as a
+  record of what was tried so that implementation does not have to
+  re-discover either failure mode from scratch, and so it lands on top of
+  Binj_ss the same way #195's original attempt did.
 
 SIZING AS BUILT
 
@@ -533,12 +594,8 @@ SIZING AS BUILT
        converged; the analytic ~1.6 V/ms nominal estimate this line
        previously carried undercounted real device/loop effects by roughly
        20%, which is why the record's measured range is cited here instead.
-  Rgma_ss/Rgmb_ss  200 kohm ideal (see WHAT IS IDEALIZED HERE) -> 1/R =
-                   5.0e-6 A/V = 1.5 / Rtop, matching Binj_ss's coefficient
-  Mgma_ss/Mgmb_ss  pfet 4 um / 1 um    the two input branches, gates SSR/VREF
-  Mgmd_ss/Mgmm_ss  nfet 4 um / 1 um    branch-A diode + mirror pair
-  Mgmr_ss/Mgmo_ss  pfet 4 um / 1 um    differencer/rectifier + output mirror
-  Mgme_ss          nfet 20 um / 0.5 um enable switch, gate EN
+  Binj_ss   5.0e-6 A/V = 1.5 / Rtop (see WHAT IS IDEALIZED HERE; #191's
+            device-level replacement is reverted as of #231, see above)
   Rh_ss     ppolyf_u_3k, 4870 squares  ~15.1 Mohm  EN -> HG
   Ch_ss     70 um x 14 um cap_mim_2f0  ~1.95 pF    HG -> VSS   (tau ~29.4 us;
             issue #212/DR-0024, also a 5x area cut from 70x70/~9.75pF/147us
@@ -576,26 +633,15 @@ SIZING AS BUILT
   Mpre_a_ss    pfet 10 um / 0.5 um   VREF -> FBP,      gate HG
   Mpre_b_ss    pfet 10 um / 0.5 um   FBP  -> FB,       gate ENB
 
-  Added enabled quiescent current, MEASURED (issue #191, replacing the
-  arithmetic estimate this note previously carried): the two delay RCs are
-  still capacitively terminated and the hold/pre-charge devices still end in
-  cutoff, exactly as before, but the transconductor's two branches (Mgma_ss/
-  Mgmb_ss and their mirrors) are NOT free even after hand-over -- SSR settles
-  above VREF, not at it, so Mgma_ss's branch current shrinks but does not
-  reach zero. sim/quiescent-current/records/<this issue's record> attributes
-  the adder against the 20260905-200855-3093ea1 baseline at the binding
-  ff/125 C/3.63 V corner; see that record for the measured number.
+  Added enabled quiescent current is the bias branch only, ~0.4 uA at
+  tt/27 C: the two delay RCs are capacitively terminated, the hold and
+  pre-charge devices end in cutoff, and Binj_ss rectifies to zero (as of
+  #231's revert; #191's device-level attempt was NOT free here -- see its
+  historical section above for the measured, non-zero leakage that revert
+  removes).
 
-  Added area: the transconductor's six MOS devices sum to 34 um2 of gate
-  area (Mgma_ss/Mgmb_ss/Mgmd_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss at 4 um2 each,
-  Mgme_ss at 10 um2) -- negligible against the totals below. Rgma_ss/
-  Rgmb_ss are IDEAL resistors (devices/res.sym, like ldo_core's Rtop/Rbot)
-  and therefore carry NO modelled on-die area here; that is the same
-  idealization Rtop/Rbot themselves already carry (design/ldo_core.sch note
-  3), not a new gap #191 introduces, and it is resolved together with theirs
-  whenever the divider is laid out in real poly (design/README.md's #15/#13
-  sizing-and-matching plan) -- at that point Rgma_ss/Rgmb_ss must track
-  whatever real device Rtop/Rbot become, per WHAT IS IDEALIZED HERE above.
+  Added area: none beyond the #189 baseline -- Binj_ss is a behavioural
+  source with no modelled on-die area (see WHAT IS IDEALIZED HERE above).
 
   Added area, #212/DR-0024 update: 2 630 um2 of capacitor (Css 720, Ch_ss
   980, Cr_ss 980 -- all three down 5x from the #189-era 3600/4900/4900) plus
@@ -647,47 +693,9 @@ C {devices/lab_pin.sym} 1180 -1000 0 0 {name=l_mtopss_g sig_type=std_logic lab=V
 C {devices/lab_pin.sym} 1220 -970 0 0 {name=l_mtopss_d sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 1220 -1030 0 0 {name=l_mtopss_s sig_type=std_logic lab=SSR}
 C {devices/lab_pin.sym} 1220 -1000 0 0 {name=l_mtopss_b sig_type=std_logic lab=VIN}
-C {devices/res.sym} 0 -900 0 0 {name=Rgma_ss value=200k footprint=1206 device=resistor m=1}
-C {devices/lab_pin.sym} 0 -930 0 0 {name=l_rgmass_p sig_type=std_logic lab=VIN}
-C {devices/lab_pin.sym} 0 -870 0 0 {name=l_rgmass_m sig_type=std_logic lab=GMSA}
-C {symbols/pfet_03v3.sym} 200 -900 0 0 {name=Mgma_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
-C {devices/lab_pin.sym} 180 -900 0 0 {name=l_mgmass_g sig_type=std_logic lab=SSR}
-C {devices/lab_pin.sym} 220 -870 0 0 {name=l_mgmass_d sig_type=std_logic lab=GMIA}
-C {devices/lab_pin.sym} 220 -930 0 0 {name=l_mgmass_s sig_type=std_logic lab=GMSA}
-C {devices/lab_pin.sym} 220 -900 0 0 {name=l_mgmass_b sig_type=std_logic lab=GMSA}
-C {symbols/nfet_03v3.sym} 400 -900 0 0 {name=Mgmd_ss model=nfet_03v3 L=1u W=4u nf=1 m=1}
-C {devices/lab_pin.sym} 420 -930 0 0 {name=l_mgmdss_d sig_type=std_logic lab=GMIA}
-C {devices/lab_pin.sym} 380 -900 0 0 {name=l_mgmdss_g sig_type=std_logic lab=GMIA}
-C {devices/lab_pin.sym} 420 -870 0 0 {name=l_mgmdss_s sig_type=std_logic lab=GMVSS}
-C {devices/lab_pin.sym} 420 -900 0 0 {name=l_mgmdss_b sig_type=std_logic lab=VSS}
-C {devices/res.sym} 600 -900 0 0 {name=Rgmb_ss value=200k footprint=1206 device=resistor m=1}
-C {devices/lab_pin.sym} 600 -930 0 0 {name=l_rgmbss_p sig_type=std_logic lab=VIN}
-C {devices/lab_pin.sym} 600 -870 0 0 {name=l_rgmbss_m sig_type=std_logic lab=GMSB}
-C {symbols/pfet_03v3.sym} 800 -900 0 0 {name=Mgmb_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
-C {devices/lab_pin.sym} 780 -900 0 0 {name=l_mgmbss_g sig_type=std_logic lab=VREF}
-C {devices/lab_pin.sym} 820 -870 0 0 {name=l_mgmbss_d sig_type=std_logic lab=GMSUM}
-C {devices/lab_pin.sym} 820 -930 0 0 {name=l_mgmbss_s sig_type=std_logic lab=GMSB}
-C {devices/lab_pin.sym} 820 -900 0 0 {name=l_mgmbss_b sig_type=std_logic lab=GMSB}
-C {symbols/nfet_03v3.sym} 600 -750 0 0 {name=Mgmm_ss model=nfet_03v3 L=1u W=4u nf=1 m=1}
-C {devices/lab_pin.sym} 620 -780 0 0 {name=l_mgmmss_d sig_type=std_logic lab=GMSUM}
-C {devices/lab_pin.sym} 580 -750 0 0 {name=l_mgmmss_g sig_type=std_logic lab=GMIA}
-C {devices/lab_pin.sym} 620 -720 0 0 {name=l_mgmmss_s sig_type=std_logic lab=GMVSS}
-C {devices/lab_pin.sym} 620 -750 0 0 {name=l_mgmmss_b sig_type=std_logic lab=VSS}
-C {symbols/pfet_03v3.sym} 800 -750 0 0 {name=Mgmr_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
-C {devices/lab_pin.sym} 780 -750 0 0 {name=l_mgmrss_g sig_type=std_logic lab=GMSUM}
-C {devices/lab_pin.sym} 820 -720 0 0 {name=l_mgmrss_d sig_type=std_logic lab=GMSUM}
-C {devices/lab_pin.sym} 820 -780 0 0 {name=l_mgmrss_s sig_type=std_logic lab=VIN}
-C {devices/lab_pin.sym} 820 -750 0 0 {name=l_mgmrss_b sig_type=std_logic lab=VIN}
-C {symbols/pfet_03v3.sym} 1000 -750 0 0 {name=Mgmo_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
-C {devices/lab_pin.sym} 980 -750 0 0 {name=l_mgmoss_g sig_type=std_logic lab=GMSUM}
-C {devices/lab_pin.sym} 1020 -720 0 0 {name=l_mgmoss_d sig_type=std_logic lab=FB}
-C {devices/lab_pin.sym} 1020 -780 0 0 {name=l_mgmoss_s sig_type=std_logic lab=VIN}
-C {devices/lab_pin.sym} 1020 -750 0 0 {name=l_mgmoss_b sig_type=std_logic lab=VIN}
-C {symbols/nfet_03v3.sym} 1200 -750 0 0 {name=Mgme_ss model=nfet_03v3 L=0.5u W=20u nf=1 m=1}
-C {devices/lab_pin.sym} 1220 -780 0 0 {name=l_mgmess_d sig_type=std_logic lab=GMVSS}
-C {devices/lab_pin.sym} 1180 -750 0 0 {name=l_mgmess_g sig_type=std_logic lab=EN}
-C {devices/lab_pin.sym} 1220 -720 0 0 {name=l_mgmess_s sig_type=std_logic lab=VSS}
-C {devices/lab_pin.sym} 1220 -750 0 0 {name=l_mgmess_b sig_type=std_logic lab=VSS}
+C {devices/bsource.sym} 0 -800 0 0 {name=Binj_ss VAR=I FUNC="'max(0, (v(VREF) - v(SSR)) * 5.0e-6) * (v(EN) > 1.4)'" m=1}
+C {devices/lab_pin.sym} 0 -830 0 0 {name=l_binjss_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 0 -770 0 0 {name=l_binjss_m sig_type=std_logic lab=FB}
 C {symbols/pfet_03v3.sym} 200 -600 0 0 {name=Mpre_a_ss model=pfet_03v3 L=0.5u W=10u nf=1 m=1}
 C {devices/lab_pin.sym} 180 -600 0 0 {name=l_mpreass_g sig_type=std_logic lab=HG}
 C {devices/lab_pin.sym} 220 -570 0 0 {name=l_mpreass_d sig_type=std_logic lab=FBP}
