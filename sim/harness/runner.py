@@ -103,6 +103,40 @@ FATAL_LOG_PATTERN = "|".join(FATAL_LOG_PATTERNS)
 # the other two run+validate checks (issue #209).
 FATAL_LOG_RE = re.compile(FATAL_LOG_PATTERN, re.IGNORECASE)
 
+# A `.let`/`v(...)` scalar assignment whose RHS references a vector that
+# does not exist in the netlist (issue #242). ngspice does not hard-error
+# on this: it exits 0 and prints, per sweep point,
+#
+#   Error: RHS "v(xdut.xsoftstart.gmsum)" invalid
+#   Error: &gmsum_dc: no such variable.
+#
+# The obvious fix -- adding the bare substring "no such variable" to
+# FATAL_LOG_PATTERNS above -- was tried and rejected: ngspice reuses that
+# exact wording for a second, unrelated, *expected* non-fatal outcome. A
+# `.meas ... find/when` that has no crossing in the swept band (documented
+# in sim/loop-stability/testbench/tb_loop_stability.spice.in's own
+# "margins" comment, e.g. `f0r`/`f180`/`gmx` when the phase never reaches
+# -180 deg) leaves its `.meas`-defined scalar unset, which ngspice reports
+# with the identical "Error: &<name>: no such variable." line. That case
+# is not distinguished from the #242 bug by the bare phrase, and adding it
+# to FATAL_LOG_PATTERNS turned >1,300 already-passing, already-recorded
+# sweep corners under sim/loop-stability/corners/ and
+# sim/soft-start-loop-gain/corners/ into false-positive fatal failures
+# (measured against origin/main @ 53cca70, 2026-09-16 curation pass).
+#
+# The two cases ARE distinguishable one line earlier: the #242 bug's RHS is
+# itself a raw `v(...)` vector reference (`RHS "v(...)" invalid`), while the
+# benign `.meas`-crossing case's `RHS` is either an arithmetic expression
+# (e.g. `f0*1.05`) or absent entirely. A corpus grep for
+# `RHS "v(...)" invalid` across every committed corner log under
+# `sim/*/corners/**/*.log` (same date/commit as above) found zero hits, so
+# this narrower pattern is checked independently of FATAL_LOG_RE/
+# FATAL_LOG_PATTERNS rather than folded into that tuple's flat
+# substring-list contract.
+_UNDEFINED_VECTOR_LET_RE = re.compile(
+    r'RHS\s+"v\([^"]*\)"\s+invalid', re.IGNORECASE
+)
+
 
 class NgspiceMissing(RuntimeError):
     pass
@@ -121,12 +155,20 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
 
     Writes ngspice's combined stdout+stderr to ``log`` unconditionally (so
     the log is available for diagnosis even on failure), then raises
-    :class:`RuntimeError` unless all three checks pass:
+    :class:`RuntimeError` unless all four checks pass:
 
     1. ``ngspice`` exited 0.
     2. The output does not match :data:`FATAL_LOG_RE` (a fatal condition
        ngspice can report to stdout/stderr while still exiting 0).
-    3. The output contains the ``SWEEP COMPLETE`` marker the caller's own
+    3. The output does not match :data:`_UNDEFINED_VECTOR_LET_RE` -- a
+       ``.let``/``v(...)`` scalar assigned directly from a vector reference
+       that does not exist in the netlist (issue #242). ngspice reports
+       this as ``Error: RHS "v(...)" invalid`` while still exiting 0, and
+       the plain "no such variable" wording it also prints for this case
+       is deliberately NOT in :data:`FATAL_LOG_PATTERNS` -- see that
+       pattern's own comment for why (it collides with an unrelated,
+       expected non-fatal ``.meas`` outcome).
+    4. The output contains the ``SWEEP COMPLETE`` marker the caller's own
        deck template prints at the end of a successful run.
 
     Returns the combined stdout+stderr text on success, for the caller to
@@ -148,6 +190,14 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     if FATAL_LOG_RE.search(text):
         bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
         raise RuntimeError(f"ngspice reported a fatal condition: {bad} (see {log})")
+    if _UNDEFINED_VECTOR_LET_RE.search(text):
+        bad = [
+            ln for ln in text.splitlines() if _UNDEFINED_VECTOR_LET_RE.search(ln)
+        ][:3]
+        raise RuntimeError(
+            f"ngspice's .let/v(...) referenced a vector that does not exist "
+            f"in the netlist: {bad} (see {log})"
+        )
     if "SWEEP COMPLETE" not in text:
         raise RuntimeError(f"sweep did not complete (see {log})")
     return text
