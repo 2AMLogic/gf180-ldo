@@ -2,13 +2,27 @@
 
 Small-signal loop gain, phase margin, gain margin and the DR-0008 gain-resurgence
 metric of the LDO's main loop **with `design/ldo_softstart.sch`'s FB-injection
-element in the loop**, measured at pinned points of the soft-start ramp, for two
-versions of that element:
+element in the loop**, measured at pinned points of the soft-start ramp, across
+two DUT variants:
 
 | variant | what it is |
 |---|---|
-| `device` | the post-#195 device-level transconductor (`Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss`), i.e. `design/netlist/ldo_softstart.spice` as committed |
-| `binj` | the pre-#195 ideal behavioural source `Binj_ss`, frozen from commit `bfc4a0a` |
+| `device` | `design/netlist/ldo_softstart.spice` as committed |
+| `binj` | `Binj_ss`, frozen pre-DR-0024 cap sizing from commit `bfc4a0a` |
+
+**Update (issue #234):** this pair used to be an injection-**element** A/B --
+`device` was the post-#195 device-level transconductor
+(`Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss`) and
+`binj` the ideal `Binj_ss` behavioural source. Issue #231 (PR #233) reverted
+the device-level chain back to `Binj_ss`, so **`device` now uses `Binj_ss`
+too**: the two variants differ ONLY in the DR-0024 MIM-cap resize
+(`XCss`/`XCh_ss`/`XCr_ss`), not in the injection element. Everywhere below
+that reads "the device-level chain" / "the two injection elements" is
+describing `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md`,
+minted before that revert, for which it is still accurate; it is not a
+description of the current tree. See `netlist_variants.py`'s module
+docstring and `VARIANT_BLURB` for the up-to-date detail, and the "Pole/zero
+attribution" section below for what changed there.
 
 ```bash
 python3 sim/run_corners.py --check-env          # is ngspice + the gf180mcu PDK present?
@@ -220,10 +234,37 @@ through one netlist per **AC-only** removal of a single coupling:
 
 | case | what it removes |
 |---|---|
-| `acopen-fb-inj` | `XMgmo_ss`'s drain, AC-opened from `FB` — the injection element's entire small-signal loading of the feedback node |
 | `acopen-fb-pre` | `XMpre_b_ss`'s drain, AC-opened from `FB` |
-| `acshort-gmsum` | the `GMSUM` mirror node, AC-shorted to `VIN` — whatever pole sits on `Mgmo_ss`'s gate |
 | `acopen-hold` | `XMhold_ss`'s drain, AC-opened from `PASS_GATE` |
+
+**Update (issue #234): two rows dropped, not re-derived.** This table used to
+also carry `acopen-fb-inj` (`XMgmo_ss`'s drain AC-opened from `FB`) and
+`acshort-gmsum` (the `GMSUM` mirror node AC-shorted to `VIN`) -- both written
+against the post-#195 device-level Mgm* chain. Issue #231/PR #233 reverted
+that chain back to the ideal `Binj_ss` behavioural source, and neither row
+survives that revert as a real measurement:
+
+- `acopen-fb-inj` against `Binj_ss` is a structural no-op, not a small
+  coupling. `Binj_ss`'s defining expression, `I = max(0, (V(VREF) - V(SSR)) *
+  5.0e-6) * (V(EN) > 1.4)`, depends on `VREF`, `SSR` and `EN` only -- it has
+  NO dependence on `V(FB)`, so its small-signal admittance out of `FB` is
+  already exactly zero. An ideal current source with a target-independent
+  output already IS an AC open; a 1 GH series inductor cannot demonstrate
+  that any more precisely than the algebra already has, and `ac_open()` now
+  refuses a `B`-prefixed (behavioural) instance outright rather than
+  reporting the zero it would otherwise measure.
+- `acshort-gmsum` targeted a node that exists only in the device-level chain
+  #231 removed; there is nothing left in `ldo_softstart` to short.
+  `add_cap()` (shared by `ac_short()`/`ac_load()`) now refuses a node absent
+  from the supplied netlist for the same reason.
+
+With `Binj_ss` in place, the only real `FB` couplings left to attribute are
+`XMpre_b_ss`'s drain (`acopen-fb-pre`, in the table above) and the deliberate
+`FB_CAP_LADDER_F` parasitic budget below -- both rows drop is a legitimate
+outcome of #234's own acceptance criteria, not a reduction in coverage.
+`sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` is unaffected:
+it was measured against the device-level chain, for which both dropped rows
+were real measurements, and stays valid for that netlist.
 
 and then, in the other direction, **adds** known capacitance from `FB` to `VSS`
 on a ladder from 10 fF to 1 nF. Removing this element's coupling only says

@@ -56,6 +56,23 @@ Three independent measurements, each of which could have found one:
 | **`acopen-fb-inj`** — `XMgmo_ss`'s drain AC-opened from `FB` at the worst measured device-variant point (`res_ss_-40c_3.63v`, `device/sink/ssr=1.15`, 1 µF/1 mΩ). A 1 GH inductor is a short at DC, so the operating point is bit-identical (landed `VOUT` 1.06953 V and `I_inj` +2.4329 µA on both sides) | the element's **entire** small-signal loading of the feedback node, with the operating-point shift held out | ΔPM **+0.053 deg**, ΔGM **+0.01 dB** |
 | **`acshort-gmsum`** — the `GMSUM` mirror node AC-shorted to `VIN`, same point | whatever pole sits on `Mgmo_ss`'s gate | ΔPM **−0.001 deg**; max \|ΔT\| **0.003 dB** anywhere in 0.01 Hz – 1 GHz, i.e. below the 0.02 dB numerical floor, so **no pole or zero is fitted** |
 
+**Update (issue #234):** both `acopen-fb-inj` and `acshort-gmsum` are, as of
+this update, DROPPED from `sim/soft-start-loop-gain/testbench/sweep.py`'s
+`ATTRIBUTIONS` and will not appear in any future record. Issue #231 (PR
+#233) reverted `design/netlist/ldo_softstart.spice` from the device-level
+`Mgmo_ss`/`GMSUM` chain these two rows target back to the ideal `Binj_ss`
+behavioural source; against `Binj_ss`, `acopen-fb-inj` is a structural
+no-op (an ideal current source's output does not depend on the terminal a
+series inductor would isolate, so its small-signal admittance out of `FB`
+is already exactly zero) and `acshort-gmsum` targets a node
+(`GMSUM`) that no longer exists in the netlist at all. Neither row is
+re-derivable in the same "remove one coupling" shape against the shipped
+`Binj_ss` element. The two rows above are UNCHANGED and remain valid: they
+are real measurements against the device-level chain that
+`20260910-015601-2387ece.md` was minted from, which is still the netlist
+this document's §1/§2 conclusions are drawn against; they are simply not
+reproducible by a fresh run of the current sweep driver.
+
 The A/B's ±20 deg spread is **not** the element loading the loop: at a fixed
 `V(SSR)` the two elements do not inject the same current, so they do not put
 the loop at the same output voltage, and most of that spread is the pass

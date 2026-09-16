@@ -5,8 +5,18 @@ Measures the LDO main loop's small-signal margins with
 ``design/ldo_softstart.sch``'s FB-injection element **in the loop**, at pinned
 points of the soft-start ramp, for two DUT variants of that element:
 
-    device   the post-#195 device-level transconductor on `main` today
-    binj     the pre-#195 ideal behavioural source `Binj_ss` (commit bfc4a0a)
+    device   `design/netlist/ldo_softstart.spice` as committed today
+    binj     `Binj_ss` frozen pre-DR-0024 cap sizing (commit bfc4a0a)
+
+NOTE (issue #234): `device` was the post-#195 device-level transconductor
+until issue #231 (PR #233) reverted it back to the ideal `Binj_ss`
+behavioural source, so as of that revert BOTH variants use `Binj_ss` and
+differ only in the DR-0024 MIM-cap resize -- see `netlist_variants.py`'s
+module docstring and `VARIANT_BLURB` for the detail. This module's own
+history (this docstring, `ATTRIBUTIONS` below) still uses "device-level
+chain" language in places that describe how `sim/soft-start-loop-gain/records/
+20260910-015601-2387ece.md` was measured, before the revert; that historical
+record's numbers are unaffected by #234 and are not to be re-derived.
 
 Why this experiment exists: PR #195 landed the device-level injection chain
 together with a "KNOWN, UNRESOLVED REGRESSION (#191)" note, and #191's Builder
@@ -1005,41 +1015,47 @@ def group(rows: list[Row], keyfn) -> dict:
 # element-removal sensitivity the record's attribution rests on; it is a
 # measurement, not a reading of the schematic.
 #
-# NOTE (issue #231, tracked by issue #234): this comment, `acopen-fb-inj` and
-# `acshort-gmsum` were written against the device-level Mgm* transconductor
-# chain, including its GMSUM mirror node, that #231 reverted back to the ideal
-# `Binj_ss` behavioural source. Both rows still RUN without raising against
-# the reverted netlist -- which is why the harness self-test is green -- but
-# neither one measures anything any more:
+# RESOLVED (issue #234, was tracked here since #231/PR #233): this set used
+# to have two more rows, `acopen-fb-inj` (Binj_ss AC-opened from FB) and
+# `acshort-gmsum` (the device-level chain's GMSUM mirror node AC-shorted to
+# VIN). Both are DROPPED, not re-derived, for reasons specific to each:
 #
-#   * `acopen-fb-inj` puts a 1 GH inductor in series with `Binj_ss`. For a
-#     MOSFET drain that removes the device's small-signal loading of FB; for
-#     an IDEAL CURRENT SOURCE it removes nothing, because KCL at the private
-#     node forces the inductor current to equal the source current exactly.
-#     FB sees the identical current at every frequency, so the row is a
-#     structural no-op and its delta is zero by construction, not by
-#     measurement.
-#   * `acshort-gmsum` names a node that no longer exists in `ldo_softstart`,
-#     so it hangs a capacitor on a floating node coupled to nothing.
+#   * `acopen-fb-inj` is a structural no-op against `Binj_ss`, and there is no
+#     honest replacement in the same "remove a coupling" shape. `Binj_ss`'s
+#     defining expression --
+#         I = max(0, (v(VREF) - v(SSR)) * 5.0e-6) * (v(EN) > 1.4)
+#     -- depends on VREF, SSR and EN only. It has NO dependence on v(FB), so
+#     its small-signal admittance out of FB is already exactly zero and the
+#     current it injects does not vary with anything this deck's AC probe
+#     perturbs. That is not a small coupling this experiment failed to
+#     remove; it is the source having no AC coupling to attribute in the
+#     first place -- an ideal current source already IS an AC open. A 1 GH
+#     series inductor (`ac_open()`'s only shape) cannot demonstrate that any
+#     more precisely than the algebra above already has, which is why
+#     `ac_open()` now refuses a `B`-prefixed instance outright instead of
+#     applying and reporting a zero.
+#   * `acshort-gmsum` targeted a node (`GMSUM`) that exists only in the
+#     post-#195 device-level Mgm* transconductor chain #231 reverted. There is
+#     nothing left in `ldo_softstart` to short. `add_cap()` (shared by
+#     `ac_short()`/`ac_load()`) now refuses a node that is not already a
+#     token in the netlist, so this class of mistake can no longer apply
+#     silently either.
 #
-# A zero delta from either row must NOT be read as "this coupling is
-# negligible" -- it means the transform did not do anything. #234 decides
-# whether these two cases still have a home (and, if they do, adds the
-# transform that actually nulls a behavioural source's AC contribution plus
-# the unit test that fails a structurally-zero attribution loudly). Until
-# then their `desc` strings below carry the caveat into any record minted
-# from this sweep.
+# Net effect: with `Binj_ss` in place, the only REAL FB couplings left to
+# attribute are `XMpre_b_ss`'s drain (`acopen-fb-pre`, below) and the
+# deliberate `FB_CAP_LADDER_F` parasitic budget further down this file --
+# which is exactly the legitimate "both rows drop" outcome this issue's
+# acceptance criteria named as acceptable. Both guard rails above are
+# regression-tested by `TestNetlistTransforms` in
+# `sim/tests/test_soft_start_loop_gain.py`, including reproducing these two
+# exact historical calls and asserting they now raise.
+#
+# `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` is untouched:
+# it was measured against the device-level chain, for which both rows were
+# real measurements, and stays valid for that netlist.
 ATTRIBUTIONS = (
-    ("acopen-fb-inj",
-     "Binj_ss AC-opened from FB -- NO-OP for an ideal current source, "
-     "delta is zero by construction (see #234)",
-     lambda t: nv.ac_open(t, "Binj_ss", "FB", "acopeninj")),
     ("acopen-fb-pre", "XMpre_b_ss's drain AC-opened from FB",
      lambda t: nv.ac_open(t, "XMpre_b_ss", "FB", "acopenpre")),
-    ("acshort-gmsum",
-     "the GMSUM mirror node AC-shorted to VIN -- GMSUM no longer exists "
-     "post-#231, delta is zero by construction (see #234)",
-     lambda t: nv.ac_short(t, "GMSUM", "VIN", "acshortgmsum")),
     ("acopen-hold", "XMhold_ss's drain AC-opened from PASS_GATE",
      lambda t: nv.ac_open(t, "XMhold_ss", "PASS_GATE", "acopenhold")),
 )
@@ -2380,15 +2396,6 @@ def attribution_section(attribution: dict | None) -> str:
             dp = ", ".join(f"{d[2]:+.3f}" for d in f["deltas"])
             lines.append(f"| `as-committed / {f['tag']}` | {dm} | {dp} |")
 
-    base_case = next((c for c in attribution["cases"]
-                      if c["tag"] == "as-committed" and "row" in c), None)
-    cut_case = next((c for c in attribution["cases"]
-                     if c["tag"] == "acopen-fb-inj" and "row" in c), None)
-    ss_only_note = None
-    if (base_case and cut_case and base_case["row"].pm_deg is not None
-            and cut_case["row"].pm_deg is not None):
-        ss_only_note = (f"{base_case['row'].pm_deg - cut_case['row'].pm_deg:+.3f}"
-                        f" deg of phase margin")
     ladders = [l for l in attribution.get("fb_cap", []) if l.get("rungs")]
     if ladders:
         lines += [
@@ -2483,13 +2490,17 @@ def attribution_section(attribution: dict | None) -> str:
                 f"\"tens of femtofarads\" -- call it 30 fF -- which is a factor "
                 f"of **{tight / 30e-15:.0f}** below that budget, and `Cff`'s "
                 f"15 pF already sits across `Rtop` on the same node for scale. "
-                f"That is the same conclusion the `acopen-fb-inj` row above "
-                f"reaches from the opposite direction and by an independent "
-                f"measurement -- removing the element's coupling entirely is "
-                f"worth {'' if ss_only_note is None else ss_only_note} -- and "
-                f"it is what the schematic note's hypothesis, *\"ANY nonzero "
-                f"parasitic capacitance ... is enough\"*, has to be read "
-                f"against.",
+                f"`Binj_ss`'s own small-signal contribution to this budget is "
+                f"zero by construction, not a measured near-zero -- its "
+                f"defining expression depends on `VREF`/`SSR`/`EN` only, so "
+                f"its admittance out of `FB` is exactly zero and there is no "
+                f"`acopen-fb-inj`-shaped row left to remove it with (see "
+                f"'Pole/zero attribution' above and issue #234). So the "
+                f"budget above is a statement about real parasitics on `FB` "
+                f"(routing, `XMpre_b_ss`'s drain, any future injection "
+                f"element), not about `Binj_ss`, and it is what the "
+                f"schematic note's hypothesis, *\"ANY nonzero parasitic "
+                f"capacitance ... is enough\"*, has to be read against.",
             ]
     return "\n".join(lines) + "\n"
 
@@ -2610,38 +2621,34 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
             f"({100 * (wv.vout_v - VOUT_NOM_V) / VOUT_NOM_V:+.3f}% of "
             f"{VOUT_NOM_V:g} V) at `{wv.corner_id}`")
 
-    # The pure small-signal contribution, isolated by the DC-preserving
-    # AC-open of the injection element's own drain (section 6). This is the
-    # number a compensation argument would have to rest on; the A/B spread
-    # below mixes it with the operating-point shift section 1 measures.
-    ss_only = None
+    # The pure small-signal contribution of the injection element. Issue
+    # #234: there is no `acopen-fb-inj`-shaped element-removal row left to
+    # measure this with (see 'Pole/zero attribution' above) -- but the same
+    # reason that row was retired answers this analytically: `Binj_ss`'s
+    # defining expression depends on `VREF`/`SSR`/`EN` only, so its
+    # small-signal admittance out of `FB` is exactly zero. That is a
+    # stronger statement than any measured near-zero could be.
+    ss_clause = ""
     if attribution:
-        base = next((c for c in attribution["cases"]
-                     if c["tag"] == "as-committed" and "row" in c), None)
-        cut = next((c for c in attribution["cases"]
-                    if c["tag"] == "acopen-fb-inj" and "row" in c), None)
-        if base and cut and base["row"].pm_deg is not None \
-                and cut["row"].pm_deg is not None:
-            ss_only = base["row"].pm_deg - cut["row"].pm_deg
+        ss_clause = (
+            " Separately: `Binj_ss`'s own small-signal contribution to the "
+            "main loop is zero BY CONSTRUCTION, not a measured near-zero -- "
+            "its current does not depend on `V(FB)` at all, so it has no "
+            "admittance to isolate (see 'Pole/zero attribution' above and "
+            "issue #234). Whatever this A/B's spread is, none of it is "
+            "`Binj_ss` loading the loop. Note also: `device` and `binj` "
+            "here both inject through `Binj_ss` and differ only in the "
+            "DR-0024 MIM-cap resize (issue #231's revert); \"the two "
+            "elements\"/\"the device-level chain\" language elsewhere in "
+            "this section is inherited from this experiment's original "
+            "post-#195/pre-#231 premise and does not describe what THIS "
+            "record's `device` netlist actually is (tracked for a full "
+            "rewrite in the #234 follow-up issue)."
+        )
 
     # The headline, keyed off the measured A/B spread rather than asserted.
     if dpms:
         span = max(abs(min(dpms)), abs(max(dpms)))
-        if ss_only is not None:
-            ss_clause = (
-                f" Separately, and more directly: at the worst measured point, "
-                f"AC-opening the device chain's own output drain from the "
-                f"feedback node -- which removes its entire small-signal "
-                f"loading while leaving the DC operating point bit-identical -- "
-                f"moves the phase margin by **{ss_only:+.3f} deg**. That is the "
-                f"injection element's small-signal cost with the operating-point "
-                f"shift held out of it, and it is "
-                f"{'below' if abs(ss_only) <= XCHECK_PM_TOL_DEG else 'above'} "
-                f"the ~{XCHECK_PM_TOL_DEG:g} deg cross-invocation movement "
-                f"class #182/#185 established."
-            )
-        else:
-            ss_clause = ""
         if span <= XCHECK_PM_TOL_DEG:
             headline = (
                 f"**The injection element is not a phase-margin problem at any "

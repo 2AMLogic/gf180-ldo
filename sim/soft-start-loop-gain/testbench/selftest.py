@@ -71,6 +71,15 @@ def check(label: str, passed: bool, detail: str) -> None:
     print(f"  [{'PASS' if passed else 'FAIL'}] {label}: {detail}")
 
 
+def _raises(exc_type, fn, *args, **kwargs) -> bool:
+    """Whether ``fn(*args, **kwargs)`` raises ``exc_type``."""
+    try:
+        fn(*args, **kwargs)
+        return False
+    except exc_type:
+        return True
+
+
 def device_lines(text: str) -> list[str]:
     """The netlist's element lines, with continuations folded in."""
     out: list[str] = []
@@ -137,7 +146,17 @@ def main() -> int:
           "the only element line that changes is Xsoftstart, whose port list "
           "must match the subckt's")
 
-    # (b) the A/B swaps the injection element and nothing else
+    # (b) the two DUT variants, and what they actually differ in post-#231
+    #
+    # NOTE (issue #234): this used to be "the A/B swaps the injection element
+    # and nothing else" -- `device` was the post-#195 device-level Mgm* chain
+    # and `binj` the ideal `Binj_ss` source. Issue #231/PR #233 reverted the
+    # device-level chain back to `Binj_ss`, so `device` (as committed today)
+    # ALSO uses `Binj_ss`; the only thing left distinguishing it from `binj`
+    # (frozen pre-DR-0024) is the DR-0024 MIM-cap resize. See
+    # `netlist_variants.py`'s module docstring and `VARIANT_BLURB` for detail,
+    # and `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` for
+    # the historical record where this check's old claim was still true.
     try:
         binj = nv.instrument_core(core, nv.fetch_pre195_softstart(REPO_ROOT))
     except nv.TransformError as exc:
@@ -151,29 +170,45 @@ def main() -> int:
         check("the two DUT variants are identical outside ldo_softstart",
               same,
               "pass device, 300k/600k divider, Cff, error_amp and ldo_ilimit "
-              "are byte-identical between the `device` and `binj` netlists, so "
-              "the A/B is attributable to the injection element and nothing else")
+              "are byte-identical between the `device` and `binj` netlists")
         dev_ss = nv.SS_BLOCK_RE.search(dev).group(0)
         binj_ss = nv.SS_BLOCK_RE.search(binj).group(0)
-        check("...and they really do differ in the injection element",
-              ("Binj_ss" in binj_ss and "Binj_ss" not in dev_ss
-               and "XMgmo_ss" in dev_ss and "XMgmo_ss" not in binj_ss),
-              "`binj` has the behavioural Binj_ss and no XMgmo_ss; `device` "
-              "has the transconductor chain and no Binj_ss")
+        dev_ss_lines = device_lines(dev_ss)
+        binj_ss_lines = device_lines(binj_ss)
+        ss_diff = [(a, b) for a, b in zip(dev_ss_lines, binj_ss_lines)
+                   if a != b]
+        check("...and post-#231 they both carry Binj_ss and differ ONLY in "
+              "the DR-0024 cap resize, NOT the injection element",
+              ("Binj_ss" in dev_ss and "Binj_ss" in binj_ss
+               and "XMgmo_ss" not in dev_ss and "XMgmo_ss" not in binj_ss
+               and len(dev_ss_lines) == len(binj_ss_lines)
+               and len(ss_diff) == 3
+               and {d[0].split()[0] for d in ss_diff}
+               == {"XCss", "XCh_ss", "XCr_ss"}),
+              f"{len(ss_diff)} line(s) differ inside ldo_softstart: "
+              + "; ".join(f"{a.split()[0]}" for a, b in ss_diff)
+              + " -- both variants inject through Binj_ss; this A/B is a "
+              "before/after of the ramp-speed cap resize, not an "
+              "injection-element comparison (issue #234)")
 
     # (c) the AC-only transforms are DC-inert by construction
-    opened = nv.ac_open(dev, "XMgmo_ss", "FB", "t")
+    #
+    # XMpre_b_ss (not the historical XMgmo_ss, gone since #231) is the target
+    # here: it survives on the current tree, touches FB exactly once, and --
+    # unlike Binj_ss -- has a `+` continuation line, so this same call also
+    # exercises the continuation-skipping check below.
+    opened = nv.ac_open(dev, "XMpre_b_ss", "FB", "t")
     ol = device_lines(opened)
     ind = [l for l in ol if l.lower().startswith("lt ")]
     rest = [l for l in ol if not l.lower().startswith("lt ")]
     diff = [(a, b) for a, b in zip(dev_lines, rest) if a != b]
     check("ac_open() adds exactly one inductor and moves exactly one terminal",
           len(ind) == 1 and len(rest) == len(dev_lines) and len(diff) == 1
-          and diff[0][0].split()[0] == "XMgmo_ss"
+          and diff[0][0].split()[0] == "XMpre_b_ss"
           and diff[0][1].split()[1] == "FB_t",
           f"inserted {ind[0] if ind else '(nothing)'}, and the only other "
-          f"changed line is XMgmo_ss's drain node. An inductor is a short at "
-          f"DC, so the operating point cannot move; {nv.AC_OPEN_H} H is "
+          f"changed line is XMpre_b_ss's drain node. An inductor is a short "
+          f"at DC, so the operating point cannot move; {nv.AC_OPEN_H} H is "
           f"{1 / (2 * math.pi * float(nv.AC_OPEN_H) * 0.01):.3g} S at the "
           f"sweep's 0.01 Hz floor, i.e. an open against the ~200 kohm the "
           f"feedback node presents")
@@ -185,7 +220,16 @@ def main() -> int:
           "inductor between an instance line and its continuation would "
           "silently truncate the parameter list (ngspice: \"Undefined "
           "parameter [nf]\"), which is a real bug this check caught")
-    shorted = nv.ac_short(dev, "GMSUM", "VIN", "t")
+    check("ac_open() refuses a B-prefixed behavioural source (issue #234)",
+          _raises(nv.TransformError, nv.ac_open, dev, "Binj_ss", "FB", "t"),
+          "a series inductor is not an AC open for an ideal current source "
+          "-- KCL forces the inductor current to equal the source current "
+          "exactly, so the transform would apply without raising and "
+          "measure nothing; this is the exact `acopen-fb-inj` mistake #234 "
+          "exists to fix, now refused outright rather than silently applied")
+    # HG is a real internal node (device.spice's soft-start hold network);
+    # GMSUM (used here pre-#234) no longer exists post-#231.
+    shorted = nv.ac_short(dev, "HG", "VIN", "t")
     sl = device_lines(shorted)
     caps = [l for l in sl if l.lower().startswith("ct ")]
     check("ac_short() adds exactly one capacitor and changes nothing else",
@@ -194,7 +238,14 @@ def main() -> int:
           f"inserted {caps[0] if caps else '(nothing)'} and left every other "
           f"line byte-identical -- a capacitor is an open at DC, so again the "
           f"operating point cannot move")
-    for bad in (("XMgmo_ss", "VIN"), ("XNoSuchDevice", "FB")):
+    check("add_cap()/ac_short() refuses a node absent from the netlist "
+          "(issue #234)",
+          _raises(nv.TransformError, nv.ac_short, dev, "GMSUM", "VIN", "t"),
+          "a capacitor onto a node nothing else touches is floating and "
+          "couples to nothing -- this is the exact `acshort-gmsum` mistake "
+          "#234 exists to fix (GMSUM was removed from ldo_softstart by "
+          "#231), now refused outright rather than silently applied")
+    for bad in (("XMhold_ss", "VIN"), ("XNoSuchDevice", "FB")):
         try:
             nv.ac_open(dev, bad[0], bad[1], "t")
             raised = False
