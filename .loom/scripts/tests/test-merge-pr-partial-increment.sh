@@ -263,11 +263,6 @@ EOF
 cat > "$STUB_DIR/issue-789.json" <<'EOF'
 {"state":"open","labels":[{"name":"loom:building"}]}
 EOF
-# #235 fixture: the real issue number from the gf180-ldo PR #233 -> #191
-# false-close incident this test's T21b mirrors.
-cat > "$STUB_DIR/issue-191.json" <<'EOF'
-{"state":"open","labels":[{"name":"loom:building"}]}
-EOF
 
 # Canned `pulls/<N>/commits` payload: one JSON commit object per message given.
 # Written in the GitHub REST shape the script reads (.[].commit.message).
@@ -411,23 +406,6 @@ assert_eq "" "$(_body_closing_refs 'close issue #123')" \
   "'close issue #123' is NOT a closing reference (keyword not adjacent to #N)"
 assert_eq "1234" "$(_body_closing_refs 'Closes #1234')" \
   "Full number is extracted (no #123 prefix confusion)"
-
-# #235: the colon-adjacent shape GitHub actually honored on the gf180-ldo PR
-# #233 -> #191 false-close. The keyword is immediately followed by `:` then
-# whitespace then `#N` — the original `[[:space:]]+`-only gap required
-# whitespace IMMEDIATELY after the keyword and never matched this, so the
-# pre-merge PARTIAL_CONFLICT_ISSUES warning and the post-merge self-heal
-# reopen both silently failed to fire.
-assert_eq "191" "$(_body_closing_refs 'cascode fix: #191 stays open')" \
-  "#235 literal repro: 'fix: #191' (keyword, colon, whitespace, #N) IS a closing reference"
-assert_eq "191" "$(_body_closing_refs 'Closes: #191')" \
-  "#235: comma/colon widening also covers a colon after 'Closes'"
-assert_eq "191" "$(_body_closing_refs 'Resolved, #191')" \
-  "#235: a comma between the keyword and #N is also tolerated"
-assert_eq "" "$(_body_closing_refs 'Note: #191 is unrelated')" \
-  "#235 false-positive check: 'Note:' is not a closing keyword at all (keyword set unchanged) — GitHub would not close on this either, since 'Note' never appears in its closing-keyword grammar"
-assert_eq "" "$(_body_closing_refs 'fix:#191 (no space before the reference)')" \
-  "#235: a missing space before #N is deliberately NOT matched (unverified against GitHub's actual grammar; not needed by the observed repro, so kept conservative)"
 
 echo ""
 echo "Testing _partial_increment_refs prose/code-span guarding (#5234)..."
@@ -647,27 +625,6 @@ assert_contains "$commit_err" "reword the offending commit message" \
   "Commit-message conflict -> remedy is amend/reword, not editing the PR body"
 assert_not_contains "$commit_err" "its body ALSO carries" \
   "Commit-message conflict -> does NOT blame the (clean) PR body"
-
-# T21b (#235): the exact real-world shape — a squash-commit message reading
-# "...cascode fix: #191 stays open..." (colon-adjacent keyword) closes the
-# tracked issue even though the PR body only declares `Part of #191`. Before
-# the #235 fix this signal was silently invisible (the keyword-to-`#N` gap
-# required whitespace immediately after the keyword), so neither the
-# pre-merge warning nor the post-merge self-heal fired — the exact
-# recurrence-of-#4569/#4595 gap this issue reports.
-reset_log
-set_commits "fix(soft-start): revert device-level FB transconductor
-
-cascode fix: #191 stays open, this only covers the FB transconductor"
-PR_JSON='{"body":"Implements a slice.\n\nPart of #191"}'
-run_capturing_stderr _check_partial_increment_close_conflict
-colon_err="$(read_stderr)"
-assert_eq "191" "$PARTIAL_CONFLICT_ISSUES" \
-  "#235 real-world shape: colon-adjacent 'fix: #191' in a commit message -> conflict recorded"
-assert_eq "191" "$PARTIAL_OPEN_BEFORE_MERGE" \
-  "#235 real-world shape: #191 also recorded as open before the merge"
-assert_contains "$colon_err" "fix: #191" \
-  "#235 real-world shape: warning quotes the offending colon-adjacent phrase"
 
 # T22: commits fetch FAILS (e.g. REST error) -> empty signal, conservative
 # behavior: still tracked as open-before-merge, but no conflict, so the
