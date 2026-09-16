@@ -997,17 +997,25 @@ def group(rows: list[Row], keyfn) -> dict:
 # pole/zero attribution
 # ---------------------------------------------------------------------------
 # The injection element can only reach the main loop through the nodes it
-# touches: `Mgmo_ss`'s drain and `Mpre_b_ss`'s drain on FB, `Mhold_ss`'s drain
-# on PASS_GATE, `Mhold_bg_ss`'s on BG -- plus, inside the chain, the GMSUM
-# mirror node that sets `Mgmo_ss`'s gate. Each entry below removes ONE of
-# those couplings in AC only, leaving the DC operating point bit-identical
-# (see netlist_variants.ac_open / ac_short), so the margin delta it produces
-# is attributable to that coupling and to nothing else. This is the
+# touches: `Binj_ss` and `Mpre_b_ss`'s drain on FB, `Mhold_ss`'s drain on
+# PASS_GATE, `Mhold_bg_ss`'s on BG. Each entry below removes ONE of those
+# couplings in AC only, leaving the DC operating point bit-identical (see
+# netlist_variants.ac_open / ac_short), so the margin delta it produces is
+# attributable to that coupling and to nothing else. This is the
 # element-removal sensitivity the record's attribution rests on; it is a
 # measurement, not a reading of the schematic.
+#
+# NOTE (issue #231): this comment and `acshort-gmsum` below were written
+# against the device-level Mgm* transconductor chain, including its GMSUM
+# mirror node, that #231 reverted back to the ideal `Binj_ss` behavioural
+# source. `acshort-gmsum` still runs without raising -- `GMSUM` is just a
+# name at that point, floating and coupled to nothing else in the circuit --
+# but it no longer isolates a real mechanism, so its margin delta is not
+# attributable to anything physical. Left as-is pending a decision on
+# whether this attribution case still has a home.
 ATTRIBUTIONS = (
-    ("acopen-fb-inj", "XMgmo_ss's drain AC-opened from FB",
-     lambda t: nv.ac_open(t, "XMgmo_ss", "FB", "acopeninj")),
+    ("acopen-fb-inj", "Binj_ss AC-opened from FB",
+     lambda t: nv.ac_open(t, "Binj_ss", "FB", "acopeninj")),
     ("acopen-fb-pre", "XMpre_b_ss's drain AC-opened from FB",
      lambda t: nv.ac_open(t, "XMpre_b_ss", "FB", "acopenpre")),
     ("acshort-gmsum", "the GMSUM mirror node AC-shorted to VIN",

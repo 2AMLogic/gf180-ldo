@@ -145,17 +145,23 @@ class TestNetlistTransforms(unittest.TestCase):
             nv.instrument_core(nv.SS_BLOCK_RE.sub("", CORE))
 
     def test_ac_open_moves_one_terminal_and_adds_one_inductor(self):
+        # Binj_ss is the real FB injection element post-#231 (the
+        # device-level Mgm* chain this used to target, including XMgmo_ss,
+        # was reverted).
         base = nv.instrument_core(CORE)
-        out = nv.ac_open(base, "XMgmo_ss", "FB", "t")
+        out = nv.ac_open(base, "Binj_ss", "FB", "t")
         self.assertIn("Lt FB_t FB " + nv.AC_OPEN_H, out)
-        self.assertRegex(out, r"(?m)^XMgmo_ss FB_t GMSUM VIN VIN ")
+        self.assertRegex(out, r"(?m)^Binj_ss VIN FB_t I ")
         self.assertEqual(len(out.splitlines()), len(base.splitlines()) + 1)
 
     def test_ac_open_puts_the_inductor_after_the_continuation_lines(self):
         # Inserting it between an instance and its `+` continuation truncates
-        # the instance's parameter list. This was a real bug.
+        # the instance's parameter list. This was a real bug. Binj_ss (used
+        # above) is a single line with no continuation, so this needs an
+        # instance that still has one -- XMpre_b_ss touches FB once and
+        # survived the #231 revert.
         base = nv.instrument_core(CORE)
-        out = nv.ac_open(base, "XMgmo_ss", "FB", "t").splitlines()
+        out = nv.ac_open(base, "XMpre_b_ss", "FB", "t").splitlines()
         i = next(k for k, ln in enumerate(out) if ln.startswith("Lt "))
         self.assertFalse(out[i + 1].startswith("+"))
         self.assertTrue(out[i - 1].startswith("+"))
@@ -163,7 +169,7 @@ class TestNetlistTransforms(unittest.TestCase):
     def test_ac_open_refuses_an_ambiguous_terminal(self):
         base = nv.instrument_core(CORE)
         with self.assertRaises(nv.TransformError):
-            nv.ac_open(base, "XMgmo_ss", "VIN", "t")   # VIN appears twice
+            nv.ac_open(base, "XMhold_ss", "VIN", "t")   # VIN appears twice
 
     def test_ac_open_refuses_an_absent_instance(self):
         with self.assertRaises(nv.TransformError):
