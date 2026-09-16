@@ -56,6 +56,15 @@
 * -27.688 vs -27.358 mV, tsettle_min_ms 3.88350 vs 3.88377,
 * overshoot_min_mv -13.663 vs -13.661 mV (gear vs default trapezoidal) --
 * sub-1.2%-of-scale agreement, well inside corner-to-corner spread.
+*
+* RUNNING A FULL CORNER SET (issue #232): this deck's per-point CPU cost
+* above means the harness's default `-j min(8, cpu_count)` / `--timeout
+* 300s` can produce mass false timeouts from CPU contention on a shared
+* multi-core host, not from a real settling regression -- see
+* sim/harness/README.md's "-j/--timeout on CPU-heavy (Gear-integration)
+* testbenches" section for the recommended override
+* (`-j 3 --timeout 900` got a clean 81/81 in ~490s wall on the host #232
+* measured this on, vs. 27/81 timeouts at the defaults).
 .options method=gear
 Vsup VIN 0 DC {vdd_val}
 Ven EN 0 PULSE(0 {vdd_val} 1u 1n 1n 10m 20m)
