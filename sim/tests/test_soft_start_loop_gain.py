@@ -561,7 +561,7 @@ class TestPoleZeroFit(unittest.TestCase):
 
 def hov(**kw) -> "sweep.HovPoint":
     base = dict(ssr_cmd=0.6, ssr_v=0.6, fb_v=1.2, vout_v=0.9, pg_v=2.0,
-                erramp_v=2.0, isup_a=1e-3, gmsum_v=2.3)
+                erramp_v=2.0, isup_a=1e-3)
     base.update(kw)
     return sweep.HovPoint(**base)
 
@@ -579,8 +579,7 @@ def ideal_curve(variant="binj", gm=5e-6, release=1.2, **kw):
         fb = sweep.VREF_V
         # KCL at FB, solved for VOUT: I = fb/600k - (vout-fb)/300k
         vout = fb - 300e3 * (i - fb / 600e3)
-        pts.append(hov(ssr_cmd=ssr, ssr_v=ssr, fb_v=fb, vout_v=vout,
-                       gmsum_v=None))
+        pts.append(hov(ssr_cmd=ssr, ssr_v=ssr, fb_v=fb, vout_v=vout))
     base = dict(corner_id="tt_27c_3.30v", corner="tt", temp_c=27.0, vin_v=3.3,
                 variant=variant, points=pts)
     base.update(kw)
@@ -635,9 +634,6 @@ class TestHandoverMetricsOnTheKnownIdealElement(unittest.TestCase):
         # 0.6125 V is deliberately off the 25 mV grid.
         self.assertAlmostEqual(self.c.iinj_at(0.6125) * 1e6,
                                (1.2 - 0.6125) * 5.0, places=4)
-
-    def test_it_has_no_mirror_node(self):
-        self.assertIsNone(self.c.gmsum_span_v)
 
 
 class TestHandoverMetricsCatchTheDefectsTheyExistToCatch(unittest.TestCase):
@@ -761,13 +757,25 @@ class TestHandoverDeck(unittest.TestCase):
     def test_it_pins_the_model_binning_flag(self):
         self.assertIn(".options wnflag=1", self.TEMPLATE)
 
-    def test_only_the_device_variant_names_the_mirror_node(self):
+    def test_neither_variant_names_the_retired_mirror_node(self):
+        """Issue #239: `has_gmsum`/the `GMSUM_*` substitutions are retired.
+
+        Pre-#231 `device` was the post-#195 device-level chain and had a real
+        `GMSUM` mirror node; post-#231 it is `Binj_ss`, same as `binj`, and
+        there is no such node in either variant's netlist for a deck to name.
+        An actual PDK run confirmed the pre-fix `device` deck's
+        `v(xdut.xsoftstart.gmsum)` reference did not error but silently
+        produced an empty field -- this is the node-existence check that
+        closes that gap, not just a template-substitution check.
+        """
         dev, binj = self.render("device"), self.render("binj")
-        self.assertIn("v(xdut.xsoftstart.gmsum)", dev)
-        self.assertNotIn("v(xdut.xsoftstart.gmsum)", binj)
-        # ...and the column is absent rather than zero-filled: a zero in the
-        # record would read as a measurement of a node that does not exist.
-        self.assertNotIn("gmsum_v=$&", binj)
+        for text in (dev, binj):
+            # The template's own retirement comment mentions "gmsum" by name
+            # (institutional memory); what must be gone is any executable
+            # reference to the node itself.
+            self.assertNotIn("v(xdut.xsoftstart.gmsum)", text.lower())
+            self.assertNotIn("gmsum_v=", text.lower())
+            self.assertNotIn("let gmsum_dc", text.lower())
 
     def test_the_field_list_matches_the_decks_own_echo(self):
         """The parser's field list and the deck's advertised columns are two
@@ -779,10 +787,7 @@ class TestHandoverDeck(unittest.TestCase):
                               self.render(variant))
                 self.assertIsNotNone(m)
                 named = tuple(t.rstrip("=") for t in m.group(1).split())
-                expect = sweep.HOV_FIELDS
-                if variant == "device":
-                    expect = expect + sweep.HOV_OPTIONAL_FIELDS
-                self.assertEqual(named, expect)
+                self.assertEqual(named, sweep.HOV_FIELDS)
 
     def test_the_echoed_line_emits_exactly_the_advertised_columns(self):
         """...and so are the column list and the line that is actually
@@ -819,9 +824,13 @@ class TestHovParsing(unittest.TestCase):
         self.assertEqual(set(sweep.parse_hov_fields(self.GOOD)),
                          set(sweep.HOV_FIELDS))
 
-    def test_the_mirror_node_field_is_optional(self):
-        f = sweep.parse_hov_fields(self.GOOD + " gmsum_v=2.3")
-        self.assertEqual(f["gmsum_v"], "2.3")
+    def test_the_retired_mirror_node_field_is_now_unknown(self):
+        """Issue #239, reconstructed: `gmsum_v` used to be optional (the
+        `device` variant's now-removed `GMSUM` mirror node); with `has_gmsum`
+        retired there is no variant that can legitimately emit it any more,
+        so it must be rejected exactly like any other unknown field."""
+        with self.assertRaises(ValueError):
+            sweep.parse_hov_fields(self.GOOD + " gmsum_v=2.3")
 
     def test_a_missing_field_is_an_error_not_a_default(self):
         with self.assertRaises(ValueError):

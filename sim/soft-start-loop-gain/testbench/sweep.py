@@ -163,10 +163,15 @@ PHASES: dict[str, dict] = {
             "The hand-over points under sim/loop-stability's own load model "
             "(ideal DC current sink, infinite small-signal impedance -- the "
             "conservative choice), so these margins are directly comparable "
-            "with its records. 1.8 V is added here because it is where the "
-            "device-level chain's injection has actually decayed away (see "
-            "the DC transfer in the record); 1.25 V is where the ideal "
-            "source's has"
+            "with its records. 1.8 V is added here as a margin past `VREF` "
+            "where `Binj_ss`'s injection has fully decayed away in BOTH "
+            "variants (see the DC transfer in the record) -- pre-#231, when "
+            "`device` was the post-#195 device-level chain, this was the "
+            "point where specifically that chain's decay finished, later "
+            "than the ideal source's at 1.25 V; post-#231 both variants "
+            "release at the same `V(SSR)` and 1.8 V is kept only as a "
+            "conservative check that neither variant's injection has crept "
+            "back up"
         ),
     },
     # The settled state, with SSR not pinned at all: electrically the
@@ -235,8 +240,9 @@ HANDOVER_RELEASE_A = 50e-9
 # pass device is off. Such a state has no loop gain and therefore no phase
 # margin, which is why it has to be found by a DC sweep and cannot be found
 # by the margin deck. 5 mV is ~50x the largest departure the ideal element
-# produces anywhere in this grid and ~1/50 of the smallest the device chain
-# produces where it saturates, so nothing sits near the threshold.
+# (both variants inject through it post-#231; see #239) produces anywhere in
+# this grid where it is IN regulation, and well below where either variant's
+# FB lands once it saturates, so nothing sits near the threshold.
 HANDOVER_REG_TOL_V = 0.005
 
 SSR_POINT_LABEL = {
@@ -250,7 +256,9 @@ SSR_POINT_LABEL = {
     0.6: "(a2) mid-ramp",
     1.15: "(b) VREF - 50 mV, just before the ideal element's hand-over",
     1.25: "(c) VREF + 50 mV, just after the ideal element's hand-over",
-    1.8: "(d) VREF + 600 mV, past the device-level chain's own hand-over",
+    1.8: "(d) VREF + 600 mV, a conservative margin past BOTH variants' "
+         "hand-over (pre-#231 this was specifically past the device-level "
+         "chain's own, later, hand-over -- see `PHASES['sink']['why']`)",
 }
 
 # --- landing rule -----------------------------------------------------------
@@ -600,15 +608,31 @@ def parse_curve(path: Path) -> list[tuple[float, float, float]]:
 # the DC hand-over transfer
 # ---------------------------------------------------------------------------
 HOV_FIELDS = ("ssr_cmd", "ssr_v", "fb_v", "vout_v", "pg_v", "erramp_v", "isup_a")
-HOV_OPTIONAL_FIELDS = ("gmsum_v",)
+
+# RETIRED (issue #239): this set used to have an optional `gmsum_v` field,
+# read only for the `device` variant's `GMSUM` mirror node -- the post-#195
+# device-level Mgm* transconductor chain issue #231 reverted. There is
+# nothing left in `ldo_softstart` to name: an actual PDK run
+# (`./sim/soft-start-loop-gain/testbench/sweep.py --variants device`,
+# tt/27C/3.3V) confirmed ngspice does NOT hard-error on the resulting
+# `.let gmsum_dc = v(xdut.xsoftstart.gmsum)` against the undefined node --
+# it prints a per-point `Error: RHS "v(...)" invalid` / `Error: &gmsum_dc: no
+# such variable.` to the deck's own log (94 times over the 97-point sweep),
+# exits 0, and the echoed field silently comes out empty (`gmsum_v=` with no
+# value), which `_f()` then folds into `None` -- i.e. this bug was BOTH
+# non-fatal AND invisible in the record, the same "floating/NaN, not a hard
+# failure" shape issue #234 found for the margin deck's `acshort-gmsum` row.
+# `sim/harness/runner.py`'s `FATAL_LOG_PATTERNS` also does not catch it: it
+# matches "no such vector", not ngspice's actual wording here, "no such
+# variable" -- see issue #239's follow-up for that harness-wide gap. `GMSUM`
+# is not referenced anywhere below any more.
 
 
 def parse_hov_fields(line: str) -> dict[str, str]:
     """``HOV k=v k=v ...`` -> dict, with the margin parser's strictness.
 
-    ``gmsum_v`` is optional because the node only exists in the device-level
-    variant; every other field is required, and an unknown one is an error
-    rather than something to ignore.
+    Every field is required and an unknown one is an error rather than
+    something to ignore.
     """
     fields: dict[str, str] = {}
     for tok in line.split()[1:]:
@@ -619,8 +643,7 @@ def parse_hov_fields(line: str) -> dict[str, str]:
             raise ValueError(f"HOV field {key!r} repeated: {line!r}")
         fields[key] = val
     missing = [k for k in HOV_FIELDS if k not in fields]
-    unknown = [k for k in fields
-               if k not in HOV_FIELDS and k not in HOV_OPTIONAL_FIELDS]
+    unknown = [k for k in fields if k not in HOV_FIELDS]
     if missing or unknown:
         raise ValueError(
             f"HOV line does not match the deck's field list "
@@ -640,7 +663,6 @@ class HovPoint:
     pg_v: float
     erramp_v: float
     isup_a: float
-    gmsum_v: float | None = None
 
     @property
     def iinj_a(self) -> float:
@@ -808,16 +830,10 @@ class HovCurve:
         """Output error at the top of the swept range, where the ramp ends."""
         return self.points[-1].vout_v - VOUT_NOM_V
 
-    @property
-    def gmsum_span_v(self) -> tuple[float, float] | None:
-        g = [p.gmsum_v for p in self.points if p.gmsum_v is not None]
-        return (min(g), max(g)) if g else None
-
 
 def render_handover_deck(pvt, pdk, *, variant: str, netlist: Path,
                          ssr_values=HANDOVER_SSR_V) -> str:
     mos, res, bjt, diode, moscap, mimcap = pvt.corner.sections
-    has_gmsum = variant == "device"
     subs = {
         "DESIGN_INCLUDE": str(pdk.design_include),
         "MODEL_LIB": str(pdk.model_lib),
@@ -830,15 +846,6 @@ def render_handover_deck(pvt, pdk, *, variant: str, netlist: Path,
         "CORNER_NAME": pvt.corner.name,
         "VARIANT": variant,
         "SSR_LIST": " ".join(f"{v:g}" for v in ssr_values),
-        # The mirror node exists only in the device-level chain; the pre-#195
-        # ideal source has no such node, so its decks do not name it and do
-        # not emit the column. Emitting a zero instead would put a number in
-        # the record that is not a measurement.
-        "GMSUM_COL": " gmsum_v=" if has_gmsum else "",
-        "GMSUM_LET": ("  let gmsum_dc = v(xdut.xsoftstart.gmsum)"
-                      if has_gmsum else
-                      "* (no mirror node in this variant)"),
-        "GMSUM_ECHO": " gmsum_v=$&gmsum_dc" if has_gmsum else "",
     }
     text = HANDOVER_TEMPLATE.read_text()
     missing = {m for m in TOKEN_RE.findall(text) if m not in subs}
@@ -869,7 +876,6 @@ def run_handover(pvt, pdk, *, variant: str, netlist: Path, workdir: Path,
             f = parse_hov_fields(line)
         except ValueError as exc:
             return None, f"{exc} (see {log})"
-        gm = f.get("gmsum_v")
         pts.append(HovPoint(
             ssr_cmd=float(f["ssr_cmd"]),
             ssr_v=ls._f(f["ssr_v"]),
@@ -878,7 +884,6 @@ def run_handover(pvt, pdk, *, variant: str, netlist: Path, workdir: Path,
             pg_v=ls._f(f["pg_v"]),
             erramp_v=ls._f(f["erramp_v"]),
             isup_a=ls._f(f["isup_a"]),
-            gmsum_v=None if gm is None else ls._f(gm),
         ))
     if len(pts) != len(HANDOVER_SSR_V):
         return None, (f"expected {len(HANDOVER_SSR_V)} HOV points, parsed "
@@ -923,7 +928,7 @@ def handover_consistency(curves: list[HovCurve], rows: list[Row]):
 HANDOVER_CSV_HEADER = [
     "corner_id", "corner", "temp_c", "vin_v", "variant", "ssr_cmd_v", "ssr_v",
     "fb_v", "vout_v", "iinj_ua", "pass_gate_v", "erramp_out_v", "isup_a",
-    "gmsum_v", "in_regulation",
+    "in_regulation",
 ]
 
 
@@ -939,7 +944,6 @@ def write_handover_csv(path: Path, curves: list[HovCurve]) -> None:
                     f"{p.fb_v:.6f}", f"{p.vout_v:.6f}",
                     f"{p.iinj_a * 1e6:.5f}", f"{p.pg_v:.6f}",
                     f"{p.erramp_v:.6f}", f"{p.isup_a:.6e}",
-                    "" if p.gmsum_v is None else f"{p.gmsum_v:.6f}",
                     "yes" if p.in_regulation else "no",
                 ])
 
@@ -1521,8 +1525,9 @@ def main() -> int:
                         # phase) decks landed cleanly and their margins are
                         # not in question. A deck that never lands on the
                         # named branch even when seeded onto it is itself a
-                        # measurement (the device chain has no solution near
-                        # VREF at that PVT point), not a testbench bug.
+                        # measurement (that variant's injection element has no
+                        # solution near VREF at that PVT point), not a
+                        # testbench bug.
                         voided.append(f"{pvt.corner_id}/{variant}/{phase}: {err}")
                         print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} "
                               f"VOIDED (no DC branch near VREF, even seeded) "
@@ -1700,18 +1705,21 @@ def run_attribution(worst: Row, grid, pdk, netlists, args, workdir: Path,
     """Element-removal sensitivity at the worst device-variant point.
 
     Runs the SAME operating point -- same corner, same ramp state, same output
-    network -- through the netlist as committed, through the pre-#195 ideal
-    element, and through one netlist per AC-only coupling removal in
-    ``ATTRIBUTIONS``. Every one of those removals is DC-inert by construction
-    (an inductor is a short at DC, a capacitor is an open), which is checked
-    here rather than asserted: each case's landed VOUT/FB/injection current is
-    reported next to its margin, so a case that moved the bias point is
-    visible and its margin delta is not attributed to anything.
+    network -- through the netlist as committed, through the ``binj`` variant
+    (the same ``Binj_ss`` source frozen at its pre-DR-0024 cap sizing), and
+    through one netlist per AC-only coupling removal in ``ATTRIBUTIONS``.
+    Every one of those removals is DC-inert by construction (an inductor is a
+    short at DC, a capacitor is an open), which is checked here rather than
+    asserted: each case's landed VOUT/FB/injection current is reported next to
+    its margin, so a case that moved the bias point is visible and its margin
+    delta is not attributed to anything.
     """
     pvt = next(p for p in grid if p.corner_id == worst.corner_id)
     device_text = netlists["device"].read_text()
     cases: list[tuple[str, str, str]] = [
-        ("as-committed", "the device-level chain exactly as `main` has it",
+        ("as-committed",
+         "`Binj_ss` with the DR-0024 MIM-cap resize, exactly as `main` has "
+         "it",
          device_text)
     ]
     for tag, desc, fn in ATTRIBUTIONS:
@@ -1720,8 +1728,10 @@ def run_attribution(worst: Row, grid, pdk, netlists, args, workdir: Path,
         except nv.TransformError as exc:
             print(f"  attribution: skipping {tag}: {exc}", file=sys.stderr)
     if "binj" in netlists:
-        cases.append(("binj", "the pre-#195 ideal `Binj_ss` source",
-                      netlists["binj"].read_text()))
+        cases.append(("binj",
+                       "the same `Binj_ss` source frozen at its "
+                       "pre-DR-0024 cap sizing (commit bfc4a0a)",
+                       netlists["binj"].read_text()))
 
     ssr_values = None if PHASES[worst.phase]["ssr"] is None else [worst.ssr_cmd]
     out: dict = {"worst": worst, "cases": [], "fits": []}
@@ -2097,6 +2107,19 @@ def handover_section(curves: list[HovCurve], consistency, args) -> str:
         "  is checked below, not assumed. Every point of every corner is in the",
         "  `-handover.csv` beside this record; what follows is its extremes.",
         "",
+        "  As of issue #231's revert, `device` and `binj` both inject through",
+        "  the identical `Binj_ss` source and differ only in the DR-0024",
+        "  MIM-cap resize on `SSR`/`HG`/`SD` -- none of which this DC transfer",
+        "  (or the margin sweep above) can see, since the transfer below is a",
+        "  sequence of pinned-`V(SSR)` operating points and every one of those",
+        "  capacitors is an open at DC. The extremes table and worked transfer",
+        "  below are consequently expected to read IDENTICAL for both",
+        "  variants, to solver-noise precision; that is a correct measurement",
+        "  of the two variants sharing an injection element, not evidence that",
+        "  the cap resize is inert -- the resize's actual effect is on the",
+        "  ramp's TIME CONSTANT, a transient quantity `sim/soft-start/` owns",
+        "  and this static, per-point deck does not run.",
+        "",
     ]
     lines += ["  " + l for l in handover_extremes_table(curves)]
     lines += [
@@ -2136,15 +2159,20 @@ def handover_section(curves: list[HovCurve], consistency, args) -> str:
         worst = max(supply_lines, key=lambda t: abs(t[2]))
         slopes = [t[2] / t[1] for t in supply_lines if t[1]]
         lines += [
-            f"  **The release point tracks the supply**, which is the shape of",
-            f"  the defect rather than its size. Over the {len(supply_lines)}",
-            f"  (process, temperature) pairs where the device-level chain",
-            f"  releases at all three supplies, moving `VIN` from 2.97 V to",
-            f"  3.63 V moves the `V(SSR)` at which it releases by",
-            f"  **{min(t[2] for t in supply_lines):+.3f} V to "
+            f"  **`device`'s release point against the supply**, checked",
+            f"  rather than assumed: `Binj_ss`'s defining expression has no",
+            f"  `VIN` term, so this is expected to come out at 0 by",
+            f"  construction post-#231 (pre-#231, when `device` was the",
+            f"  post-#195 device-level chain, this was where that chain's",
+            f"  own bias-current dependence on `VIN` showed up as real ramp",
+            f"  movement -- see the historical record for that number).",
+            f"  Over the {len(supply_lines)} (process, temperature) pairs",
+            f"  where `device` releases at all three supplies, moving `VIN`",
+            f"  from 2.97 V to 3.63 V moves the `V(SSR)` at which it releases",
+            f"  by **{min(t[2] for t in supply_lines):+.3f} V to "
             f"{max(t[2] for t in supply_lines):+.3f} V**",
             f"  (mean {sum(slopes) / len(slopes):.3f} V of ramp node per volt of",
-            f"  supply; the ideal element's is 0 by construction). Worst:",
+            f"  supply). Worst:",
             f"  `{worst[0][0]}` at {worst[0][1]:g} degC -- "
             + ", ".join(f"{v:.2f} V -> {r:.3f} V" for v, r in worst[3]) + ".",
             "",
@@ -2185,10 +2213,15 @@ def handover_section(curves: list[HovCurve], consistency, args) -> str:
                 f"  At `V(SSR)` = {HANDOVER_ACQUISITION_SSR_V:g} V (see the",
                 f"  constant's comment for why that state), over the",
                 f"  {len(pair_lines)} corners where both variants are measured,",
-                f"  the device-level chain asks for",
+                f"  `device` asks for",
                 f"  **{min(t[0] for t in pair_lines) * 1e3:+.1f} mV to "
                 f"{max(t[0] for t in pair_lines) * 1e3:+.1f} mV** more output",
-                f"  than the ideal element does at the identical ramp state.",
+                f"  than `binj` does at the identical ramp state (both use the",
+                f"  same `Binj_ss` source post-#231, so this is expected to",
+                f"  land at ~0 mV; a nonzero reading here would itself be a",
+                f"  finding, since neither variant's DC transfer has a",
+                f"  dependence on the DR-0024 cap resize that distinguishes",
+                f"  them).",
                 f"  Worst: `{worst[3]}` -- {worst[1] * 1e3:.2f} mV against",
                 f"  {worst[2] * 1e3:.2f} mV, a factor of "
                 f"{(worst[1] / worst[2]) if worst[2] else float('inf'):.1f}.",
@@ -2561,13 +2594,15 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
         worst_pair = min((p for p in pairs if p[2] is not None), key=lambda p: p[2])
         ab_reading = (
             f"Across the {len(dpms)} (corner, ramp state, C_eff, ESR) points where "
-            f"both DUT variants have a 0 dB crossing, swapping the ideal "
-            f"`Binj_ss` for the device-level chain moves the phase margin by "
+            f"both DUT variants have a 0 dB crossing, swapping `binj`'s "
+            f"pre-DR-0024 cap sizing for `device`'s DR-0024 MIM-cap resize "
+            f"(both inject through the identical `Binj_ss` source) moves the "
+            f"phase margin by "
             f"**{min(dpms):+.2f} deg to {max(dpms):+.2f} deg** (mean "
             f"{sum(dpms) / len(dpms):+.2f} deg). The worst single point is "
             f"`{worst_pair[0].corner_id}` at {worst_pair[0].state_id}, "
-            f"{worst_pair[0].cfg_id}: {pm_str(worst_pair[0])} deg with the device "
-            f"chain against {pm_str(worst_pair[1])} deg with the ideal source."
+            f"{worst_pair[0].cfg_id}: {pm_str(worst_pair[0])} deg with `device` "
+            f"against {pm_str(worst_pair[1])} deg with `binj`."
         )
     else:
         ab_reading = "No point has a 0 dB crossing on both sides, so no A/B delta is computed."
@@ -2636,54 +2671,72 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
             "its current does not depend on `V(FB)` at all, so it has no "
             "admittance to isolate (see 'Pole/zero attribution' above and "
             "issue #234). Whatever this A/B's spread is, none of it is "
-            "`Binj_ss` loading the loop. Note also: `device` and `binj` "
-            "here both inject through `Binj_ss` and differ only in the "
-            "DR-0024 MIM-cap resize (issue #231's revert); \"the two "
-            "elements\"/\"the device-level chain\" language elsewhere in "
-            "this section is inherited from this experiment's original "
-            "post-#195/pre-#231 premise and does not describe what THIS "
-            "record's `device` netlist actually is (tracked for a full "
-            "rewrite in the #234 follow-up issue)."
+            "`Binj_ss` loading the loop."
         )
 
     # The headline, keyed off the measured A/B spread rather than asserted.
+    #
+    # As of #231's revert (see issue #239), `device` and `binj` both inject
+    # through the identical `Binj_ss` source and differ ONLY in the DR-0024
+    # MIM-cap resize on `SSR`/`HG`/`SD` -- nodes that sit outside both this
+    # margin sweep's loop break and the DC hand-over's KCL-at-FB derivation.
+    # There is consequently no architectural reason left for this A/B to show
+    # anything but solver-noise-level spread, in EITHER the margins here or
+    # the DC hand-over in section 1 -- unlike pre-#231, when `device` was a
+    # real, distinct device-level transconductor and this A/B (and section 1)
+    # measured a real difference (see the historical record
+    # `20260910-015601-2387ece.md`). The two branches below therefore no
+    # longer describe "an injection-element problem" vs. "not a problem"; they
+    # describe "the cap resize is invisible to this record's methodology, as
+    # expected" vs. "something this record did not anticipate is happening".
     if dpms:
         span = max(abs(min(dpms)), abs(max(dpms)))
         if span <= XCHECK_PM_TOL_DEG:
             headline = (
-                f"**The injection element is not a phase-margin problem at any "
-                f"state this record measures.** The largest phase-margin "
-                f"difference between the ideal source and the device-level "
-                f"chain, anywhere in the {len(dpms)}-point A/B, is "
+                f"**The DR-0024 MIM-cap resize is not a phase-margin problem "
+                f"at any state this record measures -- and, since `device` "
+                f"and `binj` share the identical `Binj_ss` injection source, "
+                f"it could not have shown up here in the first place.** The "
+                f"largest phase-margin difference between the two variants, "
+                f"anywhere in the {len(dpms)}-point A/B, is "
                 f"{span:.2f} deg -- smaller than the ~{XCHECK_PM_TOL_DEG:g} deg "
                 f"cross-invocation movement class #182/#185 measured between two "
-                f"builds of the same ngspice version on an unmodified netlist. "
-                f"A margin difference that small cannot carry a compensation "
-                f"decision, and this record does not let one be read into it. "
-                f"What the two elements *do* differ in, by a wide and "
-                f"unambiguous margin, is the DC hand-over in section 1: the "
-                f"device chain's transconductance and, above all, its "
-                f"rectification." + ss_clause
+                f"builds of the same ngspice version on an unmodified netlist, "
+                f"i.e. within solver noise. This is the expected outcome of a "
+                f"cap-value change on nodes (`SSR`/`HG`/`SD`) that sit outside "
+                f"this deck's loop break and outside the DC hand-over's "
+                f"KCL-at-FB derivation, both of which section 1 confirms also "
+                f"read identical for the two variants to the same precision. "
+                f"It is NOT evidence that the resize is inert: the resize's "
+                f"actual target is the ramp's TIME CONSTANT, a transient "
+                f"quantity neither this deck nor section 1 runs -- that "
+                f"question belongs to `sim/soft-start/` and to DR-0024's own "
+                f"record." + ss_clause
             )
         else:
             headline = (
-                f"**Swapping the ideal injection source for the device-level "
-                f"chain moves the phase margin by up to {span:.2f} deg** at the "
-                f"same pinned ramp state, which is above the "
+                f"**Swapping `binj`'s pre-DR-0024 cap sizing for `device`'s "
+                f"DR-0024 resize moves the phase margin by up to {span:.2f} deg** "
+                f"at the same pinned ramp state, which is above the "
                 f"~{XCHECK_PM_TOL_DEG:g} deg cross-invocation movement class "
-                f"#182/#185 established. Read that number with section 1 in "
-                f"hand: at a fixed V(SSR) the two elements do **not** put the "
-                f"loop at the same operating point, because they do not inject "
-                f"the same current, so most of this delta is the loop being "
-                f"measured at a different output voltage (and therefore a "
-                f"different pass-device transconductance) rather than the "
-                f"injection element loading the loop differently."
-                + ss_clause
+                f"#182/#185 established. This is unexpected: both variants "
+                f"inject through the identical `Binj_ss` source, and the only "
+                f"netlist difference between them is the DR-0024 MIM-cap "
+                f"resize on `SSR`/`HG`/`SD`, none of which sit in this deck's "
+                f"loop break or in the DC hand-over's KCL-at-FB derivation "
+                f"(section 1). A margin delta this size therefore is NOT "
+                f"explained by \"the two variants inject different currents\" "
+                f"the way it would have been pre-#231 -- section 1 should be "
+                f"read first to check whether the two variants nevertheless "
+                f"landed at different DC operating points, and if not, this "
+                f"result is itself a finding that warrants its own "
+                f"investigation rather than a restatement of the pre-#231 "
+                f"story." + ss_clause
             )
     else:
         headline = ("No state measured here has a 0 dB crossing on both sides "
                     "of the A/B, so this record makes no phase-margin "
-                    "comparison between the two injection elements.")
+                    "comparison between `device` and `binj`.")
 
     seeded_md = ""
     if seeded:
@@ -2738,8 +2791,11 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
 - **Claim**: issue #196 -- the small-signal loop-gain / phase-margin
   characterization of the LDO main loop **with `design/ldo_softstart.sch`'s
   FB-injection element in the loop**, at pinned points of the soft-start ramp,
-  for the post-#195 device-level injection chain and the pre-#195 ideal
-  `Binj_ss` source. This record substantiates **no ratified spec row**. It is
+  for two DUT variants of `Binj_ss` (see 'Netlist provenance' below for what
+  currently distinguishes them -- issue #231 reverted the post-#195
+  device-level injection chain this experiment originally compared against
+  the ideal source; see issue #239). This record substantiates **no ratified
+  spec row**. It is
   the AC evidence `design/ldo_softstart.sch`'s own "WHAT THIS COSTS THE MAIN
   LOOP" note points at and that did not exist, and it is the measured input to
   `design/softstart_injection_compensation.md` and to whatever decision
@@ -2752,7 +2808,9 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   (`design/ldo_core.sch` -> `design/netlist/ldo_core.spice`, with
   `design/ldo_softstart.sch` -> `design/netlist/ldo_softstart.spice` inside
   it){' -- **DIRTY WORKING TREE at run time; not citable as a clean-tree result**' if dirty else ''}.
-  Two DUT variants, differing **only** in the injection element:
+  Two DUT variants, both injecting through the same `Binj_ss` source
+  (post-#231; see #234/#239) and differing **only** in the DR-0024 MIM-cap
+  resize:
 {chr(10).join(f'  - `{v}`: {nv.VARIANT_BLURB[v]}' for v in variants)}
 
   Both are the SSR-instrumented form of the same `ldo_core`: the ramp node
