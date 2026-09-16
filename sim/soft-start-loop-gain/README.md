@@ -22,7 +22,13 @@ describing `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md`,
 minted before that revert, for which it is still accurate; it is not a
 description of the current tree. See `netlist_variants.py`'s module
 docstring and `VARIANT_BLURB` for the up-to-date detail, and the "Pole/zero
-attribution" section below for what changed there.
+attribution" section below for what changed there. **Update (issue #239):**
+the follow-up rewrite this note promised is done -- `sweep.py`'s generated
+record narrative (headline, A/B section, DC hand-over commentary) now
+describes the current cap-resize A/B rather than the pre-#231
+injection-element premise, and the `V(GMSUM)` row further down this file
+(and the matching `has_gmsum` code path) is retired outright, not just
+disclaimed.
 
 ```bash
 python3 sim/run_corners.py --check-env          # is ngspice + the gf180mcu PDK present?
@@ -88,7 +94,7 @@ through the hand-over are we".
 | `ramp` | 0.6 V | 36 ohm resistor | mid-ramp, where the loop is genuinely live and the injection is genuinely on. |
 | `ramp` | 1.15 V | 36 ohm resistor | **(b)** `VREF - 50 mV`, just before the ideal element's hand-over. |
 | `ramp` | 1.25 V | 36 ohm resistor | **(c)** `VREF + 50 mV`, just after the ideal element's hand-over. |
-| `sink` | 1.15 / 1.25 / 1.8 V | ideal 50 mA sink | the hand-over points again under `sim/loop-stability/`'s own load model, so the margins are comparable with its records. 1.8 V is where the *device-level* chain's injection has actually decayed away. |
+| `sink` | 1.15 / 1.25 / 1.8 V | ideal 50 mA sink | the hand-over points again under `sim/loop-stability/`'s own load model, so the margins are comparable with its records. 1.8 V is a conservative margin past `VREF` where `Binj_ss`'s injection has fully decayed away in BOTH current variants; pre-#231, when `device` was the post-#195 device-level chain, this was specifically where *that* chain's injection had decayed away (later than the ideal source's, at 1.25 V). |
 | `anchor` | not pinned | ideal 50 mA sink | the settled state, `SSR` wherever `Mtop_ss`'s ceiling clamp puts it — i.e. `sim/loop-stability/`'s own measurement, reached through an SSR port connected to nothing. |
 
 `EN` is high throughout, so `HG` is at `VIN` and `Mhold_ss`/`Mhold_bg_ss` are in
@@ -205,7 +211,19 @@ operating point by the same KCL as `iinj_ua`:
 | `I_inj` still flowing at `V(SSR) = VREF` | the intent is exactly 0; what is left is the rectification error |
 | `V(SSR)` at which `I_inj` drops below 50 nA **and stays there** | where the element actually lets go. "and stays there" matters: a threshold crossing that is not final is a dip, not a release |
 | highest `V(SSR)` at which the loop is out of regulation | the over-injection region at the bottom of the ramp. It has no loop gain and therefore no phase margin, which is why it can only be found this way |
-| `V(GMSUM)` | device variant only. `VIN − V(GMSUM)` is `Mgmo_ss`'s source–gate drive, i.e. whether the element has turned **off** or has merely gone weak |
+
+**Update (issue #239): the `V(GMSUM)` row above is retired, not merely
+undocumented.** It used to report `VIN − V(GMSUM)`, `Mgmo_ss`'s source–gate
+drive for the `device` variant only, against the post-#195 device-level
+Mgm* chain issue #231 reverted. There is no `GMSUM` node left in
+`ldo_softstart` for either variant to name. An actual PDK run
+(`./sim/soft-start-loop-gain/testbench/run.sh`, `--variants device`)
+confirmed ngspice does not hard-error against the resulting undefined
+`v(xdut.xsoftstart.gmsum)` reference; it prints a per-point error to the
+deck's own log and exits 0, with the field silently coming out empty --
+the same "floating/NaN, not a hard failure" shape issue #234 found for the
+margin deck's `acshort-gmsum` row. `sweep.py`'s `has_gmsum`/`GMSUM_*`
+substitution machinery and this table row are both removed.
 
 The `binj` variant is the known answer for all of it: `Binj_ss` computes
 `I = max(0, (V(VREF) − V(SSR)) · 5 µA/V)` in closed form, so its measured
@@ -229,8 +247,10 @@ the hand-over is actually about.
 ## Pole/zero attribution: element removal that does not move the bias point
 
 At the worst measured device-variant point, the record re-simulates that same
-operating point through the netlist as committed, through the ideal element, and
-through one netlist per **AC-only** removal of a single coupling:
+operating point through the netlist as committed (`Binj_ss` with the
+DR-0024 MIM-cap resize), through `binj` (the same `Binj_ss` source frozen at
+its pre-DR-0024 cap sizing), and through one netlist per **AC-only** removal
+of a single coupling:
 
 | case | what it removes |
 |---|---|

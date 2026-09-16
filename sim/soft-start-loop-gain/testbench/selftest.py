@@ -321,7 +321,7 @@ def main() -> int:
             pts.append(sweep.HovPoint(
                 ssr_cmd=ssr, ssr_v=ssr, fb_v=fb,
                 vout_v=fb - 300e3 * (i - fb / 600e3),
-                pg_v=2.0, erramp_v=2.0, isup_a=1e-3, gmsum_v=None))
+                pg_v=2.0, erramp_v=2.0, isup_a=1e-3))
         return sweep.HovCurve(corner_id="tt_27c_3.30v", corner="tt",
                               temp_c=27.0, vin_v=3.3, variant=variant,
                               points=pts)
