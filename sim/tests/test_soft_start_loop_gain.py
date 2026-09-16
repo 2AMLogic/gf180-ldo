@@ -16,6 +16,7 @@ to ``sim/loop-stability/testbench/selftest.py``.
 
 from __future__ import annotations
 
+import difflib
 import importlib.util
 import math
 import re
@@ -145,14 +146,33 @@ class TestNetlistTransforms(unittest.TestCase):
             nv.instrument_core(nv.SS_BLOCK_RE.sub("", CORE))
 
     def test_ac_open_moves_one_terminal_and_adds_one_inductor(self):
-        # Binj_ss is the real FB injection element post-#231 (the
-        # device-level Mgm* chain this used to target, including XMgmo_ss,
-        # was reverted).
+        # XMpre_b_ss is a real device-level FB coupling that survives #231's
+        # revert. Binj_ss (the OTHER real FB coupling post-#231) is a
+        # behavioural source and is covered by the B-prefix refusal test
+        # below instead -- see issue #234.
         base = nv.instrument_core(CORE)
-        out = nv.ac_open(base, "Binj_ss", "FB", "t")
+        out = nv.ac_open(base, "XMpre_b_ss", "FB", "t")
         self.assertIn("Lt FB_t FB " + nv.AC_OPEN_H, out)
-        self.assertRegex(out, r"(?m)^Binj_ss VIN FB_t I ")
+        self.assertRegex(out, r"(?m)^XMpre_b_ss FB_t ")
         self.assertEqual(len(out.splitlines()), len(base.splitlines()) + 1)
+
+    def test_ac_open_refuses_a_behavioural_b_prefixed_instance(self):
+        """Issue #234: this is the exact `acopen-fb-inj` mistake -- a series
+        inductor in front of an ideal current source removes nothing (KCL
+        forces the inductor current to equal the source's output at every
+        frequency), so the old call applied without raising and measured a
+        delta that was zero by construction, not by measurement."""
+        base = nv.instrument_core(CORE)
+        with self.assertRaises(nv.TransformError):
+            nv.ac_open(base, "Binj_ss", "FB", "t")
+
+    def test_ac_open_b_prefix_refusal_is_case_insensitive_and_instance_only(self):
+        base = nv.instrument_core(CORE)
+        with self.assertRaises(nv.TransformError):
+            nv.ac_open(base, "binj_ss", "FB", "t")
+        # A device whose NAME merely contains a 'b' is not behavioural --
+        # only the type-letter prefix (first character) matters.
+        nv.ac_open(base, "XMben_ss", "EN", "t")  # must not raise
 
     def test_ac_open_puts_the_inductor_after_the_continuation_lines(self):
         # Inserting it between an instance and its `+` continuation truncates
@@ -176,12 +196,38 @@ class TestNetlistTransforms(unittest.TestCase):
             nv.ac_open(nv.instrument_core(CORE), "XNope", "FB", "t")
 
     def test_ac_short_adds_one_capacitor_inside_the_softstart_subckt(self):
+        # HG is a real internal node (the soft-start hold network). GMSUM
+        # (used here pre-#234) no longer exists in ldo_softstart post-#231
+        # and is covered by the node-existence-refusal test below instead.
         base = nv.instrument_core(CORE)
-        out = nv.ac_short(base, "GMSUM", "VIN", "t")
-        self.assertIn("Ct GMSUM VIN " + nv.AC_SHORT_F, out)
+        out = nv.ac_short(base, "HG", "VIN", "t")
+        self.assertIn("Ct HG VIN " + nv.AC_SHORT_F, out)
         self.assertEqual(len(out.splitlines()), len(base.splitlines()) + 1)
         block = nv.SS_BLOCK_RE.search(out).group(0)
-        self.assertIn("Ct GMSUM VIN", block)
+        self.assertIn("Ct HG VIN", block)
+
+    def test_add_cap_refuses_a_node_absent_from_the_netlist(self):
+        """Issue #234: this is the exact `acshort-gmsum` mistake -- GMSUM was
+        removed from `ldo_softstart` by #231, and the old call hung a
+        capacitor on it anyway: floating, no DC path to ground, coupled to
+        nothing in AC, so it applied without raising and measured nothing."""
+        base = nv.instrument_core(CORE)
+        with self.assertRaises(nv.TransformError):
+            nv.add_cap(base, "GMSUM", "VIN", nv.AC_SHORT_F, "t")
+        with self.assertRaises(nv.TransformError):
+            nv.ac_short(base, "GMSUM", "VIN", "t")
+        with self.assertRaises(nv.TransformError):
+            nv.ac_load(base, "GMSUM", "VIN", 1e-12, "t")
+
+    def test_add_cap_node_check_is_a_whole_token_match(self):
+        """A node name that is merely a SUBSTRING of some other token must
+        not satisfy the existence check -- that would defeat the guard the
+        same way a regex without word boundaries would."""
+        base = nv.instrument_core(CORE)
+        self.assertIn("SSR", base)      # the substring really is present...
+        self.assertNotIn(" SR ", base)  # ...but "SR" alone, as a node, is not
+        with self.assertRaises(nv.TransformError):
+            nv.add_cap(base, "SR", "VIN", nv.AC_SHORT_F, "t")
 
     def test_ac_load_adds_one_capacitor_of_the_asked_for_value(self):
         base = nv.instrument_core(CORE)
@@ -203,8 +249,8 @@ class TestNetlistTransforms(unittest.TestCase):
         any value; keeping them one code path is what makes that guarantee
         one fact rather than two."""
         base = nv.instrument_core(CORE)
-        self.assertEqual(nv.ac_short(base, "GMSUM", "VIN", "t"),
-                         nv.add_cap(base, "GMSUM", "VIN", nv.AC_SHORT_F, "t"))
+        self.assertEqual(nv.ac_short(base, "HG", "VIN", "t"),
+                         nv.add_cap(base, "HG", "VIN", nv.AC_SHORT_F, "t"))
 
     def test_the_fb_capacitance_ladder_brackets_the_schematics_own_estimate(self):
         """The schematic's regression note says the chain adds 'tens of
@@ -221,6 +267,113 @@ class TestNetlistTransforms(unittest.TestCase):
         for tag, _desc, fn in sweep.ATTRIBUTIONS:
             with self.subTest(tag=tag):
                 fn(base)   # must not raise
+
+
+def _classify_attribution_effect(base: str, out: str) -> tuple[str, str]:
+    """What an ``ATTRIBUTIONS``-shaped transform actually did to ``base``,
+    read back purely from its OWN output -- not from which function
+    (``ac_open``/``ac_short``/``ac_load``) produced it.
+
+    Uses a real line-level diff (not a positional ``zip``) so an insertion
+    anywhere in the file does not make every following line look "changed"
+    just because it shifted down by one.
+
+    Returns ``("ac_open", instance)`` for a transform that removed exactly
+    one instance line, re-added it (with one terminal renamed) and added one
+    ``L*`` inductor line, or ``("add_cap", node)`` for a transform that added
+    exactly one ``C*`` line and removed nothing (its second token is the
+    node it landed on). Raises ``AssertionError`` -- a hard test failure,
+    not a skip -- for anything else, because an attribution this classifier
+    cannot recognise is one nothing here has validated.
+    """
+    base_lines, out_lines = base.splitlines(), out.splitlines()
+    diff = list(difflib.unified_diff(base_lines, out_lines, lineterm="", n=0))
+    added = [ln[1:] for ln in diff if ln.startswith("+") and not ln.startswith("+++")]
+    removed = [ln[1:] for ln in diff if ln.startswith("-") and not ln.startswith("---")]
+    if len(removed) == 1:
+        instance = removed[0].split()[0]
+        l_added = [a for a in added if a.split()[0][:1].upper() == "L"]
+        renamed = [a for a in added if a.split()[0] == instance]
+        assert len(l_added) == 1 and len(renamed) == 1, (removed, added)
+        return ("ac_open", instance)
+    if len(removed) == 0:
+        c_added = [a for a in added if a.split()[0][:1].upper() == "C"]
+        assert len(added) == 1 and len(c_added) == 1, (removed, added)
+        return ("add_cap", c_added[0].split()[1])
+    raise AssertionError(
+        f"unrecognised transform shape (-{removed} +{added}) -- this "
+        "classifier does not know how to check it for a structurally-zero "
+        "target")
+
+
+class TestAttributionsCannotBeStructurallyZero(unittest.TestCase):
+    """Issue #234: `acopen-fb-inj` (opened `Binj_ss`, an ideal current source
+    with no AC contribution to remove) and `acshort-gmsum` (shorted `GMSUM`,
+    a node no longer in the netlist) both ran without raising and reported a
+    delta that was zero by construction, not by measurement. This class
+    checks the property that would have caught both at review time --
+    independent of `ac_open()`/`add_cap()`'s own internal guard rails, so it
+    would still catch a future attribution built the same wrong way even if
+    those guard rails were ever weakened or bypassed.
+    """
+
+    def test_every_current_attribution_targets_a_real_ac_coupling(self):
+        base = nv.instrument_core(CORE)
+        for tag, _desc, fn in sweep.ATTRIBUTIONS:
+            with self.subTest(tag=tag):
+                out = fn(base)
+                self.assertNotEqual(out, base, f"{tag}: changed nothing")
+                kind, target = _classify_attribution_effect(base, out)
+                if kind == "ac_open":
+                    self.assertNotEqual(
+                        target[:1].upper(), "B",
+                        f"{tag}: ac_open()'s target {target!r} is a "
+                        "behavioural source -- an ideal source's current "
+                        "does not depend on the terminal a series inductor "
+                        "would isolate, so this row cannot move the AC "
+                        "answer (the acopen-fb-inj mistake)")
+                else:
+                    self.assertIn(
+                        target, base,
+                        f"{tag}: add_cap()'s target node {target!r} does "
+                        "not appear in the netlist before the transform -- "
+                        "a capacitor onto it is floating and cannot move "
+                        "the AC answer (the acshort-gmsum mistake)")
+
+    def test_the_property_actually_flags_the_two_historical_mistakes(self):
+        """The check above is only worth having if it rejects the two rows
+        #234 removed -- reconstructed here exactly as the pre-#234 code
+        would have built them, bypassing the now-fixed `ac_open()`/
+        `add_cap()` so this test exercises the CLASSIFIER, not the guard
+        rails already covered by `TestNetlistTransforms`."""
+        base = nv.instrument_core(CORE)
+
+        # acopen-fb-inj, reconstructed: move Binj_ss's FB terminal, add the
+        # inductor -- exactly what ac_open() did before it refused B-lines.
+        binj_line = next(ln for ln in base.splitlines()
+                          if ln.startswith("Binj_ss "))
+        opened = base.replace(binj_line,
+                               binj_line.replace(" FB ", " FB_regress "), 1)
+        lines = opened.splitlines()
+        i = next(k for k, ln in enumerate(lines)
+                  if ln.startswith("Binj_ss "))
+        lines.insert(i + 1, f"Lregress FB_regress FB {nv.AC_OPEN_H}")
+        opened = "\n".join(lines) + "\n"
+        kind, target = _classify_attribution_effect(base, opened)
+        self.assertEqual((kind, target), ("ac_open", "Binj_ss"))
+        self.assertEqual(target[:1].upper(), "B")   # -> the check fails it
+
+        # acshort-gmsum, reconstructed: hang a capacitor on GMSUM, a node
+        # that does not exist in this netlist -- exactly what add_cap() did
+        # before it refused an absent node.
+        lines = base.splitlines()
+        i = next(k for k, ln in enumerate(lines)
+                 if ln.startswith(".subckt ldo_softstart"))
+        lines.insert(i + 1, "Cregress GMSUM VIN 1.0")
+        shorted = "\n".join(lines) + "\n"
+        kind, target = _classify_attribution_effect(base, shorted)
+        self.assertEqual((kind, target), ("add_cap", "GMSUM"))
+        self.assertNotIn(target, base)              # -> the check fails it
 
 
 class TestDeckTemplate(unittest.TestCase):
