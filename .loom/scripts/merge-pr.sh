@@ -902,8 +902,28 @@ _partial_increment_refs() {
 # guard exists for happened while GraphQL quota was exhausted (the PR was even
 # created via raw REST for that reason). A quota-free text signal is the one that
 # still works in exactly the conditions where this bug bites.
+#
+# Keyword-to-`#N` gap: `[:,]?[[:space:]]+` (#235, recurrence of #4569/#4595 via
+# a narrower text variant). GitHub's real closing-keyword parser honored a
+# squash-commit message reading "...cascode fix: #191 stays open..." — i.e.
+# `fix: #191` (keyword, colon, whitespace, `#N`) — as a real closing reference
+# to #191, but the original `[[:space:]]+`-only gap (no punctuation allowed
+# between the keyword and the required whitespace) required whitespace
+# IMMEDIATELY after the keyword and so never matched it, silently skipping
+# both the pre-merge PARTIAL_CONFLICT_ISSUES warning and the post-merge
+# self-heal reopen. Widening the gap to tolerate one optional `:` or `,`
+# before the required whitespace (still requiring at least one space before
+# `#N`, so `fix:#191` with no space is deliberately NOT matched — unverified
+# against GitHub's actual grammar, and not needed by the observed repro)
+# fixes the false negative. This cannot introduce a new false-positive class:
+# the keyword set itself (`close|closes|closed|fix|fixes|fixed|resolve|
+# resolves|resolved`) is unchanged and still `\b`-bounded, so ordinary prose
+# that merely contains a colon near an unrelated `#N` (e.g. "Note: #191 is
+# unrelated") still does not match — "Note" is not in the keyword set at all,
+# regardless of the punctuation now tolerated between a REAL keyword and the
+# reference.
 _closing_refs_stdin() {
-  { grep -oiE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[[:space:]]+#[0-9]+' \
+  { grep -oiE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[:,]?[[:space:]]+#[0-9]+' \
       | grep -oE '[0-9]+' \
       | sort -un; } || true
 }
@@ -913,13 +933,16 @@ _body_closing_refs() {
   { printf '%s\n' "$1" | _closing_refs_stdin; } || true
 }
 
-# The literal offending snippets ("close #N", "Fixes #N", …) that reference
-# issue $2 with a closing keyword inside the text $1, rendered for a warning as
-# `snippet", "snippet`. Empty when the text carries no such reference — which is
-# how the caller tells WHICH source (body vs. commit messages) is at fault.
+# The literal offending snippets ("close #N", "Fixes #N", "fix: #N", …) that
+# reference issue $2 with a closing keyword inside the text $1, rendered for a
+# warning as `snippet", "snippet`. Empty when the text carries no such
+# reference — which is how the caller tells WHICH source (body vs. commit
+# messages) is at fault. Keyword-to-`#N` gap kept identical to
+# _closing_refs_stdin above (#235) so the rendered snippet always matches what
+# was actually detected.
 _closing_ref_snippets() {
   { printf '%s\n' "$1" \
-      | grep -oiE "\\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\\b[[:space:]]+#$2\\b" \
+      | grep -oiE "\\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\\b[:,]?[[:space:]]+#$2\\b" \
       | sort -u | tr '\n' '|' | sed 's/|$//; s/|/", "/g'; } || true
 }
 
