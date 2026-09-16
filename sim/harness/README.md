@@ -128,6 +128,43 @@ python3 sim/run_corners.py smoke-bias --corners tt --temps 27 \
     --subset-reason "nominal-only mismatch sweep; distribution claim, see Statistical convention"
 ```
 
+### `-j`/`--timeout` on CPU-heavy (Gear-integration) testbenches (#232)
+
+The default `jobs = min(8, cpu_count)` and `--timeout 300` (seconds/point) work
+fine for most testbenches, which are cheap enough per-point that even 8-way
+parallelism on an 18-core host leaves headroom. They do **not** size well for
+a testbench that runs `.options method=gear` (currently `sim/startup/` and
+`sim/amp-selfosc/` — grep for `method=gear` under `sim/*/testbench/` to find
+any others added later): Gear/BDF integration is CPU-heavier per point than
+ngspice's default trapezoidal rule (see `tb_startup.spice`'s header for a
+measured 11.7 s CPU/point at tt/27C/3.30V), and 8 of those running at once
+contends hard enough for CPU on a shared build host that per-point wall time
+balloons well past the 300 s default — issue #232 measured 27/81 points
+(33%) hitting a false timeout at the default `-j`/`--timeout` on an 18-core
+host, none of which reproduced as a real convergence problem once `-j` was
+lowered. This is host contention, not evidence of a circuit regression or a
+harness correctness bug — do not read a `-j 8 --timeout 300` timeout on one
+of these benches as a settling-time regression without first re-running at
+a lower `-j`.
+
+For a full corner-set run (e.g. `--corner-set full`, 81 points) on a
+Gear-integration testbench, override both knobs rather than trusting the
+defaults:
+
+```bash
+python3 sim/run_corners.py startup --corner-set full -j 3 --timeout 900
+```
+
+`-j 3` (vs. the 8-wide default) leaves enough per-core headroom that Gear's
+heavier per-point cost does not starve sibling ngspice processes; `--timeout
+900` (vs. 300 s) is slack for the rare point that is still legitimately slow
+under load, not a relaxation of what counts as "settled". This combination
+cleanly completed 81/81 points in ~490 s wall time in the #232 investigation,
+vs. 27/81 timeouts at the defaults on the same host. `-j 3` is a starting
+point tuned for an 18-core host with other load on it, not a universal
+constant — a quieter or larger host may tolerate `-j 4`-`6`; if you still see
+timeouts at `-j 3`, lower `-j` further before raising `--timeout` again.
+
 ## Writing a testbench
 
 Create `sim/<experiment-slug>/testbench/` with a manifest and a netlist

@@ -71,6 +71,13 @@
 * the signal being measured (verified at tt/27C/3.30V -- a 400 ns ceiling
 * reports 37 nV pk-pk on the heavy branch where 200 ns reports 3.31 V).
 *
+* RUNNING A FULL CORNER SET (issue #232): like sim/startup/, this is a
+* Gear-integration deck, so the harness's default `-j`/`--timeout` can
+* produce mass false timeouts from CPU contention on a multi-core host
+* rather than a real convergence problem -- see sim/harness/README.md's
+* "-j/--timeout on CPU-heavy (Gear-integration) testbenches" section for
+* the recommended override (`-j 3 --timeout 900`).
+*
 * ---------------------------------------------------------------------------
 * Why there IS a stimulus, and why it is outside the measurement window
 * ---------------------------------------------------------------------------
