@@ -1291,61 +1291,238 @@ class NgspiceBinaryFingerprintTests(unittest.TestCase):
                 runner.ngspice_binary_sha256()
 
 
+def fake_ngspice_install(root: Path, version: str = "ngspice-46") -> Path:
+    """An executable ``<root>/bin/ngspice`` stub that prints a real banner.
+
+    ``_root_ngspice_version()`` / ``ngspice_version_at()`` (issue #247) decide
+    a candidate root's identity by *running* its binary, so a root fixture has
+    to be runnable, not just a file on disk.
+    """
+    exe = root / "bin" / "ngspice"
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_text(
+        "#!/bin/sh\n"
+        f"echo '** {version} : Circuit level simulation program'\n"
+        "echo '** Compiled with KLU Direct Linear Solver'\n"
+    )
+    exe.chmod(0o755)
+    return exe
+
+
 class NgspiceProvenanceTests(unittest.TestCase):
     """Issue #184: a version-string match is not enough -- #182 found a
     self-built ``ngspice`` shadowing the Homebrew install
     ``docs/environment-setup.md`` documents, on PATH, ahead of it. These
     cover the identity check that turns that into a loud, actionable
     ``--check-env`` failure instead of a silent "OK".
+
+    Issue #247 extended the check after Homebrew's unversioned ``ngspice``
+    formula moved to ngspice-47: the *expected root* can itself drift off the
+    pin, and the check must then blame the root rather than the
+    correctly-pinned binary it resolved on PATH.
     """
+
+    def _root(self, path: Path, version: str | None = "ngspice-46", source="test"):
+        return runner.NgspiceRoot(str(path), source, version)
 
     def test_resolved_exe_under_expected_root_is_accepted(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "homebrew"
-            exe = root / "bin" / "ngspice"
-            exe.parent.mkdir(parents=True)
-            exe.write_bytes(b"fake\n")
+            exe = fake_ngspice_install(root)
             # Should not raise.
-            runner.verify_ngspice_provenance(str(exe), str(root))
+            runner.verify_ngspice_provenance(str(exe), self._root(root))
 
     def test_resolved_exe_outside_expected_root_raises_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "homebrew"
             shadow_root = Path(tmp) / "local-build"
-            exe = shadow_root / "bin" / "ngspice"
-            exe.parent.mkdir(parents=True)
-            exe.write_bytes(b"fake\n")
-            root.mkdir()
+            fake_ngspice_install(root)
+            exe = fake_ngspice_install(shadow_root)
             with self.assertRaises(runner.NgspiceIdentityMismatch) as ctx:
-                runner.verify_ngspice_provenance(str(exe), str(root))
+                runner.verify_ngspice_provenance(str(exe), self._root(root))
             message = str(ctx.exception)
             self.assertIn(str(exe), message)
             self.assertIn(str(root), message)
             self.assertIn("GF180_LDO_NGSPICE_ROOT", message)
+            # Both sides are the pinned version here: this really IS #182's
+            # shadowed-binary case, and must keep saying so.
+            self.assertIn("#182 failure mode", message)
+
+    def test_drifted_expected_root_is_blamed_not_the_pinned_binary(self):
+        """Issue #247's core repro: Homebrew's unversioned formula moved to
+        ngspice-47, so the *root* is off the pin while the binary on PATH is
+        the only correctly-pinned ngspice-46 on the host."""
+        with tempfile.TemporaryDirectory() as tmp:
+            drifted_root = Path(tmp) / "homebrew-47"
+            fake_ngspice_install(drifted_root, "ngspice-47")
+            pinned_prefix = Path(tmp) / "pinned-46"
+            exe = fake_ngspice_install(pinned_prefix, "ngspice-46")
+            with self.assertRaises(runner.NgspiceIdentityMismatch) as ctx:
+                runner.verify_ngspice_provenance(
+                    str(exe),
+                    self._root(
+                        drifted_root, "ngspice-47", source="brew --prefix ngspice"
+                    ),
+                )
+            message = str(ctx.exception)
+            # The diagnosis names the root, not the binary, as the drifted side.
+            self.assertIn("ROOT that has drifted", message)
+            self.assertNotIn("#182 failure mode", message)
+            # And it must not tell the user to adopt the unpinned root.
+            self.assertIn("Do NOT 'fix' this by putting that root first", message)
+            # The corrective actions it names are the two supported ones.
+            self.assertIn(runner.PINNED_HOMEBREW_FORMULA, message)
+            # The suggested prefix is symlink-resolved (macOS /var -> /private/var),
+            # same as every other path this check prints.
+            self.assertIn(
+                f"export {runner.NGSPICE_ROOT_ENV}={pinned_prefix.resolve()}", message
+            )
+            # And it cites why 47 is not simply adoptable.
+            self.assertIn("DR-0025", message)
+            self.assertIn("#221", message)
+
+    def test_off_pin_binary_fails_even_when_it_lives_under_the_root(self):
+        """The other half of #247: a host whose Homebrew ngspice upgraded
+        under it resolves an ngspice-47 that really *is* under
+        ``brew --prefix ngspice`` -- containment alone would call that OK."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "homebrew-47"
+            exe = fake_ngspice_install(root, "ngspice-47")
+            with self.assertRaises(runner.NgspiceIdentityMismatch) as ctx:
+                runner.verify_ngspice_provenance(
+                    str(exe), self._root(root, "ngspice-47")
+                )
+            message = str(ctx.exception)
+            self.assertIn("reports ngspice-47", message)
+            self.assertIn(f"pins {runner.PINNED_NGSPICE_VERSION}", message)
+            self.assertIn("#221", message)
+
+    def test_unrunnable_root_binary_leaves_version_unknown_not_drifted(self):
+        """A blessed root we cannot probe (no runnable ``bin/ngspice``) is
+        "unknown", never "drifted" -- an unknown version must not fabricate a
+        drift diagnosis."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "blessed"
+            root.mkdir()
+            shadow = Path(tmp) / "elsewhere"
+            exe = fake_ngspice_install(shadow)
+            candidate = self._root(root, None)
+            self.assertFalse(candidate.drifted)
+            with self.assertRaises(runner.NgspiceIdentityMismatch) as ctx:
+                runner.verify_ngspice_provenance(str(exe), candidate)
+            self.assertIn("#182 failure mode", str(ctx.exception))
+
+    def test_ngspice_major_version_extracts_the_pin_token(self):
+        self.assertEqual(
+            runner.ngspice_major_version(
+                "ngspice-46 : Circuit level simulation program"
+            ),
+            "ngspice-46",
+        )
+        self.assertEqual(
+            runner.ngspice_major_version("** ngspice-47 : Circuit level"), "ngspice-47"
+        )
+        self.assertIsNone(runner.ngspice_major_version("unknown"))
+        self.assertIsNone(runner.ngspice_major_version(None))
+
+    def test_ngspice_version_at_reads_a_specific_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = fake_ngspice_install(Path(tmp) / "root", "ngspice-47")
+            self.assertEqual(
+                runner.ngspice_major_version(runner.ngspice_version_at(exe)),
+                "ngspice-47",
+            )
+
+    def test_ngspice_version_at_returns_none_for_a_missing_binary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(runner.ngspice_version_at(Path(tmp) / "nope"))
 
     def test_expected_ngspice_root_prefers_env_override(self):
-        with unittest.mock.patch.dict(
-            "os.environ", {runner.NGSPICE_ROOT_ENV: "/blessed/root"}
-        ):
-            with unittest.mock.patch.object(
-                runner, "homebrew_prefix", return_value="/opt/homebrew"
-            ) as homebrew_prefix:
-                self.assertEqual(runner.expected_ngspice_root(), "/blessed/root")
-                homebrew_prefix.assert_not_called()
+        with tempfile.TemporaryDirectory() as tmp:
+            blessed = Path(tmp) / "blessed"
+            fake_ngspice_install(blessed)
+            with unittest.mock.patch.dict(
+                "os.environ", {runner.NGSPICE_ROOT_ENV: str(blessed)}
+            ):
+                with unittest.mock.patch.object(
+                    runner, "homebrew_prefix", return_value="/opt/homebrew"
+                ) as homebrew_prefix:
+                    resolved = runner.expected_ngspice_root()
+                    homebrew_prefix.assert_not_called()
+            self.assertEqual(resolved.path, str(blessed))
+            self.assertEqual(resolved.source, runner.NGSPICE_ROOT_ENV)
+            self.assertEqual(resolved.version, "ngspice-46")
 
     def _env_without_ngspice_root_override(self) -> dict:
         env = dict(os.environ)
         env.pop(runner.NGSPICE_ROOT_ENV, None)
         return env
 
-    def test_expected_ngspice_root_falls_back_to_homebrew(self):
-        with unittest.mock.patch.dict(
-            os.environ, self._env_without_ngspice_root_override(), clear=True
-        ):
-            with unittest.mock.patch.object(
-                runner, "homebrew_prefix", return_value="/opt/homebrew"
+    def test_expected_ngspice_root_prefers_the_versioned_homebrew_formula(self):
+        """Issue #247, Option 1: a versioned keg's prefix cannot drift when
+        the unversioned formula upgrades, so it wins the probe order."""
+        with tempfile.TemporaryDirectory() as tmp:
+            pinned = Path(tmp) / "ngspice@46"
+            drifted = Path(tmp) / "ngspice"
+            fake_ngspice_install(pinned, "ngspice-46")
+            fake_ngspice_install(drifted, "ngspice-47")
+            prefixes = {
+                runner.PINNED_HOMEBREW_FORMULA: str(pinned),
+                runner.DRIFTING_HOMEBREW_FORMULA: str(drifted),
+            }
+            with unittest.mock.patch.dict(
+                os.environ, self._env_without_ngspice_root_override(), clear=True
             ):
-                self.assertEqual(runner.expected_ngspice_root(), "/opt/homebrew")
+                with unittest.mock.patch.object(
+                    runner, "homebrew_prefix", side_effect=prefixes.get
+                ):
+                    resolved = runner.expected_ngspice_root()
+            self.assertEqual(resolved.path, str(pinned))
+            self.assertEqual(
+                resolved.source, f"brew --prefix {runner.PINNED_HOMEBREW_FORMULA}"
+            )
+            self.assertEqual(resolved.version, "ngspice-46")
+            self.assertFalse(resolved.drifted)
+
+    def test_expected_ngspice_root_falls_back_to_the_unversioned_formula(self):
+        """A host with no versioned keg still gets a root -- but one that
+        reports the version it actually holds, so a drifted fallback can be
+        recognised as such rather than trusted as the pin."""
+        with tempfile.TemporaryDirectory() as tmp:
+            drifted = Path(tmp) / "ngspice"
+            fake_ngspice_install(drifted, "ngspice-47")
+            prefixes = {runner.DRIFTING_HOMEBREW_FORMULA: str(drifted)}
+            with unittest.mock.patch.dict(
+                os.environ, self._env_without_ngspice_root_override(), clear=True
+            ):
+                with unittest.mock.patch.object(
+                    runner, "homebrew_prefix", side_effect=prefixes.get
+                ):
+                    resolved = runner.expected_ngspice_root()
+            self.assertEqual(resolved.path, str(drifted))
+            self.assertEqual(
+                resolved.source, f"brew --prefix {runner.DRIFTING_HOMEBREW_FORMULA}"
+            )
+            self.assertTrue(resolved.drifted)
+
+    def test_expected_ngspice_root_skips_a_prefix_that_is_not_installed(self):
+        """``brew --prefix <formula>`` answers for a *known* formula whether
+        or not it is installed, so a non-existent prefix must not win."""
+        with tempfile.TemporaryDirectory() as tmp:
+            drifted = Path(tmp) / "ngspice"
+            fake_ngspice_install(drifted, "ngspice-47")
+            prefixes = {
+                runner.PINNED_HOMEBREW_FORMULA: str(Path(tmp) / "not-installed"),
+                runner.DRIFTING_HOMEBREW_FORMULA: str(drifted),
+            }
+            with unittest.mock.patch.dict(
+                os.environ, self._env_without_ngspice_root_override(), clear=True
+            ):
+                with unittest.mock.patch.object(
+                    runner, "homebrew_prefix", side_effect=prefixes.get
+                ):
+                    resolved = runner.expected_ngspice_root()
+            self.assertEqual(resolved.path, str(drifted))
 
     def test_expected_ngspice_root_is_none_without_homebrew_or_override(self):
         with unittest.mock.patch.dict(
@@ -1400,9 +1577,7 @@ class CheckEnvProvenanceTests(unittest.TestCase):
     def test_matching_provenance_reports_ok_and_exits_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "homebrew"
-            exe = root / "bin" / "ngspice"
-            exe.parent.mkdir(parents=True)
-            exe.write_bytes(b"fake\n")
+            exe = fake_ngspice_install(root)
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
                 unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
@@ -1419,13 +1594,14 @@ class CheckEnvProvenanceTests(unittest.TestCase):
 
     def test_shadowing_binary_fails_loudly_not_silently(self):
         """The core #182/#184 repro: a different build resolves first on
-        PATH than the one the doc pins, both claiming to be ngspice-46."""
+        PATH than the one the doc pins, both claiming to be ngspice-46.
+
+        Issue #247's regression guard: this must keep failing for the #182
+        reason, and must keep naming the shadowing binary."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "homebrew"
-            root.mkdir()
-            shadow_exe = Path(tmp) / "local-build" / "bin" / "ngspice"
-            shadow_exe.parent.mkdir(parents=True)
-            shadow_exe.write_bytes(b"fake shadowing build\n")
+            fake_ngspice_install(root)
+            shadow_exe = fake_ngspice_install(Path(tmp) / "local-build")
             with unittest.mock.patch("shutil.which", return_value=str(shadow_exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
                 unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
@@ -1437,6 +1613,54 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             self.assertEqual(status, cli.EXIT_ENVIRONMENT)
             self.assertIn("MISMATCH", out)
             self.assertIn(str(shadow_exe), out)
+            self.assertIn("#182 failure mode", out)
+
+    def test_drifted_homebrew_root_names_the_real_corrective_action(self):
+        """Issue #247 end to end: on a host whose unversioned Homebrew
+        ``ngspice`` has moved to 47, ``--check-env`` must stop presenting the
+        ngspice-47 Cellar as the root to "fix" towards."""
+        with tempfile.TemporaryDirectory() as tmp:
+            drifted = Path(tmp) / "homebrew-ngspice-47"
+            fake_ngspice_install(drifted, "ngspice-47")
+            pinned_prefix = Path(tmp) / "pinned-46"
+            exe = fake_ngspice_install(pinned_prefix, "ngspice-46")
+            prefixes = {runner.DRIFTING_HOMEBREW_FORMULA: str(drifted)}
+            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
+                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
+                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
+                unittest.mock.patch.object(runner, "homebrew_prefix", side_effect=prefixes.get), \
+                unittest.mock.patch.dict(
+                    os.environ, self._env_without_ngspice_root_override(), clear=True
+                ):
+                status, out = self._run_check_env()
+            self.assertEqual(status, cli.EXIT_ENVIRONMENT)
+            self.assertIn("MISMATCH", out)
+            self.assertIn("ROOT that has drifted", out)
+            self.assertIn(
+                f"export {runner.NGSPICE_ROOT_ENV}={pinned_prefix.resolve()}", out
+            )
+            self.assertNotIn("#182 failure mode", out)
+
+    def test_blessed_root_env_var_is_a_supported_happy_path(self):
+        """Issue #247, Option 2: ``GF180_LDO_NGSPICE_ROOT`` is the documented
+        mechanism for a host whose pinned ngspice-46 is not a Homebrew keg --
+        it must reach ``provenance OK``, not merely suppress the error."""
+        with tempfile.TemporaryDirectory() as tmp:
+            blessed = Path(tmp) / "blessed-46"
+            exe = fake_ngspice_install(blessed)
+            drifted = Path(tmp) / "homebrew-ngspice-47"
+            fake_ngspice_install(drifted, "ngspice-47")
+            env = self._env_without_ngspice_root_override()
+            env[runner.NGSPICE_ROOT_ENV] = str(blessed)
+            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
+                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
+                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
+                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(drifted)), \
+                unittest.mock.patch.dict(os.environ, env, clear=True):
+                status, out = self._run_check_env()
+            self.assertIn("provenance OK", out)
+            self.assertIn(runner.NGSPICE_ROOT_ENV, out)
+            self.assertNotIn("MISMATCH", out)
 
     def test_no_homebrew_and_no_override_reports_unverified_not_ok(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1451,6 +1675,27 @@ class CheckEnvProvenanceTests(unittest.TestCase):
                 ):
                 status, out = self._run_check_env()
             self.assertIn("provenance not verified", out)
+            self.assertNotIn("MISMATCH", out)
+
+    def test_unverifiable_host_off_the_pin_notes_it_without_failing(self):
+        """CI's own ``pvt-smoke`` job runs Ubuntu's apt ngspice-42 on purpose
+        (a standing #221 portability check). #247's version pin must be
+        *reported* there, never enforced -- that host has no pinned root to
+        check against and is deliberately a different build."""
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "ngspice"
+            exe.write_bytes(b"fake\n")
+            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
+                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-42"), \
+                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
+                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
+                unittest.mock.patch.dict(
+                    os.environ, self._env_without_ngspice_root_override(), clear=True
+                ):
+                status, out = self._run_check_env()
+            self.assertIn("provenance not verified", out)
+            self.assertIn("ngspice-42", out)
+            self.assertIn(runner.PINNED_NGSPICE_VERSION, out)
             self.assertNotIn("MISMATCH", out)
 
 

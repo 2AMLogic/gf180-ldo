@@ -214,19 +214,37 @@ def cmd_check_env() -> int:
         # rather than only reporting the fingerprint for later comparison.
         exe = shutil.which(runner.NGSPICE)
         expected_root = runner.expected_ngspice_root()
+        resolved_major = runner.ngspice_major_version(version)
         if expected_root and exe:
             try:
-                runner.verify_ngspice_provenance(exe, expected_root)
-                print(f"          provenance OK (under {expected_root})")
+                runner.verify_ngspice_provenance(
+                    exe, expected_root, resolved_version=resolved_major
+                )
+                print(
+                    f"          provenance OK (under {expected_root.path}, "
+                    f"via {expected_root.source})"
+                )
             except NgspiceIdentityMismatch as exc:
                 print(f"ngspice : MISMATCH\n{exc}")
                 status = EXIT_ENVIRONMENT
         else:
             print(
-                "          provenance not verified: no Homebrew on PATH and "
-                f"{runner.NGSPICE_ROOT_ENV} is unset -- see "
+                "          provenance not verified: no Homebrew "
+                f"{runner.PINNED_HOMEBREW_FORMULA}/{runner.DRIFTING_HOMEBREW_FORMULA} "
+                f"prefix on PATH and {runner.NGSPICE_ROOT_ENV} is unset -- see "
                 "docs/environment-setup.md #1"
             )
+            # #247: report the version pin even where identity cannot be
+            # enforced, but do NOT fail on it -- this is the branch a
+            # Linux/apt host (and CI's own ngspice-42 portability job) takes,
+            # and those are deliberately-different builds, not drift.
+            if resolved_major and resolved_major != runner.PINNED_NGSPICE_VERSION:
+                print(
+                    f"          note: this is {resolved_major}; "
+                    f"docs/environment-setup.md #1 pins "
+                    f"{runner.PINNED_NGSPICE_VERSION} (not enforced here -- "
+                    "there is no pinned root on this host to check against)"
+                )
     except NgspiceMissing as exc:
         print(f"ngspice : MISSING\n{exc}")
         status = EXIT_ENVIRONMENT

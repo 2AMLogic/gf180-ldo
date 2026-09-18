@@ -203,6 +203,13 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     return text
 
 
+def _parse_version_banner(out: str) -> str:
+    for line in out.splitlines():
+        if "ngspice-" in line:
+            return line.strip().lstrip("* ").strip()
+    return out.strip().splitlines()[0] if out.strip() else "unknown"
+
+
 def ngspice_version() -> str:
     exe = shutil.which(NGSPICE)
     if not exe:
@@ -214,10 +221,46 @@ def ngspice_version() -> str:
     out = subprocess.run(
         [exe, "--version"], capture_output=True, text=True, check=False
     ).stdout
-    for line in out.splitlines():
-        if "ngspice-" in line:
-            return line.strip().lstrip("* ").strip()
-    return out.strip().splitlines()[0] if out.strip() else "unknown"
+    return _parse_version_banner(out)
+
+
+def ngspice_version_at(exe: str | Path) -> str | None:
+    """``<exe> --version``'s banner line, or ``None`` if it can't be run.
+
+    Unlike :func:`ngspice_version` (which reports the binary resolved on
+    ``PATH`` and raises when there is none), this answers the question "what
+    version does *this particular* install provide?" for an arbitrary path --
+    which is what identity checking against a pinned toolchain root needs
+    (issue #247). A non-runnable / absent path is not an error here: it just
+    means that root's version is unknown.
+    """
+    try:
+        out = subprocess.run(
+            [str(exe), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return _parse_version_banner(out) if out.strip() else None
+
+
+_NGSPICE_MAJOR_RE = re.compile(r"\bngspice-(\d+)\b")
+
+
+def ngspice_major_version(banner: str | None) -> str | None:
+    """``"ngspice-46"`` out of a full banner line, or ``None``.
+
+    The banner ngspice prints is chatty ("``ngspice-46 : Circuit level
+    simulation program``"); the only part that is comparable against
+    ``docs/environment-setup.md``'s pin is the ``ngspice-<major>`` token.
+    """
+    if not banner:
+        return None
+    match = _NGSPICE_MAJOR_RE.search(banner)
+    return f"ngspice-{match.group(1)}" if match else None
 
 
 def ngspice_binary_sha256() -> str:
@@ -264,6 +307,51 @@ class NgspiceIdentityMismatch(RuntimeError):
 
 NGSPICE_ROOT_ENV = "GF180_LDO_NGSPICE_ROOT"
 
+# The ngspice major version `docs/environment-setup.md` #1 pins (46_1 via
+# Homebrew). Kept here, next to the identity check that enforces it, so the
+# check can tell "the binary drifted" apart from "the *pin probe* drifted"
+# -- issue #247.
+PINNED_NGSPICE_VERSION = "ngspice-46"
+
+# Homebrew formula names probed for the expected toolchain root, in order.
+#
+# `brew --prefix ngspice` is NOT a pin: homebrew-core's unversioned `ngspice`
+# formula tracks upstream, and on 2026-09-18 it moved to ngspice-47 -- which
+# inverted the #184 identity check on every host that had upgraded. It began
+# reporting the host's correctly-pinned ngspice-46 as the fault and naming
+# the (unpinned) ngspice-47 Cellar as the root to "fix" towards. A *versioned*
+# formula's prefix (`ngspice@46` -> `.../Cellar/ngspice@46/46_1`) cannot drift
+# that way, so it is probed first and the unversioned formula is only a
+# last-resort fallback whose version is checked before it is trusted.
+PINNED_HOMEBREW_FORMULA = "ngspice@46"
+DRIFTING_HOMEBREW_FORMULA = "ngspice"
+
+
+@dataclass(frozen=True)
+class NgspiceRoot:
+    """A candidate toolchain root, plus how it was resolved and what it holds.
+
+    ``source`` is human-readable provenance (``"brew --prefix ngspice@46"``,
+    ``"GF180_LDO_NGSPICE_ROOT"``, ...) so a mismatch message can name *which*
+    probe produced the root it is talking about. ``version`` is the
+    ``ngspice-<major>`` token that root's own ``bin/ngspice`` reports, or
+    ``None`` when that can't be determined -- a root whose version is not the
+    pinned one is not an authority to point a user at (issue #247).
+    """
+
+    path: str
+    source: str
+    version: str | None = None
+
+    @property
+    def matches_pin(self) -> bool:
+        return self.version == PINNED_NGSPICE_VERSION
+
+    @property
+    def drifted(self) -> bool:
+        """This root exists but provides a version the docs do not pin."""
+        return self.version is not None and self.version != PINNED_NGSPICE_VERSION
+
 
 def homebrew_prefix(formula: str) -> str | None:
     """``brew --prefix <formula>``'s output, or ``None`` if unavailable.
@@ -294,56 +382,204 @@ def homebrew_prefix(formula: str) -> str | None:
     return path or None
 
 
-def expected_ngspice_root() -> str | None:
+def _root_ngspice_version(root: str) -> str | None:
+    """The ``ngspice-<major>`` a candidate toolchain root actually provides."""
+    exe = Path(root) / "bin" / NGSPICE
+    if not exe.exists():
+        return None
+    return ngspice_major_version(ngspice_version_at(exe))
+
+
+def expected_ngspice_root() -> NgspiceRoot | None:
     """The toolchain root this host's ``ngspice`` is expected to resolve
     under, per ``docs/environment-setup.md``.
 
     Resolution order (mirrors ``pdk.py``'s override-before-discovery
     convention):
 
-    1. ``GF180_LDO_NGSPICE_ROOT`` -- explicit override, for a host whose
-       validated toolchain docs/environment-setup.md does not (yet) describe
-       a portable discovery rule for (e.g. a Linux/apt install, or a pinned
-       from-source build per this issue's alternative), or to blot out the
-       Homebrew probe below in a test/CI environment.
-    2. ``brew --prefix ngspice`` -- the Homebrew-managed install
-       ``docs/environment-setup.md`` (S1) documents as the validated one.
-    3. ``None`` -- Homebrew is not on this host's ``PATH``; provenance is not
-       enforced there yet (only the version banner + sha256 fingerprint are
-       reported by ``--check-env``).
+    1. ``GF180_LDO_NGSPICE_ROOT`` -- explicit override, and the documented
+       supported mechanism for any host whose validated ngspice-46 install
+       is not a Homebrew keg (a Linux/apt install, a from-source build, or a
+       Homebrew host whose unversioned formula has since moved on). Also
+       blots out the Homebrew probes below in a test/CI environment.
+    2. ``brew --prefix ngspice@46`` -- a *versioned*, keg-only formula, whose
+       prefix cannot drift when Homebrew's unversioned ``ngspice`` upgrades.
+    3. ``brew --prefix ngspice`` -- the unversioned formula. Still probed (it
+       is what a host provisioned before #247 has), but it is explicitly NOT
+       a pin: the returned :class:`NgspiceRoot` carries the version that root
+       actually provides so callers can refuse to treat a drifted root as the
+       authority (see :func:`verify_ngspice_provenance`).
+    4. ``None`` -- no override and no Homebrew on this host's ``PATH``;
+       provenance is not enforced there yet (only the version banner + sha256
+       fingerprint are reported by ``--check-env``).
+
+    A Homebrew candidate whose prefix does not exist on disk is skipped:
+    ``brew --prefix <formula>`` answers for a *known* formula whether or not
+    it is installed.
     """
     override = os.environ.get(NGSPICE_ROOT_ENV)
     if override:
-        return override
-    return homebrew_prefix("ngspice")
+        return NgspiceRoot(override, NGSPICE_ROOT_ENV, _root_ngspice_version(override))
+    for formula in (PINNED_HOMEBREW_FORMULA, DRIFTING_HOMEBREW_FORMULA):
+        prefix = homebrew_prefix(formula)
+        if prefix and Path(prefix).exists():
+            return NgspiceRoot(
+                prefix, f"brew --prefix {formula}", _root_ngspice_version(prefix)
+            )
+    return None
 
 
-def verify_ngspice_provenance(resolved_exe: str, expected_root: str) -> None:
-    """Raise :class:`NgspiceIdentityMismatch` unless ``resolved_exe`` lives
-    under ``expected_root``.
+def _wrong_version_message(
+    resolved_exe: str,
+    resolved_real: Path,
+    resolved_version: str,
+    expected_root: NgspiceRoot,
+) -> str:
+    return (
+        f"ngspice resolved on PATH ({resolved_exe} -> {resolved_real}) reports "
+        f"{resolved_version}, but docs/environment-setup.md #1 pins "
+        f"{PINNED_NGSPICE_VERSION}.\n"
+        f"  Expected toolchain root ({expected_root.source}): "
+        f"{expected_root.path} ({expected_root.version or 'version unknown'}).\n"
+        "  Fix: install the pinned version and make it resolve first on PATH.\n"
+        "  Do NOT adopt whichever version Homebrew's unversioned `ngspice` "
+        "formula happens to provide today: moving this repo's evidence onto a "
+        "new ngspice major version is a spec-adjacent decision, not a PATH "
+        "change. It needs DR-0025's `wnflag` model-bin pin re-validated on "
+        "that version first (issue #221), plus a ruling on every existing "
+        "record.\n"
+        f"  If this host intentionally runs an already-validated "
+        f"{PINNED_NGSPICE_VERSION} install at some other prefix, set "
+        f"{NGSPICE_ROOT_ENV}=<prefix> to bless it.\n"
+        "  See docs/environment-setup.md #1 and its \"Keeping the ngspice pin "
+        "from drifting\" section."
+    )
 
-    Both paths are resolved with ``Path.resolve()`` (following symlinks) so a
-    Homebrew Cellar symlink and a self-built binary sitting at a different,
-    PATH-shadowing prefix (the exact #182 failure mode) cannot alias one
-    another.
+
+def _drifted_root_message(
+    resolved_exe: str,
+    resolved_real: Path,
+    resolved_version: str | None,
+    expected_root: NgspiceRoot,
+    expected_real: Path,
+) -> str:
+    suggested = resolved_real.parent.parent
+    return (
+        f"ngspice resolved on PATH ({resolved_exe} -> {resolved_real}) is not "
+        f"under the expected toolchain root -- but it is the ROOT that has "
+        "drifted off the pin here, not the binary.\n"
+        f"  expected root   : {expected_root.source} -> {expected_root.path} "
+        f"-> {expected_real} ({expected_root.version})\n"
+        f"  resolved ngspice: {resolved_real} "
+        f"({resolved_version or 'version unknown'})\n"
+        f"  docs/environment-setup.md #1 pins {PINNED_NGSPICE_VERSION}; the "
+        f"root above provides {expected_root.version}, which this repo has "
+        "never validated (DR-0025's `wnflag` model-bin pin was established on "
+        "ngspice-46 only -- issue #221 scoped re-validating it on other "
+        "majors and that was not performed).\n"
+        "  Do NOT 'fix' this by putting that root first on PATH.\n"
+        "  Corrective action, either of:\n"
+        f"    1. Install a non-drifting pinned root -- a versioned, keg-only "
+        f"`{PINNED_HOMEBREW_FORMULA}` formula -- so this probe stops falling "
+        f"back to `brew --prefix {DRIFTING_HOMEBREW_FORMULA}`; or\n"
+        f"    2. Bless the {PINNED_NGSPICE_VERSION} install this host already "
+        "uses:\n"
+        f"         export {NGSPICE_ROOT_ENV}={suggested}\n"
+        "  See docs/environment-setup.md #1 -> \"Keeping the ngspice pin from "
+        "drifting\"."
+    )
+
+
+def _shadowed_binary_message(
+    resolved_exe: str,
+    resolved_real: Path,
+    resolved_version: str | None,
+    expected_root: NgspiceRoot,
+    expected_real: Path,
+) -> str:
+    return (
+        f"ngspice resolved on PATH ({resolved_exe} -> {resolved_real}) is not "
+        f"under the pinned toolchain root ({expected_root.source}: "
+        f"{expected_root.path} -> {expected_real}).\n"
+        f"  resolved ngspice: {resolved_version or 'version unknown'}; "
+        f"pinned root: {expected_root.version or 'version unknown'}; "
+        f"docs pin: {PINNED_NGSPICE_VERSION}.\n"
+        "  This is the #182 failure mode: a different ngspice build is "
+        "shadowing the documented one on PATH (two builds can print the same "
+        "version banner and still differ byte-for-byte).\n"
+        "  Fix: `which -a ngspice` to see every candidate, then either "
+        "reorder PATH so the pinned install resolves first, or remove/rename "
+        "the shadowing binary.\n"
+        "  If this host intentionally uses a different, already-validated "
+        f"toolchain root, set {NGSPICE_ROOT_ENV}=<root> to bless it.\n"
+        "  See docs/environment-setup.md #1 for the pinned version."
+    )
+
+
+def verify_ngspice_provenance(
+    resolved_exe: str,
+    expected_root: NgspiceRoot,
+    resolved_version: str | None = None,
+) -> None:
+    """Raise :class:`NgspiceIdentityMismatch` unless ``resolved_exe`` is the
+    pinned toolchain: the pinned *version*, living under ``expected_root``.
+
+    Two independent assertions, because #247 showed that checking only the
+    second one can invert the diagnosis:
+
+    1. **Version.** ``resolved_exe`` must report
+       :data:`PINNED_NGSPICE_VERSION`. Without this, a host whose Homebrew
+       ``ngspice`` formula silently upgraded would pass the containment check
+       (the binary really is under ``brew --prefix ngspice``) while producing
+       evidence on an unvalidated major version.
+    2. **Containment.** ``resolved_exe`` must live under ``expected_root``,
+       so a second, byte-different build of the *same* version cannot shadow
+       the documented install (the original #182/#184 purpose). Both paths go
+       through ``Path.resolve()`` (following symlinks) so a Homebrew Cellar
+       symlink and a self-built binary at another prefix cannot alias.
+
+    When containment fails, which of the two sides is at fault decides the
+    message: a root that does not itself provide the pinned version is the
+    drifted party, and the message says so instead of naming that root as the
+    thing to "fix" towards.
+
+    ``resolved_version`` (the ``ngspice-<major>`` token) is probed from
+    ``resolved_exe`` when not supplied.
     """
     resolved_real = Path(resolved_exe).resolve()
-    expected_real = Path(expected_root).resolve()
+    expected_real = Path(expected_root.path).resolve()
+    if resolved_version is None:
+        resolved_version = ngspice_major_version(ngspice_version_at(resolved_exe))
+
+    if resolved_version is not None and resolved_version != PINNED_NGSPICE_VERSION:
+        raise NgspiceIdentityMismatch(
+            _wrong_version_message(
+                resolved_exe, resolved_real, resolved_version, expected_root
+            )
+        ) from None
+
     try:
         resolved_real.relative_to(expected_real)
     except ValueError:
+        pass
+    else:
+        return
+
+    if expected_root.drifted:
         raise NgspiceIdentityMismatch(
-            f"ngspice resolved on PATH ({resolved_exe} -> {resolved_real}) is not "
-            f"under the pinned toolchain root ({expected_root} -> {expected_real}).\n"
-            "  This is the #182 failure mode: a different ngspice build is "
-            "shadowing the documented one on PATH.\n"
-            "  Fix: `which -a ngspice` to see every candidate, then either "
-            "reorder PATH so the pinned install resolves first, or remove/rename "
-            "the shadowing binary.\n"
-            "  If this host intentionally uses a different, already-validated "
-            f"toolchain root, set {NGSPICE_ROOT_ENV}=<root> to bless it.\n"
-            "  See docs/environment-setup.md #1 for the pinned version."
+            _drifted_root_message(
+                resolved_exe,
+                resolved_real,
+                resolved_version,
+                expected_root,
+                expected_real,
+            )
         ) from None
+    raise NgspiceIdentityMismatch(
+        _shadowed_binary_message(
+            resolved_exe, resolved_real, resolved_version, expected_root, expected_real
+        )
+    ) from None
 
 
 def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
