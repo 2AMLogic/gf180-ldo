@@ -1,6 +1,39 @@
 # DR-0024: restate the Startup row as a startup-current budget at 1 µF, and re-centre the soft-start ramp ~5x faster
 
-- **Status**: proposed
+- **Status**: ratified 2026-09-15 (issue #212 / this pull request) —
+  **pending**: this status line states the diff this record's ratifying
+  pull request (#228) proposes; per the 2026-08-19 ratification-via-PR
+  policy (2AMLogic/2am#357), the operator's review and approval **of that
+  pull request** is the ratification act itself — no separate ratification
+  comment is expected. Until the pull request merges, this line is a
+  proposal, not yet true of `main`, and `README.md`'s Startup row keeps
+  DR-0006's ratified text (≤ 1 V/ms ramp, inrush/clearance at C_eff =
+  4.7 µF, ±2% within 6 ms). **This ratification is scoped to the two
+  clauses this record's evidence actually proves (ramp rate, settling) and
+  the C_eff = 1 µF anchor move (necessary, by construction, to keep the
+  faster ramp's inrush/clearance arithmetic self-consistent) — it does
+  *not* certify the inrush, current-limit-clearance or monotonicity
+  sub-clauses as passing.** Those remain failing at the majority of 1 µF
+  points, per the "Result up front" and evidence table below, entirely
+  attributable to the pre-existing, separately-tracked issue #191
+  acquisition-transient/settled-leakage regression (same-corner A/B
+  confirmed against `origin/main`'s pre-#212 netlist, not introduced or
+  worsened by this record's resize) — the same posture DR-0006's own
+  ratification (PR #127) took for the Startup row's other, already-failing
+  sub-clauses (tracked separately by #43/#10 at the time). **DR-0022
+  reconciliation**: DR-0022 (`proposed`, not ratified) first proposed the
+  C_eff = 1 µF anchor for the clearance sub-clause alone, against the
+  pre-resize ramp, and measured it passing cleanly there (63/63 + 20/20,
+  `sim/soft-start/records/20260906-125202-f1096c9.md`). That specific
+  clean-pass claim is now stale: `20260915-103035-18f664f.md` (this
+  record's own evidence, gathered after issue #191 was characterized) shows
+  the clearance clause failing at 46/79 points at the same C_eff = 1 µF
+  anchor. This ratification supersedes DR-0022's row-text proposal with
+  this record's fresher, honest evidence rather than citing DR-0022's own
+  now-superseded numbers; DR-0022's underlying arithmetic (why no single
+  global ramp rate satisfies the clearance clause at 4.7 µF) is unaffected
+  and unchanged. DR-0022 itself is left `proposed` — not ratified, not
+  edited — and a separate issue tracks reconciling its own document.
 - **Date**: 2026-09-15
 - **Decided by**: agent-builder (issue #212) — proposing; the ratified spec
   is a human gate (2026-08-19 ratification-via-PR policy, 2AMLogic/2am#357),
