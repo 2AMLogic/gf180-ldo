@@ -22,24 +22,31 @@ Five kinds of transform, each deliberately as small as it can be:
    commit ``bfc4a0a``, leaving the rest of ``ldo_core`` -- pass device,
    divider, error amp, current limit -- byte for byte identical.
 
-   NOTE (issue #234): this pair used to be an injection-ELEMENT A/B --
-   ``device`` was the post-#195 device-level Mgm* transconductor chain,
-   ``binj`` the ideal ``Binj_ss`` behavioural source, and the two differed in
-   the injection element and nothing else. Issue #231 (PR #233) reverted the
-   device-level chain back to ``Binj_ss``, so as of that revert **``device``
-   also uses ``Binj_ss``**: the two variants differ ONLY in three MIM-cap
-   lengths -- ``XCss`` 12u<->60u, ``XCh_ss`` 14u<->70u, ``XCr_ss`` 14u<->70u,
-   the `spec/decision-records/DR-0024-startup-current-budget-at-1uf.md`
-   ramp-speed resize -- which ``binj`` (frozen before that resize landed)
-   predates and ``device`` (`main` as committed) has. "The A/B is
-   attributable to the injection element" is therefore no longer true of the
-   CURRENT tree; it stays true of the historical record this module can still
-   reproduce (`sim/soft-start-loop-gain/records/20260910-015601-2387ece.md`),
-   which was measured against the device-level chain before the revert.
-   ``binj`` is kept regardless, because it is still the ideal,
+   WHAT THE A/B ACTUALLY ISOLATES HAS CHANGED TWICE -- date any record you
+   read against this list, because the same two variant names have meant
+   three different comparisons:
+
+   * **post-#195, pre-#231**: ``device`` was the device-level Mgm*
+     transconductor chain, ``binj`` the ideal ``Binj_ss`` source, and the two
+     differed in the injection element and nothing else. That is the
+     comparison `records/20260910-015601-2387ece.md` was measured under.
+   * **#231 (PR #233) to #246**: the chain was reverted, so ``device`` ALSO
+     carried ``Binj_ss`` and the two differed ONLY in three MIM-cap
+     lengths -- the DR-0024 ramp-speed resize. The A/B had no
+     injection-element content at all (issue #234).
+   * **#246 onward (now)**: DR-0023's cascoded mirror lands, so ``device``
+     carries the Mgm* chain again -- ``Mgmr_ss``/``Mgmrc_ss`` in the
+     reference leg and ``Mgmo_ss``/``Mgmc_ss`` in the output leg -- and
+     ``binj`` still carries ``Binj_ss``. The A/B is an injection-element
+     comparison again, **but it is confounded by the DR-0024 cap resize**,
+     which ``binj`` (frozen at ``bfc4a0a``) predates. There is no commit
+     that has the cascoded element without the resize, so the confound is
+     NAMED in every record rather than removed. ``selftest.py`` asserts both
+     halves of this so a record cannot silently describe the wrong one.
+
+   ``binj`` is kept regardless of any of that, because it is also the ideal,
    closed-form-transfer variant ``selftest.py`` and the hand-over deck check
-   the metric code against -- not because it isolates an injection element
-   the current tree no longer has two versions of.
+   the metric code against.
 
 3. **AC-open sensitivity**: a named device's drain is moved onto a private
    node and reconnected through a 1 GH inductor. At DC an inductor is a
@@ -98,16 +105,17 @@ DUT_VARIANTS = ("device", "binj")
 VARIANT_BLURB = {
     "device": (
         "`design/netlist/ldo_softstart.spice` as committed -- as of issue "
-        "#231/PR #233 this is the ideal `Binj_ss` behavioural source, the "
-        "SAME injection element `binj` uses; the two variants now differ "
-        "ONLY in the DR-0024 MIM-cap resize (`XCss`/`XCh_ss`/`XCr_ss`), not "
-        "in the injection element (see #234)"
+        "#246 this is the DEVICE-LEVEL transconductor with DR-0023's "
+        "cascoded output mirror (`Mgmr_ss`/`Mgmrc_ss` reference leg, "
+        "`Mgmo_ss`/`Mgmc_ss` output leg); there is no behavioural injection "
+        "source in it"
     ),
     "binj": (
-        f"ideal behavioural injection source `Binj_ss`, frozen pre-DR-0024 "
-        f"cap sizing from commit `{PRE195_SHORT}` (also pre-#195, but #195's "
-        f"device-level chain was reverted by #231 and is no longer what "
-        f"distinguishes this from `device`)"
+        f"ideal behavioural injection source `Binj_ss`, frozen at commit "
+        f"`{PRE195_SHORT}` -- which is pre-#195 AND pre-DR-0024, so a "
+        f"device-vs-binj delta carries BOTH the injection element and the "
+        f"DR-0024 ramp-speed MIM-cap resize. No commit separates them; the "
+        f"confound is named, not removed (issues #234, #246)"
     ),
 }
 

@@ -146,17 +146,25 @@ def main() -> int:
           "the only element line that changes is Xsoftstart, whose port list "
           "must match the subckt's")
 
-    # (b) the two DUT variants, and what they actually differ in post-#231
+    # (b) the two DUT variants, and what they actually differ in
     #
-    # NOTE (issue #234): this used to be "the A/B swaps the injection element
-    # and nothing else" -- `device` was the post-#195 device-level Mgm* chain
-    # and `binj` the ideal `Binj_ss` source. Issue #231/PR #233 reverted the
-    # device-level chain back to `Binj_ss`, so `device` (as committed today)
-    # ALSO uses `Binj_ss`; the only thing left distinguishing it from `binj`
-    # (frozen pre-DR-0024) is the DR-0024 MIM-cap resize. See
-    # `netlist_variants.py`'s module docstring and `VARIANT_BLURB` for detail,
-    # and `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` for
-    # the historical record where this check's old claim was still true.
+    # HISTORY, because this check's claim has now changed twice and a reader
+    # who only sees the current assertion will mis-date the records:
+    #   pre-#231  `device` was #195's device-level Mgm* chain and `binj` the
+    #             ideal `Binj_ss` source -- the A/B WAS an injection-element
+    #             comparison (record 20260910-015601-2387ece).
+    #   #231/#234 the chain was reverted, so BOTH variants carried `Binj_ss`
+    #             and the A/B degenerated into a DR-0024 cap-resize before/
+    #             after with no injection-element content at all.
+    #   #246      DR-0023's cascoded mirror lands, so `device` carries the
+    #             Mgm* chain again (now with Mgmrc_ss/Mgmc_ss) and `binj`
+    #             still carries `Binj_ss`. The A/B is an injection-element
+    #             comparison again -- but it is CONFOUNDED by the DR-0024
+    #             cap resize, which `binj` (frozen at bfc4a0a) predates. That
+    #             confound is named rather than removed, because removing it
+    #             would mean re-freezing `binj` at a commit that does not
+    #             exist. Any record minted from this bench must say so.
+    # See `netlist_variants.py`'s module docstring and `VARIANT_BLURB`.
     try:
         binj = nv.instrument_core(core, nv.fetch_pre195_softstart(REPO_ROOT))
     except nv.TransformError as exc:
@@ -175,27 +183,39 @@ def main() -> int:
         binj_ss = nv.SS_BLOCK_RE.search(binj).group(0)
         dev_ss_lines = device_lines(dev_ss)
         binj_ss_lines = device_lines(binj_ss)
-        ss_diff = [(a, b) for a, b in zip(dev_ss_lines, binj_ss_lines)
-                   if a != b]
-        check("...and post-#231 they both carry Binj_ss and differ ONLY in "
-              "the DR-0024 cap resize, NOT the injection element",
-              ("Binj_ss" in dev_ss and "Binj_ss" in binj_ss
-               and "XMgmo_ss" not in dev_ss and "XMgmo_ss" not in binj_ss
-               and len(dev_ss_lines) == len(binj_ss_lines)
-               and len(ss_diff) == 3
-               and {d[0].split()[0] for d in ss_diff}
-               == {"XCss", "XCh_ss", "XCr_ss"}),
-              f"{len(ss_diff)} line(s) differ inside ldo_softstart: "
-              + "; ".join(f"{a.split()[0]}" for a, b in ss_diff)
-              + " -- both variants inject through Binj_ss; this A/B is a "
-              "before/after of the ramp-speed cap resize, not an "
-              "injection-element comparison (issue #234)")
+        cascode = ("XMgmr_ss", "XMgmrc_ss", "XMgmo_ss", "XMgmc_ss")
+        missing = [n for n in cascode if f"\n{n} " not in "\n" + dev_ss]
+        check("...and post-#246 `device` carries DR-0023's CASCODED mirror "
+              "while `binj` carries the ideal Binj_ss source",
+              (not missing
+               and "Binj_ss" not in dev_ss
+               and "Binj_ss" in binj_ss
+               and not any(n in binj_ss for n in cascode)),
+              "`device` must have all four mirror devices "
+              + ", ".join(cascode)
+              + " and no behavioural injection source; `binj` must have "
+              "Binj_ss and none of them"
+              + (f" -- MISSING from `device`: {missing}" if missing else ""))
+        check("...and the A/B's OTHER difference, the DR-0024 cap resize, is "
+              "still present and is a named confound, not a surprise",
+              all(any(ln.split()[0] == n for ln in dev_ss_lines)
+                  and any(ln.split()[0] == n for ln in binj_ss_lines)
+                  for n in ("XCss", "XCh_ss", "XCr_ss"))
+              and [ln for ln in dev_ss_lines if ln.split()[0] == "XCss"]
+              != [ln for ln in binj_ss_lines if ln.split()[0] == "XCss"],
+              "`binj` is frozen at bfc4a0a, which predates DR-0024's 5x "
+              "MIM-cap resize, so a device-vs-binj delta from this bench "
+              "carries BOTH the injection element and the ramp-speed resize. "
+              "There is no commit that has one without the other, so the "
+              "confound is named in every record rather than removed "
+              "(issues #234, #246)")
 
     # (c) the AC-only transforms are DC-inert by construction
     #
-    # XMpre_b_ss (not the historical XMgmo_ss, gone since #231) is the target
-    # here: it survives on the current tree, touches FB exactly once, and --
-    # unlike Binj_ss -- has a `+` continuation line, so this same call also
+    # XMpre_b_ss is the target here because it is the FB coupling that is
+    # stable across this cell's injection-element churn (the Mgm* chain has
+    # now been removed and re-added once each, #231 and #246): it touches FB
+    # exactly once and has a `+` continuation line, so this same call also
     # exercises the continuation-skipping check below.
     opened = nv.ac_open(dev, "XMpre_b_ss", "FB", "t")
     ol = device_lines(opened)
@@ -227,8 +247,10 @@ def main() -> int:
           "exactly, so the transform would apply without raising and "
           "measure nothing; this is the exact `acopen-fb-inj` mistake #234 "
           "exists to fix, now refused outright rather than silently applied")
-    # HG is a real internal node (device.spice's soft-start hold network);
-    # GMSUM (used here pre-#234) no longer exists post-#231.
+    # HG is a real internal node (the soft-start hold network), chosen
+    # because it is stable across this cell's injection-element churn:
+    # GMSUM, which this check used pre-#234, was deleted by #231 and
+    # re-instated by #246, which is exactly what makes it a bad fixture.
     shorted = nv.ac_short(dev, "HG", "VIN", "t")
     sl = device_lines(shorted)
     caps = [l for l in sl if l.lower().startswith("ct ")]
@@ -240,11 +262,14 @@ def main() -> int:
           f"operating point cannot move")
     check("add_cap()/ac_short() refuses a node absent from the netlist "
           "(issue #234)",
-          _raises(nv.TransformError, nv.ac_short, dev, "GMSUM", "VIN", "t"),
+          _raises(nv.TransformError, nv.ac_short, dev,
+                  "NODE_THAT_IS_NOT_IN_THIS_NETLIST", "VIN", "t"),
           "a capacitor onto a node nothing else touches is floating and "
           "couples to nothing -- this is the exact `acshort-gmsum` mistake "
-          "#234 exists to fix (GMSUM was removed from ldo_softstart by "
-          "#231), now refused outright rather than silently applied")
+          "#234 exists to fix. The absent node is named synthetically rather "
+          "than reusing GMSUM, because GMSUM came BACK in #246 (DR-0023's "
+          "cascoded mirror) and this check then inverted into asserting that "
+          "a node which EXISTS is refused, and failed")
     for bad in (("XMhold_ss", "VIN"), ("XNoSuchDevice", "FB")):
         try:
             nv.ac_open(dev, bad[0], bad[1], "t")

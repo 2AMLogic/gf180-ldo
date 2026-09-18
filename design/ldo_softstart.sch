@@ -25,31 +25,31 @@ CURRENT INJECTION INTO FB. Read the two "WHY" sections below in order: the
 first is why #38 did not ramp the amplifier's reference, and the second is
 why injecting into FB is not that idea and does not hit its floor.
 
-#189 BUILT THE INJECTION AS ONE BEHAVIOURAL SOURCE (Binj_ss). #191 (open)
-replaced it, for one release, with a device-level transconductor --
-Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss --
-and #231 REVERTED that back to Binj_ss below. Both the topology tried and
-why it is reverted are kept as a historical record under "#191'S
-DEVICE-LEVEL ATTEMPT (REVERTED BY #231)": #191 already knew of one PVT-wide
-failure mode (an acquisition-transient inrush spike) before #231 started;
-#231 found a SECOND, independent one (a persistent settled-accuracy leak
-into FB, at exactly the corners sim/startup's full/min-load branches check
-and sim/soft-start's own settled-read point does not reach), and every
-sizing either issue tried made one or both failures worse, not better.
-#191 stays open. It is NOT starting from zero: `spec/decision-records/
-DR-0023-softstart-injection-mirror-topology.md` already root-caused both
-failure modes to the mirror's drain-voltage mismatch and proposes cascoding
-Mgmo_ss against Mgmr_ss as the fix -- but DR-0023 is `status: proposed`,
-gated on human ratification (PR #217) before any implementation PR may
-touch this schematic, and that PR has not merged as of #231. Until it does,
-this cell ships with the same zero-parasitic idealization #189 committed --
-see "WHAT IS IDEALIZED HERE" below.
+THE INJECTION IS NOW REAL DEVICES, AND THE MIRROR IS CASCODED (#246).
+#189 built the injection as one behavioural source (Binj_ss). #191 replaced
+it, for one release, with a device-level transconductor
+(Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss)
+whose output mirror was NOT cascoded; #231 reverted that to Binj_ss because
+the uncascoded mirror had two independent PVT-wide failure modes (an
+acquisition-transient inrush spike, and a persistent settled-accuracy leak
+into FB). `spec/decision-records/DR-0023-softstart-injection-mirror-
+topology.md` root-caused both to ONE thing -- the mirror's two legs do not
+see the same drain voltage -- and ratified the fix (PR #217, merged
+2026-09-18): cascode Mgmo_ss against Mgmr_ss. #246 is that implementation.
+Binj_ss is gone; the chain below is the same one #191 built PLUS the two
+cascode devices DR-0023 ratifies, Mgmrc_ss (reference leg, diode-connected)
+and Mgmc_ss (output leg). Read "HOW THE INJECTION IS GENERATED, AS DEVICES"
+for the topology, "WHAT THE CASCODE FIXED, AND WHAT IT DID NOT" for the
+measured outcome (including the two targets it does NOT reach), and
+"#191'S UNCASCODED ATTEMPT (REVERTED BY #231)" for the historical record
+of why no amount of resizing the uncascoded chain could have worked.
 
 Port order (also the .sym pin order -- do not reorder either file without
 updating both, and without re-running design/netlist.py --check):
   VIN        supply, 3.3 V nominal
   FB         ldo_core's feedback-divider midpoint, 2/3 * VOUT. As of #189
-             this block DRIVES that node (Binj_ss sources into it, and
+             this block DRIVES that node (the injection element -- Mgmc_ss's
+             drain as of #246, Binj_ss before it -- sources into it, and
              Mpre_a_ss/Mpre_b_ss pre-charge it to VREF for the first tens of
              microseconds after enable); before #189 it only sensed it. The
              divider ratio, the loop's feedback factor beta and #10's loop
@@ -231,7 +231,8 @@ ENABLE / SHUTDOWN
   Mben_ss (gate EN): opens the bias branch -- Iref_ss and the ramp go to 0.
   Mdis_ss (gate SD): resets SSR to 0 (SD is high whenever ENB is).
   Mpre_b_ss (gate ENB): opens the FB pre-charge path.
-  Binj_ss: gated on EN in its own expression (see WHAT IS IDEALIZED HERE).
+  Mgme_ss (gate EN): breaks the injection transconductor's ground return, so
+  both its PMOS branches stand down and the mirror stops sourcing into FB.
   Mhold_ss/Mhold_bg_ss (gate HG): HG sits at 0 while disabled, so the hold
   is ON before EN is ever asserted -- the same guarantee #38 got by parking
   CLG at VSS. Men (ldo_core) releases PASS_GATE within a microsecond of the
@@ -247,11 +248,30 @@ WHAT THIS COSTS THE MAIN LOOP
   In the settled enabled state every element #189 added is off:
   Mhold_ss/Mhold_bg_ss are in cutoff (HG at VIN -- adjudicated at every
   corner by the bench's own hg_end predicate), Mpre_a_ss/Mpre_b_ss are open
-  (ENB high... low, and HG at VIN), and Binj_ss is rectified off because SSR
-  finishes above VREF. What remains on FB is two PMOS drain junctions and one
-  injection-source terminal, i.e. tens of femtofarads -- against Cff's 15 pF.
-  That is strictly LESS than what #38/#43 left behind, which was Cm_ss's
-  7.2 pF and Rz_ss's 1.55 Mohm permanently hanging on PASS_GATE.
+  (ENB high... low, and HG at VIN), and the injection mirror is rectified off
+  because SSR finishes above VREF. What remains on FB is two PMOS drain
+  junctions -- Mpre_b_ss's, and (as of #246) Mgmc_ss's in place of the
+  behavioural source's zero-capacitance terminal -- i.e. tens of femtofarads,
+  against Cff's 15 pF. The cascode does NOT add a junction to FB: Mgmc_ss's
+  drain REPLACES Mgmo_ss's on that node rather than joining it, so the count
+  on FB is the same as the uncascoded chain's. That is strictly LESS than
+  what #38/#43 left behind, which was Cm_ss's 7.2 pF and Rz_ss's 1.55 Mohm
+  permanently hanging on PASS_GATE.
+
+  MEASURED, #246 (targets T6 and T7, design/softstart_injection_
+  compensation.md section 3). AC-opening Mgmc_ss's drain from FB while
+  holding the DC operating point bit-identical (a 1 GH series inductor is a
+  short at DC; the landed VOUT and I_inj agree to every printed digit on both
+  sides) moves the main loop by 0.00 deg of phase margin and 0.00 dB of gain
+  margin at tt_27c_3.30v, device/sink/ssr=1.15, 1 uF/100 mOhm -- at most
+  0.0015 dB / 0.0030 deg anywhere in 0.01 Hz to 1 GHz, i.e. below the
+  numerical floor, so no pole or zero is fitted. T6's bar is 2 deg / 1 dB.
+  The same run's capacitance ladder puts FB's own budget at 10 pF in the
+  settled-ish sink state and 3 pF at the hold-release ramp state, against
+  T7's 1 pF bar and this element's tens of femtofarads. Both targets PASS
+  and neither regresses against the uncascoded chain's +0.053 deg / +0.01 dB.
+  One corner and two ramp states, not a PVT-wide restatement -- see
+  sim/soft-start/records/20260918-190207-8a59d23.md section 5.
 
   The AC consequence of removing Cm_ss/Rz_ss from PASS_GATE is real and is
   NOT characterised here: sim/soft-start measures the large-signal startup
@@ -264,20 +284,10 @@ WHAT THIS COSTS THE MAIN LOOP
   sim/soft-start-loop-gain/records/20260910-015601-2387ece.md, and the
   recommendation it feeds, design/softstart_injection_compensation.md.
 
-#191'S DEVICE-LEVEL ATTEMPT (REVERTED BY #231) -- HISTORICAL RECORD
+HOW THE INJECTION IS GENERATED, AS DEVICES (#191, CASCODED BY #246/DR-0023)
 
-  Everything under this heading, down to "WHAT IS IDEALIZED HERE", describes
-  Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss, a
-  device-level implementation of the injection that #191 landed (dce8d73)
-  and #231 removed from this schematic. It is kept, in full, as a record of
-  what was tried and why it failed -- both for the two PVT-wide failure
-  modes #191 itself already found (below) and the additional one #231 found
-  (last subsection) -- so a future attempt at a real (non-behavioural)
-  injection element does not have to rediscover any of them. None of the
-  named devices exist in this file any more; the live implementation is
-  Binj_ss, below "WHAT IS IDEALIZED HERE".
-
-HOW THE INJECTION IS GENERATED, AS DEVICES (#191)
+  This section describes the LIVE implementation. There is no behavioural
+  injection source in this cell any more.
 
   #189 built the injection as one behavioural source:
 
@@ -315,51 +325,193 @@ HOW THE INJECTION IS GENERATED, AS DEVICES (#191)
                       mirror.
     Mgmm_ss           mirrors GMIA's bias (1:1 with Mgmd_ss) and sinks Ia
                       from GMSUM to GMVSS.
-    Mgmr_ss           diode-connected PMOS (gate=drain=GMSUM, source=VIN).
-                      GMSUM's KCL is Ib + I(Mgmr_ss) = Ia, so
-                      I(Mgmr_ss) = Ia - Ib = (VREF - SSR)/R for SSR < VREF
-                      (both branches share R and are degenerated off the SAME
-                      VIN, so VIN and the branches' own Vsg cancel in the
-                      difference -- the ~3 % residual from the two branches'
-                      Vsg not matching exactly is the transconductor's own
-                      error, budgeted below). For SSR > VREF, Ia < Ib and
-                      Mgmr_ss would need to source negative current to
-                      balance GMSUM's KCL -- it cannot, so it goes into
-                      cutoff and I(Mgmr_ss) clips to exactly zero. THIS is
-                      the rectifier: a property of the topology, not a
-                      separate comparator.
-    Mgmo_ss           mirrors Mgmr_ss (1:1) and sources the result into FB --
-                      the same "VIN -> FB" direction Binj_ss carried.
+    Mgmr_ss/Mgmrc_ss  the reference leg of the mirror, a DIODE-CONNECTED
+                      CASCODE STACK from VIN down to GMSUM: Mgmr_ss
+                      (gate=drain=GMRM, source=VIN) on top of Mgmrc_ss
+                      (gate=drain=GMSUM, source=GMRM). GMSUM's KCL is
+                      Ib + I(stack) = Ia, so I(stack) = Ia - Ib =
+                      (VREF - SSR)/R for SSR < VREF (both branches share R
+                      and are degenerated off the SAME VIN, so VIN and the
+                      branches' own Vsg cancel in the difference -- the
+                      residual from the two branches' Vsg not matching
+                      exactly is the transconductor's own error, measured
+                      below). For SSR > VREF, Ia < Ib and the stack would
+                      need to source negative current to balance GMSUM's
+                      KCL -- it cannot, so BOTH its devices go into cutoff
+                      and I(stack) clips to zero. THIS is the rectifier: a
+                      property of the topology, not a separate comparator.
+                      Mgmrc_ss is new in #246; DR-0023 is what puts it here.
+    Mgmo_ss/Mgmc_ss   the output leg, the SAME stack mirrored: Mgmo_ss
+                      (gate GMRM, source VIN, drain GMOD) under Mgmc_ss
+                      (gate GMSUM, source GMOD, drain FB), sourcing into FB
+                      in the same "VIN -> FB" direction Binj_ss carried.
+                      Mgmc_ss is new in #246 and is the whole point of
+                      DR-0023: because Mgmc_ss and Mgmrc_ss are matched and
+                      carry the same current, |Vgs(Mgmc_ss)| = |Vgs(Mgmrc_ss)|,
+                      so V(GMOD) = V(GMRM) and Mgmo_ss's |Vds| equals
+                      Mgmr_ss's BY CONSTRUCTION rather than by coincidence.
+                      Uncascoded, those two |Vds| differed by 0.95-1.61 V and
+                      grew one-for-one with VIN (DR-0023's table); that is the
+                      error term every #191 sizing sweep failed to move, and
+                      it is ~0 here.
+                      Mgmc_ss's body, like Mgmrc_ss's, is tied to its OWN
+                      source (GMOD / GMRM) for the same reason Mgma_ss's is:
+                      Vsb = 0 on both cascodes is what makes their |Vgs| match
+                      rather than differ by a body-effect term that tracks
+                      neither leg.
     Mgme_ss           the enable gate: an NMOS (gate EN) between GMVSS and
                       VSS, shared by Mgmd_ss and Mgmm_ss. With it open
                       (EN = 0) neither NMOS has a return path, so DC current
                       in both PMOS branches goes to zero in steady state --
-                      GMIA and GMSUM float toward VIN, Mgmr_ss and Mgmo_ss
-                      see ~0 Vsg and stop sourcing into FB. This is the same
-                      "break the branch's ground return with one EN-gated
-                      NMOS" idiom Mben_ss already uses on Rss_bias.
+                      GMIA, GMRM and GMSUM float toward VIN, all four mirror
+                      devices see ~0 Vsg and nothing is sourced into FB. This
+                      is the same "break the branch's ground return with one
+                      EN-gated NMOS" idiom Mben_ss already uses on Rss_bias.
 
   THE HEADROOM TRAP THIS AVOIDS: at SSR = 0 (the start of every ramp), a PMOS
   gated by SSR has its source only a Vsg above ground -- if that branch's own
   current were sensed by an NMOS diode sitting at its DRAIN (the "obvious"
   place, mirroring the way Mgmd_ss senses GMIA here), the NMOS diode would
   need its own Vgs of headroom BELOW that already-thin margin, and the branch
-  cannot deliver it. Both PMOS diodes in this design (Mgmr_ss, and Mgmd_ss's
-  role is filled by an NMOS only because GMIA sits well above ground once
-  Ia's own IR drop across Rgma_ss is accounted for -- verified in simulation,
-  not assumed) are sensed at the VIN end instead: Mgmr_ss's source is VIN
-  itself, so it always has a full VIN worth of headroom regardless of where
-  SSR sits. Mgmb_ss's branch (gate VREF, not SSR) never approaches this floor
-  since VREF is fixed at 1.2 V, so its own diode-sensing analogue was not
-  needed -- its current is taken directly into GMSUM rather than mirrored.
+  cannot deliver it. Both PMOS diodes in this design (the Mgmr_ss/Mgmrc_ss
+  stack, and Mgmd_ss's role is filled by an NMOS only because GMIA sits well
+  above ground once Ia's own IR drop across Rgma_ss is accounted for --
+  verified in simulation, not assumed) are sensed at the VIN end instead:
+  Mgmr_ss's source is VIN itself, so the stack always has a full VIN worth of
+  headroom regardless of where SSR sits. Mgmb_ss's branch (gate VREF, not SSR)
+  never approaches this floor since VREF is fixed at 1.2 V, so its own
+  diode-sensing analogue was not needed -- its current is taken directly into
+  GMSUM rather than mirrored.
 
-KNOWN, UNRESOLVED REGRESSION (#191): A REAL INJECTION ELEMENT DESTABILIZES
-THE HOLD-RELEASE TRANSIENT AT MOST OF THE PVT MATRIX
+  WHERE THE CASCODE'S HEADROOM COMES FROM, AND WHAT IT COSTS GMSUM. On the
+  OUTPUT leg the arithmetic is DR-0023's: at the binding minimum-supply
+  corner VIN - V(FB) = 2.97 - 1.2 = 1.77 V is available, Mgmo_ss needs
+  |Vds| ~ |Vgs| ~ 0.82 V to match its reference leg, and the ~0.95 V left
+  over is 5-9x a pfet_03v3's |Vdsat| at these single-digit-uA currents. That
+  is the check DR-0023 made and it holds as built.
 
-  This is the single biggest finding of #191 and it is NOT fixed here. It is
-  documented in this much detail because the natural next step (resize the
-  transconductor) makes it WORSE, not better, and that cost real time to
-  discover.
+  DR-0023 did NOT check the other side of the same change, so this note
+  records it: stacking a second diode-connected device in the REFERENCE leg
+  pushes V(GMSUM) DOWN by one |Vgs|, from VIN - |Vgs| to VIN - 2|Vgs|. GMSUM
+  is also Mgmb_ss's drain, and a PMOS with its gate at VREF saturates only
+  while its drain stays below VREF + |Vtp| ~ 1.9 V. Uncascoded, GMSUM sat at
+  2.15 V (DR-0023's own table, tt_27c_2.97v) -- i.e. Mgmb_ss was in TRIODE,
+  which is one more reason the reference current it sets was never as clean
+  as the (VREF - SSR)/R expression above assumes. Cascoded, GMSUM sits about
+  a |Vgs| lower, which moves Mgmb_ss TOWARD saturation rather than away from
+  it. It is therefore not a cost at the low-supply end; at the high-supply,
+  low-current end (VIN = 3.63 V with the mirror near cutoff, where both
+  |Vgs| fall back toward |Vtp|) GMSUM rises again and Mgmb_ss can re-enter
+  triode. That is measured, not argued: it is visible in the per-corner
+  hand-over transfer as the residual-injection and release-point spread this
+  cell still has at 3.63 V and 125 C (see "WHAT THE CASCODE FIXED, AND WHAT
+  IT DID NOT").
+
+WHAT THE CASCODE FIXED, AND WHAT IT DID NOT
+
+  Measured by #246, all against the same DR-0024 cap sizing so the only
+  difference from the superseded records is the two cascode devices:
+
+    sim/soft-start/records/20260918-190207-8a59d23.md
+      163-point PVT transient matrix + the 63-corner T1-T5 hand-over transfer
+      + the ideal-ramp A/B, superseding 20260915-103035-18f664f.md
+    sim/quiescent-current/records/20260918-190801-8a59d23.md
+      81-point Iq re-run, superseding 20260915-234352-077e15b.md
+
+  FIXED -- the DC transfer defect DR-0023 root-caused, comprehensively:
+
+    T5, the loop in regulation at every ramp state: 37/63 corners VIOLATED
+      uncascoded, 0/63 cascoded. This is the headline. The mirror no longer
+      over-injects into FB at the bottom of the ramp, so the error amplifier
+      never rails and the pass device never parks off. Every ramp state now
+      has a loop around it.
+    Settled output error: -141.26 mV worst uncascoded, -1.78 mV worst
+      cascoded -- a 79x reduction, and now inside the ratified +/-2 %
+      (+/-36 mV) accuracy allocation by 20x rather than failing it by 4x.
+    Residual injection at hand-over: +170...+4125 nA uncascoded,
+      +35...+1433 nA cascoded (2.9x better at the worst corner).
+    Release point: 1.250...2.300 V uncascoded and NEVER releasing at 2/63
+      corners; 1.200...2.025 V cascoded and releasing at 63/63.
+    The sim/startup/sim/quiescent-current settled-accuracy failures #231
+      reverted this cell over are GONE: vout_full at ff_125c_3.63v reads
+      1.79357 V cascoded against 1.56863 V uncascoded (threshold 1.7 V), and
+      at sf_125c_3.63v 1.79721 V against 1.65874 V. Both corners PASS.
+    Convergence: 8/163 transient points never reached 1.764 V at all
+      uncascoded; 0/163 cascoded. Worst settling 1.72525 ms -> 1.28724 ms.
+
+  NOT REACHED -- the absolute-accuracy targets, and this is the R4 trigger:
+
+    T1 (residual <= 50 nA above VREF)        1/63 corners pass
+    T2 (I_inj at SSR=0 = 6.00 +/- 0.10 uA)   0/63; measured 4.985...5.807 uA
+    T3 (transconductance -5.00 uA/V +/-5 %)  0/63; measured -4.53...-3.52
+    T4 (release exactly at V(SSR) = 1.200 V) 1/63
+
+    All four are IMPROVED and none is MET. Per DR-0023's own Consequences
+    section and design/softstart_injection_compensation.md section 3 (R4),
+    this is the documented outcome in which the next lever is the 300 kohm
+    transimpedance, not a seventh sizing iteration of the element -- and that
+    is a topology decision needing its own decision record. #246 does not
+    take it; it measures and reports the shortfall.
+
+  MADE WORSE -- the hold-release acquisition transient, and the reason is T2:
+
+    Inrush at C_eff = 1 uF, against the 5 mA bound: 18/79 points clean
+      uncascoded, 0/83 clean cascoded (worst 314.9 mA). Uncascoded, the
+      clean points were ALL at VIN = 3.30/3.63 V (15 of 39) and none at
+      2.97 V (0 of 21); cascoded, none at any supply.
+
+    That pattern is the mechanism, not a coincidence. The loop's DC target
+    at the instant Mhold_ss releases is
+
+        VOUT(target) = 1.5 * VREF - I_inj(SSR=0) * Rtop
+                     = (6.00 uA - I_inj(SSR=0)) * 300 kohm,
+
+    which is EXACTLY T2's error expressed as a voltage. Cascoded, I_inj(0)
+    is 4.985...5.807 uA at every one of the 63 corners -- always BELOW
+    6.00 uA -- so that target is always positive, +58...+305 mV, and the
+    loop acquires it through a 2000 um pass device in about a microsecond:
+    1 uF times 0.2 V in 1 us is 200 mA. Uncascoded, the mirror's
+    drain-voltage error made it OVER-inject at high VIN (DR-0023's table:
+    +1.35 uA of excess at tt_27c_3.30v, +2.54 uA at tt_27c_3.63v), which
+    makes the same target NEGATIVE -- the pass device simply stays off and
+    nothing is acquired. Those corners were not clean because the element
+    was good; they were clean because it was wrong in the direction that
+    hides this edge, at the price of T5 (the loop open, the amplifier
+    railed) at 37/63 corners.
+
+    So the cascode did not introduce a new transient failure mode. It
+    removed the error that was masking an OLD one, and the old one is a
+    direct function of T2. Nothing that leaves T2 unmet can fix it: at the
+    +/-0.10 uA T2 allows, the acquisition step is at most +/-30 mV, which is
+    the level the ideal Binj_ss element already demonstrated clean.
+
+    design/softstart_injection_compensation.md section 4's open arithmetic
+    (a 2.1x voltage difference producing a 356x current difference) is
+    answered by the same observation: the acquisition current is NOT
+    proportional to the step, because it is slew-limited by the loop and the
+    pass device, not step-limited. #246's ideal-ramp A/B measures that
+    directly -- forcing V(SSR) from an ideal source, so the ramp node's own
+    dynamics and source impedance are removed, leaves the spike essentially
+    unchanged, which rules the ramp node out as the mechanism and leaves the
+    hold-release step itself. See the record for the per-corner numbers.
+
+#191'S UNCASCODED ATTEMPT (REVERTED BY #231) -- HISTORICAL RECORD
+
+  Everything from here down to "WHAT IS IDEALIZED HERE" is a record of the
+  chain ABOVE MINUS the two cascode devices -- what #191 landed (dce8d73),
+  what #231 reverted (8fff168), and why. It is kept in full because it is
+  what establishes that no amount of RESIZING could have fixed it, which is
+  what makes cascoding (a topology change, DR-0023) the right move rather
+  than one more sizing attempt. Read the per-measurement outcomes here as
+  statements about the UNCASCODED chain; "WHAT THE CASCODE FIXED, AND WHAT IT
+  DID NOT" below states which of them #246 closes and which it does not.
+
+KNOWN REGRESSION OF THE UNCASCODED CHAIN (#191): A REAL INJECTION ELEMENT
+DESTABILIZED THE HOLD-RELEASE TRANSIENT AT MOST OF THE PVT MATRIX
+
+  This was the single biggest finding of #191. It is documented in this much
+  detail because the natural next step (resize the transconductor) made it
+  WORSE, not better, and that cost real time to discover.
 
   Corroborated again by issue #212/DR-0024's 163-point sweep (resizing only
   Css/Ch_ss/Cr_ss -- this section's transconductor is untouched): the same
@@ -470,48 +622,44 @@ THE HOLD-RELEASE TRANSIENT AT MOST OF THE PVT MATRIX
 
 WHAT IS IDEALIZED HERE
 
-  Fss_ramp, as before: an ideal CCCS standing in for a large-ratio mirror off
-  a bias generator this repo has not designed.
+  Fss_ramp: an ideal CCCS standing in for a large-ratio mirror off a bias
+  generator this repo has not designed. It is now the ONLY idealization left
+  in this cell's injection path.
 
-  Binj_ss, NEW IN #189 and the bigger idealization of the two: a behavioural
-  source implementing
+  THE INJECTION ITSELF IS NO LONGER IDEALIZED (#246). #189's behavioural
+  source
 
       I(VIN -> FB) = max(0, (VREF - SSR) * 5.0e-6) * (EN > 1.4 V)
 
-  i.e. a linear transconductor of 5 uA/V, a source-only rectifier, and an
-  enable gate, in one element. Each of those three is realizable and the
-  intended implementation is standard -- two VIN-referenced resistor-
-  degenerated PMOS branches whose gates are SSR and VREF, their difference
-  taken in a diode-connected PMOS (which IS the rectifier: it simply turns
-  off when SSR passes VREF) and mirrored into FB -- but it is not built here,
-  and this cell therefore does NOT characterise:
-    * the transconductor's own PVT spread and its Vgs-matching error, which
-      the two branches' unequal currents make ~3 % at SSR = 0 and zero at
-      hand-over;
-    * the quiescent current it adds (the settled Iq row has ~8 uA of headroom
-      at its binding corner, ff/125 C/3.63 V, per
-      sim/quiescent-current/records/);
-    * its area.
-  #191 built exactly that device-level implementation once (dce8d73) and
-  #231 reverted it (see the historical section above and "#231:" below) --
-  both of its independent PVT-wide failure modes (an acquisition-transient
-  inrush spike, and the settled-accuracy leakage sim/startup measures) are
-  properties of a REAL device implementation Binj_ss's own zero-parasitic,
-  hard-rectifying idealization does not have. A future device-level build is
-  still tracked by #191, against the cascoded-mirror topology
-  DR-0023 proposes (root-causing both failures to Mgmr_ss/Mgmo_ss's
-  drain-voltage mismatch) once its ratification PR (#217) merges -- not a
-  further resize of the uncascoded topology tried here, which #191's own
-  sizing sweeps already exhausted.
+  packed a 5 uA/V linear transconductor, a source-only rectifier and an
+  enable gate into one zero-capacitance, zero-delay, PVT-invariant element.
+  All three are now real devices (see "HOW THE INJECTION IS GENERATED, AS
+  DEVICES"), so this cell now DOES characterise what that source hid:
+    * the transconductor's own PVT spread and its Vgs-matching error;
+    * the quiescent current it adds;
+    * its area;
+    * its parasitic loading of FB and its finite bias-node bandwidth.
+  Every one of those is measured rather than estimated, in the records this
+  issue mints -- which is also why FOUR of the numeric targets in
+  design/softstart_injection_compensation.md section 3 (T1, T2, T3, T4) are
+  now KNOWN to be out of reach for this topology rather than merely
+  unverified. See "WHAT THE CASCODE FIXED, AND WHAT IT DID NOT".
+
+  Rgma_ss/Rgmb_ss are plain `res` primitives (200 kohm), not ppolyf_u_3k
+  instances: they are the one remaining place in the injection path where a
+  value is stated rather than built out of a PDK device. That is deliberate
+  and is the SAME modelling choice ldo_core's feedback divider already makes
+  (README.md note 3) -- and it is load-bearing for the next paragraph, which
+  is a statement about the RATIO of the two.
 
   The 5.0e-6 coefficient is 1.5/Rtop, i.e. it is a RATIO to the feedback
   divider, not an absolute transconductance. That is deliberate and is the
-  one property any eventual device-level build must preserve: if the
-  injection's reference resistor does not track Rtop, the VOUT/SSR gain moves
-  with the resistor corner, and at -25 % the ramp would START at +0.45 V
-  instead of 0. ldo_core's divider is itself modelled as two ideal resistors,
-  so expressing the injection as a ratio to it is consistent with how the
-  divider ratio is already treated (README.md note 3).
+  one property the device-level build must preserve: if the injection's
+  reference resistor does not track Rtop, the VOUT/SSR gain moves with the
+  resistor corner, and at -25 % the ramp would START at +0.45 V instead of 0.
+  ldo_core's divider is itself modelled as two ideal resistors, so expressing
+  the injection as a ratio to it is consistent with how the divider ratio is
+  already treated (README.md note 3).
 
 #231: THIS LEAKAGE IS WHAT sim/startup's FULL/MIN-LOAD BRANCHES ALSO
 MEASURE, AND WHY THIS CELL IS REVERTED
@@ -548,7 +696,7 @@ MEASURE, AND WHY THIS CELL IS REVERTED
   section is dated before #231 and reaches the same "no lever" conclusion
   independently).
   With two independent PVT-wide failure modes and no untried lever on the
-  UNCASCODED topology, #231 reverted this cell to Binj_ss (below) as an
+  UNCASCODED topology, #231 reverted this cell to Binj_ss as an
   interim fix rather than wait on the real one: `spec/decision-records/
   DR-0023-softstart-injection-mirror-topology.md` already proposes the
   cascoded-mirror redesign that root-causes and fixes both failures
@@ -558,14 +706,17 @@ MEASURE, AND WHY THIS CELL IS REVERTED
   may land it before then. The full 81-point sim/startup matrix passes
   cleanly against Binj_ss (see the record this issue superseded
   20260816-100018-af4d1f9.md's replacement), which is expected: Binj_ss is
-  exactly what that baseline was measured against. #191 stays open, now
-  targeting DR-0023's cascoded topology once #217 merges -- not a further
-  resize of the topology reverted here, which #191's own sweeps (and #231's
-  independent confirmation) already showed has no fix left to try. This
-  section, and the device-level topology above, are left in place as a
-  record of what was tried so that implementation does not have to
-  re-discover either failure mode from scratch, and so it lands on top of
-  Binj_ss the same way #195's original attempt did.
+  exactly what that baseline was measured against.
+
+  CLOSED BY #246. PR #217 merged 2026-09-18, ratifying DR-0023, and this cell
+  now carries the cascoded mirror. The settled-leakage mechanism this section
+  root-causes -- SSR parking above VREF and the mirror still sourcing a few
+  hundred nanoamps there, because its two legs' drains do not match -- is
+  what the cascode removes; the measured residual and the resulting settled
+  output error are in "WHAT THE CASCODE FIXED, AND WHAT IT DID NOT" below.
+  This section is left in place as the record of what was tried, so a future
+  reader does not re-discover either failure mode from scratch, and so that
+  the case for cascoding (rather than resizing a seventh time) stays legible.
 
 SIZING AS BUILT
 
@@ -594,8 +745,37 @@ SIZING AS BUILT
        converged; the analytic ~1.6 V/ms nominal estimate this line
        previously carried undercounted real device/loop effects by roughly
        20%, which is why the record's measured range is cited here instead.
-  Binj_ss   5.0e-6 A/V = 1.5 / Rtop (see WHAT IS IDEALIZED HERE; #191's
-            device-level replacement is reverted as of #231, see above)
+  THE INJECTION TRANSCONDUCTOR (#191's chain + #246/DR-0023's cascode). The
+  design target is 5.0e-6 A/V = 1.5 / Rtop (a RATIO to the divider -- see
+  WHAT IS IDEALIZED HERE), which is what sets the two 200 kohm degeneration
+  resistors: 1/(Rtop||Rbot) = 1.5/300k = 5.0 uA/V, so R = 200 kohm.
+
+  Rgma_ss/Rgmb_ss  res 200 kohm each     branch degeneration, the element's
+                                         own reference. NOT a PDK resistor
+                                         primitive -- see WHAT IS IDEALIZED
+                                         HERE for why the ratio, not the
+                                         absolute value, is the property
+                                         being preserved.
+  Mgma_ss/Mgmb_ss  pfet 4 um / 1 um      the two input branches, gates SSR
+                                         and VREF, bodies on their OWN
+                                         sources (GMSA / GMSB)
+  Mgmd_ss/Mgmm_ss  nfet 4 um / 1 um      branch-A diode + its 1:1 mirror
+  Mgmr_ss/Mgmo_ss  pfet 4 um / 1 um      the mirror's top devices: reference
+                                         (diode at GMRM) and output
+  Mgmrc_ss/Mgmc_ss pfet 4 um / 1 um      THE CASCODE (#246/DR-0023): the
+                                         reference-leg cascode is diode-
+                                         connected at GMSUM, the output-leg
+                                         cascode shares its gate, and both
+                                         have body = own source (GMRM /
+                                         GMOD). Matched-and-same-current is
+                                         what makes V(GMOD) = V(GMRM), which
+                                         is what makes the mirror's two
+                                         |Vds| equal. Identical geometry to
+                                         the devices they cascode, because
+                                         the matching that matters is
+                                         Mgmrc_ss-to-Mgmc_ss, not either of
+                                         them to Mgmr_ss/Mgmo_ss.
+  Mgme_ss          nfet 20 um / 0.5 um   enable switch, gate EN
   Rh_ss     ppolyf_u_3k, 4870 squares  ~15.1 Mohm  EN -> HG
   Ch_ss     70 um x 14 um cap_mim_2f0  ~1.95 pF    HG -> VSS   (tau ~29.4 us;
             issue #212/DR-0024, also a 5x area cut from 70x70/~9.75pF/147us
@@ -633,15 +813,56 @@ SIZING AS BUILT
   Mpre_a_ss    pfet 10 um / 0.5 um   VREF -> FBP,      gate HG
   Mpre_b_ss    pfet 10 um / 0.5 um   FBP  -> FB,       gate ENB
 
-  Added enabled quiescent current is the bias branch only, ~0.4 uA at
-  tt/27 C: the two delay RCs are capacitively terminated, the hold and
-  pre-charge devices end in cutoff, and Binj_ss rectifies to zero (as of
-  #231's revert; #191's device-level attempt was NOT free here -- see its
-  historical section above for the measured, non-zero leakage that revert
-  removes).
+  Added enabled quiescent current, #246 update. The ramp bias branch is
+  ~0.4 uA at tt/27 C as before, the two delay RCs are capacitively terminated
+  and the hold and pre-charge devices end in cutoff. What is NEW is that the
+  injection transconductor is a real, standing DC current: its two branches
+  each carry (VIN - Vsg)/200 kohm and they do NOT switch off at hand-over --
+  the MIRROR rectifies, the branches do not. That adder is measured, not
+  estimated: sim/quiescent-current/records/20260918-190801-8a59d23.md against
+  20260915-234352-077e15b.md (the Binj_ss baseline, same 81-point grid) reads
+  +0.004...+7.18 uA, worst at ff_125c_3.63v, where enabled Iq goes 20.8645 ->
+  28.0411 uA against the ratified < 30 uA row. PASS at 81/81 points, with
+  1.96 uA of headroom left at the binding corner (was 9.14 uA).
 
-  Added area: none beyond the #189 baseline -- Binj_ss is a behavioural
-  source with no modelled on-die area (see WHAT IS IDEALIZED HERE above).
+  TWO THINGS ABOUT THAT NUMBER ARE WORTH STATING PLAINLY, because DR-0023
+  estimated the cascode as costing no material Iq and that estimate is only
+  half right.
+
+    The adder is dominated by the TRANSCONDUCTOR, not by the cascode. Both
+    degenerated branches carry (VIN - |Vsg| - V(gate))/200 kohm and neither
+    switches off at hand-over -- only the mirror rectifies -- so the element
+    stands ~2 x Ia of DC current forever. That is #191's cost, not #246's:
+    it is the price of replacing a behavioural source with real devices, and
+    Binj_ss (an ideal source with no branches) never paid it.
+
+    The cascode is NOT free on top of that, for the reason "WHERE THE
+    CASCODE'S HEADROOM COMES FROM" gives: dropping V(GMSUM) by one |Vgs|
+    pulls Mgmb_ss out of triode and back toward saturation, so its branch
+    delivers MORE current than it did uncascoded. Against #191's own
+    uncascoded measurement at the binding corner (25.3658 uA,
+    sim/quiescent-current/records/20260906-231405-d3cb117.md) the cascode's
+    own share of the adder is about +2.7 uA. DR-0023's "no new current path"
+    argument is correct about topology and incomplete about bias: adding no
+    path is not the same as moving no operating point.
+
+  The 1.96 uA of remaining headroom is the tightest this row has ever been
+  and is a real constraint on anything that follows: the R4 lever (scaling
+  the feedback divider to relax T2/T3) is closed by exactly this row, which
+  is why it needs a decision record rather than a patch.
+
+  Added area, #246 update: the injection transconductor is
+  EIGHT pfet/nfet 03v3 devices at 4 um2 each (Mgma_ss, Mgmb_ss, Mgmd_ss,
+  Mgmm_ss, Mgmr_ss, Mgmo_ss, and #246's two cascodes Mgmrc_ss and Mgmc_ss) =
+  32 um2, plus Mgme_ss at 10 um2, i.e. 42 um2 of transistor -- 8 um2 more
+  than the uncascoded chain's 34 um2, which is DR-0023's "~10 um2 added"
+  estimate confirmed to within one device. The two 200 kohm degeneration
+  resistors are `res` primitives with no PDK geometry and therefore no
+  modelled area (WHAT IS IDEALIZED HERE); built out of ppolyf_u_3k at
+  W = 1 um they would be ~67 squares each, ~134 um2 total, which is the
+  number a layout-phase build should budget and is recorded here so it is not
+  rediscovered. Against the ratified < 0.1 mm2 (100 000 um2) core-area row,
+  the whole transconductor -- cascode, resistors and all -- is under 0.2 %.
 
   Added area, #212/DR-0024 update: 2 630 um2 of capacitor (Css 720, Ch_ss
   980, Cr_ss 980 -- all three down 5x from the #189-era 3600/4900/4900) plus
@@ -693,9 +914,57 @@ C {devices/lab_pin.sym} 1180 -1000 0 0 {name=l_mtopss_g sig_type=std_logic lab=V
 C {devices/lab_pin.sym} 1220 -970 0 0 {name=l_mtopss_d sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 1220 -1030 0 0 {name=l_mtopss_s sig_type=std_logic lab=SSR}
 C {devices/lab_pin.sym} 1220 -1000 0 0 {name=l_mtopss_b sig_type=std_logic lab=VIN}
-C {devices/bsource.sym} 0 -800 0 0 {name=Binj_ss VAR=I FUNC="'max(0, (v(VREF) - v(SSR)) * 5.0e-6) * (v(EN) > 1.4)'" m=1}
-C {devices/lab_pin.sym} 0 -830 0 0 {name=l_binjss_p sig_type=std_logic lab=VIN}
-C {devices/lab_pin.sym} 0 -770 0 0 {name=l_binjss_m sig_type=std_logic lab=FB}
+C {devices/res.sym} 0 -900 0 0 {name=Rgma_ss value=200k footprint=1206 device=resistor m=1}
+C {devices/lab_pin.sym} 0 -930 0 0 {name=l_rgmass_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 0 -870 0 0 {name=l_rgmass_m sig_type=std_logic lab=GMSA}
+C {symbols/pfet_03v3.sym} 200 -900 0 0 {name=Mgma_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 180 -900 0 0 {name=l_mgmass_g sig_type=std_logic lab=SSR}
+C {devices/lab_pin.sym} 220 -870 0 0 {name=l_mgmass_d sig_type=std_logic lab=GMIA}
+C {devices/lab_pin.sym} 220 -930 0 0 {name=l_mgmass_s sig_type=std_logic lab=GMSA}
+C {devices/lab_pin.sym} 220 -900 0 0 {name=l_mgmass_b sig_type=std_logic lab=GMSA}
+C {symbols/nfet_03v3.sym} 400 -900 0 0 {name=Mgmd_ss model=nfet_03v3 L=1u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 420 -930 0 0 {name=l_mgmdss_d sig_type=std_logic lab=GMIA}
+C {devices/lab_pin.sym} 380 -900 0 0 {name=l_mgmdss_g sig_type=std_logic lab=GMIA}
+C {devices/lab_pin.sym} 420 -870 0 0 {name=l_mgmdss_s sig_type=std_logic lab=GMVSS}
+C {devices/lab_pin.sym} 420 -900 0 0 {name=l_mgmdss_b sig_type=std_logic lab=VSS}
+C {devices/res.sym} 600 -900 0 0 {name=Rgmb_ss value=200k footprint=1206 device=resistor m=1}
+C {devices/lab_pin.sym} 600 -930 0 0 {name=l_rgmbss_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 600 -870 0 0 {name=l_rgmbss_m sig_type=std_logic lab=GMSB}
+C {symbols/pfet_03v3.sym} 800 -900 0 0 {name=Mgmb_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 780 -900 0 0 {name=l_mgmbss_g sig_type=std_logic lab=VREF}
+C {devices/lab_pin.sym} 820 -870 0 0 {name=l_mgmbss_d sig_type=std_logic lab=GMSUM}
+C {devices/lab_pin.sym} 820 -930 0 0 {name=l_mgmbss_s sig_type=std_logic lab=GMSB}
+C {devices/lab_pin.sym} 820 -900 0 0 {name=l_mgmbss_b sig_type=std_logic lab=GMSB}
+C {symbols/nfet_03v3.sym} 600 -750 0 0 {name=Mgmm_ss model=nfet_03v3 L=1u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 620 -780 0 0 {name=l_mgmmss_d sig_type=std_logic lab=GMSUM}
+C {devices/lab_pin.sym} 580 -750 0 0 {name=l_mgmmss_g sig_type=std_logic lab=GMIA}
+C {devices/lab_pin.sym} 620 -720 0 0 {name=l_mgmmss_s sig_type=std_logic lab=GMVSS}
+C {devices/lab_pin.sym} 620 -750 0 0 {name=l_mgmmss_b sig_type=std_logic lab=VSS}
+C {symbols/pfet_03v3.sym} 800 -750 0 0 {name=Mgmr_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 780 -750 0 0 {name=l_mgmrss_g sig_type=std_logic lab=GMRM}
+C {devices/lab_pin.sym} 820 -720 0 0 {name=l_mgmrss_d sig_type=std_logic lab=GMRM}
+C {devices/lab_pin.sym} 820 -780 0 0 {name=l_mgmrss_s sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 820 -750 0 0 {name=l_mgmrss_b sig_type=std_logic lab=VIN}
+C {symbols/pfet_03v3.sym} 1000 -750 0 0 {name=Mgmrc_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 980 -750 0 0 {name=l_mgmrcss_g sig_type=std_logic lab=GMSUM}
+C {devices/lab_pin.sym} 1020 -720 0 0 {name=l_mgmrcss_d sig_type=std_logic lab=GMSUM}
+C {devices/lab_pin.sym} 1020 -780 0 0 {name=l_mgmrcss_s sig_type=std_logic lab=GMRM}
+C {devices/lab_pin.sym} 1020 -750 0 0 {name=l_mgmrcss_b sig_type=std_logic lab=GMRM}
+C {symbols/pfet_03v3.sym} 1200 -750 0 0 {name=Mgmo_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 1180 -750 0 0 {name=l_mgmoss_g sig_type=std_logic lab=GMRM}
+C {devices/lab_pin.sym} 1220 -720 0 0 {name=l_mgmoss_d sig_type=std_logic lab=GMOD}
+C {devices/lab_pin.sym} 1220 -780 0 0 {name=l_mgmoss_s sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 1220 -750 0 0 {name=l_mgmoss_b sig_type=std_logic lab=VIN}
+C {symbols/pfet_03v3.sym} 1400 -750 0 0 {name=Mgmc_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} 1380 -750 0 0 {name=l_mgmcss_g sig_type=std_logic lab=GMSUM}
+C {devices/lab_pin.sym} 1420 -720 0 0 {name=l_mgmcss_d sig_type=std_logic lab=FB}
+C {devices/lab_pin.sym} 1420 -780 0 0 {name=l_mgmcss_s sig_type=std_logic lab=GMOD}
+C {devices/lab_pin.sym} 1420 -750 0 0 {name=l_mgmcss_b sig_type=std_logic lab=GMOD}
+C {symbols/nfet_03v3.sym} 1600 -750 0 0 {name=Mgme_ss model=nfet_03v3 L=0.5u W=20u nf=1 m=1}
+C {devices/lab_pin.sym} 1620 -780 0 0 {name=l_mgmess_d sig_type=std_logic lab=GMVSS}
+C {devices/lab_pin.sym} 1580 -750 0 0 {name=l_mgmess_g sig_type=std_logic lab=EN}
+C {devices/lab_pin.sym} 1620 -720 0 0 {name=l_mgmess_s sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} 1620 -750 0 0 {name=l_mgmess_b sig_type=std_logic lab=VSS}
 C {symbols/pfet_03v3.sym} 200 -600 0 0 {name=Mpre_a_ss model=pfet_03v3 L=0.5u W=10u nf=1 m=1}
 C {devices/lab_pin.sym} 180 -600 0 0 {name=l_mpreass_g sig_type=std_logic lab=HG}
 C {devices/lab_pin.sym} 220 -570 0 0 {name=l_mpreass_d sig_type=std_logic lab=FBP}

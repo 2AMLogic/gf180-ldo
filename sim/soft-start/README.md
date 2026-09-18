@@ -75,6 +75,50 @@ and the `ff` / `ss` corners (which move the resistor *and* the capacitor
 together) are therefore the axis that matters, and both ends of it are in
 the subset.
 
+## Three drivers, one bench (issue #246)
+
+`testbench/run.sh` is the PVT transient matrix and the only one that mints a
+`netlist-snapshots/` entry. Two smaller drivers answer questions that are
+adjudicated against the **same** Startup row but are not transient sweeps:
+
+| driver | what it runs | what it is for |
+|---|---|---|
+| `testbench/run.sh` | the 163-point transient matrix | every clause of the ratified/proposed Startup row |
+| `testbench/handover_t15.py` | the 63-corner DC hand-over transfer | targets **T1–T5** of `design/softstart_injection_compensation.md` §3 — the FB-injection element's own transfer |
+| `testbench/ramp_ab.py` + `tb_ss_ramp_ab.spice.in` | a two-arm transient A/B, `V(SSR)` internal vs. forced by an ideal PWL on the promoted `SSR` port | the experiment `design/softstart_injection_compensation.md` §4 names: separating the injection element's transfer from the ramp node's own dynamics |
+
+Neither of the two re-implements anything. `handover_t15.py` imports
+`sim/soft-start-loop-gain/testbench/sweep.py`'s own hand-over deck and metric
+code, and `ramp_ab.py` imports that experiment's `promote_ssr_port()`
+(issue #196), so there is exactly one definition of "what `I_inj` is at this
+ramp state" and one implementation of the `SSR` port promotion in this repo.
+Both write under `corners/<record-id>-handover/` and
+`corners/<record-id>-rampab/`, and both leave the record markdown to be
+written by hand like every other bench here.
+
+### Comparing two DUT netlists on one binary
+
+`run.sh` accepts an `LDO_NETLIST` override so a same-host, same-session A/B
+against a frozen `netlist-snapshots/<record-id>.spice` is reproducible.
+Cross-record comparison is *not* a safe substitute: this bench's numbers are
+large-signal transient peaks and records minted weeks apart can carry
+different ngspice binaries. The override is **refused unless `NO_RECORD=1`**,
+so an evidence record is still always the committed export:
+
+```bash
+NO_RECORD=1 LDO_NETLIST=sim/soft-start/netlist-snapshots/<id>.spice \
+  CORNERS=tt TEMPS=27 SUPPLIES=3.30 CAPS=1u/0.1/36 \
+  EXTRA_CORNERS= EXTRA_TEMPS= EXTRA_SUPPLIES= EXTRA_CAPS= \
+  ./sim/soft-start/testbench/run.sh
+```
+
+An explicitly **empty** `EXTRA_*` means "no extra points" (the four use
+`${VAR-default}`, not `${VAR:-default}`, precisely so that works), and two
+invocations that land in the same second on the same commit are refused
+rather than silently merged into one `corners/` directory.
+`corners/20260918-190207-8a59d23-ab/` is a worked example, with its own
+`README.md`.
+
 ## Relationship to sim/enable-shutdown
 
 `sim/enable-shutdown` owns the **Enable / shutdown** row — settled disabled
