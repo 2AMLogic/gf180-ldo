@@ -140,7 +140,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `53827e92c2cc5e546
 - `startup`: `sim/startup/records/20260916-112114-8b551ab.md` — **PASS**, stale
   - Overall: PASS
 - `soft-start`: `sim/soft-start/records/20260918-190207-8a59d23.md` — **MIXED**, fresh (matches current `ldo_core`)
-  - Overall (Startup, ratified row, DR-0006): FAIL on ramp rate / Overall (Startup, DR-0024 proposed bounds, not yet ratified): PASS on ramp rate (163/163 ≤ 5 V/ms) and settling (163/163 ≤ 1.8 ms) / Overall (issue #246's own targets, `design/softstart_injection_ compensation.md` §3): T5 PASS at 63/63 / Overall (the named `softstart_injection_compensation.md` §4 experiment): conclusive.
+  - Overall (Startup, ratified row, DR-0006): FAIL on ramp rate … and FAIL on inrush and current-limit clearance … PASS on the ratified ≤ 6 ms settling clause at 163/163 … PASS on the ratified ±2% settled-accuracy allocation at 161/163 / Overall (Startup, DR-0024 proposed bounds, not yet ratified): PASS on ramp rate (163/163 ≤ 5 V/ms) and settling (163/163 ≤ 1.8 ms) … FAIL on inrush, current-limit clearance, monotonicity and peak dV_out/dt / Overall (issue #246's own targets, `design/softstart_injection_ compensation.md` §3): T5 PASS at 63/63 … and T6/T7 PASS re-measured against the cascoded element … T1, T2, T3 and T4 FAIL / Overall (the named `softstart_injection_compensation.md` §4 experiment): conclusive.
 
 ### Enable / shutdown
 
