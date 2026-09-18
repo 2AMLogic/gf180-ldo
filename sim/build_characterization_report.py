@@ -29,13 +29,28 @@ reproduces byte-identical output (no wall-clock timestamps are emitted).
 Every record's own prose states its result as a bolded ``**Overall...**``
 span (e.g. ``**Overall: PASS**``, or ``**Overall (thermal, ratified <= 290 mW
 into a short): FAIL**`` for records that carry more than one sub-claim). This
-script extracts every such span from the chosen record, optionally filtered
+script extracts every such verdict from the chosen record, optionally filtered
 by a keyword when one record's latest substantive result covers more than
 one ratified row (e.g. ``current-limit`` covers both the "Current limit" row
-and the "Thermal" row). Records that use the older ``## Result ...`` heading
-style instead of a bolded ``**Overall**`` span (a handful of the earliest
-hand-written testbenches) are matched via that heading as a fallback. A
-record with neither is reported as UNKNOWN rather than silently guessed.
+and the "Thermal" row).
+
+A verdict is not always one contiguous bold run: records also state one
+verdict as *several* bold runs separated by unbolded qualifying prose
+(``**Overall (...): FAIL on ramp rate** (163/163 points ...) **and FAIL on
+inrush and current-limit clearance** (0/83 ...)``). Reading only the first
+run dropped every later clause and made the rollup read more favourably
+than the evidence it summarised (issue #251), so a verdict is taken to run
+from its ``**Overall`` opener to the end of the enclosing Markdown block (a
+paragraph, a list item, a table row) or to the next ``**Overall`` opener,
+whichever comes first. Every PASS/FAIL-stating bold run in that span is a
+clause of the verdict; the clauses are joined with `` … ``, which marks the
+unbolded prose elided between them. A record that states its verdict as one
+bold run renders exactly as it always did.
+
+Records that use the older ``## Result ...`` heading style instead of a
+bolded ``**Overall**`` span (a handful of the earliest hand-written
+testbenches) are matched via that heading as a fallback. A record with
+neither is reported as UNKNOWN rather than silently guessed.
 
 ## How "fresh" vs "stale" is determined
 
@@ -72,7 +87,22 @@ DUT_CANDIDATES = {
     "error_amp": REPO_ROOT / "design" / "netlist" / "error_amp.spice",
 }
 
-OVERALL_RE = re.compile(r"\*\*Overall[^*]*\*\*")
+# A verdict is stated as one or more **bold runs** inside a single Markdown
+# block (a paragraph, a list item, a table row). BOLD_RUN_RE finds the runs;
+# BLOCK_START_RE finds where the enclosing block ends, so a verdict never
+# absorbs the next bullet's or the next paragraph's bold text. See
+# extract_verdict_snippets() for how the two combine (issue #251).
+BOLD_RUN_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+BLOCK_START_RE = re.compile(r"^[ \t]*(?:[-+]\s|\*\s|\d+[.)]\s|\||#{1,6}\s|>)")
+OVERALL_OPENER_RE = re.compile(r"^\s*Overall\b")
+# A bold run *after* the opener only continues the verdict if it states a
+# result; a bare emphasis run in the qualifying prose (e.g. "ruling the ramp
+# node **out**") is not a verdict clause. PASS/FAIL is the same token set
+# classify() reads, so a run this skips could not have changed the verdict.
+RESULT_TOKEN_RE = re.compile(r"PASS|FAIL", re.IGNORECASE)
+# Separator between the clauses of one verdict that the record itself wrote
+# as separate bold runs, marking the unbolded prose elided between them.
+CLAUSE_JOIN = " … "
 RESULT_HEADING_RE = re.compile(r"^##\s*Result\b.*$", re.MULTILINE)
 
 
@@ -136,17 +166,74 @@ def freshness(snapshot: pathlib.Path | None) -> tuple[str, str | None]:
 # Verdict extraction
 # ---------------------------------------------------------------------------
 
+def _markdown_blocks(text: str) -> list[str]:
+    """Split ``text`` into Markdown blocks: paragraphs, list items, table
+    rows, headings. A block ends at a blank line or at the start of the next
+    block-level construct, so a continuation line (an indented wrap of the
+    line above) stays with the statement it continues.
+    """
+    blocks: list[list[str]] = []
+    for line in text.splitlines():
+        if not line.strip():
+            blocks.append([])  # blank line: whatever follows starts anew
+            continue
+        if BLOCK_START_RE.match(line) or not blocks or not blocks[-1]:
+            blocks.append([line])
+        else:
+            blocks[-1].append(line)
+    return ["\n".join(block) for block in blocks if block]
+
+
+def _verdict_statements(text: str) -> list[str]:
+    """Every ``**Overall...**`` verdict in ``text``, each rendered with ALL
+    of its bold-run clauses rather than only the first (issue #251).
+
+    Records state a verdict either as one contiguous bold run
+    (``**Overall (thermal, ratified <= 290 mW into a short): FAIL**``) or as
+    several bold runs separated by unbolded prose that qualifies them
+    (``**Overall (...): FAIL on ramp rate** (163/163 points ...) **and FAIL
+    on inrush and current-limit clearance** (0/83 ...)``). Both forms state
+    one verdict, so both must render as one snippet -- reading only the
+    first bold run made the rollup read more favourably than the evidence it
+    summarises.
+
+    A verdict runs from its ``**Overall`` opener to the end of the enclosing
+    Markdown block, or to the next ``**Overall`` opener, whichever comes
+    first. Bold runs before the first opener in a block (e.g. a sibling
+    ``- **Links**:`` bullet's own label) are not part of any verdict, and a
+    bold run after the opener only continues it if it states a PASS/FAIL
+    result -- prose emphasis (``ruling the ramp node **out**``) is not a
+    verdict clause. The elided unbolded prose is marked with ``CLAUSE_JOIN``
+    rather than reproduced: it is qualification, not verdict text, and the
+    record itself remains the citation.
+    """
+    statements: list[list[str]] = []
+    for block in _markdown_blocks(text):
+        current: list[str] | None = None
+        for match in BOLD_RUN_RE.finditer(block):
+            run = match.group(1)
+            if OVERALL_OPENER_RE.match(run):
+                if current:
+                    statements.append(current)
+                current = [run]
+            elif current is not None and RESULT_TOKEN_RE.search(run):
+                current.append(run)
+        if current:
+            statements.append(current)
+    return [CLAUSE_JOIN.join(_clean(run) for run in runs) for runs in statements]
+
+
 def extract_verdict_snippets(text: str, keyword: str | None) -> list[str]:
-    matches = OVERALL_RE.findall(text)
+    statements = _verdict_statements(text)
     if keyword:
-        filtered = [m for m in matches if keyword.lower() in m.lower()]
+        filtered = [s for s in statements if keyword.lower() in s.lower()]
         if filtered:
-            return [_clean(m) for m in filtered]
+            return filtered
         # keyword given but nothing matched it -- fall through to the
         # heading fallback rather than silently returning unrelated
         # sub-claims for a different row.
-    elif matches:
-        return [_clean(m) for m in matches]
+    elif statements:
+        return statements
     heading = RESULT_HEADING_RE.search(text)
     if heading:
         return [_clean(heading.group(0))]
