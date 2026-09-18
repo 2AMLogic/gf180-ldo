@@ -1,14 +1,51 @@
 # DR-0025: gf180mcu model-bin selection binds on the per-finger width `W/NF`; this repo pins it in the deck rather than inheriting it from the host
 
-- **Status**: proposed (ratification tracked in **#219**) -- ratification is
-  the operator's, the same process
-  DR-0001, DR-0007, DR-0008 and DR-0012 through DR-0023 went through.
-  This record proposes **no** `design/` change and **no** spec-value change:
+- **Status**: ratified 2026-09-18 (issue #219 / this pull request) --
+  **pending**: this status line states the diff this record's ratifying
+  pull request proposes, and is not true of `main` until that pull request
+  merges. Ratification follows the **two-key** mechanism the operator put
+  in force on 2026-09-18 (the un-parking comment on #219; `FLEET.md`;
+  `2am/scripts/ratify-key.sh`, epic 2AMLogic/2am#372 Phases B-C): an **EE
+  key** (non-author technical review against this repo's own evidence) plus
+  a **market key** (`adequate-for-catalog`) together ratify, and **no**
+  separate per-pull-request operator sign-off is expected. That supersedes,
+  for this record, the operator-only process DR-0001, DR-0007, DR-0008 and
+  DR-0012 through DR-0024 went through; the author of the ratifying pull
+  request is disqualified from applying its EE key.
+  This record ratifies **no** `design/` change and **no** spec-value change:
   it ratifies a simulation convention and records the evidence that the
-  existing `sim/` evidence trail is unaffected by it. The `sim/harness`
-  change that implements the convention ships in the same pull request,
+  existing `sim/` evidence trail is unaffected by it. No `README.md` row
+  moves. The `sim/harness` change that implements the convention shipped
+  with the record's own (proposing) pull request, #222,
   because it is measurably inert on any host where a record could have been
   produced at all (see "Evidence", E6/E7).
+  **Independent re-verification for ratification**, on a second host with a
+  different operating system from the one the Evidence section below was
+  taken on (macOS, `ngspice-46` KLU, same pinned PDK
+  `gf180mcuD @ c6d73a35f524070e85faff4a6a9eef49553ebc2b`; transcripts in the
+  ratifying pull request's body): E1 (16 `pfet_03v3` bins per process-corner
+  group over 5 corner-group sections, `W` edges
+  `0.22 / 0.5 / 1.2 / 10 / 100.001 um`, `L` edges
+  `0.28 / 0.5 / 1.2 / 10 / 50.001 um`, bin `.12` =
+  `L [0.28, 0.5) x W [10, 100.001] um`, no bin covering a raw
+  `W = 2000 um`), E2 (the pass-device geometry resolves to `pfet_03v3.12`
+  with the instance's `w` still `0.002`, undivided, at `nf=40`), E3
+  (`i(vd1)/i(vd2) = 4.000000e+01`, exactly 40x), E4 (a genuinely
+  out-of-range `W=150u nf=1` device hard-errors under `wnflag=1`, under
+  `wnflag=0` and under `ngbehavior=hsa`, while an in-range `W=90u nf=1`
+  control on the same deck resolves `pfet_03v3.12` -- two outcomes, no
+  extrapolation path) and E5's `wnflag` rows for this geometry (`wnflag=1`
+  -> bin 12; `wnflag=0`, and no card at all, -> `could not find a valid
+  modelname`) all reproduce. E8's conclusion reproduces unchanged --
+  **zero** instances in `design/netlist/*.spice` have `W/NF > 100.001 um`,
+  `XMpass` is still the only instance whose raw `W` leaves the bin table,
+  and the table's rows are unchanged (50 um: `XMpass`, `XMsense`,
+  `XMclamp`; 25 um: `XMen`; everything else <= 20 um) -- but its instance
+  **count has moved with the design**: 108 FET instantiations at `e07ee92`
+  (2026-09-18) rather than the 104 measured on 2026-09-15, the four added
+  by the #233 and #246/#250 soft-start work. E8's count is left as it was
+  measured, being a dated observation rather than a live invariant; the
+  ratified claim is the `W/NF` rule, not the census.
 - **Date**: 2026-09-15
 - **Decided by**: agent-builder, issue #214 (recommendation only)
 
