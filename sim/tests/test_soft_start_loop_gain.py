@@ -196,9 +196,10 @@ class TestNetlistTransforms(unittest.TestCase):
             nv.ac_open(nv.instrument_core(CORE), "XNope", "FB", "t")
 
     def test_ac_short_adds_one_capacitor_inside_the_softstart_subckt(self):
-        # HG is a real internal node (the soft-start hold network). GMSUM
-        # (used here pre-#234) no longer exists in ldo_softstart post-#231
-        # and is covered by the node-existence-refusal test below instead.
+        # HG is a real internal node (the soft-start hold network) and is
+        # chosen because it is stable across this cell's injection-element
+        # churn: GMSUM, which this test used pre-#234, was deleted by #231
+        # and reinstated by #246, which is exactly why it is a bad fixture.
         base = nv.instrument_core(CORE)
         out = nv.ac_short(base, "HG", "VIN", "t")
         self.assertIn("Ct HG VIN " + nv.AC_SHORT_F, out)
@@ -210,14 +211,24 @@ class TestNetlistTransforms(unittest.TestCase):
         """Issue #234: this is the exact `acshort-gmsum` mistake -- GMSUM was
         removed from `ldo_softstart` by #231, and the old call hung a
         capacitor on it anyway: floating, no DC path to ground, coupled to
-        nothing in AC, so it applied without raising and measured nothing."""
+        nothing in AC, so it applied without raising and measured nothing.
+
+        The absent node is named SYNTHETICALLY here rather than reusing
+        GMSUM, because GMSUM came BACK in #246 (DR-0023's cascoded mirror
+        re-instates the whole Mgm* chain, mirror node included) and this
+        assertion then silently inverted: it started asserting that a node
+        which exists is refused, and failed. A guard test must not depend on
+        which nodes the design happens to have this month.
+        """
         base = nv.instrument_core(CORE)
+        absent = "NODE_THAT_IS_NOT_IN_THIS_NETLIST"
+        self.assertNotIn(absent, base)
         with self.assertRaises(nv.TransformError):
-            nv.add_cap(base, "GMSUM", "VIN", nv.AC_SHORT_F, "t")
+            nv.add_cap(base, absent, "VIN", nv.AC_SHORT_F, "t")
         with self.assertRaises(nv.TransformError):
-            nv.ac_short(base, "GMSUM", "VIN", "t")
+            nv.ac_short(base, absent, "VIN", "t")
         with self.assertRaises(nv.TransformError):
-            nv.ac_load(base, "GMSUM", "VIN", 1e-12, "t")
+            nv.ac_load(base, absent, "VIN", 1e-12, "t")
 
     def test_add_cap_node_check_is_a_whole_token_match(self):
         """A node name that is merely a SUBSTRING of some other token must
@@ -345,34 +356,49 @@ class TestAttributionsCannotBeStructurallyZero(unittest.TestCase):
         #234 removed -- reconstructed here exactly as the pre-#234 code
         would have built them, bypassing the now-fixed `ac_open()`/
         `add_cap()` so this test exercises the CLASSIFIER, not the guard
-        rails already covered by `TestNetlistTransforms`."""
-        base = nv.instrument_core(CORE)
+        rails already covered by `TestNetlistTransforms`.
 
-        # acopen-fb-inj, reconstructed: move Binj_ss's FB terminal, add the
-        # inductor -- exactly what ac_open() did before it refused B-lines.
-        binj_line = next(ln for ln in base.splitlines()
-                          if ln.startswith("Binj_ss "))
-        opened = base.replace(binj_line,
-                               binj_line.replace(" FB ", " FB_regress "), 1)
-        lines = opened.splitlines()
-        i = next(k for k, ln in enumerate(lines)
-                  if ln.startswith("Binj_ss "))
+        BOTH shapes are reconstructed against a SYNTHETIC fixture rather than
+        against the live netlist (issue #246). The original version of this
+        test reached into `CORE` for a real `Binj_ss ` line and a genuinely
+        absent `GMSUM` node -- and both of those facts have since flipped:
+        #246's cascoded mirror deleted `Binj_ss` and re-instated `GMSUM`, so
+        the test errored on a `StopIteration` that said nothing about the
+        classifier it exists to check. What is being tested here is a
+        property of `_classify_attribution_effect`, not of this month's
+        schematic, so the fixture should not be this month's schematic.
+        """
+        # A two-line stand-in with the same shape the classifier sees: one
+        # behavioural source touching FB, inside an ldo_softstart block.
+        base = (".subckt ldo_softstart VIN FB PASS_GATE EN VREF VSS BG\n"
+                "Bfake_ss VIN FB I = '1e-6'\n"
+                "XMfake_ss FB EN VIN VIN pfet_03v3 L=1u W=1u nf=1 m=1\n"
+                ".ends\n")
+
+        # acopen-fb-inj, reconstructed: move the B-source's FB terminal and
+        # add the inductor -- exactly what ac_open() did before it refused
+        # B-prefixed lines.
+        lines = base.splitlines()
+        i = next(k for k, ln in enumerate(lines) if ln.startswith("Bfake_ss "))
+        lines[i] = lines[i].replace(" FB ", " FB_regress ", 1)
         lines.insert(i + 1, f"Lregress FB_regress FB {nv.AC_OPEN_H}")
         opened = "\n".join(lines) + "\n"
         kind, target = _classify_attribution_effect(base, opened)
-        self.assertEqual((kind, target), ("ac_open", "Binj_ss"))
+        self.assertEqual((kind, target), ("ac_open", "Bfake_ss"))
         self.assertEqual(target[:1].upper(), "B")   # -> the check fails it
 
-        # acshort-gmsum, reconstructed: hang a capacitor on GMSUM, a node
-        # that does not exist in this netlist -- exactly what add_cap() did
-        # before it refused an absent node.
+        # acshort-gmsum, reconstructed: hang a capacitor on a node that does
+        # not exist in the netlist -- exactly what add_cap() did before it
+        # refused an absent node.
+        absent = "NODE_THAT_IS_NOT_IN_THIS_NETLIST"
+        self.assertNotIn(absent, base)
         lines = base.splitlines()
         i = next(k for k, ln in enumerate(lines)
                  if ln.startswith(".subckt ldo_softstart"))
-        lines.insert(i + 1, "Cregress GMSUM VIN 1.0")
+        lines.insert(i + 1, f"Cregress {absent} VIN 1.0")
         shorted = "\n".join(lines) + "\n"
         kind, target = _classify_attribution_effect(base, shorted)
-        self.assertEqual((kind, target), ("add_cap", "GMSUM"))
+        self.assertEqual((kind, target), ("add_cap", absent))
         self.assertNotIn(target, base)              # -> the check fails it
 
 

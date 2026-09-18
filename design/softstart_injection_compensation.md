@@ -331,6 +331,30 @@ observable as a time rather than inferred from a DC sweep. It is a
 `sim/soft-start/` change, not a `design/` change, and it is out of scope for
 #196.
 
+### Update (issue #246, 2026-09-18): that experiment was run, and the answer
+### is that the ramp node is not the mechanism
+
+`sim/soft-start/testbench/ramp_ab.py` + `tb_ss_ramp_ab.spice.in` implement it
+(PWL fitted per point to that point's *own* internal ramp, so the two arms
+traverse the same trajectory and the A/B isolates the ramp node's dynamics and
+source impedance rather than its rate). Result at six `tt` points spanning
+−40/27 °C × 2.97/3.30/3.63 V, against DR-0023's cascoded mirror:
+**replacing the entire ramp generator with an ideal source moves the
+acquisition peak by −9.0 % … +12.6 %** — two orders of magnitude short of
+explaining a 5 mA bound missed by 40–60×. `t_startup` agrees to 0.1 µs and
+`V(OUT)` at 700 µs to 0.1 mV between arms, so the null result is a
+measurement and not a mis-fit.
+
+What §4's arithmetic was actually seeing: the acquisition current is **not
+proportional to the voltage step**, because it is slew-limited by the loop and
+the pass device rather than step-limited — so a 2.1× difference in the step
+producing a 356× difference in the current is not the paradox it reads as.
+The step itself is **T2**: at hold release the loop's DC target is
+`(6.00 µA − I_inj(V(SSR)=0)) · Rtop`, which is T2's error in volts. Full
+evidence, including the supply-binned before/after that shows the uncascoded
+mirror's over-injection was *masking* this edge rather than avoiding it:
+`sim/soft-start/records/20260918-190207-8a59d23.md` §§3–4.
+
 ---
 
 ## 5. The margins themselves, for reference

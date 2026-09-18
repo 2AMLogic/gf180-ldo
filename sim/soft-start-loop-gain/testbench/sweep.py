@@ -8,15 +8,23 @@ points of the soft-start ramp, for two DUT variants of that element:
     device   `design/netlist/ldo_softstart.spice` as committed today
     binj     `Binj_ss` frozen pre-DR-0024 cap sizing (commit bfc4a0a)
 
-NOTE (issue #234): `device` was the post-#195 device-level transconductor
-until issue #231 (PR #233) reverted it back to the ideal `Binj_ss`
-behavioural source, so as of that revert BOTH variants use `Binj_ss` and
-differ only in the DR-0024 MIM-cap resize -- see `netlist_variants.py`'s
-module docstring and `VARIANT_BLURB` for the detail. This module's own
-history (this docstring, `ATTRIBUTIONS` below) still uses "device-level
-chain" language in places that describe how `sim/soft-start-loop-gain/records/
-20260910-015601-2387ece.md` was measured, before the revert; that historical
-record's numbers are unaffected by #234 and are not to be re-derived.
+NOTE: what the `device`/`binj` A/B isolates has changed twice. `device` was
+the post-#195 device-level transconductor, then (issue #231 / PR #233) the
+ideal `Binj_ss` source -- identical to `binj`'s element, leaving the A/B with
+no injection-element content at all (issue #234) -- and is now, as of issue
+#246, the device-level transconductor again WITH DR-0023's cascoded output
+mirror. So the A/B is once more an injection-element comparison, confounded
+by the DR-0024 MIM-cap resize that `binj` (frozen at bfc4a0a) predates. See
+`netlist_variants.py`'s module docstring and `VARIANT_BLURB` for the full
+three-era account, which `selftest.py` asserts.
+
+**`ATTRIBUTIONS` is re-expanded by #246, but only by one row.**
+`acopen-fb-inj` comes back, retargeted from `XMgmo_ss` to `XMgmc_ss` (the
+cascode's drain is what sits on FB now), because it is the measurement target
+T6 is written against and nothing else in this repo can produce one.
+`acshort-gmsum` stays retired even though `GMSUM` is a netlist token again:
+it never resolved a pole or a zero. See the comment above `ATTRIBUTIONS` for
+both arguments in full.
 
 Why this experiment exists: PR #195 landed the device-level injection chain
 together with a "KNOWN, UNRESOLVED REGRESSION (#191)" note, and #191's Builder
@@ -1057,7 +1065,38 @@ def group(rows: list[Row], keyfn) -> dict:
 # `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` is untouched:
 # it was measured against the device-level chain, for which both rows were
 # real measurements, and stays valid for that netlist.
+#
+# `acopen-fb-inj` IS RESTORED BY #246; `acshort-gmsum` IS NOT. DR-0023's
+# cascoded mirror puts the device-level chain back into
+# `design/ldo_softstart.sch`, so both retired rows have a real target again --
+# and the two are restored on different evidence, so they are treated
+# differently rather than as a pair:
+#
+#   * `acopen-fb-inj` is RESTORED, retargeted from `XMgmo_ss` to `XMgmc_ss`.
+#     The cascode's drain is what sits on FB now, so this row measures exactly
+#     what target T6 (`design/softstart_injection_compensation.md` section 3)
+#     is written against: the element's ENTIRE small-signal loading of the
+#     feedback node, with the operating-point shift held out (a 1 GH series
+#     inductor is a short at DC). Without it, nothing in this repo can issue a
+#     T6 verdict on the cascoded element, and issue #246's own acceptance
+#     criteria ask for one. It is a real instance with a real drain on a real
+#     node, so `ac_open()`'s #234 guard rails admit it; the B-source refusal
+#     that retired it applied to `Binj_ss`, which no longer exists.
+#   * `acshort-gmsum` stays RETIRED. `GMSUM` is a netlist token again, so
+#     `add_cap()` would no longer refuse it -- but #234 retired it for the
+#     stronger of its two reasons as well: the row never resolved a pole or a
+#     zero (max |dT| 0.003 dB over 0.01 Hz - 1 GHz, below the 0.02 dB
+#     numerical floor, `design/softstart_injection_compensation.md` section 1).
+#     A row that returns a null result at ten times the cost of the guard that
+#     replaced it is not worth re-running merely because its target exists
+#     again. If a later record needs it, restoring it is one line here.
+#
+# `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` is untouched
+# either way: it was measured against the UNCASCODED device-level chain, and
+# both rows were real measurements for that netlist.
 ATTRIBUTIONS = (
+    ("acopen-fb-inj", "XMgmc_ss's drain AC-opened from FB",
+     lambda t: nv.ac_open(t, "XMgmc_ss", "FB", "acopeninj")),
     ("acopen-fb-pre", "XMpre_b_ss's drain AC-opened from FB",
      lambda t: nv.ac_open(t, "XMpre_b_ss", "FB", "acopenpre")),
     ("acopen-hold", "XMhold_ss's drain AC-opened from PASS_GATE",

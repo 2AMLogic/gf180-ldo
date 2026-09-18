@@ -39,10 +39,15 @@ SUPPLIES="${SUPPLIES:-2.97 3.30 3.63}"
 CAPS="${CAPS:-1u/0.1/36}"
 # Extra points: the DR-0001 window corners and the no-load case, over a
 # bracketing corner subset.
-EXTRA_CORNERS="${EXTRA_CORNERS:-tt ff ss res_ff res_ss}"
-EXTRA_TEMPS="${EXTRA_TEMPS:--40 125}"
-EXTRA_SUPPLIES="${EXTRA_SUPPLIES:-2.97 3.63}"
-EXTRA_CAPS="${EXTRA_CAPS:-0.33u/0.001/36 0.33u/0.5/36 4.7u/0.001/36 4.7u/0.5/36 1u/0.1/1e9}"
+# `${VAR-default}`, NOT `${VAR:-default}`, on all four: an explicitly EMPTY
+# value has to mean "run no extra points", and the colon form silently
+# re-expands the default for it. A single-point debug or netlist-A/B run is
+# the normal reason to want that, and getting 100 extra points instead is
+# both slow and easy to miss (issue #246 lost a run to exactly this).
+EXTRA_CORNERS="${EXTRA_CORNERS-tt ff ss res_ff res_ss}"
+EXTRA_TEMPS="${EXTRA_TEMPS--40 125}"
+EXTRA_SUPPLIES="${EXTRA_SUPPLIES-2.97 3.63}"
+EXTRA_CAPS="${EXTRA_CAPS-0.33u/0.001/36 0.33u/0.5/36 4.7u/0.001/36 4.7u/0.5/36 1u/0.1/1e9}"
 JOBS="${JOBS:-8}"
 
 # Shared corner name -> "mos res bjt diode moscap mimcap" model-section
@@ -60,13 +65,48 @@ source "$REPO_ROOT/sim/harness/lib/pdk_discover.sh"
 harness_discover_pdk "$REPO_ROOT"
 
 python3 "$REPO_ROOT/design/netlist.py" --check >/dev/null
-LDO_NETLIST="$REPO_ROOT/design/netlist/ldo_core.spice"
+# The DUT netlist. Overridable ONLY so that a same-host, same-binary A/B
+# against a frozen `netlist-snapshots/<record-id>.spice` is reproducible --
+# the comparison every record of this bench that attributes a change to the
+# schematic has had to make, and which up to issue #246 was made with an
+# uncommitted one-off script (see 20260915-103035-18f664f.md's "Pre-existing
+# #191 regression" section, which says so). Cross-record comparison is not a
+# safe substitute: records minted weeks apart can carry different ngspice
+# binaries, and this bench's numbers are large-signal transient peaks.
+#
+#   NO_RECORD=1 LDO_NETLIST=sim/soft-start/netlist-snapshots/<id>.spice \
+#     CORNERS=tt TEMPS=27 SUPPLIES=3.30 CAPS=1u/0.1/36 \
+#     EXTRA_CORNERS= EXTRA_CAPS= ./sim/soft-start/testbench/run.sh
+#
+# Evidence runs MUST leave it unset: `design/netlist.py --check` above
+# guarantees the default is the schematics' own export, and an override
+# breaks that guarantee -- which is why the override is refused unless
+# NO_RECORD is set.
+if [ -n "${LDO_NETLIST:-}" ] && [ -z "${NO_RECORD:-}" ]; then
+  echo "refusing to mint a record with an overridden LDO_NETLIST" >&2
+  echo "(set NO_RECORD=1 -- an evidence record must be the committed export)" >&2
+  exit 1
+fi
+LDO_NETLIST="${LDO_NETLIST:-$REPO_ROOT/design/netlist/ldo_core.spice}"
 
 RECORD_ID="$(date -u +%Y%m%d-%H%M%S)-$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 LOG_DIR="$EXPDIR/corners/$RECORD_ID"
+# The record id has one-second resolution, so two invocations started in the
+# same second on the same commit collide -- and the collision is SILENT and
+# corrupting: both write per-corner logs into one directory and whichever
+# summarize.py runs last rolls up the union, attributing the other run's
+# points to this run's netlist. That is not hypothetical; issue #246 hit it
+# running ten single-point netlist-A/B invocations in parallel (the use case
+# the LDO_NETLIST override above exists for). Refuse rather than merge --
+# `mkdir` without `-p` is atomic, so this is a race-free check, and the
+# caller only has to wait a second.
+if ! mkdir "$LOG_DIR" 2>/dev/null; then
+  echo "record id $RECORD_ID is already taken ($LOG_DIR exists)" >&2
+  echo "(two runs in the same second on the same commit -- retry in 1 s)" >&2
+  exit 1
+fi
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
-mkdir -p "$LOG_DIR"
 
 echo "experiment : $SLUG"
 echo "pdk        : $PDK_VARIANT @ $PDK_VERSION"

@@ -249,15 +249,29 @@ WHAT THIS COSTS THE MAIN LOOP
   Mhold_ss/Mhold_bg_ss are in cutoff (HG at VIN -- adjudicated at every
   corner by the bench's own hg_end predicate), Mpre_a_ss/Mpre_b_ss are open
   (ENB high... low, and HG at VIN), and the injection mirror is rectified off
-  because SSR finishes above VREF. What remains on FB is three PMOS drain
+  because SSR finishes above VREF. What remains on FB is two PMOS drain
   junctions -- Mpre_b_ss's, and (as of #246) Mgmc_ss's in place of the
   behavioural source's zero-capacitance terminal -- i.e. tens of femtofarads,
-  against Cff's 15 pF. The cascode does NOT add a second junction to FB:
-  Mgmc_ss's drain replaces Mgmo_ss's on that node rather than joining it, so
-  the count on FB is the same as the uncascoded chain's and T7's ~1 pF budget
-  is unchanged by this issue. That is strictly LESS than what #38/#43 left
-  behind, which was Cm_ss's 7.2 pF and Rz_ss's 1.55 Mohm permanently hanging
-  on PASS_GATE.
+  against Cff's 15 pF. The cascode does NOT add a junction to FB: Mgmc_ss's
+  drain REPLACES Mgmo_ss's on that node rather than joining it, so the count
+  on FB is the same as the uncascoded chain's. That is strictly LESS than
+  what #38/#43 left behind, which was Cm_ss's 7.2 pF and Rz_ss's 1.55 Mohm
+  permanently hanging on PASS_GATE.
+
+  MEASURED, #246 (targets T6 and T7, design/softstart_injection_
+  compensation.md section 3). AC-opening Mgmc_ss's drain from FB while
+  holding the DC operating point bit-identical (a 1 GH series inductor is a
+  short at DC; the landed VOUT and I_inj agree to every printed digit on both
+  sides) moves the main loop by 0.00 deg of phase margin and 0.00 dB of gain
+  margin at tt_27c_3.30v, device/sink/ssr=1.15, 1 uF/100 mOhm -- at most
+  0.0015 dB / 0.0030 deg anywhere in 0.01 Hz to 1 GHz, i.e. below the
+  numerical floor, so no pole or zero is fitted. T6's bar is 2 deg / 1 dB.
+  The same run's capacitance ladder puts FB's own budget at 10 pF in the
+  settled-ish sink state and 3 pF at the hold-release ramp state, against
+  T7's 1 pF bar and this element's tens of femtofarads. Both targets PASS
+  and neither regresses against the uncascoded chain's +0.053 deg / +0.01 dB.
+  One corner and two ramp states, not a PVT-wide restatement -- see
+  sim/soft-start/records/20260918-190207-8a59d23.md section 5.
 
   The AC consequence of removing Cm_ss/Rz_ss from PASS_GATE is real and is
   NOT characterised here: sim/soft-start measures the large-signal startup
@@ -392,6 +406,94 @@ HOW THE INJECTION IS GENERATED, AS DEVICES (#191, CASCODED BY #246/DR-0023)
   hand-over transfer as the residual-injection and release-point spread this
   cell still has at 3.63 V and 125 C (see "WHAT THE CASCODE FIXED, AND WHAT
   IT DID NOT").
+
+WHAT THE CASCODE FIXED, AND WHAT IT DID NOT
+
+  Measured by #246, all against the same DR-0024 cap sizing so the only
+  difference from the superseded records is the two cascode devices:
+
+    sim/soft-start/records/20260918-190207-8a59d23.md
+      163-point PVT transient matrix + the 63-corner T1-T5 hand-over transfer
+      + the ideal-ramp A/B, superseding 20260915-103035-18f664f.md
+    sim/quiescent-current/records/20260918-190801-8a59d23.md
+      81-point Iq re-run, superseding 20260915-234352-077e15b.md
+
+  FIXED -- the DC transfer defect DR-0023 root-caused, comprehensively:
+
+    T5, the loop in regulation at every ramp state: 37/63 corners VIOLATED
+      uncascoded, 0/63 cascoded. This is the headline. The mirror no longer
+      over-injects into FB at the bottom of the ramp, so the error amplifier
+      never rails and the pass device never parks off. Every ramp state now
+      has a loop around it.
+    Settled output error: -141.26 mV worst uncascoded, -1.78 mV worst
+      cascoded -- a 79x reduction, and now inside the ratified +/-2 %
+      (+/-36 mV) accuracy allocation by 20x rather than failing it by 4x.
+    Residual injection at hand-over: +170...+4125 nA uncascoded,
+      +35...+1433 nA cascoded (2.9x better at the worst corner).
+    Release point: 1.250...2.300 V uncascoded and NEVER releasing at 2/63
+      corners; 1.200...2.025 V cascoded and releasing at 63/63.
+    The sim/startup/sim/quiescent-current settled-accuracy failures #231
+      reverted this cell over are GONE: vout_full at ff_125c_3.63v reads
+      1.79357 V cascoded against 1.56863 V uncascoded (threshold 1.7 V), and
+      at sf_125c_3.63v 1.79721 V against 1.65874 V. Both corners PASS.
+    Convergence: 8/163 transient points never reached 1.764 V at all
+      uncascoded; 0/163 cascoded. Worst settling 1.72525 ms -> 1.28724 ms.
+
+  NOT REACHED -- the absolute-accuracy targets, and this is the R4 trigger:
+
+    T1 (residual <= 50 nA above VREF)        1/63 corners pass
+    T2 (I_inj at SSR=0 = 6.00 +/- 0.10 uA)   0/63; measured 4.985...5.807 uA
+    T3 (transconductance -5.00 uA/V +/-5 %)  0/63; measured -4.53...-3.52
+    T4 (release exactly at V(SSR) = 1.200 V) 1/63
+
+    All four are IMPROVED and none is MET. Per DR-0023's own Consequences
+    section and design/softstart_injection_compensation.md section 3 (R4),
+    this is the documented outcome in which the next lever is the 300 kohm
+    transimpedance, not a seventh sizing iteration of the element -- and that
+    is a topology decision needing its own decision record. #246 does not
+    take it; it measures and reports the shortfall.
+
+  MADE WORSE -- the hold-release acquisition transient, and the reason is T2:
+
+    Inrush at C_eff = 1 uF, against the 5 mA bound: 18/79 points clean
+      uncascoded, 0/83 clean cascoded (worst 314.9 mA). Uncascoded, the
+      clean points were ALL at VIN = 3.30/3.63 V (15 of 39) and none at
+      2.97 V (0 of 21); cascoded, none at any supply.
+
+    That pattern is the mechanism, not a coincidence. The loop's DC target
+    at the instant Mhold_ss releases is
+
+        VOUT(target) = 1.5 * VREF - I_inj(SSR=0) * Rtop
+                     = (6.00 uA - I_inj(SSR=0)) * 300 kohm,
+
+    which is EXACTLY T2's error expressed as a voltage. Cascoded, I_inj(0)
+    is 4.985...5.807 uA at every one of the 63 corners -- always BELOW
+    6.00 uA -- so that target is always positive, +58...+305 mV, and the
+    loop acquires it through a 2000 um pass device in about a microsecond:
+    1 uF times 0.2 V in 1 us is 200 mA. Uncascoded, the mirror's
+    drain-voltage error made it OVER-inject at high VIN (DR-0023's table:
+    +1.35 uA of excess at tt_27c_3.30v, +2.54 uA at tt_27c_3.63v), which
+    makes the same target NEGATIVE -- the pass device simply stays off and
+    nothing is acquired. Those corners were not clean because the element
+    was good; they were clean because it was wrong in the direction that
+    hides this edge, at the price of T5 (the loop open, the amplifier
+    railed) at 37/63 corners.
+
+    So the cascode did not introduce a new transient failure mode. It
+    removed the error that was masking an OLD one, and the old one is a
+    direct function of T2. Nothing that leaves T2 unmet can fix it: at the
+    +/-0.10 uA T2 allows, the acquisition step is at most +/-30 mV, which is
+    the level the ideal Binj_ss element already demonstrated clean.
+
+    design/softstart_injection_compensation.md section 4's open arithmetic
+    (a 2.1x voltage difference producing a 356x current difference) is
+    answered by the same observation: the acquisition current is NOT
+    proportional to the step, because it is slew-limited by the loop and the
+    pass device, not step-limited. #246's ideal-ramp A/B measures that
+    directly -- forcing V(SSR) from an ideal source, so the ramp node's own
+    dynamics and source impedance are removed, leaves the spike essentially
+    unchanged, which rules the ramp node out as the mechanism and leaves the
+    hold-release step itself. See the record for the per-corner numbers.
 
 #191'S UNCASCODED ATTEMPT (REVERTED BY #231) -- HISTORICAL RECORD
 
@@ -538,10 +640,10 @@ WHAT IS IDEALIZED HERE
     * its area;
     * its parasitic loading of FB and its finite bias-node bandwidth.
   Every one of those is measured rather than estimated, in the records this
-  issue mints -- which is also why two of the numeric targets in
-  design/softstart_injection_compensation.md section 3 are now KNOWN to be
-  out of reach for this topology rather than merely unverified. See "WHAT THE
-  CASCODE FIXED, AND WHAT IT DID NOT".
+  issue mints -- which is also why FOUR of the numeric targets in
+  design/softstart_injection_compensation.md section 3 (T1, T2, T3, T4) are
+  now KNOWN to be out of reach for this topology rather than merely
+  unverified. See "WHAT THE CASCODE FIXED, AND WHAT IT DID NOT".
 
   Rgma_ss/Rgmb_ss are plain `res` primitives (200 kohm), not ppolyf_u_3k
   instances: they are the one remaining place in the injection path where a
@@ -717,10 +819,37 @@ SIZING AS BUILT
   injection transconductor is a real, standing DC current: its two branches
   each carry (VIN - Vsg)/200 kohm and they do NOT switch off at hand-over --
   the MIRROR rectifies, the branches do not. That adder is measured, not
-  estimated, in the sim/quiescent-current record this issue mints (see "WHAT
-  THE CASCODE FIXED, AND WHAT IT DID NOT"); it is the same adder #191's
-  uncascoded chain already carried, since cascoding adds devices IN SERIES
-  with existing branches and opens no new current path.
+  estimated: sim/quiescent-current/records/20260918-190801-8a59d23.md against
+  20260915-234352-077e15b.md (the Binj_ss baseline, same 81-point grid) reads
+  +0.004...+7.18 uA, worst at ff_125c_3.63v, where enabled Iq goes 20.8645 ->
+  28.0411 uA against the ratified < 30 uA row. PASS at 81/81 points, with
+  1.96 uA of headroom left at the binding corner (was 9.14 uA).
+
+  TWO THINGS ABOUT THAT NUMBER ARE WORTH STATING PLAINLY, because DR-0023
+  estimated the cascode as costing no material Iq and that estimate is only
+  half right.
+
+    The adder is dominated by the TRANSCONDUCTOR, not by the cascode. Both
+    degenerated branches carry (VIN - |Vsg| - V(gate))/200 kohm and neither
+    switches off at hand-over -- only the mirror rectifies -- so the element
+    stands ~2 x Ia of DC current forever. That is #191's cost, not #246's:
+    it is the price of replacing a behavioural source with real devices, and
+    Binj_ss (an ideal source with no branches) never paid it.
+
+    The cascode is NOT free on top of that, for the reason "WHERE THE
+    CASCODE'S HEADROOM COMES FROM" gives: dropping V(GMSUM) by one |Vgs|
+    pulls Mgmb_ss out of triode and back toward saturation, so its branch
+    delivers MORE current than it did uncascoded. Against #191's own
+    uncascoded measurement at the binding corner (25.3658 uA,
+    sim/quiescent-current/records/20260906-231405-d3cb117.md) the cascode's
+    own share of the adder is about +2.7 uA. DR-0023's "no new current path"
+    argument is correct about topology and incomplete about bias: adding no
+    path is not the same as moving no operating point.
+
+  The 1.96 uA of remaining headroom is the tightest this row has ever been
+  and is a real constraint on anything that follows: the R4 lever (scaling
+  the feedback divider to relax T2/T3) is closed by exactly this row, which
+  is why it needs a decision record rather than a patch.
 
   Added area, #246 update: the injection transconductor is
   EIGHT pfet/nfet 03v3 devices at 4 um2 each (Mgma_ss, Mgmb_ss, Mgmd_ss,
