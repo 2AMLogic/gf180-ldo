@@ -238,6 +238,17 @@ fingerprint for later comparison — see
 [`docs/environment-setup.md`](../docs/environment-setup.md)'s "A version
 banner is not a toolchain identity" section.
 
+Issue #247 then found that check could invert once Homebrew's unversioned
+`ngspice` formula moved past the pinned 46_1 — it began blaming the
+correctly-pinned binary and naming an unvalidated ngspice-47 keg as the
+"correct" root. It now checks the *version* pin as well as containment, and
+prefers a non-drifting root. The **four distinct ngspice-46 builds already
+present across the committed records** are documented there as an accepted,
+historical split (census, and what a cross-fingerprint comparison may and may
+not conclude): `docs/environment-setup.md` → "The ngspice-46 builds already
+in `sim/*/records/` are an accepted, historical split". Per the append-only
+rule above, none of those records are regenerated to reconcile it.
+
 ## Interim evidence note (for #4, device characterization)
 
 #4 (characterizing gf180mcu devices for the LDO — pass FETs, resistors,

@@ -42,14 +42,22 @@ if ! python3 "${SIM_DIR}/run_corners.py" --check-env; then
     echo "      toolchain-identity check found the resolved ngspice does not"
     echo "      match what docs/environment-setup.md pins; both are reported"
     echo "      above by --check-env)."
+    echo "      The MISMATCH text above names which side is at fault and the"
+    echo "      corrective action for it -- follow that, not a generic 'put"
+    echo "      Homebrew's ngspice first on PATH' (issue #247: Homebrew's"
+    echo "      unversioned ngspice formula is not itself the pin, and once"
+    echo "      it moves past the pinned major version, adopting it would"
+    echo "      move evidence onto a version DR-0025 does not cover)."
     exit 1
   fi
   echo
   echo "SKIP: simulation stage -- see the ngspice/PDK detail above; either"
   echo "      ngspice/the gf180mcu PDK are not available, or #184's toolchain-"
   echo "      identity check found a mismatch (both reported above)."
-  echo "      Unit tests passed. Install the PDK / fix the mismatch (see the"
-  echo "      hint above) to run the end-to-end PVT smoke test."
+  echo "      Unit tests passed. Install the PDK / fix the mismatch (follow the"
+  echo "      corrective action the MISMATCH text names -- it distinguishes a"
+  echo "      shadowed binary from a drifted pin root, see issue #247) to run"
+  echo "      the end-to-end PVT smoke test."
   exit 0
 fi
 
