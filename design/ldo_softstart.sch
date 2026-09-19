@@ -911,7 +911,11 @@ SIZING AS BUILT
   and the hold and pre-charge devices end in cutoff. What is NEW is that the
   injection transconductor is a real, standing DC current: its two branches
   each carry (VIN - Vsg)/200 kohm and they do NOT switch off at hand-over --
-  the MIRROR rectifies, the branches do not. That adder is measured, not
+  the MIRROR rectifies, the branches do not. (THAT LAST SENTENCE IS #246's
+  STATE, NOT TODAY'S: #259 gates the branch supply, see the DR-0028 update
+  at the end of this note. The measurement below is left as written because
+  it is the baseline the recovery is measured against.) That adder is
+  measured, not
   estimated: sim/quiescent-current/records/20260918-190801-8a59d23.md against
   20260915-234352-077e15b.md (the Binj_ss baseline, same 81-point grid) reads
   +0.004...+7.18 uA, worst at ff_125c_3.63v, where enabled Iq goes 20.8645 ->
@@ -943,14 +947,37 @@ SIZING AS BUILT
     argument is correct about topology and incomplete about bias: adding no
     path is not the same as moving no operating point.
 
-  The 1.29 uA of remaining headroom (full-load clause, the binding one --
-  see above) is the tightest this row has ever been and is a real constraint
-  on anything that follows: the R4 lever (scaling the feedback divider to
-  relax T2/T3) is closed by exactly this row, which is why it needs a
-  decision record rather than a patch. Issue #259 / DR-0027 proposes
-  recovering this adder by switching the two degeneration branches off once
-  the element has released; as filed it is a proposed record with a known
-  open failure mode (see the record), not yet implemented here.
+  MOST OF THAT ADDER IS NOW RECOVERED, #259/DR-0028 update. Mgmg_ss/Rgmg_ss
+  (see "HOW THE BRANCH SUPPLY IS GATED AFTER HAND-OVER") take the branches'
+  supply away once the mirror's reference stack cuts off, and the result is
+  measured on the same 81-point grid:
+  sim/quiescent-current/records/20260919-080719-de8b468.md against
+  20260918-190801-8a59d23.md above.
+
+    At ff_125c_3.63v (the binding corner) enabled Iq goes 28.0411 ->
+    22.9725 uA and the binding FULL-LOAD clause goes 28.71 -> 23.7275 uA.
+    Headroom against the ratified < 30 uA row: 1.29 -> 6.27 uA at full load,
+    1.96 -> 7.03 uA at no load.
+    Iq falls at 80 of the 81 points and rises at none; the one non-negative
+    delta is +0.00003 uA (30 pA) at ss_-40c_2.97v.
+    Against the ideal-Binj_ss baseline the whole element's adder goes
+    +0.0001...+7.1766 -> +0.0001...+2.1080 uA, i.e. 70.6% of the worst-corner
+    adder recovered. The remainder is the 450 kohm bleed's own throughput,
+    which is the deliberate price of the convergence bound DR-0027 measured
+    the need for.
+    The cost is settled accuracy at the hot, high-supply corners: worst-corner
+    settled output 1.79357 -> 1.78833 V at ff_125c_3.63v, i.e. -6.43 ->
+    -11.67 mV of error against a +/-36 mV ratified allocation. Bit-identical
+    at tt/27 C. T1-T7 and the 163-point transient set are re-measured in
+    sim/soft-start/records/20260919-073737-de8b468.md; T5 stays 63/63, T6/T7
+    do not regress, T1/T4 improve, T2/T3 do not move, and two already-failing
+    transient clauses lose a point each (that record's section 1 names them).
+
+  The 6.27 uA of remaining headroom (full-load clause, the binding one --
+  see above) is still a real constraint on anything that follows: the R4
+  lever (scaling the feedback divider to relax T2/T3) adds ~18 uA and is
+  closed by exactly this row even now, which is why it needs a decision
+  record rather than a patch.
 
   Added area, #246 update: the injection transconductor is
   EIGHT pfet/nfet 03v3 devices at 4 um2 each (Mgma_ss, Mgmb_ss, Mgmd_ss,
