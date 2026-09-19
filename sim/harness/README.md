@@ -379,6 +379,30 @@ the control block, so the expression must reduce to a **scalar**: fine for
 silently failed to apply, a strongly PVT-sensitive measurement would come back
 flat, and this catches that instead of reporting a suspiciously perfect result.
 
+**Both spread kinds need at least two completed points to mean anything**
+(issue #253). A spread over a single sample is not small, it is *undefined* —
+`max` and `min` are the same number by construction, so `spread_pct` is 0 for
+every measurement regardless of the DUT. On such a grid the harness therefore
+**waives** spread checks rather than deciding them: it prints
+
+```
+CHECK WAIVED vbe min_spread_pct=20 not evaluated (spread is undefined over 1 completed point; needs at least 2)
+```
+
+annotates the `status:` line, and renders a "Grid-level checks NOT evaluated"
+note into any record it writes. The waiver is gated on the **sample count**,
+never on the observed value, so two points that happen to measure the same
+number are still a genuine `min_spread_pct` failure — the "grid never moved"
+regression this check exists for is still caught. Any grid of two or more
+points (including every `corners: ["full"]` manifest, and every mandated
+81-point matrix) waives nothing and is graded exactly as the table above says.
+
+This is what makes single-point invocations usable — `sim/selftest.sh --quick`,
+the one-point `startup` smoke in `.github/workflows/ci.yml`, and ad-hoc
+debugging runs like DR-0019's `--corners ff --temps 125 --supply 3.63
+--supply-tol 0`. Their verdict covers the per-point bounds only; read it as
+"every bound held", never as "PVT plumbing is proven to move".
+
 ## What a run writes
 
 One run mints one `<record-id>` (`<YYYYMMDD>-<HHMMSS>-<short-git-sha>`) and
