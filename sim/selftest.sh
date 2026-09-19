@@ -8,6 +8,18 @@
 #   sim/selftest.sh --require-pdk  fail (instead of skipping) if the PDK is absent
 #
 # Exit codes: 0 pass (or skipped sim stage), 1 something failed.
+#
+# --quick stage-3 verdict semantics (issue #253): the one-point grid grades
+# every per-point bound (min/max) exactly as the full run does, but grid-level
+# *spread* checks (min_spread_pct / max_spread_pct) are NOT evaluated -- a
+# spread over a single sample is 0 by construction, so smoke-bias's spread
+# floors ("proves .temp / .lib actually move") are unsatisfiable and its
+# spread ceilings are vacuous. The harness reports those as `CHECK WAIVED`
+# lines and annotates the status line; it does not silently pass them. So a
+# green --quick means "the harness ran end to end and every bound held", NOT
+# "PVT plumbing is proven to move" -- only the full run below shows that.
+# The full run (no --quick) is an 81-point grid: nothing is ever waived there,
+# and every check, spread floors included, is enforced exactly as before.
 
 set -uo pipefail
 
@@ -22,7 +34,10 @@ for arg in "$@"; do
     --record) RECORD=1 ;;
     --quick) QUICK=1 ;;
     --require-pdk) REQUIRE_PDK=1 ;;
-    -h|--help) sed -n '2,12p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    # Print the whole leading comment block rather than a hardcoded line
+    # range, so extending the header (e.g. the --quick verdict semantics
+    # above) can never silently truncate --help.
+    -h|--help) awk 'NR == 1 { next } /^#/ { print; next } { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown option: ${arg}" >&2; exit 1 ;;
   esac
 done
@@ -63,6 +78,13 @@ fi
 
 echo
 echo "== 3/3 end-to-end PVT smoke run =="
+if [ "${QUICK}" -eq 1 ]; then
+  echo "    --quick: one-point grid. Per-point bounds are graded; grid-level"
+  echo "    spread checks are UNGRADED (a spread over one sample is undefined)"
+  echo "    and are reported below as CHECK WAIVED. Run without --quick for the"
+  echo "    full 81-point grid, where every check including the spread floors"
+  echo "    is enforced."
+fi
 args=(smoke-bias)
 [ "${QUICK}" -eq 1 ] && args+=(--corners tt --temps 27 --supply-tol 0)
 [ "${RECORD}" -eq 1 ] || args+=(--no-write)

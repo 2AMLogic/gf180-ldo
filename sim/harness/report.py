@@ -133,6 +133,62 @@ def summarize(results: list[PointResult], measure_names: list[str]) -> dict:
     return summary
 
 
+#: Check kinds that are statistics over the whole PVT grid rather than
+#: per-point assertions. These are the only kinds a degenerate grid can make
+#: unevaluable (issue #253); ``min``/``max`` bounds are per-point and stay
+#: fully graded no matter how small the grid is.
+SPREAD_KINDS = ("max_spread_pct", "min_spread_pct")
+
+#: Minimum number of completed samples for a spread statistic to mean
+#: anything. Below this the max/min of the sample set are the same number by
+#: construction, so ``spread_pct`` is identically 0 regardless of the DUT.
+SPREAD_MIN_SAMPLES = 2
+
+
+def _spread_is_evaluable(summary: dict, name: str) -> bool:
+    """Can a spread check on ``name`` be decided from this grid at all?"""
+    return (summary.get(name) or {}).get("n", 0) >= SPREAD_MIN_SAMPLES
+
+
+def waived_checks(checks: dict[str, dict], summary: dict) -> list[dict]:
+    """Spread checks this grid is too small to decide, with the reason why.
+
+    Issue #253: ``sim/selftest.sh --quick`` collapses the grid to a single
+    point, where ``spread_pct`` is 0 for *every* measurement by construction.
+    That made ``smoke-bias``'s ``min_spread_pct`` floors -- whose whole
+    purpose is to prove ``.temp`` / ``.lib`` actually move between points --
+    permanently unsatisfiable, so ``--quick`` could never pass. The honest
+    answer is neither "fail" nor "pass": the check was not evaluated, and the
+    run must say so rather than bank a verdict the grid cannot support.
+
+    Returns an empty list for any grid of >= ``SPREAD_MIN_SAMPLES`` points,
+    so the full mandated PVT matrix is completely unaffected.
+    """
+    waived: list[dict] = []
+    for name, spec in checks.items():
+        if _spread_is_evaluable(summary, name):
+            continue
+        n = (summary.get(name) or {}).get("n", 0)
+        for kind in SPREAD_KINDS:
+            limit = spec.get(kind)
+            if limit is None:
+                continue
+            waived.append(
+                {
+                    "measurement": name,
+                    "kind": kind,
+                    "limit": limit,
+                    "n": n,
+                    "reason": (
+                        f"spread is undefined over {n} completed "
+                        f"point{'' if n == 1 else 's'}; needs at least "
+                        f"{SPREAD_MIN_SAMPLES}"
+                    ),
+                }
+            )
+    return waived
+
+
 def evaluate_checks(
     checks: dict[str, dict],
     results: list[PointResult],
@@ -178,6 +234,17 @@ def evaluate_checks(
             ("min_spread_pct", spec.get("min_spread_pct")),
         ):
             if limit is None:
+                continue
+            # A spread is a statistic *over the grid*; with fewer than two
+            # samples it is not a weak measurement, it is undefined (issue
+            # #253). Evaluating it anyway turns every single-point run into a
+            # guaranteed min_spread_pct FAIL and a vacuous max_spread_pct
+            # PASS. Such checks are reported separately by waived_checks()
+            # instead of being silently decided here. Two samples that happen
+            # to be *equal* remain a genuine min_spread_pct failure -- the
+            # gate is the sample count, never the observed value -- so a
+            # real "the grid never moved" regression is still caught.
+            if not _spread_is_evaluable(summary, name):
                 continue
             observed = (summary.get(name) or {}).get("spread_pct")
             violated = (
@@ -300,6 +367,7 @@ def build_record(
     measure_names = list(tb.measure)
     summary = summarize(results, measure_names)
     failures = evaluate_checks(tb.checks, results, summary)
+    waived = waived_checks(tb.checks, summary)
     n_ok = sum(1 for r in results if r.status == "ok")
 
     if n_ok != len(results):
@@ -354,6 +422,11 @@ def build_record(
             "spec": tb.checks,
             "passed": not failures,
             "failures": failures,
+            # Non-empty only on a degenerate (< 2 point) grid -- see
+            # waived_checks(). Rendered into the record so a thin run can
+            # never read as "every check passed" when some were never
+            # evaluated at all (issue #253).
+            "waived": waived,
         },
         "summary": summary,
         "points": [r.as_dict() for r in results],
@@ -521,6 +594,20 @@ def _result_lines(record: dict) -> list[str]:
     if grid_failures:
         lines.append("")
         lines.append("  Grid-level check failures: " + "; ".join(grid_failures) + ".")
+
+    waived = record["checks"].get("waived") or []
+    if waived:
+        lines.append("")
+        lines.append(
+            "  **Grid-level checks NOT evaluated** (this grid is too small to "
+            "define a spread — see sim/harness/report.py `waived_checks`): "
+            + "; ".join(
+                f"{w['measurement']} {w['kind']}={_fmt(w['limit'])} ({w['reason']})"
+                for w in waived
+            )
+            + ". The verdict below covers the per-point bounds only; it is not "
+            "evidence about PVT sensitivity."
+        )
 
     lines.append("")
     lines.append("  Spread across the grid:")
