@@ -39,6 +39,7 @@ import csv
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -222,6 +223,13 @@ def main() -> int:
         rows = parse_corner_logs(logdir)
         print(f"   points : {len(rows)}")
         results[label] = rows
+        # `sim/README.md`: raw per-corner ngspice output is evidence, not
+        # scratch. `--no-write` leaves it in the gitignored scratch workdir,
+        # so copy it under this run's own evidence directory.
+        kept = out_dir / label
+        kept.mkdir(parents=True, exist_ok=True)
+        for log in sorted(logdir.glob("*.log")):
+            shutil.copy2(log, kept / log.name)
 
     ref_label = builds[0][0]
     ref = results[ref_label]
