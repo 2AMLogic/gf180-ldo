@@ -79,14 +79,18 @@ def _num(tok: str) -> float | None:
         return None
 
 
-def load(record_id: str) -> dict[tuple, dict]:
-    path = RECORDS / f"{record_id}-matrix.csv"
+def load(
+    record_id: str,
+    key_fields: tuple[str, ...] = KEY_FIELDS,
+    records_dir: Path = RECORDS,
+) -> dict[tuple, dict]:
+    path = records_dir / f"{record_id}-matrix.csv"
     if not path.exists():
         raise SystemExit(f"FATAL: no such matrix CSV: {path}")
     out: dict[tuple, dict] = {}
     with path.open(newline="") as fh:
         for row in csv.DictReader(fh):
-            key = tuple(row[f] for f in KEY_FIELDS)
+            key = tuple(row[f] for f in key_fields)
             if key in out:
                 raise SystemExit(f"FATAL: duplicate key {key} in {path}")
             out[key] = row
