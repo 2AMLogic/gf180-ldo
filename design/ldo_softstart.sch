@@ -44,6 +44,14 @@ measured outcome (including the two targets it does NOT reach), and
 "#191'S UNCASCODED ATTEMPT (REVERTED BY #231)" for the historical record
 of why no amount of resizing the uncascoded chain could have worked.
 
+#259 ADDS ONE SWITCH SO THE DEGENERATION BRANCHES STOP STANDING FOREVER.
+The mirror above rectifies at hand-over; its two INPUT branches
+(Rgma_ss/Mgma_ss, Rgmb_ss/Mgmb_ss) did not, and stood ~2 x Ia of DC current
+after every release (spec/decision-records/DR-0027-softstart-injection-
+degeneration-branch-cutoff.md). Mgmk_ss, one PMOS gated by the mirror's own
+GMRM node, now gates VIN off from both branches whenever the mirror is off.
+See "SWITCHING THE DEGENERATION BRANCHES OFF AT RELEASE" below.
+
 Port order (also the .sym pin order -- do not reorder either file without
 updating both, and without re-running design/netlist.py --check):
   VIN        supply, 3.3 V nominal
@@ -367,6 +375,14 @@ HOW THE INJECTION IS GENERATED, AS DEVICES (#191, CASCODED BY #246/DR-0023)
                       devices see ~0 Vsg and nothing is sourced into FB. This
                       is the same "break the branch's ground return with one
                       EN-gated NMOS" idiom Mben_ss already uses on Rss_bias.
+    Mgmk_ss           NEW (#259): a PMOS switch -- source VIN, drain GMVING,
+                      gate GMRM, body = own source (VIN) -- in series between
+                      VIN and the top of BOTH degeneration resistors.
+                      Rgma_ss and Rgmb_ss no longer tie directly to VIN; both
+                      now tie to GMVING, Mgmk_ss's drain, so ONE switch gates
+                      BOTH branches. See "SWITCHING THE DEGENERATION BRANCHES
+                      OFF AT RELEASE" below for why GMRM is the right gate
+                      signal and what it costs.
 
   THE HEADROOM TRAP THIS AVOIDS: at SSR = 0 (the start of every ramp), a PMOS
   gated by SSR has its source only a Vsg above ground -- if that branch's own
@@ -406,6 +422,62 @@ HOW THE INJECTION IS GENERATED, AS DEVICES (#191, CASCODED BY #246/DR-0023)
   hand-over transfer as the residual-injection and release-point spread this
   cell still has at 3.63 V and 125 C (see "WHAT THE CASCODE FIXED, AND WHAT
   IT DID NOT").
+
+SWITCHING THE DEGENERATION BRANCHES OFF AT RELEASE (#259)
+
+  THE PROBLEM. Rgma_ss/Mgma_ss and Rgmb_ss/Mgmb_ss each carry
+  (VIN - |Vsg| - V(gate))/200 kohm continuously. Only the MIRROR
+  (Mgmr_ss/Mgmrc_ss/Mgmo_ss/Mgmc_ss) rectifies at hand-over -- KCL at GMSUM
+  clips ITS current to zero once SSR crosses VREF, per "THIS is the
+  rectifier" above -- but the two input branches that feed it have no such
+  clipping of their own: Ia and Ib keep flowing at whatever (VIN - Vsg)/R
+  they always did, doing no work once the mirror they feed is off. Measured
+  cost: sim/quiescent-current/records/20260918-190801-8a59d23.md against
+  20260915-234352-077e15b.md (same 81-point grid, the Binj_ss baseline)
+  reads +0.004...+7.18 uA of settled-state Iq adder, worst at
+  ff_125c_3.63v, dominated by the branches (~2 x Ia) rather than by the
+  cascode (~+2.7 uA, "TWO THINGS ABOUT THAT NUMBER..." below).
+
+  WHY GMRM IS THE RIGHT GATE SIGNAL. GMRM is Mgmr_ss/Mgmrc_ss's own diode
+  node -- ALREADY the thing that rectifies. Pre-release, the reference-leg
+  stack carries current, so GMRM sits a full stacked |Vgs| below VIN (the
+  same voltage "THIS is the rectifier" derives). Post-release, KCL forces
+  that same stack's current to zero, so BOTH its devices go to ~0 Vgs and
+  GMRM floats up toward VIN -- exactly the "GMIA, GMRM and GMSUM float
+  toward VIN" behaviour Mgme_ss's own bullet above already documents for
+  EN = 0, except this time it is SSR crossing VREF that causes it, not the
+  enable switch. A PMOS gated by GMRM, sourced from VIN, is therefore ON
+  whenever the mirror is (pre-release) and OFF whenever it is not
+  (post-release) -- THE SAME rectification event, reused, not a second one.
+  No comparator, no timer, no fixed V(SSR) threshold (the release point is
+  PVT-dependent, 1.200...2.025 V per the T4 table below, and this switch
+  never reads V(SSR) at all), and no second device on FB: Mgmk_ss's drain is
+  GMVING, an internal supply rail, never FB.
+
+  WHY IT IS SIZED 20 um / 0.5 um (Mhold_ss's own geometry, reused). The
+  branches together carry only a few uA, but Mgmk_ss sits in series with
+  BOTH of them pre-release, and any Vsd it drops subtracts directly from the
+  VIN each branch's own (VIN - Vsg)/R expression assumes. Sized this large,
+  its own Vsg overdrive at these currents keeps that drop in the low-mV
+  range -- small against the volts-scale swings the branches already work
+  over, and nowhere near the T1-T4 absolute-accuracy budget's OWN unmet
+  shortfall (see T1-T4 below, all already failing before this switch existed
+  -- see "WHAT THE CASCODE FIXED, AND WHAT IT DID NOT").
+
+  WHAT IT DOES NOT DO. Mgmk_ss adds one drain junction to GMVING, an
+  internal node no other measurement (T1-T7, the main loop's compensation)
+  is defined against; it changes nothing on FB and nothing in the mirror
+  itself. It also does not shrink Mgme_ss's job: EN = 0 already killed the
+  branches by removing the NMOS return path, and continues to; Mgmk_ss adds
+  a second, independent way to reach zero current, gated by the ramp's OWN
+  progress rather than by enable, which is what removes the ~2 x Ia standing
+  cost while the block is enabled but past hand-over -- the state EN alone
+  cannot distinguish from "enabled and still ramping."
+
+  MEASURED: sim/quiescent-current/records/<record-id-for-259>.md, the same
+  81-point grid, reports the recovered Iq attributed to this switch, and
+  design/ldo_softstart.sch's SIZING AS BUILT section below restates the
+  binding-corner headroom against it.
 
 WHAT THE CASCODE FIXED, AND WHAT IT DID NOT
 
@@ -775,6 +847,14 @@ SIZING AS BUILT
                                          the matching that matters is
                                          Mgmrc_ss-to-Mgmc_ss, not either of
                                          them to Mgmr_ss/Mgmo_ss.
+  Mgmk_ss          pfet 20 um / 0.5 um   NEW (#259/DR-0027): the branch
+                                         cutoff switch, VIN -> GMVING, gate
+                                         GMRM -- same geometry as Mhold_ss,
+                                         chosen so its own Vsg overdrive
+                                         keeps its Vsd drop in the low-mV
+                                         range at these branch currents. See
+                                         "SWITCHING THE DEGENERATION BRANCHES
+                                         OFF AT RELEASE" above.
   Mgme_ss          nfet 20 um / 0.5 um   enable switch, gate EN
   Rh_ss     ppolyf_u_3k, 4870 squares  ~15.1 Mohm  EN -> HG
   Ch_ss     70 um x 14 um cap_mim_2f0  ~1.95 pF    HG -> VSS   (tau ~29.4 us;
@@ -915,7 +995,7 @@ C {devices/lab_pin.sym} 1220 -970 0 0 {name=l_mtopss_d sig_type=std_logic lab=VS
 C {devices/lab_pin.sym} 1220 -1030 0 0 {name=l_mtopss_s sig_type=std_logic lab=SSR}
 C {devices/lab_pin.sym} 1220 -1000 0 0 {name=l_mtopss_b sig_type=std_logic lab=VIN}
 C {devices/res.sym} 0 -900 0 0 {name=Rgma_ss value=200k footprint=1206 device=resistor m=1}
-C {devices/lab_pin.sym} 0 -930 0 0 {name=l_rgmass_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 0 -930 0 0 {name=l_rgmass_p sig_type=std_logic lab=GMVING}
 C {devices/lab_pin.sym} 0 -870 0 0 {name=l_rgmass_m sig_type=std_logic lab=GMSA}
 C {symbols/pfet_03v3.sym} 200 -900 0 0 {name=Mgma_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} 180 -900 0 0 {name=l_mgmass_g sig_type=std_logic lab=SSR}
@@ -928,13 +1008,18 @@ C {devices/lab_pin.sym} 380 -900 0 0 {name=l_mgmdss_g sig_type=std_logic lab=GMI
 C {devices/lab_pin.sym} 420 -870 0 0 {name=l_mgmdss_s sig_type=std_logic lab=GMVSS}
 C {devices/lab_pin.sym} 420 -900 0 0 {name=l_mgmdss_b sig_type=std_logic lab=VSS}
 C {devices/res.sym} 600 -900 0 0 {name=Rgmb_ss value=200k footprint=1206 device=resistor m=1}
-C {devices/lab_pin.sym} 600 -930 0 0 {name=l_rgmbss_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 600 -930 0 0 {name=l_rgmbss_p sig_type=std_logic lab=GMVING}
 C {devices/lab_pin.sym} 600 -870 0 0 {name=l_rgmbss_m sig_type=std_logic lab=GMSB}
 C {symbols/pfet_03v3.sym} 800 -900 0 0 {name=Mgmb_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} 780 -900 0 0 {name=l_mgmbss_g sig_type=std_logic lab=VREF}
 C {devices/lab_pin.sym} 820 -870 0 0 {name=l_mgmbss_d sig_type=std_logic lab=GMSUM}
 C {devices/lab_pin.sym} 820 -930 0 0 {name=l_mgmbss_s sig_type=std_logic lab=GMSB}
 C {devices/lab_pin.sym} 820 -900 0 0 {name=l_mgmbss_b sig_type=std_logic lab=GMSB}
+C {symbols/pfet_03v3.sym} 1000 -900 0 0 {name=Mgmk_ss model=pfet_03v3 L=0.5u W=20u nf=1 m=1}
+C {devices/lab_pin.sym} 980 -900 0 0 {name=l_mgmkss_g sig_type=std_logic lab=GMRM}
+C {devices/lab_pin.sym} 1020 -870 0 0 {name=l_mgmkss_d sig_type=std_logic lab=GMVING}
+C {devices/lab_pin.sym} 1020 -930 0 0 {name=l_mgmkss_s sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 1020 -900 0 0 {name=l_mgmkss_b sig_type=std_logic lab=VIN}
 C {symbols/nfet_03v3.sym} 600 -750 0 0 {name=Mgmm_ss model=nfet_03v3 L=1u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} 620 -780 0 0 {name=l_mgmmss_d sig_type=std_logic lab=GMSUM}
 C {devices/lab_pin.sym} 580 -750 0 0 {name=l_mgmmss_g sig_type=std_logic lab=GMIA}
