@@ -822,8 +822,12 @@ SIZING AS BUILT
   estimated: sim/quiescent-current/records/20260918-190801-8a59d23.md against
   20260915-234352-077e15b.md (the Binj_ss baseline, same 81-point grid) reads
   +0.004...+7.18 uA, worst at ff_125c_3.63v, where enabled Iq goes 20.8645 ->
-  28.0411 uA against the ratified < 30 uA row. PASS at 81/81 points, with
-  1.96 uA of headroom left at the binding corner (was 9.14 uA).
+  28.0411 uA against the ratified < 30 uA row. PASS at 81/81 points -- but
+  the row's OWN binding clause at this corner is 'at full load', not
+  'enabled, no load': iq_full_ua reads 28.71 uA at ff_125c_3.63v (same
+  record), leaving only 1.29 uA of headroom, not the 1.96 uA the no-load
+  clause alone would suggest (#259 corrects this note; #249 first found the
+  discrepancy). Anything that adds standing current has to fit in 1.29 uA.
 
   TWO THINGS ABOUT THAT NUMBER ARE WORTH STATING PLAINLY, because DR-0023
   estimated the cascode as costing no material Iq and that estimate is only
@@ -846,10 +850,14 @@ SIZING AS BUILT
     argument is correct about topology and incomplete about bias: adding no
     path is not the same as moving no operating point.
 
-  The 1.96 uA of remaining headroom is the tightest this row has ever been
-  and is a real constraint on anything that follows: the R4 lever (scaling
-  the feedback divider to relax T2/T3) is closed by exactly this row, which
-  is why it needs a decision record rather than a patch.
+  The 1.29 uA of remaining headroom (full-load clause, the binding one --
+  see above) is the tightest this row has ever been and is a real constraint
+  on anything that follows: the R4 lever (scaling the feedback divider to
+  relax T2/T3) is closed by exactly this row, which is why it needs a
+  decision record rather than a patch. Issue #259 / DR-0027 proposes
+  recovering this adder by switching the two degeneration branches off once
+  the element has released; as filed it is a proposed record with a known
+  open failure mode (see the record), not yet implemented here.
 
   Added area, #246 update: the injection transconductor is
   EIGHT pfet/nfet 03v3 devices at 4 um2 each (Mgma_ss, Mgmb_ss, Mgmd_ss,
