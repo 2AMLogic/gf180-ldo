@@ -44,6 +44,21 @@ measured outcome (including the two targets it does NOT reach), and
 "#191'S UNCASCODED ATTEMPT (REVERTED BY #231)" for the historical record
 of why no amount of resizing the uncascoded chain could have worked.
 
+AND THE BRANCHES' OWN BIAS IS NOW GATED TOO (#259). The cascode rectifies
+what the transconductor SOURCES; it does not switch off what the
+transconductor BURNS. Both degeneration branches kept standing a DC current
+after hand-over, measured as a +0.004...+7.18 uA Iq adder (worst at
+ff_125c_3.63v) against a ratified < 30 uA row with 1.29 uA of headroom left.
+#259 adds two devices -- Mgmg_ss, a PMOS between VIN and the branches' new
+shared supply node VING, gated by the mirror's OWN reference node GMRM, and
+Rgmg_ss, a 450 kohm bleed across it -- so the branches lose their supply as
+a SIDE EFFECT of the cutoff event DR-0023 already ratified, with no
+comparator, no timer, no new threshold and nothing new on FB.
+`spec/decision-records/DR-0028-softstart-injection-branch-supply-gating.md`
+is the record; read "HOW THE BRANCH SUPPLY IS GATED AFTER HAND-OVER" and
+"WHY Rgmg_ss IS NOT OPTIONAL" below for the mechanism and its one real
+hazard.
+
 Port order (also the .sym pin order -- do not reorder either file without
 updating both, and without re-running design/netlist.py --check):
   VIN        supply, 3.3 V nominal
@@ -300,8 +315,13 @@ HOW THE INJECTION IS GENERATED, AS DEVICES (#191, CASCODED BY #246/DR-0023)
   differenced in a diode-connected PMOS (which IS the rectifier), mirrored
   into FB.
 
-    Rgma_ss/Mgma_ss   the SSR branch: VIN -> Rgma_ss -> GMSA -> Mgma_ss
-                      (gate SSR) -> GMIA. Current Ia = (VIN - SSR - Vsg)/R,
+    Rgma_ss/Mgma_ss   the SSR branch: VING -> Rgma_ss -> GMSA -> Mgma_ss
+                      (gate SSR) -> GMIA. Current Ia = (VING - SSR - Vsg)/R,
+                      and VING is VIN less Mgmg_ss's own drop, which is tens
+                      of millivolts while the element is working and is a
+                      COMMON-MODE term on both branches -- see "HOW THE
+                      BRANCH SUPPLY IS GATED AFTER HAND-OVER". Both branches
+                      hung directly off VIN before #259.
                       large when SSR is near 0 V and falling as SSR rises.
                       Mgma_ss's body is tied to its OWN source (GMSA), not
                       VIN: the 200 kohm degeneration resistor drops up to
@@ -318,9 +338,9 @@ HOW THE INJECTION IS GENERATED, AS DEVICES (#191, CASCODED BY #246/DR-0023)
     Mgmd_ss           diode-connected NMOS (gate=drain=GMIA) that turns Ia
                       into a gate-voltage reference at GMIA.
     Rgmb_ss/Mgmb_ss   the VREF branch, built identically (including the same
-                      body = own-source fix, on Mgmb_ss's body -> GMSB): VIN
+                      body = own-source fix, on Mgmb_ss's body -> GMSB): VING
                       -> Rgmb_ss -> GMSB -> Mgmb_ss (gate VREF) -> GMSUM,
-                      carrying a FIXED current Ib = (VIN - VREF - Vsg)/R,
+                      carrying a FIXED current Ib = (VING - VREF - Vsg)/R,
                       injected directly into GMSUM rather than through a
                       mirror.
     Mgmm_ss           mirrors GMIA's bias (1:1 with Mgmd_ss) and sinks Ia
@@ -367,6 +387,60 @@ HOW THE INJECTION IS GENERATED, AS DEVICES (#191, CASCODED BY #246/DR-0023)
                       devices see ~0 Vsg and nothing is sourced into FB. This
                       is the same "break the branch's ground return with one
                       EN-gated NMOS" idiom Mben_ss already uses on Rss_bias.
+    Mgmg_ss/Rgmg_ss   the branch-supply gate (#259): a PMOS in series between
+                      VIN and VING, the new shared supply node BOTH
+                      degeneration resistors now hang off, with a 450 kohm
+                      ppolyf_u_3k bleed (Rgmg_ss) permanently across it.
+                      Mgmg_ss's gate is GMRM -- the mirror's own reference
+                      node, NOT a new signal -- so it throttles off as a
+                      consequence of the same cutoff event that rectifies the
+                      mirror. See the next section.
+
+  HOW THE BRANCH SUPPLY IS GATED AFTER HAND-OVER (#259, DR-0028). Everything
+  above rectifies the transconductor's OUTPUT: once Ia < Ib the Mgmr_ss/
+  Mgmrc_ss stack is in cutoff and nothing is sourced into FB. It does not
+  rectify the transconductor's own BIAS. Both branches kept carrying
+  (VIN - |Vsg| - V(gate))/200 kohm forever, which is the +7.18 uA worst-corner
+  Iq adder the note under SIZING AS BUILT measures. Mgmg_ss/Rgmg_ss recover
+  most of it WITHOUT adding a threshold, a comparator or a timer:
+
+    Pre-release (SSR < VREF, Ia > Ib, the stack conducting). GMRM is the
+    stack's own top diode node and sits a full |Vgs(Mgmr_ss)| below VIN --
+    deepest exactly at the START of the ramp, where Ia, and therefore the
+    branch current that matters, is largest. Mgmg_ss sees that same |Vgs| as
+    its Vsg, is in deep triode at these single-digit-uA currents, and passes
+    VIN through to VING with a drop of tens of millivolts. That drop is a
+    COMMON-MODE term: it lands on Ia and Ib alike, and the element's output
+    is their DIFFERENCE, so what it perturbs is the two branches' Vsg
+    mismatch (a second-order term), not the (VREF - SSR)/R law itself. The
+    measured T2/T3 movement is under 0.5 % -- see the record.
+
+    Post-release (SSR > VREF, Ia < Ib). The stack goes into cutoff -- this is
+    DR-0023's ratified rectification-by-cutoff, unchanged and not
+    reimplemented -- so its reference current collapses and GMRM rises toward
+    VIN. Mgmg_ss's Vsg = VIN - V(GMRM) collapses with it and the branches
+    lose their low-impedance supply. This is the whole mechanism: the gate
+    signal is an EXISTING internal mirror node, so there is no new threshold
+    to inherit T4's PVT spread (1.200...2.025 V today) and nothing new on FB.
+
+  WHY Rgmg_ss IS NOT OPTIONAL, AND WHY THE RECOVERY IS PARTIAL ON PURPOSE.
+  The loop just described is REGENERATIVE: starving the branches lowers Ia,
+  which lowers the stack's reference current, which raises GMRM, which
+  starves the branches harder. Left unbounded it has a second, non-physical
+  operating point, and that is measured rather than feared --
+  spec/decision-records/DR-0027 prototyped exactly this mechanism WITHOUT a
+  bleed and found no physical DC solution at ss_-40c_2.97v (the coldest,
+  slowest corner, where the branches' own currents are already smallest);
+  ngspice's dynamic-gmin, true-gmin and source-stepping continuations all
+  failed there and the pseudo-transient fallback landed on VOUT = -0.075 V.
+  Rgmg_ss bounds the loop by construction: however hard Mgmg_ss is off, the
+  branches are still fed through 450 kohm, so GMIA / GMRM / GMSUM can never
+  become undetermined and the regenerative loop cannot run away. The price is
+  that the post-release branch current is throttled rather than zeroed --
+  450 kohm in series with the 200 kohm degeneration, i.e. roughly a 2.8x
+  reduction rather than a 100 % one -- which is why the measured recovery is
+  about 5 uA of the 7.18 uA adder at the binding corner and not all of it. A
+  larger bleed recovers more and is untested; DR-0028 says so explicitly.
 
   THE HEADROOM TRAP THIS AVOIDS: at SSR = 0 (the start of every ramp), a PMOS
   gated by SSR has its source only a Vsg above ground -- if that branch's own
@@ -776,6 +850,25 @@ SIZING AS BUILT
                                          Mgmrc_ss-to-Mgmc_ss, not either of
                                          them to Mgmr_ss/Mgmo_ss.
   Mgme_ss          nfet 20 um / 0.5 um   enable switch, gate EN
+  Mgmg_ss          pfet 10 um / 0.5 um   THE BRANCH-SUPPLY GATE (#259/
+                                         DR-0028): VIN -> VING, gate GMRM,
+                                         body VIN. W/L = 20 is chosen so its
+                                         triode drop at the few uA the
+                                         branches draw is tens of mV (a
+                                         common-mode term on both branches)
+                                         while it is on, not so that it
+                                         "matches" anything -- it is a
+                                         switch, not a mirror leg, even
+                                         though its gate is a mirror node.
+  Rgmg_ss   ppolyf_u_3k, 150 squares   ~450 kohm   VIN -> VING, the bleed that
+                                         keeps GMIA/GMRM/GMSUM determined
+                                         when Mgmg_ss is off. NOT optional:
+                                         DR-0027 measured what happens
+                                         without it. A real PDK resistor
+                                         (unlike Rgma_ss/Rgmb_ss) because
+                                         nothing here depends on its ratio to
+                                         the divider -- only on its being
+                                         large and finite.
   Rh_ss     ppolyf_u_3k, 4870 squares  ~15.1 Mohm  EN -> HG
   Ch_ss     70 um x 14 um cap_mim_2f0  ~1.95 pF    HG -> VSS   (tau ~29.4 us;
             issue #212/DR-0024, also a 5x area cut from 70x70/~9.75pF/147us
@@ -818,7 +911,11 @@ SIZING AS BUILT
   and the hold and pre-charge devices end in cutoff. What is NEW is that the
   injection transconductor is a real, standing DC current: its two branches
   each carry (VIN - Vsg)/200 kohm and they do NOT switch off at hand-over --
-  the MIRROR rectifies, the branches do not. That adder is measured, not
+  the MIRROR rectifies, the branches do not. (THAT LAST SENTENCE IS #246's
+  STATE, NOT TODAY'S: #259 gates the branch supply, see the DR-0028 update
+  at the end of this note. The measurement below is left as written because
+  it is the baseline the recovery is measured against.) That adder is
+  measured, not
   estimated: sim/quiescent-current/records/20260918-190801-8a59d23.md against
   20260915-234352-077e15b.md (the Binj_ss baseline, same 81-point grid) reads
   +0.004...+7.18 uA, worst at ff_125c_3.63v, where enabled Iq goes 20.8645 ->
@@ -850,14 +947,37 @@ SIZING AS BUILT
     argument is correct about topology and incomplete about bias: adding no
     path is not the same as moving no operating point.
 
-  The 1.29 uA of remaining headroom (full-load clause, the binding one --
-  see above) is the tightest this row has ever been and is a real constraint
-  on anything that follows: the R4 lever (scaling the feedback divider to
-  relax T2/T3) is closed by exactly this row, which is why it needs a
-  decision record rather than a patch. Issue #259 / DR-0027 proposes
-  recovering this adder by switching the two degeneration branches off once
-  the element has released; as filed it is a proposed record with a known
-  open failure mode (see the record), not yet implemented here.
+  MOST OF THAT ADDER IS NOW RECOVERED, #259/DR-0028 update. Mgmg_ss/Rgmg_ss
+  (see "HOW THE BRANCH SUPPLY IS GATED AFTER HAND-OVER") take the branches'
+  supply away once the mirror's reference stack cuts off, and the result is
+  measured on the same 81-point grid:
+  sim/quiescent-current/records/20260919-080719-de8b468.md against
+  20260918-190801-8a59d23.md above.
+
+    At ff_125c_3.63v (the binding corner) enabled Iq goes 28.0411 ->
+    22.9725 uA and the binding FULL-LOAD clause goes 28.71 -> 23.7275 uA.
+    Headroom against the ratified < 30 uA row: 1.29 -> 6.27 uA at full load,
+    1.96 -> 7.03 uA at no load.
+    Iq falls at 80 of the 81 points and rises at none; the one non-negative
+    delta is +0.00003 uA (30 pA) at ss_-40c_2.97v.
+    Against the ideal-Binj_ss baseline the whole element's adder goes
+    +0.0001...+7.1766 -> +0.0001...+2.1080 uA, i.e. 70.6% of the worst-corner
+    adder recovered. The remainder is the 450 kohm bleed's own throughput,
+    which is the deliberate price of the convergence bound DR-0027 measured
+    the need for.
+    The cost is settled accuracy at the hot, high-supply corners: worst-corner
+    settled output 1.79357 -> 1.78833 V at ff_125c_3.63v, i.e. -6.43 ->
+    -11.67 mV of error against a +/-36 mV ratified allocation. Bit-identical
+    at tt/27 C. T1-T7 and the 163-point transient set are re-measured in
+    sim/soft-start/records/20260919-073737-de8b468.md; T5 stays 63/63, T6/T7
+    do not regress, T1/T4 improve, T2/T3 do not move, and two already-failing
+    transient clauses lose a point each (that record's section 1 names them).
+
+  The 6.27 uA of remaining headroom (full-load clause, the binding one --
+  see above) is still a real constraint on anything that follows: the R4
+  lever (scaling the feedback divider to relax T2/T3) adds ~18 uA and is
+  closed by exactly this row even now, which is why it needs a decision
+  record rather than a patch.
 
   Added area, #246 update: the injection transconductor is
   EIGHT pfet/nfet 03v3 devices at 4 um2 each (Mgma_ss, Mgmb_ss, Mgmd_ss,
@@ -871,6 +991,13 @@ SIZING AS BUILT
   number a layout-phase build should budget and is recorded here so it is not
   rediscovered. Against the ratified < 0.1 mm2 (100 000 um2) core-area row,
   the whole transconductor -- cascode, resistors and all -- is under 0.2 %.
+
+  Added area, #259/DR-0028 update: Mgmg_ss is 10 um x 0.5 um = 5 um2, so the
+  transconductor's transistor area goes 42 -> 47 um2. Rgmg_ss is a REAL PDK
+  resistor and its area is therefore modelled, unlike Rgma_ss/Rgmb_ss: 150
+  squares at W = 1 um = 150 um2 of ppolyf_u_3k. Against the same < 0.1 mm2
+  row that is +0.16 %, and it buys back about 5 uA of the ratified < 30 uA
+  Iq row's binding clause -- the cheapest trade on this page.
 
   Added area, #212/DR-0024 update: 2 630 um2 of capacitor (Css 720, Ch_ss
   980, Cr_ss 980 -- all three down 5x from the #189-era 3600/4900/4900) plus
@@ -922,8 +1049,17 @@ C {devices/lab_pin.sym} 1180 -1000 0 0 {name=l_mtopss_g sig_type=std_logic lab=V
 C {devices/lab_pin.sym} 1220 -970 0 0 {name=l_mtopss_d sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 1220 -1030 0 0 {name=l_mtopss_s sig_type=std_logic lab=SSR}
 C {devices/lab_pin.sym} 1220 -1000 0 0 {name=l_mtopss_b sig_type=std_logic lab=VIN}
+C {symbols/pfet_03v3.sym} 1400 -1000 0 0 {name=Mgmg_ss model=pfet_03v3 L=0.5u W=10u nf=1 m=1}
+C {devices/lab_pin.sym} 1380 -1000 0 0 {name=l_mgmgss_g sig_type=std_logic lab=GMRM}
+C {devices/lab_pin.sym} 1420 -970 0 0 {name=l_mgmgss_d sig_type=std_logic lab=VING}
+C {devices/lab_pin.sym} 1420 -1030 0 0 {name=l_mgmgss_s sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 1420 -1000 0 0 {name=l_mgmgss_b sig_type=std_logic lab=VIN}
+C {symbols/ppolyf_u_3k.sym} 1600 -1000 0 0 {name=Rgmg_ss model=ppolyf_u_3k W=1u L=150u m=1}
+C {devices/lab_pin.sym} 1600 -1030 0 0 {name=l_rgmgss_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 1600 -970 0 0 {name=l_rgmgss_m sig_type=std_logic lab=VING}
+C {devices/lab_pin.sym} 1580 -1000 0 0 {name=l_rgmgss_b sig_type=std_logic lab=VSS}
 C {devices/res.sym} 0 -900 0 0 {name=Rgma_ss value=200k footprint=1206 device=resistor m=1}
-C {devices/lab_pin.sym} 0 -930 0 0 {name=l_rgmass_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 0 -930 0 0 {name=l_rgmass_p sig_type=std_logic lab=VING}
 C {devices/lab_pin.sym} 0 -870 0 0 {name=l_rgmass_m sig_type=std_logic lab=GMSA}
 C {symbols/pfet_03v3.sym} 200 -900 0 0 {name=Mgma_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} 180 -900 0 0 {name=l_mgmass_g sig_type=std_logic lab=SSR}
@@ -936,7 +1072,7 @@ C {devices/lab_pin.sym} 380 -900 0 0 {name=l_mgmdss_g sig_type=std_logic lab=GMI
 C {devices/lab_pin.sym} 420 -870 0 0 {name=l_mgmdss_s sig_type=std_logic lab=GMVSS}
 C {devices/lab_pin.sym} 420 -900 0 0 {name=l_mgmdss_b sig_type=std_logic lab=VSS}
 C {devices/res.sym} 600 -900 0 0 {name=Rgmb_ss value=200k footprint=1206 device=resistor m=1}
-C {devices/lab_pin.sym} 600 -930 0 0 {name=l_rgmbss_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 600 -930 0 0 {name=l_rgmbss_p sig_type=std_logic lab=VING}
 C {devices/lab_pin.sym} 600 -870 0 0 {name=l_rgmbss_m sig_type=std_logic lab=GMSB}
 C {symbols/pfet_03v3.sym} 800 -900 0 0 {name=Mgmb_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} 780 -900 0 0 {name=l_mgmbss_g sig_type=std_logic lab=VREF}
