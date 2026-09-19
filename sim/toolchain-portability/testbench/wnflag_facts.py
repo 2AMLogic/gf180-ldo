@@ -246,8 +246,18 @@ def show_field(output: str, field_name: str) -> str | None:
     return match.group(1) if match else None
 
 
-def measure(ngspice: Path, pdk: Pdk) -> list[Fact]:
-    """Run every probe and return the three facts with their verdicts."""
+FACT_KEYS = ("F1", "F2", "F3")
+
+
+def measure(ngspice: Path, pdk: Pdk, keys: tuple[str, ...] = FACT_KEYS) -> list[Fact]:
+    """Run the probes for ``keys`` and return those facts with verdicts.
+
+    ``keys`` exists so one fact can be measured on its own: each of the
+    three gets its own append-only ``sim/`` record, and ``sim/README.md``
+    ties a record id to the ``corners/<record-id>/`` directory holding
+    *that record's* raw logs -- so a record must be able to produce
+    exactly its own evidence, not the union of all three.
+    """
 
     def go(fact: Fact, name: str, purpose: str, deck: str) -> Probe:
         out, rc = run_deck(ngspice, deck)
@@ -265,17 +275,21 @@ def measure(ngspice: Path, pdk: Pdk) -> list[Fact]:
         ),
         dr0025_evidence="E2 / E5",
     )
-    p = go(f1, "f1-bin-resolve-wnflag1", "show the resolved bin at wnflag=1",
-           deck_show_pass_device(pdk, "1"))
-    f1.checks = [
-        (f"deck parses (no {MODEL_LOOKUP_FAILURE!r})",
-         MODEL_LOOKUP_FAILURE not in p.output),
-        (f"resolved model is {PASS_BIN}", show_field(p.output, "model") == PASS_BIN),
-        ("instance w is 0.002 (undivided 2000 um)",
-         show_field(p.output, "w") == "0.002"),
-        (f"instance nf is {PASS_NF}", show_field(p.output, "nf") == PASS_NF),
-        (f"{MODEL_BINNING_KEY} read back as 1", effective_wnflag(p.output) == "1"),
-    ]
+    if "F1" in keys:
+        p = go(f1, "f1-bin-resolve-wnflag1",
+               "show the resolved bin at wnflag=1",
+               deck_show_pass_device(pdk, "1"))
+        f1.checks = [
+            (f"deck parses (no {MODEL_LOOKUP_FAILURE!r})",
+             MODEL_LOOKUP_FAILURE not in p.output),
+            (f"resolved model is {PASS_BIN}",
+             show_field(p.output, "model") == PASS_BIN),
+            ("instance w is 0.002 (undivided 2000 um)",
+             show_field(p.output, "w") == "0.002"),
+            (f"instance nf is {PASS_NF}", show_field(p.output, "nf") == PASS_NF),
+            (f"{MODEL_BINNING_KEY} read back as 1",
+             effective_wnflag(p.output) == "1"),
+        ]
 
     # ---- F2: wnflag=0 fails to parse; nothing ever clamps ----------------
     f2 = Fact(
@@ -287,27 +301,30 @@ def measure(ngspice: Path, pdk: Pdk) -> list[Fact]:
         ),
         dr0025_evidence="E4 / E5",
     )
-    p0 = go(f2, "f2-bin-resolve-wnflag0", "the same deck at wnflag=0",
-            deck_show_pass_device(pdk, "0"))
-    pnone = go(f2, "f2-bin-resolve-no-card", "the same deck with no options card",
-               deck_show_pass_device(pdk))
-    poor1 = go(f2, "f2-out-of-range-wnflag1",
-               "an out-of-range per-finger width, at wnflag=1",
-               deck_out_of_range(pdk, "1"))
-    pctl = go(f2, "f2-in-range-control-wnflag1",
-              "an in-range per-finger width on the same deck shape",
-              deck_in_range_control(pdk, "1"))
-    f2.checks = [
-        (f"wnflag=0 -> {MODEL_LOOKUP_FAILURE!r}",
-         MODEL_LOOKUP_FAILURE in p0.output),
-        ("wnflag=0 resolves no bin at all", show_field(p0.output, "model") is None),
-        (f"no card -> {MODEL_LOOKUP_FAILURE!r}",
-         MODEL_LOOKUP_FAILURE in pnone.output),
-        (f"out-of-range finger ({OOR_W}/nf={OOR_NF}) hard-errors even at "
-         "wnflag=1", MODEL_LOOKUP_FAILURE in poor1.output),
-        (f"in-range control ({IN_RANGE_W}/nf={IN_RANGE_NF}) still resolves "
-         f"{PASS_BIN}", show_field(pctl.output, "model") == PASS_BIN),
-    ]
+    if "F2" in keys:
+        p0 = go(f2, "f2-bin-resolve-wnflag0", "the same deck at wnflag=0",
+                deck_show_pass_device(pdk, "0"))
+        pnone = go(f2, "f2-bin-resolve-no-card",
+                   "the same deck with no options card",
+                   deck_show_pass_device(pdk))
+        poor1 = go(f2, "f2-out-of-range-wnflag1",
+                   "an out-of-range per-finger width, at wnflag=1",
+                   deck_out_of_range(pdk, "1"))
+        pctl = go(f2, "f2-in-range-control-wnflag1",
+                  "an in-range per-finger width on the same deck shape",
+                  deck_in_range_control(pdk, "1"))
+        f2.checks = [
+            (f"wnflag=0 -> {MODEL_LOOKUP_FAILURE!r}",
+             MODEL_LOOKUP_FAILURE in p0.output),
+            ("wnflag=0 resolves no bin at all",
+             show_field(p0.output, "model") is None),
+            (f"no card -> {MODEL_LOOKUP_FAILURE!r}",
+             MODEL_LOOKUP_FAILURE in pnone.output),
+            (f"out-of-range finger ({OOR_W}/nf={OOR_NF}) hard-errors even at "
+             "wnflag=1", MODEL_LOOKUP_FAILURE in poor1.output),
+            (f"in-range control ({IN_RANGE_W}/nf={IN_RANGE_NF}) still resolves "
+             f"{PASS_BIN}", show_field(pctl.output, "model") == PASS_BIN),
+        ]
 
     # ---- F3: duplicate .options keys resolve to the FIRST card -----------
     f3 = Fact(
@@ -320,34 +337,36 @@ def measure(ngspice: Path, pdk: Pdk) -> list[Fact]:
             '"A testbench manifest cannot override the pin" consequence'
         ),
     )
-    p10 = go(f3, "f3-readback-1-then-0", "cp readback, cards 1 then 0",
-             deck_readback("1", "0"))
-    p01 = go(f3, "f3-readback-0-then-1", "cp readback, cards 0 then 1",
-             deck_readback("0", "1"))
-    ps1 = go(f3, "f3-readback-single-1", "control: a single card, 1",
-             deck_readback("1"))
-    ps0 = go(f3, "f3-readback-single-0", "control: a single card, 0",
-             deck_readback("0"))
-    b10 = go(f3, "f3-bin-1-then-0", "bin selection, cards 1 then 0",
-             deck_show_pass_device(pdk, "1", "0"))
-    b01 = go(f3, "f3-bin-0-then-1", "bin selection, cards 0 then 1",
-             deck_show_pass_device(pdk, "0", "1"))
-    f3.checks = [
-        ("1-then-0 leaves 1 in effect", effective_wnflag(p10.output) == "1"),
-        ("0-then-1 leaves 0 in effect", effective_wnflag(p01.output) == "0"),
-        ("control: a single `1` card reads back 1",
-         effective_wnflag(ps1.output) == "1"),
-        ("control: a single `0` card reads back 0",
-         effective_wnflag(ps0.output) == "0"),
-        (f"1-then-0 still resolves {PASS_BIN}",
-         show_field(b10.output, "model") == PASS_BIN),
-        (f"0-then-1 dies with {MODEL_LOOKUP_FAILURE!r}",
-         MODEL_LOOKUP_FAILURE in b01.output),
-        ("neither ordering warns about the discarded card",
-         "warn" not in b10.output.lower() and "warn" not in p10.output.lower()),
-    ]
+    if "F3" in keys:
+        p10 = go(f3, "f3-readback-1-then-0", "cp readback, cards 1 then 0",
+                 deck_readback("1", "0"))
+        p01 = go(f3, "f3-readback-0-then-1", "cp readback, cards 0 then 1",
+                 deck_readback("0", "1"))
+        ps1 = go(f3, "f3-readback-single-1", "control: a single card, 1",
+                 deck_readback("1"))
+        ps0 = go(f3, "f3-readback-single-0", "control: a single card, 0",
+                 deck_readback("0"))
+        b10 = go(f3, "f3-bin-1-then-0", "bin selection, cards 1 then 0",
+                 deck_show_pass_device(pdk, "1", "0"))
+        b01 = go(f3, "f3-bin-0-then-1", "bin selection, cards 0 then 1",
+                 deck_show_pass_device(pdk, "0", "1"))
+        f3.checks = [
+            ("1-then-0 leaves 1 in effect", effective_wnflag(p10.output) == "1"),
+            ("0-then-1 leaves 0 in effect", effective_wnflag(p01.output) == "0"),
+            ("control: a single `1` card reads back 1",
+             effective_wnflag(ps1.output) == "1"),
+            ("control: a single `0` card reads back 0",
+             effective_wnflag(ps0.output) == "0"),
+            (f"1-then-0 still resolves {PASS_BIN}",
+             show_field(b10.output, "model") == PASS_BIN),
+            (f"0-then-1 dies with {MODEL_LOOKUP_FAILURE!r}",
+             MODEL_LOOKUP_FAILURE in b01.output),
+            ("neither ordering warns about the discarded card",
+             "warn" not in b10.output.lower()
+             and "warn" not in p10.output.lower()),
+        ]
 
-    return [f1, f2, f3]
+    return [f for f in (f1, f2, f3) if f.key in keys]
 
 
 def write_logs(facts: list[Fact], log_dir: Path) -> None:
@@ -378,6 +397,14 @@ def main() -> int:
         default=None,
         help="directory to write one raw log per probe into (evidence)",
     )
+    ap.add_argument(
+        "--facts",
+        nargs="+",
+        choices=FACT_KEYS,
+        default=list(FACT_KEYS),
+        help="measure only these facts (each gets its own sim/ record, so "
+             "each must be able to produce exactly its own raw logs)",
+    )
     args = ap.parse_args()
 
     exe = args.ngspice or shutil.which("ngspice")
@@ -405,7 +432,7 @@ def main() -> int:
     print(f"  models      : {pdk.model_lib}")
     print()
 
-    facts = measure(ngspice, pdk)
+    facts = measure(ngspice, pdk, tuple(args.facts))
 
     if args.log_dir:
         write_logs(facts, Path(args.log_dir))
@@ -420,7 +447,9 @@ def main() -> int:
         print()
         ok = ok and fact.holds
 
-    print(f"OVERALL: {'all three DR-0025 facts reproduce' if ok else 'DIVERGENCE'}"
+    measured = ", ".join(f.key for f in facts)
+    verb = "reproduce" if len(facts) > 1 else "reproduces"
+    print(f"OVERALL: {f'{measured} {verb}' if ok else 'DIVERGENCE'}"
           f" on {major or banner}")
     return 0 if ok else 1
 
