@@ -79,8 +79,12 @@ def _num(tok: str) -> float | None:
         return None
 
 
-def load(record_id: str, key_fields: tuple[str, ...] = KEY_FIELDS) -> dict[tuple, dict]:
-    path = RECORDS / f"{record_id}-matrix.csv"
+def load(
+    record_id: str,
+    key_fields: tuple[str, ...] = KEY_FIELDS,
+    records_dir: Path = RECORDS,
+) -> dict[tuple, dict]:
+    path = records_dir / f"{record_id}-matrix.csv"
     if not path.exists():
         raise SystemExit(f"FATAL: no such matrix CSV: {path}")
     out: dict[tuple, dict] = {}

@@ -68,7 +68,8 @@ def main() -> int:
                     help="also write records/<OUT_ID>-delta.csv")
     args = ap.parse_args()
 
-    base, head = lsc.load(args.baseline, KEY_FIELDS), lsc.load(args.head, KEY_FIELDS)
+    base = lsc.load(args.baseline, KEY_FIELDS, RECORDS)
+    head = lsc.load(args.head, KEY_FIELDS, RECORDS)
     common = sorted(set(base) & set(head))
     only_base = sorted(set(base) - set(head))
     only_head = sorted(set(head) - set(base))
