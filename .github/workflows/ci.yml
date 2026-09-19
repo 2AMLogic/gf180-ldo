@@ -83,6 +83,22 @@ jobs:
         # spec table, and its own module docstring documents byte-identical
         # output on an unchanged tree.
 
+      - name: Verify decision-record numbers are unique
+        run: |
+          dupes="$(ls spec/decision-records/DR-*.md \
+            | grep -oE 'DR-[0-9]+' | sort | uniq -d)"
+          if [ -n "$dupes" ]; then
+            echo "::error::two or more spec/decision-records/ files claim the same DR number: $(echo "$dupes" | tr '\n' ' ')-- renumber the one that merged second into the next free slot (issue #268)."
+            exit 1
+          fi
+        # DR numbers are stable cross-referenced identifiers repo-wide, so a
+        # duplicate makes every bare "DR-00NN" citation ambiguous. Two sessions
+        # each reading "next free number" off origin/main inside the same
+        # ten-minute window is enough to collide (PR #263 / PR #264, both
+        # DR-0027, 2026-09-19 -- issue #268). This runs on push to main too, so
+        # the second merge of a colliding pair fails immediately rather than
+        # waiting for a human to notice.
+
   pvt-smoke:
     name: PVT smoke run against gf180mcu (ngspice + PDK)
     runs-on: ubuntu-latest

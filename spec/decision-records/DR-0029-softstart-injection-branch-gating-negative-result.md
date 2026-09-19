@@ -1,4 +1,4 @@
-# DR-0027: gate the soft-start injection transconductor's degeneration branches off a self-referential mirror node — proposed mechanism, not yet ready to ratify
+# DR-0029: gate the soft-start injection transconductor's degeneration branches off a self-referential mirror node — proposed mechanism, not yet ready to ratify
 
 - **Status**: proposed 2026-09-19 (issue #259 / this pull request) — per the
   2026-08-19 ratification-via-PR policy (2AMLogic/2am#357, the mechanism used
@@ -17,11 +17,37 @@
   session — `git diff origin/main...HEAD -- design/netlist` is empty except
   for the one-line `ldo_softstart.sch` documentation correction §"Related"
   describes, which does not touch device topology.
-- **Date**: 2026-09-19
+- **Date**: 2026-09-19 (renumbered 2026-09-19 — see *Numbering* below)
 - **Decided by**: agent-builder (issue #259) — **not decided**; a mechanism
   with a known blocking failure mode is not a decision for the operator to
   ratify yet. Filed so the failure mode and the promising baseline are both
   on record before the next attempt.
+
+### Numbering
+
+This record was **renumbered from `DR-0027` to `DR-0029`** on 2026-09-19
+(issue #268). Unlike DR-0020's pre-publication renumber, this one happened
+*after* publication: it merged as `DR-0027` in PR #264 at 04:12:55Z, six
+minutes after PR #263 merged a different record —
+`DR-0027-wnflag-facts-reproduce-across-ngspice-majors.md` — into the same
+slot at 04:06:50Z. Two sessions had each computed "next free DR number"
+against `origin/main` inside the same ten-minute window, before either PR
+landed, so both read `DR-0027` as free. The collision was live on `main`
+until this renumber.
+
+`DR-0027` stays with the wnflag-facts record, which merged first and is
+already cross-referenced by path from `docs/environment-setup.md`,
+`sim/CHARACTERIZATION.md` and four `sim/toolchain-portability/records/*.md`
+files; this record had no inbound cross-references at all, so moving it was
+the smaller blast radius. `DR-0028` was not free either — open PR #267 had
+already claimed it for
+`DR-0028-softstart-injection-branch-supply-gating.md` — hence `DR-0029`.
+
+Consequently PR #264's own title, commit message and merged diff all say
+`DR-0027` and will keep saying so; git history is not rewritten to match.
+Anything on `main` or in an issue/PR body that reads `DR-0027` refers to the
+wnflag-facts record. Nothing ever cited *this* record as `DR-0027` outside
+PR #264's own history.
 
 ## Context
 

@@ -854,10 +854,13 @@ SIZING AS BUILT
   see above) is the tightest this row has ever been and is a real constraint
   on anything that follows: the R4 lever (scaling the feedback divider to
   relax T2/T3) is closed by exactly this row, which is why it needs a
-  decision record rather than a patch. Issue #259 / DR-0027 proposes
+  decision record rather than a patch. Issue #259 / DR-0029 proposes
   recovering this adder by switching the two degeneration branches off once
   the element has released; as filed it is a proposed record with a known
-  open failure mode (see the record), not yet implemented here.
+  open failure mode (see the record), not yet implemented here. (That record
+  merged as DR-0027 in PR #264 and was renumbered to DR-0029 by issue #268 --
+  DR-0027 is a different, unrelated record. See the renumbered record's
+  "Numbering" section.)
 
   Added area, #246 update: the injection transconductor is
   EIGHT pfet/nfet 03v3 devices at 4 um2 each (Mgma_ss, Mgmb_ss, Mgmd_ss,
