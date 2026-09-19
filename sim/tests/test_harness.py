@@ -663,6 +663,19 @@ class ChecksTests(unittest.TestCase):
         summary = report.summarize(flat, ["v"])
         failures = report.evaluate_checks({"v": {"min_spread_pct": 5.0}}, flat, summary)
         self.assertEqual(failures[0]["kind"], "min_spread_pct")
+        # ...and the degenerate-grid waiver (issue #253) must NOT swallow it:
+        # two samples that happen to be equal is exactly the regression this
+        # check exists to catch. The waiver gates on the sample count, never
+        # on the observed spread value.
+        self.assertEqual(report.waived_checks({"v": {"min_spread_pct": 5.0}}, summary), [])
+
+    def test_a_multi_point_grid_waives_nothing(self):
+        self.assertEqual(
+            report.waived_checks(
+                {"v": {"min_spread_pct": 5.0, "max_spread_pct": 50.0}}, self.summary
+            ),
+            [],
+        )
 
     def test_passing_checks_produce_no_failures(self):
         self.assertEqual(
@@ -673,6 +686,65 @@ class ChecksTests(unittest.TestCase):
             ),
             [],
         )
+
+
+class DegenerateGridSpreadTests(unittest.TestCase):
+    """Issue #253: a spread over a single sample is undefined, not zero.
+
+    ``sim/selftest.sh --quick`` collapses the grid to one tt/27C/nominal
+    point. Before this, ``smoke-bias``'s ``min_spread_pct`` floors -- which
+    exist to prove ``.temp``/``.lib`` actually move between points -- were
+    evaluated against that one point, observed a spread of 0, and failed by
+    construction, so ``--quick`` could never pass. A one-point grid must
+    instead *waive* grid-level spread checks (and say so), while still
+    grading every per-point bound.
+    """
+
+    SPEC = {
+        "vbe": {"min": 0.35, "max": 0.95, "min_spread_pct": 20.0},
+        "vdiv_ratio": {"min": 0.4999, "max": 0.5001, "max_spread_pct": 0.001},
+    }
+
+    def setUp(self):
+        self.one_point = [_StubResult("tt_27c_3.30v", {"vbe": 0.690436, "vdiv_ratio": 0.5})]
+        self.summary = report.summarize(self.one_point, ["vbe", "vdiv_ratio"])
+
+    def test_spread_is_zero_by_construction_on_one_point(self):
+        """The precondition: this is why the old evaluation was unsatisfiable."""
+        self.assertEqual(self.summary["vbe"]["n"], 1)
+        self.assertEqual(self.summary["vbe"]["spread_pct"], 0.0)
+
+    def test_spread_checks_are_not_failed_on_a_one_point_grid(self):
+        failures = report.evaluate_checks(self.SPEC, self.one_point, self.summary)
+        self.assertEqual(
+            [f["kind"] for f in failures],
+            [],
+            "a one-point grid must not manufacture a min_spread_pct failure",
+        )
+
+    def test_spread_checks_are_waived_explicitly_rather_than_silently_passed(self):
+        waived = report.waived_checks(self.SPEC, self.summary)
+        self.assertEqual(
+            {(w["measurement"], w["kind"]) for w in waived},
+            {("vbe", "min_spread_pct"), ("vdiv_ratio", "max_spread_pct")},
+        )
+        for entry in waived:
+            self.assertEqual(entry["n"], 1)
+            self.assertIn("undefined", entry["reason"])
+        # The limits are reported verbatim -- the waiver never relaxes them.
+        limits = {w["measurement"]: w["limit"] for w in waived}
+        self.assertEqual(limits["vbe"], 20.0)
+
+    def test_per_point_bounds_are_still_graded_on_a_one_point_grid(self):
+        """The waiver is scoped to spread only; min/max still fail normally."""
+        out_of_band = [_StubResult("tt_27c_3.30v", {"vbe": 1.5, "vdiv_ratio": 0.5})]
+        summary = report.summarize(out_of_band, ["vbe", "vdiv_ratio"])
+        failures = report.evaluate_checks(self.SPEC, out_of_band, summary)
+        self.assertEqual([(f["measurement"], f["kind"]) for f in failures], [("vbe", "max")])
+
+    def test_a_measurement_with_no_spread_spec_is_never_waived(self):
+        waived = report.waived_checks({"vbe": {"min": 0.35, "max": 0.95}}, self.summary)
+        self.assertEqual(waived, [])
 
 
 class RecordIdTests(unittest.TestCase):
@@ -895,6 +967,51 @@ class RecordRenderingTests(unittest.TestCase):
         self.assertIn("Load current: 50mA", text)
         self.assertIn("Output cap: 1.0uF, ESR=100mOhm", text)
         self.assertIn("Enable state: enabled (EN = VIN)", text)
+
+    def test_a_full_grid_record_waives_nothing_and_renders_no_waiver_note(self):
+        """Regression guard for issue #253: the full-matrix path is untouched."""
+        self.assertEqual(self.record["checks"]["waived"], [])
+        self.assertNotIn(
+            "NOT evaluated", report.render_record(self.record, "smoke-bias")
+        )
+
+    def _one_point_record_with_a_spread_check(self):
+        self.tb.checks = {"vout": {"min": 0.0, "max": 10.0, "min_spread_pct": 20.0}}
+        points = corners.build_grid(corners.resolve_corners(["tt"]), (27,), (3.3,))
+        results = [
+            runner.PointResult(point=p, status="ok", measurements={"vout": 1.0})
+            for p in points
+        ]
+        self.assertEqual(len(points), 1)
+        return report.build_record(
+            tb=self.tb,
+            pdk=self.pdk,
+            points=points,
+            results=results,
+            ngspice="ngspice-46",
+            repo_root=SIM_DIR,
+            record_id="20260729-153002-1a7ef75",
+            started_utc="2026-07-29T15:30:02+00:00",
+            wall_seconds=0.1,
+            subset_reason="single-point harness smoke test, not a spec claim",
+        )
+
+    def test_a_one_point_record_passes_instead_of_failing_an_undecidable_spread(self):
+        record = self._one_point_record_with_a_spread_check()
+        self.assertEqual(record["checks"]["failures"], [])
+        self.assertEqual(record["status"], "pass")
+
+    def test_a_one_point_record_states_which_checks_it_could_not_evaluate(self):
+        """Not silently passed: the evidence names the ungraded checks."""
+        record = self._one_point_record_with_a_spread_check()
+        self.assertEqual(
+            [(w["measurement"], w["kind"]) for w in record["checks"]["waived"]],
+            [("vout", "min_spread_pct")],
+        )
+        text = report.render_record(record, "smoke-bias")
+        self.assertIn("NOT evaluated", text)
+        self.assertIn("min_spread_pct", text)
+        self.assertIn("not evidence about PVT sensitivity", text)
 
 
 class DutNetlistProvenanceTests(unittest.TestCase):

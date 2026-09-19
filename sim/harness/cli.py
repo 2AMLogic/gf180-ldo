@@ -436,6 +436,16 @@ def run(args: argparse.Namespace) -> int:
             f"got {report._fmt(failure['value'])} at {failure['at']}"
         )
 
+    # Issue #253: spread checks on a grid too small to define a spread are
+    # neither passed nor failed -- they are not evaluated, and the run says so
+    # rather than banking a verdict the grid cannot support. Empty on any grid
+    # of >= 2 points, so the full mandated matrix prints exactly as before.
+    for waiver in record["checks"].get("waived") or []:
+        print(
+            f"  CHECK WAIVED {waiver['measurement']} {waiver['kind']}="
+            f"{report._fmt(waiver['limit'])} not evaluated ({waiver['reason']})"
+        )
+
     if not args.no_write:
         snapshot = report.write_netlist_snapshot(tb, experiment_dir, record_id)
         record_path = report.write_record(record, experiment_dir)
@@ -447,7 +457,15 @@ def run(args: argparse.Namespace) -> int:
         print()
         print("evidence  : not recorded (--no-write)")
     print(f"work dir  : {workdir}")
-    print(f"status    : {record['status'].upper()}")
+    n_waived = len(record["checks"].get("waived") or [])
+    grading = (
+        ""
+        if not n_waived
+        else f"  ({n_waived} grid-level check"
+        f"{'' if n_waived == 1 else 's'} not evaluated -- bounds graded, "
+        "spread ungraded)"
+    )
+    print(f"status    : {record['status'].upper()}{grading}")
 
     if record["status"] == "error":
         return EXIT_SIM_ERROR
