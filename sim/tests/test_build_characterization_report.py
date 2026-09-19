@@ -18,7 +18,10 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -204,6 +207,72 @@ class TestKeywordFilterAndFallback(unittest.TestCase):
     def test_a_record_with_no_verdict_at_all_is_unknown(self):
         self.assertEqual(bcr.extract_verdict_snippets("nothing here\n", None), [])
         self.assertEqual(bcr.classify([]), "UNKNOWN")
+
+
+class TestUnmappedSlugCoverage(unittest.TestCase):
+    """Every sim/<slug>/records/ directory reaches the rollup (issue #257).
+
+    The rollup is only "the single file tying every row to its evidence" if
+    an experiment cannot exist under sim/ without appearing in it. Before
+    #257 an unmapped slug produced a stderr-only warning and exit 0, so
+    `sim/soft-start-loop-gain/` -- real committed evidence -- appeared in
+    neither the row table nor the appendix and CI (which diffs stdout only)
+    stayed green.
+    """
+
+    def test_the_committed_tree_has_no_unmapped_slug(self):
+        self.assertEqual(
+            bcr.unmapped_slugs(),
+            [],
+            "a sim/<slug>/records/ directory reaches neither a ROWS entry "
+            "nor SUPPORTING_SLUGS_NOTE -- map it before committing",
+        )
+
+    def test_soft_start_loop_gain_reaches_the_rendered_appendix(self):
+        self.assertIn("soft-start-loop-gain", bcr.SUPPORTING_SLUGS_NOTE)
+        self.assertIn("| `soft-start-loop-gain` |", bcr.render())
+
+    def _run_generator(self) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(_REPORT_PATH)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_an_unmapped_slug_makes_the_generator_exit_non_zero(self):
+        """End-to-end against the real script, via a synthetic slug.
+
+        Asserted through a subprocess rather than by calling main() so the
+        exit status CI actually observes is the thing under test.
+        """
+        scratch = Path(
+            tempfile.mkdtemp(prefix="zz-unmapped-selftest-", dir=SIM_DIR)
+        )
+        try:
+            (scratch / "records").mkdir()
+            (scratch / "records" / "20260101-000000-0000000.md").write_text(
+                "# synthetic record\n\n**Overall: PASS**\n"
+            )
+            self.assertIn(scratch.name, bcr.unmapped_slugs())
+
+            done = self._run_generator()
+            self.assertNotEqual(
+                done.returncode, 0, "unmapped slug did not fail the generator"
+            )
+            self.assertIn(scratch.name, done.stderr)
+            # The report is still emitted, so regenerating into the committed
+            # file does not truncate it -- the failure is the exit status.
+            self.assertTrue(
+                done.stdout.startswith("# Characterization report"), done.stdout[:200]
+            )
+        finally:
+            shutil.rmtree(scratch)
+
+    def test_the_generator_exits_zero_on_the_committed_tree(self):
+        done = self._run_generator()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stderr, "")
 
 
 class TestClassify(unittest.TestCase):
