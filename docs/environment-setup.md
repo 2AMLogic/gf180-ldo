@@ -38,10 +38,17 @@ upgrades it.** homebrew-core's *unversioned* `ngspice` formula tracks
 upstream: on 2026-09-18 it moved to **ngspice-47**, so on every host that had
 run `brew upgrade` since, `brew --prefix ngspice` stopped pointing at the
 46_1 this table pins. That is not a cosmetic drift -- ngspice-47 is a major
-version this repo has never validated, and
+version whose numerical evidence trail this repo has never adopted, even
+though
 [`DR-0025`](../spec/decision-records/DR-0025-model-bin-selection-binds-on-per-finger-width.md)'s
-`.options wnflag=1` model-bin pin was established on ngspice-46 only (closed
-issue #221 scoped re-validating it on other majors; that was not performed).
+`.options wnflag=1` model-bin pin's three underlying facts are now confirmed
+to reproduce on it (and on ngspice-42) --
+[`DR-0027`](../spec/decision-records/DR-0027-wnflag-facts-reproduce-across-ngspice-majors.md),
+issue #254, closed issue #221's un-performed scope. That confirmation is the
+documented *prerequisite* for moving this pin, not the decision to move it:
+DR-0027 explicitly does not move it, since doing so would additionally have
+to rule on every one of the ~132 existing `sim/` records this pin's ratified
+evidence trail carries.
 
 So the pin needs a mechanism that survives `brew upgrade`. **Either of these
 two is a fully supported provisioning of this doc** -- pick one:
@@ -101,9 +108,12 @@ fresh shell. `python3 sim/run_corners.py --check-env` prints `provenance OK
 
 **What is *not* an option:** silently adopting whatever version `brew
 --prefix ngspice` provides today. Moving this repo's evidence onto a new
-ngspice major version is a spec-adjacent decision -- it requires DR-0025's
-`wnflag` re-validation on that version (#221) and a ruling on every existing
-record -- not a `PATH` edit. The identity check enforces this: it fails if
+ngspice major version is a spec-adjacent decision -- DR-0025's `wnflag` facts
+are now confirmed to reproduce on ngspice-42 and ngspice-47
+([`DR-0027`](../spec/decision-records/DR-0027-wnflag-facts-reproduce-across-ngspice-majors.md),
+issue #254), but that confirmation is only the prerequisite; the move itself
+would still need a ruling on every existing record -- not a `PATH` edit. The
+identity check enforces this: it fails if
 the resolved `ngspice` is not `ngspice-46`, **even when that binary really is
 the one `brew --prefix ngspice` points at.**
 
@@ -335,8 +345,10 @@ probes. On a host with neither probe resolving and no override set,
 -- version and sha256 are still reported, plus a `note:` line if the version
 is off the pin, but identity cannot be checked against a pin there. That
 branch stays non-fatal on purpose: CI's `pvt-smoke` job deliberately runs
-Ubuntu's apt ngspice (a *different* major version) as the standing #221
-model-bin portability check.
+Ubuntu's apt ngspice (a *different* major version) as a standing model-bin
+portability check -- ngspice-42's `wnflag` facts are confirmed to reproduce
+by [`DR-0027`](../spec/decision-records/DR-0027-wnflag-facts-reproduce-across-ngspice-majors.md)
+(issue #254).
 
 ### `could not find a valid modelname` on the pass device (#214 / DR-0025)
 

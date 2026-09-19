@@ -1496,7 +1496,7 @@ class NgspiceProvenanceTests(unittest.TestCase):
             )
             # And it cites why 47 is not simply adoptable.
             self.assertIn("DR-0025", message)
-            self.assertIn("#221", message)
+            self.assertIn("DR-0027", message)
 
     def test_off_pin_binary_fails_even_when_it_lives_under_the_root(self):
         """The other half of #247: a host whose Homebrew ngspice upgraded
@@ -1512,7 +1512,7 @@ class NgspiceProvenanceTests(unittest.TestCase):
             message = str(ctx.exception)
             self.assertIn("reports ngspice-47", message)
             self.assertIn(f"pins {runner.PINNED_NGSPICE_VERSION}", message)
-            self.assertIn("#221", message)
+            self.assertIn("DR-0027", message)
 
     def test_unrunnable_root_binary_leaves_version_unknown_not_drifted(self):
         """A blessed root we cannot probe (no runnable ``bin/ngspice``) is
@@ -1796,7 +1796,8 @@ class CheckEnvProvenanceTests(unittest.TestCase):
 
     def test_unverifiable_host_off_the_pin_notes_it_without_failing(self):
         """CI's own ``pvt-smoke`` job runs Ubuntu's apt ngspice-42 on purpose
-        (a standing #221 portability check). #247's version pin must be
+        (a standing model-bin portability check; DR-0027 / issue #254
+        confirms its wnflag facts reproduce). #247's version pin must be
         *reported* there, never enforced -- that host has no pinned root to
         check against and is deliberately a different build."""
         with tempfile.TemporaryDirectory() as tmp:
