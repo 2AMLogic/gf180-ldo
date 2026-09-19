@@ -52,6 +52,23 @@ bolded ``**Overall**`` span (a handful of the earliest hand-written
 testbenches) are matched via that heading as a fallback. A record with
 neither is reported as UNKNOWN rather than silently guessed.
 
+## Coverage: no experiment may escape this rollup
+
+Every ``sim/<slug>/records/`` directory must reach the report, either as a
+``Source(...)`` under a ``Row`` (direct evidence for a ratified README row)
+or as a ``SUPPORTING_SLUGS_NOTE`` entry (the appendix of supporting
+testbenches that are not a ratified row). A slug reaching neither is a
+**hard failure**: the report is still printed in full -- so regenerating
+into ``sim/CHARACTERIZATION.md`` never truncates it -- but the exit status
+is non-zero and the gap is named on stderr.
+
+This was a stderr-only warning with an unconditional exit 0 until issue
+#257, which is how ``sim/soft-start-loop-gain/`` sat outside both tables
+unnoticed: CI's "Verify sim/CHARACTERIZATION.md is up to date" step diffs
+stdout, so a warning nothing reads changed nothing. A rollup that silently
+omits committed evidence is worse than no rollup, because it reads as
+complete.
+
 ## How "fresh" vs "stale" is determined
 
 Per record, "fresh" means the frozen netlist snapshot committed alongside it
@@ -384,6 +401,7 @@ SUPPORTING_SLUGS_NOTE = {
     "devchar": "PDK device characterization feeding other rows' assumptions (e.g. divider-mismatch, README note 3); has no records/ directory of its own -- see sim/devchar/CONCLUSIONS.md.",
     "vref-transfer": "VREF-to-VOUT small-signal transfer over frequency, light load (1 mA) -- issue #178 / DR-0021 Decision #3's 'accuracy / tempco / noise / its own PSRR' contract-table row; not itself a ratified spec row (no threshold exists for this transfer), but its measured gain feeds the reference accuracy-class budget derived in sim/vref-transfer/README.md.",
     "vref-transfer-50ma": "VREF-to-VOUT small-signal transfer over frequency, full load (50 mA) -- the load-dependent sibling of vref-transfer, same role.",
+    "soft-start-loop-gain": "small-signal loop gain, phase margin, gain margin and the DR-0008 gain-resurgence metric of the main loop *during* the soft-start hand-over, held at pinned points of the ramp across the `device`/`binj` DUT variants (issue #196). Not a ratified spec row, and explicitly not a DR-0001 verdict: DR-0001's matrix is the settled operating point, where the ramp is over and the FB injection is off, so `loop-stability` remains the Stability row's evidence and nothing here moves it -- see sim/soft-start-loop-gain/README.md, \"What it measures, and what it deliberately does not\".",
 }
 
 
@@ -583,17 +601,36 @@ def render() -> str:
     return "\n".join(out) + "\n"
 
 
-def main() -> int:
+def unmapped_slugs() -> list[str]:
+    """Every ``sim/<slug>/records/`` directory that reaches neither a ``ROWS``
+    entry nor ``SUPPORTING_SLUGS_NOTE`` -- i.e. every experiment carrying
+    committed evidence that this report would not mention at all.
+
+    A slug listed in ``SUPPORTING_SLUGS_NOTE`` without a ``records/``
+    directory of its own (``devchar``) is not a candidate in the first place
+    and is unaffected.
+    """
     all_slugs = {p.name for p in SIM_DIR.iterdir() if p.is_dir() and (p / "records").is_dir()}
     mapped_slugs = {source.slug for row in ROWS for source in row.sources}
-    unmapped = all_slugs - mapped_slugs - set(SUPPORTING_SLUGS_NOTE)
+    return sorted(all_slugs - mapped_slugs - set(SUPPORTING_SLUGS_NOTE))
+
+
+def main() -> int:
+    unmapped = unmapped_slugs()
+    # The report is printed either way, so regenerating into the committed
+    # file never truncates it; the gap is signalled by the exit status.
+    print(render(), end="")
     if unmapped:
         print(
-            f"warning: sim/ experiment(s) with records/ not mapped to a row "
-            f"or the supporting-testbench appendix: {sorted(unmapped)}",
+            f"error: sim/ experiment(s) with records/ not mapped to a row "
+            f"or the supporting-testbench appendix: {unmapped}. Add each to "
+            f"a Row's Source(...) list if it is direct evidence for a "
+            f"ratified README row, or to SUPPORTING_SLUGS_NOTE with a "
+            f"description of its role. Committed evidence that this rollup "
+            f"does not mention is invisible to every reader of it.",
             file=sys.stderr,
         )
-    print(render(), end="")
+        return 1
     return 0
 
 
