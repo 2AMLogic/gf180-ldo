@@ -18,6 +18,14 @@ itself yet, and no silicon. Read every number here as a simulation result
 against an open PDK's models, with the corner and testbench that produced it
 recorded alongside it.
 
+**How far that is from T1 is graded, not asserted.**
+[`signoff/records/t1-tier-report.json`](signoff/records/t1-tier-report.json)
+is the verdict of record — `klt signoff --manifest`'s mechanical grading of
+this block against klayout-tools' design-evidence ladder, re-run by CI on
+every push. Today it reads **`tier: null`, T1 1 of 11 items met**. See
+[`signoff/README.md`](signoff/README.md) for the per-item reading and the
+disclosures the grader structurally cannot make on this repo's behalf.
+
 ## Built by agents
 
 This block is designed by AI agents, on purpose and out in the open. The

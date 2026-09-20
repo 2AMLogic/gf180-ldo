@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kind": "generic",
+  "status": "pass",
+  "summary": "T1 item 8: sim/CHARACTERIZATION.md is the one aggregated, current, per-spec-row rollup for this block, and it names the sim/<slug>/records/ evidence record behind every verdict. It is generated (sim/build_characterization_report.py), never hand-edited, and CI regenerates and diffs it on every push, so it cannot drift from the committed evidence. Item 8 asks for the aggregation artifact to exist and be current, not for every row to pass: this report currently reads FAIL on Current limit, Thermal and Stability, MIXED on Startup, and marks nearly every row's underlying sim record STALE against the current design/netlist/*.spice. Those are item 5's gap, tracked there as unmet, not item 8's. See signoff/README.md for the full reading.",
+  "source": "sim/CHARACTERIZATION.md",
+  "provenance": {
+    "input": {
+      "content_hash": "sha256:e0ba561fc6fa66018915f72bcc0cdfd0b1c6c3070fb59ea005678d35af9316fd",
+      "role": "source"
+    }
+  }
+}
