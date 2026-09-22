@@ -45,7 +45,7 @@ claim into a check CI runs.
 | Vth temperature coefficient | **−1.0 mV/°C**, both polarities (−1.044 nFET, −1.078 pFET at L = 0.28 µm, typical corner) | computed from `sim/devchar/fets/results/vth.csv` |
 | Divider resistor TC | **−1293 ppm/°C** (`ppolyf_u_3k`), and it cancels *only* to the extent both legs are at the same temperature | `sim/devchar/CONCLUSIONS.md` §2 |
 | Metal stack | `gf180mcuD` = 5 routing layers. Thickness **0.54 µm** (Metal1–Metal4), **1.19 µm** (Metal5). Sheet resistance min / **nom** / max = 0.076 / **0.090** / 0.104 Ω/sq (M1–M4) and 0.050 / **0.060** / 0.070 Ω/sq (M5). Via1–Via4 0.0 / **4.5** / 15.0 Ω per cut. Contact 5.2 Ω (p+). | `libs.ref/gf180mcu_fd_sc_mcu{7,9}t5v0/techlef/*.tlef`; `libs.tech/magic/gf180mcuD.tech` `resist`/`contact` (agrees at nom) |
-| EM current density | **DC AVERAGE 0.67 mA/µm** (Metal1–Metal4), **1.5 mA/µm** (Metal5), **0.18 mA per cut** (Via1–Via4). **No limit published for the `CON` contact layer** (§8) | `libs.ref/*/techlef/*.tlef` `DCCURRENTDENSITY` |
+| EM current density | **DC AVERAGE 0.67 mA/µm** of drawn width (Metal1–Metal4), **1.5 mA/µm** (Metal5), **0.18 mA per cut** (Via1–Via4) — unit convention derived in §8.1, not assumed. **No limit published for the `CON` contact layer**: 129 µA/cut placeholder per DR-0030 (§8.3) | `libs.ref/*/techlef/*.tlef` `DCCURRENTDENSITY`; DR-0030 (proposed) |
 
 **Because #139 is open, nothing here hard-codes a pass-device width.** §3 defines
 the array as *N identical unit cells* and every EM, IR, thermal and area number
@@ -189,12 +189,16 @@ interdigitated straps → M3/M4/M5 interdigitated VIN/VOUT plates → bus → pa
 entries in the standard-cell tech LEFs
 (`libs.ref/gf180mcu_fd_sc_mcu{7,9}t5v0/techlef/*.tlef`) — the only place in a
 `gf180mcuD` install that publishes machine-readable EM data. All six files in
-this install agree. The one exception is the `CON` contact layer, which carries
-no current-density entry at all; §8 covers it.
+this install agree. Those entries are in **mA per µm of drawn width** for the
+routing layers and **mA per cut** for the cut layers — the file settles that
+ambiguity against itself, and [§8.1](#81-what-the-raw-tech-lef-entries-mean)
+shows the derivation. The one exception is the `CON` contact layer, which
+carries no current-density entry at all; [§8.3](#83-the-contact-layer--the-one-remaining-assumption)
+and DR-0030 cover it.
 
 | Level | Geometry | Peak, W = 2 mm | Peak, W = 4 mm | Published DC limit | Margin (2 mm) |
 | --- | --- | --- | --- | --- | --- |
-| Drain contacts | 0.22 µm, 0.50 µm pitch (CO.1 / CO.2b), 100 per region | 25.0 µA each | 12.5 µA | **not published** — 129 µA by cut-area scaling from Via1 (§8) | 5.2× |
+| Drain contacts | 0.22 µm, 0.50 µm pitch (CO.1 / CO.2b), 100 per region | 25.0 µA each | 12.5 µA | **not published** — DR-0030's 129 µA placeholder, by cut-area scaling from Via1 (§8.3) | 5.2× |
 | M1 finger strap | 0.44 µm wide, tapped by via1 + M2 every 5 µm | 0.284 mA/µm | 0.142 mA/µm | 0.67 mA/µm | **2.4×** |
 | Via1 | 0.26 µm (V1.1), 0.52 µm pitch, ~96 per strap | 26.0 µA each | 13.0 µA | 180 µA per cut | 6.9× |
 | M2 strap | 2.2 µm wide on a 5 µm D/S period, **stitched to M3 every 5 µm** | 0.178 mA/µm | 0.089 mA/µm | 0.67 mA/µm | 3.8× |
@@ -745,16 +749,116 @@ not `libs.tech/openlane`. Two consequences:
    this is the one number this design most needs and the one the PDK does not
    give.
 
+### 8.1 What the raw tech LEF entries mean
+
+The file does not state its own units beyond `UNITS … CURRENT MILLIAMPS 1 ;`.
+A bare `DCCURRENTDENSITY AVERAGE 0.67 ;` on a routing layer is therefore
+ambiguous on its face between **mA per µm of drawn width** and **mA per µm² of
+cross-section** — the two readings differ by a factor of the layer thickness,
+1.85× on Metal1–Metal4 and 1.19× on Metal5, straight into the metal strategy,
+and the wrong reading is permissive on Metal5. The file settles the ambiguity
+against itself; no external spec text is needed.
+
+**Routing layers — the entries track thickness, so they are per unit width.**
+The tech LEFs declare `THICKNESS` for every routing layer. Divide each entry by
+its layer's thickness and see whether the result is constant:
+
+| Quantity | Metal1–Metal4 | Metal5 | Ratio (M5 / M1–M4) |
+| --- | --- | --- | --- |
+| `THICKNESS` | 0.54 µm | 1.19 µm | 2.204 |
+| `DCCURRENTDENSITY AVERAGE` | 0.67 | 1.5 | **2.239** |
+| `ACCURRENTDENSITY AVERAGE` | 1.00 | 2.2 | **2.200** |
+| entry ÷ thickness, DC | 1.241 | 1.261 | agree to **1.6 %** |
+| entry ÷ thickness, AC | 1.852 | 1.849 | agree to **0.17 %** |
+
+Read as **mA/µm of width**, the file is one volumetric limit — ≈ 1.24 mA/µm²
+DC, ≈ 1.85 mA/µm² AC — applied to two declared thicknesses, self-consistent to
+1.6 % on the DC pair and 0.17 % on the AC pair. Read as **mA/µm² of
+cross-section**, the entry would already be thickness-normalised and would have
+no reason to track thickness at all; it would instead be asserting that the same
+aluminium metallisation is 2.2× stronger volumetrically on Metal5 than on
+Metal1. The AC pair tracking thickness to within 0.17 % is not a coincidence
+that survives that reading. **Verdict: mA per µm of drawn width.**
+
+**Cut layers — the entries are per cut, not per µm² of cut area.** A Via1–Via4
+cut is 0.26 µm square (V1.1), i.e. 0.0676 µm². Cross-check each reading against
+the metal it lands on, which §8.1's first half has already pinned down:
+
+| Reading | DC per Via1 cut | vs. 0.26 µm of Metal1 (= 0.26 × 0.67 = 0.174 mA) |
+| --- | --- | --- |
+| **0.18 mA per cut** | 180 µA | **+3.3 %** — a cut carries what its own width of metal carries |
+| 0.18 mA/µm² of cut area | 12.2 µA | 14.3× *less* than the metal feeding it |
+
+The AC pair agrees: 0.28 mA per cut vs. 0.26 × 1.00 = 0.26 mA of Metal1, within
+7.7 %. The per-cut-area reading would require ~14 cuts under every
+minimum-width wire just to break even with the wire, which is not what the
+PDK's own via rules (V1.2a, a 0.26 µm cut spacing giving a 0.52 µm array pitch)
+are built around. **Verdict: mA per cut.**
+
+Both verdicts are re-derivable from the pinned install alone
+(`c6d73a35f524070e85faff4a6a9eef49553ebc2b`) — `THICKNESS`, `WIDTH` and the
+density entries are all in the same six files.
+
+**What is still not established by any of this**: the tech LEFs state no
+temperature, no target lifetime, and no array-derating factor for *any* of
+their current-density entries. §3.3's operating point is Tj = 125 °C; the
+published limits carry no stated Tj of their own. That caveat applies to the
+metal and via rows too, not only to the contact row, and it is the reason §3.3
+is sized with ≥ 2.4× margin everywhere rather than to the limit.
+
+### 8.2 Reconciliation with the figures this document assumed before the tech LEFs were found
+
+An earlier revision of this plan (and issue #278 as originally filed) sized the
+power path against *assumed* limits, on the premise that the open PDK published
+none. Four of those rows now have a published counterpart. Recording the
+comparison rather than quietly dropping it, because two of the four assumptions
+were **optimistic**, not conservative:
+
+| Layer | Previously assumed | Published (tech LEF) | Verdict |
+| --- | --- | --- | --- |
+| Metal1–Metal4 | 1.0 mA/µm | **0.67 mA/µm** | **corrected** — the assumption was optimistic by **1.49×** |
+| Metal5 | 1.5 mA/µm | **1.5 mA/µm** | **confirmed exactly** |
+| Via1–Via4 | 200 µA per cut | **180 µA per cut** | **corrected** — optimistic by **1.11×** |
+| Contact (0.22 µm) | 150 µA per cut | *none published* | **still an assumption** — now DR-0030's 129 µA, 1.16× more conservative than the old figure |
+
+§3.3's table is already computed against the published column, so no margin
+claim in this document rests on the superseded assumptions. The point of
+recording it is that the old "a ≥ 3× margin protects us against the magnitude
+being wrong" argument was doing real work: on Metal1–Metal4 the assumption *was*
+wrong, by 1.49×, in the unsafe direction.
+
+### 8.3 The contact layer — the one remaining assumption
+
 **The only assumption in §3.3 is therefore the contact limit**, taken as
 **129 µA per cut** by scaling Via1's published 0.18 mA by cut area
 (`0.18 mA × (0.22 / 0.26)² = 0.129 mA`). Area scaling is the conservative
 choice — width scaling would give 0.152 mA. At 25.0 µA per contact the plan has
 5.2× margin against it, so it survives a contact limit up to 5× more
-restrictive than this proxy. Tracked as a follow-up (§10); until a real DRM
-number exists, **any EM claim this repo makes about the contact layer must carry
-this caveat**, while the metal and via rows may be cited as PDK data.
+restrictive than this proxy.
 
-Two further assumptions, both inherited rather than introduced here:
+That placeholder is no longer a note inside this document: it is
+[`DR-0030`](../spec/decision-records/DR-0030-contact-layer-em-placeholder.md)
+(`Status: proposed` — ratification is the operator's act per DR-0004), which
+records the derivation, the conditions it does *not* establish, and four
+falsifiable revisit triggers. The two that bear on this plan directly:
+
+- **the margin trigger** — if any change pushes the worst-case per-contact
+  current above **43 µA** (= 129/3), the placeholder stops being survivable on
+  margin alone. At 2 mm the worst case is 25.0 µA, and #139's wider candidates
+  move *away* from the trigger, not toward it;
+- **the mechanism caveat** — a contact lands on silicide over diffusion, a via
+  on aluminium, so scaling one to the other is a proxy whose *mechanism* may be
+  wrong and not merely whose magnitude may be off. Margin cannot buy that back.
+
+Until DR-0030 is superseded by a real published number, **any EM claim this repo
+makes about the contact layer must carry this caveat** — a claim of "the contact
+array is EM-clean at 50 mA" is only ever "…against DR-0030's 129 µA placeholder,
+with 5.2× margin". The metal and via rows carry no such caveat: they may be
+cited as PDK data.
+
+### 8.4 Two further assumptions, unrelated to EM
+
+Both inherited rather than introduced here:
 
 - **Divider mismatch** uses `ppolyf_u`'s disabled `par_r = 0.021` card
   coefficient as a proxy for the 3k flavour — `README.md` note 3 sanctions
@@ -786,11 +890,24 @@ manual check to run against the first real GDS.
 - [ ] Via1 is a **full column** along every source and drain M1 strap, not a via
       per strap (§3.3).
 - [ ] M3 is stitched to M2 across the whole array at ≤ 5 µm pitch (§3.3).
-- [ ] Worst-case current density on every level is computed against the tech
-      LEFs' published `DCCURRENTDENSITY` (and §8's contact proxy for `CON`) and
-      recorded with its margin — at 50 mA, not at a typical load.
+- [ ] **Metal1–Metal5 and Via1–Via4** (*not provisional — PDK data*): worst-case
+      current density on every level is computed against the tech LEFs'
+      published `DCCURRENTDENSITY`, in the units §8.1 derives (mA/µm of drawn
+      width for routing, mA per cut for cuts), and recorded with its margin —
+      at 50 mA, not at a typical load.
+- [ ] **`CON` contacts** (*provisional — DR-0030 placeholder, not PDK data*):
+      worst-case per-contact current computed and recorded against DR-0030's
+      129 µA, **and** checked against DR-0030's margin trigger — if it exceeds
+      **43 µA** the placeholder is no longer survivable on margin and a real
+      published number is required before the change lands.
+- [ ] DR-0030's PDK trigger re-run against whatever install the GDS is built
+      against, not just the pinned one: `awk '/^LAYER CON/,/^END CON/'` over
+      every `libs.ref/*/techlef/*.tlef`, checking for a `DCCURRENTDENSITY` entry
+      that would supersede the placeholder.
 - [ ] If the install used carries `gf180mcu_osu_sc_*` libraries as well, Metal5
-      is re-checked against the conservative 1.21 mA/µm view (§8).
+      is re-checked against the conservative 1.21 mA/µm view (§8), and DR-0030's
+      contact placeholder is re-derived from that install's conservative Via1
+      view (DR-0030 trigger 4).
 - [ ] On-chip power-path resistance measured (extracted) ≤ 80 mΩ total, and the
       resulting dropout adder is re-checked against the *then-current*
       `sim/dropout-vs-load` margin (§3.4).
@@ -829,9 +946,16 @@ manual check to run against the first real GDS.
 ## 10. Follow-ups filed
 
 - **#278** — the `CON` contact layer has no published current-density limit, so
-  §3.3's contact row rests on §8's cut-area proxy. Filed so the one remaining
-  EM gap is tracked rather than buried in this document. (The metal and via
-  rows are not affected: they are PDK data, from the tech LEFs.)
+  §3.3's contact row rests on a cut-area proxy. **Resolved** by promoting that
+  proxy out of this document into
+  [`DR-0030`](../spec/decision-records/DR-0030-contact-layer-em-placeholder.md)
+  (`Status: proposed`), which carries four falsifiable revisit triggers, and by
+  §8.1's derivation of the tech LEF unit convention / §8.2's reconciliation
+  against the figures this plan assumed before the tech LEFs were found. The gap
+  itself is **not** closed — the PDK still publishes nothing for `CON`, and
+  DR-0030 books that as a stated residual risk of building a 50 mA power device
+  against an open PDK. (The metal and via rows are not affected: they are PDK
+  data, from the tech LEFs.)
 - **#279** — resistor-flavour area lever: `Rz`/`Rbufb`/`Rza`/`Rbias` in
   `ppolyf_u_3k` would recover ~16 % of the area budget but changes the corner
   spread on a steep stability frontier; needs a loop-stability re-run, so it is
