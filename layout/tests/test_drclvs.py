@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Unit tests for layout/drclvs.py's record-writing path.
+"""Unit tests for layout/drclvs.py's host-independent parts.
 
     python3 -m unittest discover -s layout/tests -v
 
-No PDK, klayout, or xschem required: these tests exercise only
-``write_record()``'s append-only guard, not the DRC/LVS stages themselves.
+No PDK, klayout, or xschem required: these tests exercise ``write_record()``'s
+append-only guard, the ``--cell`` registry, and ``deck_env()``'s pmap(1)
+stand-in -- not the DRC/LVS stages themselves.
 """
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -59,19 +62,95 @@ class WriteRecordTests(unittest.TestCase):
 
             original_records_dir = drclvs.RECORDS_DIR
             drclvs.RECORDS_DIR = records_dir
+            spec = drclvs.TESTCELL_SPEC
             try:
-                path = drclvs.write_record(rid, summary, pdk)
+                path = drclvs.write_record(rid, summary, pdk, spec)
                 self.assertEqual(path, records_dir / f"{rid}.md")
                 first_text = path.read_text()
                 self.assertIn(rid, first_text)
 
                 with self.assertRaises(RecordExists):
-                    drclvs.write_record(rid, summary, pdk)
+                    drclvs.write_record(rid, summary, pdk, spec)
 
                 # the first record must not have been clobbered
                 self.assertEqual(path.read_text(), first_text)
             finally:
                 drclvs.RECORDS_DIR = original_records_dir
+
+
+class DeckEnvTests(unittest.TestCase):
+    """The pmap(1) stand-in that keeps the PDK decks runnable off Linux."""
+
+    def test_real_pmap_is_used_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            original = drclvs.tool_path
+            drclvs.tool_path = lambda name: "/usr/bin/pmap"
+            try:
+                env, provenance = drclvs.deck_env(run_dir)
+            finally:
+                drclvs.tool_path = original
+            self.assertEqual(provenance, "host")
+            self.assertFalse((run_dir / "shims").exists())
+            self.assertEqual(env["PATH"], os.environ["PATH"])
+
+    def test_missing_pmap_gets_an_executable_shim_on_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            original = drclvs.tool_path
+            drclvs.tool_path = lambda name: None
+            try:
+                env, provenance = drclvs.deck_env(run_dir)
+            finally:
+                drclvs.tool_path = original
+            self.assertEqual(provenance, "shimmed")
+            shim = run_dir / "shims" / "pmap"
+            self.assertTrue(os.access(shim, os.X_OK), shim)
+            self.assertEqual(env["PATH"].split(os.pathsep)[0], str(run_dir / "shims"))
+
+    def test_shim_output_survives_the_decks_column_slice(self):
+        """The decks do `pmap <pid> | tail -1`[10, 40].strip` -- that must not be nil.
+
+        Reproduces the exact Ruby expression from the gf180mcu decks' logger
+        formatter against the shim's real output: a shim whose line is shorter
+        than 11 characters would slice to nil and crash the deck the same way
+        a missing pmap does.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            original = drclvs.tool_path
+            drclvs.tool_path = lambda name: None
+            try:
+                drclvs.deck_env(run_dir)
+            finally:
+                drclvs.tool_path = original
+            proc = subprocess.run(
+                [str(run_dir / "shims" / "pmap"), str(os.getpid())],
+                capture_output=True, text=True, check=True,
+            )
+            last = proc.stdout.splitlines()[-1]
+            sliced = last[10:50].strip()     # Ruby's String#[10, 40] then .strip
+            self.assertTrue(sliced, f"empty slice from {last!r}")
+            self.assertTrue(sliced.endswith("K"), sliced)
+            self.assertTrue(sliced[:-1].strip().isdigit(), sliced)
+
+
+class CellRegistryTests(unittest.TestCase):
+    """The --cell registry this issue's generalization introduces."""
+
+    def test_testcell_is_the_default_and_is_registered(self):
+        self.assertIn("testcell", drclvs.CELLS)
+        self.assertIs(drclvs.CELLS["testcell"], drclvs.TESTCELL_SPEC)
+        self.assertEqual(drclvs.TESTCELL_SPEC.key, "testcell")
+
+    def test_cell_spec_paths_exist_in_the_repo(self):
+        spec = drclvs.TESTCELL_SPEC
+        self.assertTrue(spec.gen_gds.is_file(), spec.gen_gds)
+        self.assertTrue(spec.schematic.is_file(), spec.schematic)
+
+    def test_unknown_cell_is_rejected_by_argument_parsing(self):
+        with self.assertRaises(SystemExit):
+            drclvs.main(["--cell", "not-a-registered-cell", "--check-env"])
 
 
 if __name__ == "__main__":
