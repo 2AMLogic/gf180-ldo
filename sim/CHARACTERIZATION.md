@@ -31,7 +31,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `53827e92c2cc5e546
 | Thermal | FAIL | STALE | `sim/current-limit/records/20260905-230521-3093ea1.md` |
 | Output noise | N/A | N/A | see note below |
 | Area | N/A | N/A | see note below |
-| Stability | FAIL | STALE | `sim/loop-stability/records/20260906-071437-fff0bf0.md` |
+| Stability | FAIL | fresh | `sim/loop-stability/records/20260922-012628-ac57c94.md` |
 
 ## Detail
 
@@ -174,18 +174,18 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `53827e92c2cc5e546
 
 ### Stability
 
-**Ratified target**: stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 55.44 deg / 11.96 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1584/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and issue #147. 0 mA (no external load) remains outside the envelope per DR-0007.
+**Ratified target**: stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 55.75 deg / 12.08 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1586/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and DR-0019, which measures that lever foreclosed by the amplifier's own iq_ua allocation (issue #147). 0 mA (no external load) remains outside the envelope per DR-0007.
 
-**Verdict**: FAIL  **Fresh**: STALE
+**Verdict**: FAIL  **Fresh**: fresh
 
-- `loop-stability`: `sim/loop-stability/records/20260906-071437-fff0bf0.md` — **FAIL**, stale
+- `loop-stability` — verdict is the record's own, taken against DR-0001's ORIGINAL 4536-point matrix -- wider than the envelope this row has claimed since DR-0018 was ratified (2026-09-15). Inside the ratified envelope (0.1-50 mA, C_eff = 1 uF, ESR >= 200 mOhm) the same record is 630/630, worst PM 55.75 deg / GM 12.08 dB, DR-0008 resurgence clean 0/630; points outside it are covered by DR-0018 (cap/ESR) and DR-0007 (0 mA) -- subset accounting in sim/loop-stability/records/20260922-022122-ac57c94.md, rollup gap tracked by #276: `sim/loop-stability/records/20260922-012628-ac57c94.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 
 ## Tally
 
 16 ratified rows: 12 testable (8 PASS, 3 FAIL, 1 MIXED, 0 UNKNOWN), 4 N/A.
 
-Freshness among the 12 testable rows: 0 fresh, 12 stale, 0 unknown.
+Freshness among the 12 testable rows: 1 fresh, 11 stale, 0 unknown.
 
 A row is only a true current PASS if its Verdict column reads PASS **and** its Fresh column reads fresh — a stale PASS reflects a design state this repo has since moved past, not a claim about `design/netlist/ldo_core.spice` as committed today.
 
