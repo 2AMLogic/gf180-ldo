@@ -388,7 +388,26 @@ ROWS: list[Row] = [
         "Area",
         na_note="Not simulable pre-layout -- no LDO layout exists yet (#2).",
     ),
-    Row("Stability", sources=[Source("loop-stability")]),
+    Row(
+        "Stability",
+        sources=[
+            Source(
+                "loop-stability",
+                note=(
+                    "verdict is the record's own, taken against DR-0001's "
+                    "ORIGINAL 4536-point matrix -- wider than the envelope "
+                    "this row has claimed since DR-0018 was ratified "
+                    "(2026-09-15). Inside the ratified envelope (0.1-50 mA, "
+                    "C_eff = 1 uF, ESR >= 200 mOhm) the same record is "
+                    "630/630, worst PM 55.75 deg / GM 12.08 dB, DR-0008 "
+                    "resurgence clean 0/630; points outside it are covered "
+                    "by DR-0018 (cap/ESR) and DR-0007 (0 mA) -- subset "
+                    "accounting in sim/loop-stability/records/"
+                    "20260922-022122-ac57c94.md, rollup gap tracked by #276"
+                ),
+            )
+        ],
+    ),
 ]
 
 # Experiments that exist under sim/ but are not cited by any ROW above --
