@@ -87,6 +87,7 @@ file at all is UNKNOWN.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import pathlib
 import re
@@ -276,6 +277,138 @@ def classify(snippets: list[str]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Envelope filters -- a Source may narrow its verdict to a named subset of
+# its record's own committed ``-matrix.csv``, rather than the record's
+# top-level prose ``**Overall...**`` verdict (issue #276).
+#
+# Some records (e.g. ``sim/loop-stability/``) sweep a wider grid than the
+# spec currently ratifies -- DR-0018 narrowed the ``Stability`` row's claimed
+# envelope on 2026-09-15 without narrowing the bench itself (its Consequence
+# #2). Grading such a row from the record's own prose grades it against
+# whatever matrix the *record* states its verdict over, which can be wider
+# than what README.md actually claims -- silently hiding a real pass inside
+# the ratified envelope (or, going forward, a real regression inside it,
+# since a verdict that is already FAIL cannot get worse to signal one).
+#
+# Each envelope's predicate reads the record's ``-matrix.csv`` (the
+# machine-readable per-point sweep every ``sim/loop-stability`` record
+# already commits) so the boundary is derived from real per-point data, not
+# re-spelled as a second copy of the decision record's prose. Defined once
+# here so neither this report nor any future reader of it can drift from
+# what the cited decision record actually narrowed the row to.
+# ---------------------------------------------------------------------------
+
+class EnvelopeFilter:
+    def __init__(self, name: str, decision_record: str, predicate):
+        self.name = name
+        self.decision_record = decision_record
+        # callable(csv_row: dict[str, str]) -> bool
+        self.predicate = predicate
+
+
+def _in_dr0018_stability_envelope(row: dict[str, str]) -> bool:
+    """DR-0018's ratified ``Stability`` envelope: 0.1-50 mA (0 mA is excluded
+    per DR-0007), C_eff = 1 uF nominal, ESR >= 200 mOhm."""
+    return (
+        float(row["iload_ma"]) > 0
+        and abs(float(row["ceff_uf"]) - 1.0) < 1e-9
+        and float(row["esr_ohm"]) >= 0.2
+    )
+
+
+DR0018_STABILITY_ENVELOPE = EnvelopeFilter(
+    name="0.1-50 mA / C_eff=1uF nominal / ESR>=200 mOhm",
+    decision_record="DR-0018",
+    predicate=_in_dr0018_stability_envelope,
+)
+
+
+def envelope_verdict(record: pathlib.Path, envelope: EnvelopeFilter) -> dict:
+    """PASS/FAIL for ``envelope``'s subset of ``record``'s own committed
+    ``-matrix.csv``, alongside the full-matrix pass count for context (the
+    wider-matrix result must stay visible, not be dropped -- issue #276).
+
+    A point counts as passing the envelope only if it passes **both** the
+    record's own phase/gain-margin ``result`` column and its DR-0008
+    ``resurgence_result`` column -- either one failing inside the ratified
+    envelope must fail the row, matching how the record's own prose states
+    its envelope accounting.
+    """
+    csv_path = record.parent / f"{record.stem}-matrix.csv"
+    if not csv_path.is_file():
+        return {"available": False, "verdict": "UNKNOWN"}
+
+    with csv_path.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+
+    n_total_full = len(rows)
+    n_pass_full = sum(1 for r in rows if r.get("result", "").upper() == "PASS")
+
+    subset = [r for r in rows if envelope.predicate(r)]
+    if not subset:
+        return {
+            "available": True,
+            "verdict": "UNKNOWN",
+            "n_pass": 0,
+            "n_total": 0,
+            "n_total_full": n_total_full,
+            "n_pass_full": n_pass_full,
+        }
+
+    def _point_passes(r: dict[str, str]) -> bool:
+        result_ok = r.get("result", "").upper() == "PASS"
+        resurgence_ok = r.get("resurgence_result", "PASS").upper() == "PASS"
+        return result_ok and resurgence_ok
+
+    n_pass = sum(1 for r in subset if _point_passes(r))
+    n_total = len(subset)
+    n_resurge_flagged = sum(
+        1 for r in subset if r.get("resurgence_result", "PASS").upper() != "PASS"
+    )
+    result: dict = {
+        "available": True,
+        "verdict": "PASS" if n_pass == n_total else "FAIL",
+        "n_pass": n_pass,
+        "n_total": n_total,
+        "n_resurge_flagged": n_resurge_flagged,
+        "n_total_full": n_total_full,
+        "n_pass_full": n_pass_full,
+    }
+    if "phase_margin_deg" in subset[0] and "gain_margin_db" in subset[0]:
+        result["worst_pm"] = min(float(r["phase_margin_deg"]) for r in subset)
+        result["worst_gm"] = min(float(r["gain_margin_db"]) for r in subset)
+    return result
+
+
+def _render_envelope_snippet(env: dict, envelope: EnvelopeFilter) -> str:
+    if not env["available"]:
+        return (
+            f"envelope ({envelope.decision_record}, {envelope.name}): UNKNOWN "
+            "-- no `-matrix.csv` committed alongside this record"
+        )
+    if env["n_total"] == 0:
+        return (
+            f"envelope ({envelope.decision_record}, {envelope.name}): UNKNOWN "
+            "-- no matrix point falls inside this envelope"
+        )
+    margin = ""
+    if "worst_pm" in env and "worst_gm" in env:
+        margin = f", worst PM {env['worst_pm']:.2f} deg / worst GM {env['worst_gm']:.2f} dB"
+    full = ""
+    if env["n_total_full"]:
+        full = (
+            f"; full matrix (DR-0001's original, wider window): "
+            f"{env['n_pass_full']}/{env['n_total_full']} passing"
+        )
+    return (
+        f"envelope ({envelope.decision_record}, {envelope.name}): "
+        f"**{env['verdict']}** -- {env['n_pass']}/{env['n_total']} points passing"
+        f"{margin}, DR-0008 resurgence flagged {env.get('n_resurge_flagged', 0)}/"
+        f"{env['n_total']}{full}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Row definitions -- which experiment slug(s) substantiate each ratified
 # README row. This mapping is domain knowledge (which testbench measures
 # which spec line) and is the one part of this script that is necessarily
@@ -284,10 +417,20 @@ def classify(snippets: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 class Source:
-    def __init__(self, slug: str, keyword: str | None = None, note: str = ""):
+    def __init__(
+        self,
+        slug: str,
+        keyword: str | None = None,
+        note: str = "",
+        envelope: EnvelopeFilter | None = None,
+    ):
         self.slug = slug
         self.keyword = keyword
         self.note = note
+        # When set, this source's verdict is computed from the record's own
+        # committed ``-matrix.csv`` filtered to ``envelope``, rather than
+        # from the record's full-matrix prose verdict (issue #276).
+        self.envelope = envelope
 
 
 class Row:
@@ -393,17 +536,20 @@ ROWS: list[Row] = [
         sources=[
             Source(
                 "loop-stability",
+                envelope=DR0018_STABILITY_ENVELOPE,
                 note=(
-                    "verdict is the record's own, taken against DR-0001's "
-                    "ORIGINAL 4536-point matrix -- wider than the envelope "
-                    "this row has claimed since DR-0018 was ratified "
-                    "(2026-09-15). Inside the ratified envelope (0.1-50 mA, "
-                    "C_eff = 1 uF, ESR >= 200 mOhm) the same record is "
-                    "630/630, worst PM 55.75 deg / GM 12.08 dB, DR-0008 "
-                    "resurgence clean 0/630; points outside it are covered "
-                    "by DR-0018 (cap/ESR) and DR-0007 (0 mA) -- subset "
-                    "accounting in sim/loop-stability/records/"
-                    "20260922-022122-ac57c94.md, rollup gap tracked by #276"
+                    "verdict is computed from this record's own committed "
+                    "`-matrix.csv`, filtered to the ratified DR-0018 "
+                    "envelope (0.1-50 mA, C_eff = 1 uF, ESR >= 200 mOhm), "
+                    "not from the record's full-matrix prose verdict -- "
+                    "that prose states DR-0001's ORIGINAL, wider 4536-point "
+                    "matrix, which this row no longer claims (DR-0018, "
+                    "ratified 2026-09-15). The wider-matrix result is kept "
+                    "visible alongside the envelope verdict below, not "
+                    "dropped; points outside the envelope are covered by "
+                    "DR-0018 (cap/ESR) and DR-0007 (0 mA) -- subset "
+                    "accounting cross-checked in sim/loop-stability/"
+                    "records/20260922-022122-ac57c94.md"
                 ),
             )
         ],
@@ -493,9 +639,14 @@ def render() -> str:
                     }
                 )
                 continue
-            text = record.read_text()
-            snippets = extract_verdict_snippets(text, source.keyword)
-            verdict = classify(snippets)
+            if source.envelope is not None:
+                env = envelope_verdict(record, source.envelope)
+                verdict = env["verdict"]
+                snippets = [_render_envelope_snippet(env, source.envelope)]
+            else:
+                text = record.read_text()
+                snippets = extract_verdict_snippets(text, source.keyword)
+                verdict = classify(snippets)
             fresh_status, fresh_dut = freshness(snapshot)
             source_results.append(
                 {

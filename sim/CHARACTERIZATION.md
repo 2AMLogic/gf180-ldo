@@ -31,7 +31,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `53827e92c2cc5e546
 | Thermal | FAIL | STALE | `sim/current-limit/records/20260905-230521-3093ea1.md` |
 | Output noise | N/A | N/A | see note below |
 | Area | N/A | N/A | see note below |
-| Stability | FAIL | fresh | `sim/loop-stability/records/20260922-012628-ac57c94.md` |
+| Stability | PASS | fresh | `sim/loop-stability/records/20260922-012628-ac57c94.md` |
 
 ## Detail
 
@@ -176,14 +176,14 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `53827e92c2cc5e546
 
 **Ratified target**: stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 55.75 deg / 12.08 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1586/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and DR-0019, which measures that lever foreclosed by the amplifier's own iq_ua allocation (issue #147). 0 mA (no external load) remains outside the envelope per DR-0007.
 
-**Verdict**: FAIL  **Fresh**: fresh
+**Verdict**: PASS  **Fresh**: fresh
 
-- `loop-stability` — verdict is the record's own, taken against DR-0001's ORIGINAL 4536-point matrix -- wider than the envelope this row has claimed since DR-0018 was ratified (2026-09-15). Inside the ratified envelope (0.1-50 mA, C_eff = 1 uF, ESR >= 200 mOhm) the same record is 630/630, worst PM 55.75 deg / GM 12.08 dB, DR-0008 resurgence clean 0/630; points outside it are covered by DR-0018 (cap/ESR) and DR-0007 (0 mA) -- subset accounting in sim/loop-stability/records/20260922-022122-ac57c94.md, rollup gap tracked by #276: `sim/loop-stability/records/20260922-012628-ac57c94.md` — **FAIL**, fresh (matches current `ldo_core`)
-  - Overall: FAIL
+- `loop-stability` — verdict is computed from this record's own committed `-matrix.csv`, filtered to the ratified DR-0018 envelope (0.1-50 mA, C_eff = 1 uF, ESR >= 200 mOhm), not from the record's full-matrix prose verdict -- that prose states DR-0001's ORIGINAL, wider 4536-point matrix, which this row no longer claims (DR-0018, ratified 2026-09-15). The wider-matrix result is kept visible alongside the envelope verdict below, not dropped; points outside the envelope are covered by DR-0018 (cap/ESR) and DR-0007 (0 mA) -- subset accounting cross-checked in sim/loop-stability/records/20260922-022122-ac57c94.md: `sim/loop-stability/records/20260922-012628-ac57c94.md` — **PASS**, fresh (matches current `ldo_core`)
+  - envelope (DR-0018, 0.1-50 mA / C_eff=1uF nominal / ESR>=200 mOhm): **PASS** -- 630/630 points passing, worst PM 55.75 deg / worst GM 12.08 dB, DR-0008 resurgence flagged 0/630; full matrix (DR-0001's original, wider window): 2939/4536 passing
 
 ## Tally
 
-16 ratified rows: 12 testable (8 PASS, 3 FAIL, 1 MIXED, 0 UNKNOWN), 4 N/A.
+16 ratified rows: 12 testable (9 PASS, 2 FAIL, 1 MIXED, 0 UNKNOWN), 4 N/A.
 
 Freshness among the 12 testable rows: 1 fresh, 11 stale, 0 unknown.
 
