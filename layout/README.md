@@ -1,10 +1,15 @@
 # layout/ — GDS, DRC and LVS
 
 Physical verification for this repo, on the gf180mcu open PDK. **There is no
-LDO layout yet.** What lives here today is the *flow*: a documented, one-command
-DRC + LVS invocation, proven end to end against a deliberately trivial test
-cell, so that whoever lays the block out inherits a working loop instead of
-building one.
+LDO layout yet.** What lives here today is the *flow* and the *plan*:
+
+- the flow — a documented, one-command DRC + LVS invocation, proven end to end
+  against a deliberately trivial test cell, so that whoever lays the block out
+  inherits a working loop instead of building one (the rest of this file);
+- the plan — [`floorplan.md`](floorplan.md), the pass-array segmentation and
+  metal strategy, the common-centroid matching plan, the Kelvin-sense scheme
+  and the core-area estimate, with [`area_estimate.py`](area_estimate.py)
+  re-deriving that estimate from `design/netlist/` on demand.
 
 ```bash
 python3 layout/drclvs.py --check-env    # is everything installed?
@@ -35,14 +40,36 @@ it.
 ```
 layout/
   drclvs.py                          the one command (see "The seven stages")
+  floorplan.md                       the floorplan and matching plan (issue #15)
+  area_estimate.py                   core-area estimate from design/netlist/
   xschemrc                           design/xschemrc + `lvs_netlist 1`
   testcell/
     drclvs_testcell.sch              the test cell, schematic side
     drclvs_testcell.sym              (exists only to force a real `.subckt`)
     gen_gds.py                       the test cell, layout side (a generator)
     netlist/drclvs_testcell.spice    the exported LVS reference netlist
+  tests/                             stdlib unittest, no PDK/klayout needed
   records/<record-id>.md             append-only run records
 ```
+
+## The floorplan
+
+[`floorplan.md`](floorplan.md) is the physical plan the eventual layout has to
+implement: how the pass array is segmented and strapped for 50 mA, which
+devices must be common-centroid and to what numeric target, where the output is
+Kelvin-sensed, and how the whole block fits the ratified `< 0.1 mm²` core
+budget. Its area arithmetic is not typed in by hand — it comes from
+
+```bash
+python3 layout/area_estimate.py               # the block / per-kind table
+python3 layout/area_estimate.py --devices     # ... plus every device
+python3 layout/area_estimate.py --pass-width 4000   # what-if (issue #139)
+```
+
+which reads `design/netlist/ldo_core.spice` directly, so the estimate tracks
+the design. `layout/tests/test_area_estimate.py` asserts the estimate still
+fits the budget at every candidate pass-device width, which makes the budget
+claim a check CI runs rather than a sentence that can go stale.
 
 ## Getting the tools
 
@@ -240,6 +267,11 @@ generically against [klayout-tools](https://github.com/2AMLogic/klayout-tools):
   surfaced: the simulation-vs-LVS netlist-form split, and the need for negative
   controls in the contract. `klt` has no LVS verb today, which is why stage 5
   drives the PDK's deck directly.
+- [#2308](https://github.com/2AMLogic/klayout-tools/issues/2308) — no verb
+  reports a deck's **rule values**, so pre-layout arithmetic (everything
+  `area_estimate.py` computes) hard-codes constants transcribed out of Ruby
+  comment strings in the PDK's rule decks. `klt deck info` gives a content hash
+  and device classes; `klt drc` needs a stream. Filed from `floorplan.md` §10.
 
 When `klt` grows `lvs` and PDK-deck support, stages 4 and 5 should collapse into
 `klt` calls and this file should shrink accordingly.

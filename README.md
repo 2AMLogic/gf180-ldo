@@ -341,6 +341,16 @@ See [`layout/README.md`](layout/README.md) for what each stage establishes, what
 "DRC clean" does and does not mean here, and the tool caveats worth knowing
 before believing a result.
 
+What *does* exist ahead of the layout is the plan for it:
+[`layout/floorplan.md`](layout/floorplan.md) fixes the pass-array segmentation
+and 50 mA metal strategy, the common-centroid matching plan (including the
+divider, whose mismatch this PDK's models cannot simulate at all — note 3), the
+Kelvin-sense scheme, and the core-area estimate against the Area row.
+
+```bash
+python3 layout/area_estimate.py        # core-area estimate from design/netlist/
+```
+
 ## Chipalooza
 
 This block's proposal for Open Circuit Design's Chipalooza Challenge #5
