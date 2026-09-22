@@ -315,13 +315,25 @@ generically against [klayout-tools](https://github.com/2AMLogic/klayout-tools):
 - [#163](https://github.com/2AMLogic/klayout-tools/issues/163) (existing, part
   of the `klt lvs` epic) — commented with two requirements this bring-up
   surfaced: the simulation-vs-LVS netlist-form split, and the need for negative
-  controls in the contract. `klt` has no LVS verb today, which is why stage 5
-  drives the PDK's deck directly.
+  controls in the contract. `klt` had no LVS verb when stage 5 was written,
+  which is why it drives the PDK's deck directly; see the note below the list.
 - [#2308](https://github.com/2AMLogic/klayout-tools/issues/2308) — no verb
   reports a deck's **rule values**, so pre-layout arithmetic (everything
   `area_estimate.py` computes) hard-codes constants transcribed out of Ruby
   comment strings in the PDK's rule decks. `klt deck info` gives a content hash
   and device classes; `klt drc` needs a stream. Filed from `floorplan.md` §10.
+- [#2333](https://github.com/2AMLogic/klayout-tools/issues/2333) — `klt drc
+  --engine klayout` runs a PDK's **driver script** as-is, so the driver's host
+  assumptions become klt's; a missing host utility aborts the deck before any
+  rule runs, and the surfaced error blames the deck. This is the generic form
+  of the `pmap` problem above. Asks for either deck composition from the rule
+  tables alone, or a preflight that names the missing utility.
 
-When `klt` grows `lvs` and PDK-deck support, stages 4 and 5 should collapse into
-`klt` calls and this file should shrink accordingly.
+`klt` has since grown both of the verbs this section's older entries wanted:
+`klt drc --engine klayout` (PDK-native DRC-DSL decks, #173) and `klt extract` /
+`klt lvs` (headless extraction and compare, the #163 epic) — as of `klt 0.4.0`,
+which is newer than stages 4 and 5 here. **Collapsing those two stages into
+`klt` calls is real, available work, but it is not a free swap**: the negative
+controls and the verdict-string contract in stage 5 are what make an LVS
+"match" evidence at all, and any move has to carry them across and show the
+same cell reaching the same verdict both ways before the old path is retired.
