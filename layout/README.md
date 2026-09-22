@@ -18,13 +18,24 @@ python3 layout/drclvs.py --check        # ... and the committed netlist must be 
 python3 layout/drclvs.py --record       # ... and write layout/records/<record-id>.md
 ```
 
+`drclvs.py` is a **generalized driver, not a testcell-only script**: the seven
+stages above take a `CellSpec` (GDS generator, LVS reference schematic,
+substrate net, where the exported netlist is committed) rather than hardcoded
+constants. `--cell testcell` (the default) selects the one registered today;
+a real block's layout registers its own `CellSpec` in `drclvs.py`'s `CELLS`
+dict and drives it with `--cell <key>` — see that file's module docstring for
+the exact contract. The two LVS negative controls (stage 6/7) currently key
+off the netlist's first MOS (`M*`) element line, so an all-passive cell (e.g.
+a resistor-only feedback divider) will need its own mutation pair rather than
+reusing `control_topology`/`control_parameter` verbatim.
+
 A run takes about a minute and prints one line per stage:
 
 ```
 [1/7] layout      : drclvs_testcell.gds (2592 bytes)
 [2/7] netlist     : 1 device line(s), LVS form
 [3/7] klt drc     : clean (0 violation(s), curated subset)
-[4/7] pdk drc     : 0 violation(s) across 642 rule categories (41 rule tables)
+[4/7] pdk drc     : 0 violation(s) across 640 rule categories (41 rule tables)
 [5/7] lvs         : MATCH
 [6/7] control topo: gate shorted to drain -> MISMATCH (expected)
 [7/7] control para: device width doubled -> MISMATCH (expected)
@@ -93,6 +104,37 @@ tells you which are missing.
 The PDK is found by `sim/harness/pdk.py` — the same resolver the simulation
 harness uses, so there is one implementation of "where is gf180mcu" in the repo
 and `python3 sim/run_corners.py --check-env` diagnoses a missing PDK for both.
+
+### A fifth tool you do *not* have to install: `pmap`
+
+The gf180mcu DRC and LVS decks install a Ruby `Logger` formatter that shells out
+to `pmap(1)` on **every** log line, to print the run's memory usage:
+
+```ruby
+"#{datetime}: Memory Usage (" + `pmap #{Process.pid} | tail -1`[10, 40].strip + ") : #{msg}"
+```
+
+`pmap` is procps — Linux-only, and absent from macOS and from many minimal
+Linux containers. On such a host the backtick yields `""`, `""[10, 40]` is
+`nil`, and `nil.strip` raises, so the deck dies on its **first** `logger.info`,
+before running a single rule. It fails as
+
+```
+sh: pmap: command not found
+ERROR: In .../main.drc: undefined method 'strip' for nil
+```
+
+which reads like a broken deck rather than a missing utility, and takes stages
+4–7 — i.e. every DRC number and every LVS verdict this repo is willing to
+quote — with it.
+
+`drclvs.py` therefore writes a small `pmap` stand-in into the run directory and
+puts it on `PATH` **for the deck subprocesses only** when the host has no real
+one. It reports the process's actual resident size via `ps(1)`, in the column
+layout the formatter slices, so the logged number is true rather than invented.
+Which of the two ran is recorded: the stage-4 line prints `pmap shimmed`, and
+every `--record` run carries a `pmap` row reading `host` or `shimmed`, so a
+record never implies a stock toolchain when a stage ran against a substitute.
 
 ## The test cell
 
@@ -166,10 +208,18 @@ and it is a **13-rule curated subset**. See "Coverage, honestly" below.
 way the PDK's own `run_drc.py` assembles it: `main.drc`, then every rule table
 (minus the flat-mode `*_split` variants, matching what `run_drc.py` does in deep
 mode), then `tail.drc`, with `layers_def.drc` copied beside the generated deck.
-41 rule tables, 642 rule categories. `drclvs.py` assembles the deck itself
+41 rule tables, and ~640 rule categories. `drclvs.py` assembles the deck itself
 rather than shelling out to `run_drc.py`, which needs `docopt` and drives its
 own parallel run/report layout; what we want is one deck, one report, one exit
 status. **This is the DRC number worth quoting.**
+
+Quote it from a *record*, not from this file: the category count is a property
+of the deck **as the installed KLayout builds it**, not of the PDK alone. At
+the same open_pdks hash it was 642 under KLayout 0.28.16 (record
+`20260801-075800-9419809`) and is 640 under 0.30.10 (record
+`20260922-215349-74f117f`). What matters for a DRC claim is that the count is
+large and non-zero — see the zero-category trap immediately below — and that
+the violation count beside it is zero.
 
 A deck that runs but registers *zero* rule categories produces an empty report
 that is indistinguishable from a clean one — that is what a mis-assembled deck
@@ -265,13 +315,25 @@ generically against [klayout-tools](https://github.com/2AMLogic/klayout-tools):
 - [#163](https://github.com/2AMLogic/klayout-tools/issues/163) (existing, part
   of the `klt lvs` epic) — commented with two requirements this bring-up
   surfaced: the simulation-vs-LVS netlist-form split, and the need for negative
-  controls in the contract. `klt` has no LVS verb today, which is why stage 5
-  drives the PDK's deck directly.
+  controls in the contract. `klt` had no LVS verb when stage 5 was written,
+  which is why it drives the PDK's deck directly; see the note below the list.
 - [#2308](https://github.com/2AMLogic/klayout-tools/issues/2308) — no verb
   reports a deck's **rule values**, so pre-layout arithmetic (everything
   `area_estimate.py` computes) hard-codes constants transcribed out of Ruby
   comment strings in the PDK's rule decks. `klt deck info` gives a content hash
   and device classes; `klt drc` needs a stream. Filed from `floorplan.md` §10.
+- [#2333](https://github.com/2AMLogic/klayout-tools/issues/2333) — `klt drc
+  --engine klayout` runs a PDK's **driver script** as-is, so the driver's host
+  assumptions become klt's; a missing host utility aborts the deck before any
+  rule runs, and the surfaced error blames the deck. This is the generic form
+  of the `pmap` problem above. Asks for either deck composition from the rule
+  tables alone, or a preflight that names the missing utility.
 
-When `klt` grows `lvs` and PDK-deck support, stages 4 and 5 should collapse into
-`klt` calls and this file should shrink accordingly.
+`klt` has since grown both of the verbs this section's older entries wanted:
+`klt drc --engine klayout` (PDK-native DRC-DSL decks, #173) and `klt extract` /
+`klt lvs` (headless extraction and compare, the #163 epic) — as of `klt 0.4.0`,
+which is newer than stages 4 and 5 here. **Collapsing those two stages into
+`klt` calls is real, available work, but it is not a free swap**: the negative
+controls and the verdict-string contract in stage 5 are what make an LVS
+"match" evidence at all, and any move has to carry them across and show the
+same cell reaching the same verdict both ways before the old path is retired.

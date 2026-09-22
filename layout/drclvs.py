@@ -1,14 +1,27 @@
 #!/usr/bin/env python3
-"""Run DRC and LVS on the gf180mcu bring-up test cell -- one command.
+"""Run DRC and LVS on a registered gf180mcu layout cell -- one command.
 
-    python3 layout/drclvs.py               # build, export, DRC, LVS; print a summary
-    python3 layout/drclvs.py --check       # same, plus: the committed netlist must be current
-    python3 layout/drclvs.py --check-env   # report which tools/PDK are visible, then stop
-    python3 layout/drclvs.py --record      # also write layout/records/<record-id>.md
-    python3 layout/drclvs.py --keep        # keep the run directory (default: keep only on failure)
+    python3 layout/drclvs.py                     # bring-up test cell (default)
+    python3 layout/drclvs.py --cell testcell      # same, named explicitly
+    python3 layout/drclvs.py --check             # same, plus: the committed netlist must be current
+    python3 layout/drclvs.py --check-env         # report which tools/PDK are visible, then stop
+    python3 layout/drclvs.py --record            # also write layout/records/<record-id>.md
+    python3 layout/drclvs.py --keep              # keep the run directory (default: keep only on failure)
 
 Exit status is 0 only if **every** stage passed. See layout/README.md for what
 each stage means and what it does and does not prove.
+
+Driving a real block through this flow
+---------------------------------------
+This file used to be hardcoded to the one-transistor bring-up test cell
+(issue #14). It is now a **generalized driver**: the seven stages below take a
+:class:`CellSpec` -- a GDS generator script, an LVS reference schematic, a
+substrate net, and where the exported netlist is committed -- rather than
+module-level constants for the test cell specifically. ``CELLS`` at the top of
+this file is the registry a real block's layout plugs into; add an entry there
+(see ``TESTCELL_SPEC`` for the shape) and drive it with ``--cell <key>``.
+Nothing about stages 1-7 is test-cell-specific; only ``TESTCELL_SPEC`` and its
+generator (``layout/testcell/gen_gds.py``) are.
 
 What this runs, in order
 ------------------------
@@ -44,14 +57,16 @@ What this runs, in order
    ignores device parameters would wave through a mis-sized transistor. Each
    control isolates one of those.
 
-Nothing here is LDO-specific: the test cell is one transistor and exists only
-to prove the flow. Driving a real block through it is a later issue's job; the
-invocation is the deliverable.
+Nothing here is LDO-specific in stages 1-7 themselves: only the registered
+``CellSpec`` is. The bring-up test cell (``testcell``, the default) is one
+transistor and exists only to prove the flow; driving a real block through it
+means registering that block's own ``CellSpec`` in ``CELLS`` below.
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import difflib
 import glob
 import json
@@ -66,15 +81,61 @@ from pathlib import Path
 LAYOUT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = LAYOUT_DIR.parent
 TESTCELL_DIR = LAYOUT_DIR / "testcell"
-NETLIST_DIR = TESTCELL_DIR / "netlist"
 RECORDS_DIR = LAYOUT_DIR / "records"
 WORK_DIR = LAYOUT_DIR / ".work"
 XSCHEMRC = LAYOUT_DIR / "xschemrc"
-GEN_GDS = TESTCELL_DIR / "gen_gds.py"
 
-CELL = "drclvs_testcell"
-TOP_CELL = "DRCLVS_TESTCELL"   # gen_gds.py's top cell name
-SUBSTRATE_NET = "VSS"          # the schematic's bulk port == the LVS substrate net
+
+@dataclasses.dataclass(frozen=True)
+class CellSpec:
+    """Everything the seven stages need to know about one layout cell.
+
+    A real block's layout registers one of these in ``CELLS`` instead of
+    editing the stage functions below -- the stages themselves are generic.
+    """
+
+    key: str
+    # Base name used for generated file names (<cell>.gds, <cell>.spice, ...)
+    # and, by convention, the schematic's own .subckt name.
+    cell: str
+    # The layout top cell name gen_gds emits -- the DRC/LVS decks' `topcell`
+    # switch. Not necessarily equal to `cell` (see testcell: DRCLVS_TESTCELL).
+    top_cell: str
+    # klayout -b -r script that builds the GDS (see layout/testcell/gen_gds.py
+    # for the expected -rd out=/-rd pdk= contract).
+    gen_gds: Path
+    # The .sch xschem netlists in LVS form for the LVS reference netlist.
+    schematic: Path
+    # Where the committed LVS reference netlist (<cell>.spice) lives.
+    netlist_dir: Path
+    # Directories joined into XSCHEM_USER_LIBRARY_PATH so the schematic's own
+    # symbol references resolve (e.g. design/ for a cell that instantiates
+    # design/error_amp.sym and friends).
+    xschem_library_paths: tuple[Path, ...]
+    # The schematic's bulk/substrate port == the LVS deck's lvs_sub switch.
+    substrate_net: str = "VSS"
+    # One-line human description, quoted verbatim in --record's run record.
+    description: str = ""
+
+
+TESTCELL_SPEC = CellSpec(
+    key="testcell",
+    cell="drclvs_testcell",
+    top_cell="DRCLVS_TESTCELL",
+    gen_gds=TESTCELL_DIR / "gen_gds.py",
+    schematic=TESTCELL_DIR / "drclvs_testcell.sch",
+    netlist_dir=TESTCELL_DIR / "netlist",
+    xschem_library_paths=(TESTCELL_DIR,),
+    substrate_net="VSS",
+    description="one nfet_03v3, W=2 um, L=0.28 um, nf=1",
+)
+
+# The registry a real block's layout plugs into -- add an entry here (see
+# TESTCELL_SPEC's fields) and drive it with `--cell <key>`. `testcell` is the
+# only entry today because no block layout exists yet (issue #173).
+CELLS: dict[str, CellSpec] = {
+    TESTCELL_SPEC.key: TESTCELL_SPEC,
+}
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.pdk import Pdk, PdkNotFound, find_pdk  # noqa: E402
@@ -149,6 +210,13 @@ def check_env(verbose: bool = True) -> tuple[bool, Pdk | None]:
         for tool, path, why in rows:
             print(f"  {tool:<8} {path}")
             print(f"           {why}")
+        if tool_path("pmap") is None:
+            print(
+                "  pmap     NOT FOUND -- not required; the PDK decks' memory "
+                "logger calls it,\n"
+                "           and drclvs.py supplies a ps(1)-backed stand-in on "
+                "hosts without it."
+            )
         print(f"\npdk:\n  {pdk_line}")
         if pdk is not None and pdk.variant[-1] not in VARIANT_SWITCHES:
             print(
@@ -171,12 +239,63 @@ def variant_switches(pdk: Pdk) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------
+# host portability: the PDK decks' `pmap` dependency
+# --------------------------------------------------------------------------
+
+# The gf180mcu DRC and LVS decks install a Ruby Logger formatter that shells
+# out to pmap(1) on EVERY log line:
+#
+#     "#{datetime}: Memory Usage (" + `pmap #{Process.pid} | tail -1`[10, 40].strip + ...
+#
+# pmap is procps, i.e. Linux-only. On a host without it the backtick returns
+# "", `""[10, 40]` is nil, and `nil.strip` raises -- so the deck dies on its
+# very first logger.info(), before it has run a single rule. The failure reads
+# as `undefined method 'strip' for nil` in main.drc, which looks like a deck
+# bug rather than a missing utility.
+#
+# Rather than let that make the whole flow Linux-only, supply a pmap that
+# reports the process's real RSS via ps(1), on PATH for the deck subprocesses
+# only. Truthful (the number is this process's actual resident size, in KiB,
+# which is what pmap's own `total` line reports) and scoped (it lives in the
+# gitignored run directory and is never put on the caller's PATH).
+PMAP_SHIM = """\
+#!/bin/sh
+# pmap(1) stand-in, written by layout/drclvs.py for hosts without procps.
+# Emits one pmap-style "total <N>K" line for the pid in $1, from ps(1)'s RSS,
+# because the gf180mcu decks' logger parses column 10.. of `pmap <pid> | tail -1`.
+rss=$(ps -o rss= -p "${1:-$$}" 2>/dev/null | tr -d ' ')
+[ -n "$rss" ] || rss=0
+printf 'total %12sK\\n' "$rss"
+"""
+
+
+def deck_env(run_dir: Path) -> tuple[dict[str, str], str]:
+    """Environment for a PDK-deck klayout subprocess.
+
+    Returns ``(env, provenance)`` where ``provenance`` is ``"host"`` when the
+    host has a real pmap(1) and ``"shimmed"`` when this function supplied the
+    stand-in above -- the run record prints it, so a record never implies a
+    stock toolchain when one stage ran against a substitute.
+    """
+    env = dict(os.environ)
+    if tool_path("pmap") is not None:
+        return env, "host"
+    shim_dir = run_dir / "shims"
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    shim = shim_dir / "pmap"
+    shim.write_text(PMAP_SHIM)
+    shim.chmod(0o755)
+    env["PATH"] = os.pathsep.join([str(shim_dir), env.get("PATH", "")])
+    return env, "shimmed"
+
+
+# --------------------------------------------------------------------------
 # stage 1 -- layout
 # --------------------------------------------------------------------------
 
-def build_gds(pdk: Pdk, out: Path, log: Path) -> None:
+def build_gds(pdk: Pdk, spec: CellSpec, out: Path, log: Path) -> None:
     cmd = [
-        "klayout", "-b", "-r", str(GEN_GDS),
+        "klayout", "-b", "-r", str(spec.gen_gds),
         "-rd", f"out={out}",
         "-rd", f"pdk={pdk.path}",
     ]
@@ -189,14 +308,16 @@ def build_gds(pdk: Pdk, out: Path, log: Path) -> None:
 # stage 2 -- schematic netlist
 # --------------------------------------------------------------------------
 
-def export_netlist(pdk: Pdk, outdir: Path) -> str:
-    """Netlist the test cell in LVS form. Returns the normalized text."""
+def export_netlist(pdk: Pdk, spec: CellSpec, outdir: Path) -> str:
+    """Netlist ``spec``'s cell in LVS form. Returns the normalized text."""
     env = dict(os.environ)
     env["PDK_ROOT"] = str(pdk.path.parent)
     env["PDK"] = pdk.variant
     env["GF180_PDK_PATH"] = str(pdk.path)
-    env["XSCHEM_USER_LIBRARY_PATH"] = str(TESTCELL_DIR)
-    sch = TESTCELL_DIR / f"{CELL}.sch"
+    env["XSCHEM_USER_LIBRARY_PATH"] = os.pathsep.join(
+        str(p) for p in spec.xschem_library_paths
+    )
+    sch = spec.schematic
     try:
         text = run_xschem_netlist(sch, outdir, env, XSCHEMRC)
     except XschemExportError as exc:
@@ -215,18 +336,18 @@ def export_netlist(pdk: Pdk, outdir: Path) -> str:
             "  This repo pins 3.4.7; see docs/environment-setup.md.\n"
             f"--- exported ---\n{text}"
         )
-    if f".subckt {CELL}" not in text:
+    if f".subckt {spec.cell}" not in text:
         raise StageError(
-            f"the exported netlist has no `.subckt {CELL}` line -- xschem "
-            "emitted the commented `**.subckt` form, which KLayout will not "
-            "read. This is also an xschem-too-old symptom "
+            f"the exported netlist has no `.subckt {spec.cell}` line -- "
+            "xschem emitted the commented `**.subckt` form, which KLayout "
+            "will not read. This is also an xschem-too-old symptom "
             f"(`xschem --version`: {tool_version('xschem', ['--version'])}; this repo pins 3.4.7).\n"
             f"--- exported ---\n{text}"
         )
 
     header = (
-        f"* {CELL} -- generated by layout/drclvs.py from "
-        f"layout/testcell/{CELL}.sch\n"
+        f"* {spec.cell} -- generated by layout/drclvs.py from "
+        f"{sch.relative_to(REPO_ROOT)}\n"
         f"* LVS reference netlist (xschem lvs_netlist form). Do not edit: edit\n"
         f"* the schematic and re-run the export.\n"
     )
@@ -338,13 +459,13 @@ def assemble_pdk_drc_deck(pdk: Pdk, run_dir: Path) -> tuple[Path, int]:
     return deck, len(tables)
 
 
-def run_pdk_drc(pdk: Pdk, gds: Path, run_dir: Path, log: Path) -> dict:
+def run_pdk_drc(pdk: Pdk, spec: CellSpec, gds: Path, run_dir: Path, log: Path) -> dict:
     deck, table_count = assemble_pdk_drc_deck(pdk, run_dir)
-    report = run_dir / f"{CELL}.lyrdb"
+    report = run_dir / f"{spec.cell}.lyrdb"
     switches = {
         "input": str(gds),
         "report": str(report),
-        "topcell": TOP_CELL,
+        "topcell": spec.top_cell,
         "thr": str(max(1, min(4, os.cpu_count() or 1))),
         "run_mode": "deep",
         "feol": "true",
@@ -359,7 +480,8 @@ def run_pdk_drc(pdk: Pdk, gds: Path, run_dir: Path, log: Path) -> dict:
     cmd = ["klayout", "-b", "-r", str(deck)]
     for key, value in switches.items():
         cmd += ["-rd", f"{key}={value}"]
-    run_logged(cmd, log, "PDK DRC deck")
+    env, pmap_provenance = deck_env(run_dir)
+    run_logged(cmd, log, "PDK DRC deck", env=env)
     if not report.is_file():
         raise StageError(f"the PDK DRC deck produced no report at {report}")
 
@@ -378,6 +500,7 @@ def run_pdk_drc(pdk: Pdk, gds: Path, run_dir: Path, log: Path) -> dict:
         "rule_categories": categories,
         "violations": items,
         "rule_tables": table_count,
+        "pmap": pmap_provenance,
     }
 
 
@@ -386,7 +509,7 @@ def run_pdk_drc(pdk: Pdk, gds: Path, run_dir: Path, log: Path) -> dict:
 # --------------------------------------------------------------------------
 
 def run_lvs(
-    pdk: Pdk, gds: Path, netlist: Path, run_dir: Path, log: Path, tag: str
+    pdk: Pdk, spec: CellSpec, gds: Path, netlist: Path, run_dir: Path, log: Path, tag: str
 ) -> dict:
     lvsdb = run_dir / f"{tag}.lvsdb"
     extracted = run_dir / f"{tag}_extracted.cir"
@@ -395,10 +518,10 @@ def run_lvs(
         "schematic": str(netlist),
         "report": str(lvsdb),
         "target_netlist": str(extracted),
-        "topcell": TOP_CELL,
+        "topcell": spec.top_cell,
         "thr": str(max(1, min(4, os.cpu_count() or 1))),
         "run_mode": "deep",
-        "lvs_sub": SUBSTRATE_NET,
+        "lvs_sub": spec.substrate_net,
         "verbose": "false",
         "spice_net_names": "true",
         "spice_comments": "false",
@@ -416,7 +539,8 @@ def run_lvs(
     cmd = ["klayout", "-b", "-r", str(pdk.klayout_dir / "lvs" / "gf180mcu.lvs")]
     for key, value in switches.items():
         cmd += ["-rd", f"{key}={value}"]
-    output = run_logged(cmd, log, f"LVS ({tag})")
+    env, _ = deck_env(run_dir)
+    output = run_logged(cmd, log, f"LVS ({tag})", env=env)
 
     # The deck reports its own verdict; klayout exits 0 either way, so the log
     # IS the contract. Demand exactly one of the two verdicts so that a deck
@@ -446,9 +570,11 @@ def run_lvs(
 # plumbing
 # --------------------------------------------------------------------------
 
-def run_logged(cmd: list[str], log: Path, what: str) -> str:
+def run_logged(
+    cmd: list[str], log: Path, what: str, env: dict[str, str] | None = None
+) -> str:
     log.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     output = proc.stdout + proc.stderr
     log.write_text(output)
     if proc.returncode != 0:
@@ -464,6 +590,7 @@ def run_logged(cmd: list[str], log: Path, what: str) -> str:
 # --------------------------------------------------------------------------
 
 def run(args: argparse.Namespace) -> int:
+    spec = CELLS[args.cell]
     ok, pdk = check_env(verbose=args.check_env)
     if args.check_env:
         return 0 if ok else 2
@@ -479,22 +606,23 @@ def run(args: argparse.Namespace) -> int:
     run_dir = WORK_DIR / rid
     run_dir.mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
-    summary: dict = {"record_id": rid, "pdk": pdk.provenance()}
+    summary: dict = {"record_id": rid, "pdk": pdk.provenance(), "cell": spec.key}
 
+    print(f"cell      : {spec.key} ({spec.cell})")
     print(f"record id : {rid}")
     print(f"pdk       : {pdk.path} ({pdk.variant}, {pdk.version})")
     print(f"run dir   : {run_dir}")
     print()
 
     # ---- 1. layout -------------------------------------------------------
-    gds = run_dir / f"{CELL}.gds"
-    build_gds(pdk, gds, run_dir / "build-gds.log")
+    gds = run_dir / f"{spec.cell}.gds"
+    build_gds(pdk, spec, gds, run_dir / "build-gds.log")
     print(f"[1/7] layout      : {gds.name} ({gds.stat().st_size} bytes)")
 
     # ---- 2. schematic netlist -------------------------------------------
     with tempfile.TemporaryDirectory(prefix="gf180-ldo-lvs-netlist-") as tmp:
-        netlist_text = export_netlist(pdk, Path(tmp))
-    committed = NETLIST_DIR / f"{CELL}.spice"
+        netlist_text = export_netlist(pdk, spec, Path(tmp))
+    committed = spec.netlist_dir / f"{spec.cell}.spice"
     if args.check:
         if not committed.is_file():
             failures.append(f"{committed.relative_to(REPO_ROOT)} is missing")
@@ -503,8 +631,8 @@ def run(args: argparse.Namespace) -> int:
                 difflib.unified_diff(
                     committed.read_text().splitlines(),
                     netlist_text.splitlines(),
-                    fromfile=f"committed/{CELL}.spice",
-                    tofile=f"regenerated/{CELL}.spice",
+                    fromfile=f"committed/{spec.cell}.spice",
+                    tofile=f"regenerated/{spec.cell}.spice",
                     lineterm="",
                 )
             )
@@ -513,9 +641,9 @@ def run(args: argparse.Namespace) -> int:
                 f"reproducible:\n{diff}"
             )
     else:
-        NETLIST_DIR.mkdir(parents=True, exist_ok=True)
+        spec.netlist_dir.mkdir(parents=True, exist_ok=True)
         committed.write_text(netlist_text)
-    netlist = run_dir / f"{CELL}.spice"
+    netlist = run_dir / f"{spec.cell}.spice"
     netlist.write_text(netlist_text)
     device_lines = [
         line for line in netlist_text.splitlines()
@@ -525,7 +653,7 @@ def run(args: argparse.Namespace) -> int:
     summary["netlist_devices"] = len(device_lines)
 
     # ---- 3. klt drc ------------------------------------------------------
-    klt_report = run_klt_drc(gds, run_dir / f"{CELL}.klt-drc.json")
+    klt_report = run_klt_drc(gds, run_dir / f"{spec.cell}.klt-drc.json")
     klt_ok = klt_report["status"] == "clean"
     summary["klt_drc"] = {
         "status": klt_report["status"],
@@ -544,16 +672,18 @@ def run(args: argparse.Namespace) -> int:
         )
 
     # ---- 4. PDK drc deck -------------------------------------------------
-    pdk_drc = run_pdk_drc(pdk, gds, run_dir, run_dir / "pdk-drc.log")
+    pdk_drc = run_pdk_drc(pdk, spec, gds, run_dir, run_dir / "pdk-drc.log")
     summary["pdk_drc"] = {
         "violations": pdk_drc["violations"],
         "rule_categories": pdk_drc["rule_categories"],
         "rule_tables": pdk_drc["rule_tables"],
     }
+    summary["pmap"] = pdk_drc["pmap"]
     print(
         f"[4/7] pdk drc     : {pdk_drc['violations']} violation(s) across "
         f"{pdk_drc['rule_categories']} rule categories "
         f"({pdk_drc['rule_tables']} rule tables)"
+        + ("" if pdk_drc["pmap"] == "host" else ", pmap shimmed")
     )
     if pdk_drc["violations"]:
         failures.append(
@@ -562,7 +692,7 @@ def run(args: argparse.Namespace) -> int:
         )
 
     # ---- 5. LVS ----------------------------------------------------------
-    lvs = run_lvs(pdk, gds, netlist, run_dir, run_dir / "lvs.log", "lvs")
+    lvs = run_lvs(pdk, spec, gds, netlist, run_dir, run_dir / "lvs.log", "lvs")
     summary["lvs"] = {"match": lvs["match"], "warnings": lvs["warnings"]}
     print(f"[5/7] lvs         : {'MATCH' if lvs['match'] else 'MISMATCH'}")
     for warning in lvs["warnings"]:
@@ -571,6 +701,12 @@ def run(args: argparse.Namespace) -> int:
         failures.append(f"LVS reported a mismatch; see {lvs['lvsdb']}")
 
     # ---- 6/7. LVS negative controls -------------------------------------
+    # NOTE: both mutations below key off the first MOS (`M*`) element line in
+    # the netlist (see _mos_line) -- true of every cell registered in CELLS
+    # today, but a future all-passive cell (e.g. a resistor-only feedback
+    # divider) would need its own mutation pair rather than reusing these
+    # verbatim. Generalizing that is left to whichever increment first
+    # registers such a cell.
     controls = {
         "topology": (
             control_topology,
@@ -585,10 +721,10 @@ def run(args: argparse.Namespace) -> int:
     }
     summary["lvs_negative_controls"] = {}
     for index, (tag, (mutate, what, implication)) in enumerate(controls.items(), 6):
-        bad = run_dir / f"{CELL}.control-{tag}.spice"
+        bad = run_dir / f"{spec.cell}.control-{tag}.spice"
         bad.write_text(mutate(netlist_text))
         result = run_lvs(
-            pdk, gds, bad, run_dir, run_dir / f"lvs-control-{tag}.log", f"control-{tag}"
+            pdk, spec, gds, bad, run_dir, run_dir / f"lvs-control-{tag}.log", f"control-{tag}"
         )
         summary["lvs_negative_controls"][tag] = {
             "match": result["match"], "mutation": what,
@@ -614,7 +750,7 @@ def run(args: argparse.Namespace) -> int:
     print("    both negative controls correctly fail.")
     if args.record:
         try:
-            path = write_record(rid, summary, pdk)
+            path = write_record(rid, summary, pdk, spec)
         except RecordExists as exc:
             raise StageError(
                 f"could not write the run record: {exc}. Records are "
@@ -644,7 +780,7 @@ def control_rows(summary: dict) -> str:
     return "\n".join(rows)
 
 
-def write_record(rid: str, summary: dict, pdk: Pdk) -> Path:
+def write_record(rid: str, summary: dict, pdk: Pdk, spec: CellSpec) -> Path:
     """Render and write ``layout/records/<rid>.md``.
 
     Writing goes through ``harness.report.write_markdown_record()`` rather
@@ -656,18 +792,30 @@ def write_record(rid: str, summary: dict, pdk: Pdk) -> Path:
     klt = summary["klt_drc"]
     drc = summary["pdk_drc"]
     warnings = summary["lvs"]["warnings"]
-    body = f"""# DRC/LVS bring-up run `{rid}`
+    schematic_rel = spec.schematic.relative_to(REPO_ROOT)
+    is_full_block = spec.key != TESTCELL_SPEC.key
+    scope_note = (
+        f"- It certifies exactly `{spec.cell}` as netlisted from "
+        f"`{schematic_rel}`, nothing more or less. A full-`ldo_core` DRC/LVS "
+        "claim requires running this same flow against `ldo_core`'s own "
+        "top-level schematic and its full layout."
+        if is_full_block
+        else "- It says **nothing** about the LDO. The cell is one transistor; "
+        "no block-level layout exists yet."
+    )
+    body = f"""# DRC/LVS run `{rid}` -- `{spec.key}`
 
-Produced by `python3 layout/drclvs.py --record`. Append-only: a re-run mints a
-new record rather than editing this one.
+Produced by `python3 layout/drclvs.py --cell {spec.key} --record`. Append-only:
+a re-run mints a new record rather than editing this one.
 
 | | |
 | --- | --- |
-| Cell | `{CELL}` (layout top cell `{TOP_CELL}`) -- one `nfet_03v3`, W=2 um, L=0.28 um, nf=1 |
+| Cell | `{spec.cell}` (layout top cell `{spec.top_cell}`){' -- ' + spec.description if spec.description else ''} |
 | PDK | gf180mcu variant `{pdk.variant}`, open_pdks `{pdk.version}` |
 | klayout | `{tool_version('klayout', ['-b', '-v'])}` |
 | klt | `{tool_version('klt', ['--version'])}` |
 | xschem | `{tool_version('xschem', ['--version'])}` |
+| pmap | `{summary.get('pmap', 'host')}` (the PDK decks' memory logger; `shimmed` = this host has no procps pmap(1) and `drclvs.py` supplied a ps(1)-backed stand-in) |
 
 ## Results
 
@@ -679,15 +827,14 @@ new record rather than editing this one.
 {control_rows(summary)}
 
 Schematic netlist: {summary['netlist_devices']} device line(s), exported in
-xschem's `lvs_netlist` form from `layout/testcell/{CELL}.sch`.
+xschem's `lvs_netlist` form from `{schematic_rel}`.
 
 ## What this does and does not establish
 
 - The flow runs end to end: PDK PCell -> GDS -> DRC (two decks) -> LVS against
   a netlist exported from the schematic source, with negative controls proving
   the compare is live in both topology and device parameters.
-- It says **nothing** about the LDO. The cell is one transistor; no block-level
-  layout exists yet.
+{scope_note}
 - `klt drc`'s deck is a curated subset (see `layout/README.md`, "Coverage,
   honestly"); the PDK deck's {drc['rule_categories']} categories are the number
   worth quoting.
@@ -709,7 +856,13 @@ def tool_version(tool: str, args: list[str]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run DRC and LVS on the gf180mcu bring-up test cell.",
+        description="Run DRC and LVS on a registered gf180mcu layout cell.",
+    )
+    parser.add_argument(
+        "--cell", choices=sorted(CELLS), default=TESTCELL_SPEC.key,
+        help="which registered cell to run DRC/LVS against (default: "
+             f"{TESTCELL_SPEC.key!r}, the bring-up test cell). See CELLS in "
+             "this file to register a real block's layout.",
     )
     parser.add_argument(
         "--check", action="store_true",
