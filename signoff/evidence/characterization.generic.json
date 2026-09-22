@@ -2,11 +2,11 @@
   "schema_version": 1,
   "kind": "generic",
   "status": "pass",
-  "summary": "T1 item 8: sim/CHARACTERIZATION.md is the one aggregated, current, per-spec-row rollup for this block, and it names the sim/<slug>/records/ evidence record behind every verdict. It is generated (sim/build_characterization_report.py), never hand-edited, and CI regenerates and diffs it on every push, so it cannot drift from the committed evidence. Item 8 asks for the aggregation artifact to exist and be current, not for every row to pass: this report currently reads FAIL on Current limit, Thermal and Stability, MIXED on Startup, and marks nearly every row's underlying sim record STALE against the current design/netlist/*.spice. Those are item 5's gap, tracked there as unmet, not item 8's. See signoff/README.md for the full reading.",
+  "summary": "T1 item 8: sim/CHARACTERIZATION.md is the one aggregated, current, per-spec-row rollup for this block, and it names the sim/<slug>/records/ evidence record behind every verdict. It is generated (sim/build_characterization_report.py), never hand-edited, and CI regenerates and diffs it on every push, so it cannot drift from the committed evidence. Item 8 asks for the aggregation artifact to exist and be current, not for every row to pass: this report currently reads FAIL on Current limit and Thermal, MIXED on Startup, and marks nearly every row's underlying sim record STALE against the current design/netlist/*.spice. Those are item 5's gap, tracked there as unmet, not item 8's. Stability reads PASS against the DR-0018-ratified envelope (issue #276), with the wider DR-0001 full-matrix result shown alongside rather than driving the verdict. See signoff/README.md for the full reading.",
   "source": "sim/CHARACTERIZATION.md",
   "provenance": {
     "input": {
-      "content_hash": "sha256:8a170ec5547d14f9007842dc6b9ee6284a1b22c9554f9ad9b33821e952c7825d",
+      "content_hash": "sha256:632e85490196a518b67397b7adb35e09fc9db008d2be50a0d958d915566b3096",
       "role": "source"
     }
   }
