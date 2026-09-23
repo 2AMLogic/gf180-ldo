@@ -106,7 +106,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `5bfa966c7d33005f2
 
 - `psrr-dc` — amp-level open-loop DC term: `sim/psrr-dc/records/20260923-005717-000bdc6.md` — **PASS**, fresh (matches current `error_amp`)
   - Overall: PASS
-- `psrr-vs-freq` — closed-loop, 1 mA (binding light load): `sim/psrr-vs-freq/records/20260923-092346-eb81bbb.md` — **FAIL**, stale
+- `psrr-vs-freq` — closed-loop, 1 mA (binding light load): `sim/psrr-vs-freq/records/20260923-233113-1a8fcf7.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 - `psrr-vs-freq-50ma` — closed-loop, 50 mA (full load): `sim/psrr-vs-freq-50ma/records/20260923-092419-eb81bbb.md` — **FAIL**, stale
   - Overall: FAIL
