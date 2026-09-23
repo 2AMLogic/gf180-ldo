@@ -469,5 +469,150 @@ class TestStabilityRowUsesEnvelopeVerdict(unittest.TestCase):
         self.assertIn("2790/4536", stability_section)
 
 
+class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):
+    """Record selection is freshness-first, not recency-only (issue #311).
+
+    Record ids are minted when a branch *runs* its bench, not when it
+    merges, so a branch that measures against the DUT it started from can
+    land a record that is simultaneously the newest by id and a measurement
+    of a DUT `main` has since replaced. Selected on recency alone that
+    record downgrades its row from fresh to stale even though a record
+    matching the current DUT is sitting in the same directory -- what
+    #308's `20260923-093349-7674ddf` (pre-DR-0033) would have done to
+    `20260923-005938-b62ac83` (post-swap) on the Iq row.
+
+    Synthetic trees only: `bcr.SIM_DIR` and `bcr.DUT_CANDIDATES` are
+    repointed at a tempdir so these assert the selection *rule*, not
+    whichever records happen to be committed today.
+    """
+
+    SLUG = "zz-selection-fixture"
+    CURRENT_DUT = ".subckt ldo_core vin vout\nRz n1 n2 1k ppolyf_u_3k\n.ends\n"
+    PRE_SWAP_DUT = ".subckt ldo_core vin vout\nRz n1 n2 1k ppolyf_u_1k\n.ends\n"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        self.records_dir = root / self.SLUG / "records"
+        self.snapshots_dir = root / self.SLUG / "netlist-snapshots"
+        self.records_dir.mkdir(parents=True)
+        self.snapshots_dir.mkdir(parents=True)
+
+        dut = root / "design" / "netlist" / "ldo_core.spice"
+        dut.parent.mkdir(parents=True)
+        dut.write_text(self.CURRENT_DUT)
+
+        for name, value in (
+            ("SIM_DIR", root),
+            ("DUT_CANDIDATES", {"ldo_core": dut}),
+        ):
+            original = getattr(bcr, name)
+            setattr(bcr, name, value)
+            self.addCleanup(setattr, bcr, name, original)
+
+    def _add_record(self, record_id: str, snapshot_of: str | None = None) -> None:
+        """A record, plus (optionally) its frozen netlist snapshot.
+
+        `snapshot_of=None` is the metadata-only correction record case: a
+        record with no snapshot of its own, which is not a measurement and
+        must never be selected over one that is.
+        """
+        (self.records_dir / f"{record_id}.md").write_text(
+            f"# {record_id}\n\n**Overall: PASS**\n"
+        )
+        if snapshot_of is not None:
+            (self.snapshots_dir / f"{record_id}.spice").write_text(
+                f"* frozen DUT snapshot for {record_id}\n{snapshot_of}"
+            )
+
+    def _selected_id(self) -> str | None:
+        record, _snapshot = bcr.latest_substantive_record(self.SLUG)
+        return None if record is None else record.stem
+
+    def test_a_newer_stale_record_does_not_outrank_an_older_fresh_one(self):
+        """The #311 regression: stale-latest vs. fresh-earlier."""
+        self._add_record("20260923-005938-b62ac83", self.CURRENT_DUT)
+        self._add_record("20260923-093349-7674ddf", self.PRE_SWAP_DUT)
+
+        record, snapshot = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, "20260923-005938-b62ac83")
+        # ...and the row therefore reports fresh, which is the whole point:
+        # the false downgrade was the observable defect.
+        self.assertEqual(bcr.freshness(snapshot), ("fresh", "ldo_core"))
+
+    def test_the_newest_record_still_wins_when_it_matches_the_current_dut(self):
+        """Recency is still the tiebreak among records that do match."""
+        self._add_record("20260923-005938-b62ac83", self.CURRENT_DUT)
+        self._add_record("20260923-125526-8225d5d", self.CURRENT_DUT)
+        self.assertEqual(self._selected_id(), "20260923-125526-8225d5d")
+
+    def test_a_newer_snapshotless_record_is_still_skipped(self):
+        """Unchanged: a correction record is not a measurement."""
+        self._add_record("20260923-005938-b62ac83", self.CURRENT_DUT)
+        self._add_record("20260923-201500-deadbee", snapshot_of=None)
+        self.assertEqual(self._selected_id(), "20260923-005938-b62ac83")
+
+    def test_no_matching_snapshot_falls_back_to_the_newest_snapshotted_record(self):
+        """Edge case: a genuinely stale row still reports as stale, citing
+        its newest evidence -- the pre-#311 behaviour, unchanged.
+        """
+        self._add_record("20260801-003015-b64d60e", self.PRE_SWAP_DUT)
+        self._add_record("20260923-093349-7674ddf", self.PRE_SWAP_DUT)
+
+        record, snapshot = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, "20260923-093349-7674ddf")
+        self.assertEqual(bcr.freshness(snapshot), ("stale", None))
+
+    def test_no_snapshots_at_all_falls_back_to_the_newest_record(self):
+        self._add_record("20260801-003015-b64d60e", snapshot_of=None)
+        self._add_record("20260923-093349-7674ddf", snapshot_of=None)
+
+        record, snapshot = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, "20260923-093349-7674ddf")
+        self.assertIsNone(snapshot)
+
+    def test_an_empty_or_missing_records_directory_is_still_none_none(self):
+        self.assertEqual(bcr.latest_substantive_record(self.SLUG), (None, None))
+        self.assertEqual(
+            bcr.latest_substantive_record("zz-no-such-slug"), (None, None)
+        )
+
+
+class TestCommittedTreeSelection(unittest.TestCase):
+    """The same rule against the real, committed records under `sim/`.
+
+    Stated as the invariant rather than as "today's answer": for every slug
+    the report cites, if *any* of that slug's records matches the current
+    DUT then the selected record must be the newest such record. A future
+    branch that legitimately lands an out-of-order record (the #311
+    scenario) therefore exercises this test rather than breaking it.
+    """
+
+    def _fresh_record_ids(self, slug: str) -> list[str]:
+        records_dir = bcr.SIM_DIR / slug / "records"
+        snapshots_dir = bcr.SIM_DIR / slug / "netlist-snapshots"
+        return [
+            record.stem
+            for record in sorted(records_dir.glob("*.md"))
+            if bcr.freshness(snapshots_dir / f"{record.stem}.spice")[0] == "fresh"
+        ]
+
+    def test_no_cited_slug_is_reported_stale_while_a_matching_record_exists(self):
+        slugs = sorted({source.slug for row in bcr.ROWS for source in row.sources})
+        self.assertGreater(len(slugs), 5, "row->slug mapping not found")
+        checked = 0
+        for slug in slugs:
+            fresh_ids = self._fresh_record_ids(slug)
+            if not fresh_ids:
+                continue  # every record predates the current DUT: row is stale
+            checked += 1
+            with self.subTest(slug=slug):
+                record, snapshot = bcr.latest_substantive_record(slug)
+                self.assertEqual(bcr.freshness(snapshot)[0], "fresh")
+                self.assertEqual(record.stem, fresh_ids[-1])
+        self.assertGreater(checked, 0, "no committed slug has a fresh record")
+
+
 if __name__ == "__main__":
     unittest.main()

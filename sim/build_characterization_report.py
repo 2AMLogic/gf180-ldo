@@ -5,7 +5,9 @@
 
 For every ratified row of README.md's "Target specification" table, this
 script finds the most recent *substantive* record under the row's mapped
-``sim/<slug>/records/`` director(y/ies), extracts that record's own stated
+``sim/<slug>/records/`` director(y/ies) -- preferring the most recent one
+measured against the *current* DUT where there is one (see
+``latest_substantive_record()``) -- extracts that record's own stated
 pass/fail verdict, and determines whether the record is fresh or stale
 against the current DUT netlist(s) under ``design/netlist/``.
 
@@ -152,20 +154,47 @@ def latest_substantive_record(slug: str) -> tuple[pathlib.Path | None, pathlib.P
     frozen netlist snapshot -- i.e. the most recent record that is itself a
     measurement, not a metadata-only correction record pointing back at an
     earlier one (sim/README.md's Supersedes/correction convention). Record
-    ids sort chronologically as strings (YYYYMMDD-HHMMSS-sha), so the
-    lexicographically-last one with a matching snapshot is the one wanted.
+    ids sort chronologically as strings (YYYYMMDD-HHMMSS-sha), so newest
+    means lexicographically last.
+
+    Recency alone is not the selector, though: the newest record whose
+    snapshot still matches the *current* DUT wins over a strictly newer
+    record measured against a DUT that has since been replaced (issue #311).
+    Record ids are minted when a branch runs its bench, not when it merges,
+    so a branch that mints a record while ``main``'s DUT changes underneath
+    it lands a record that is both newest *and* pre-swap -- which, selected
+    on recency alone, downgrades the row from fresh to stale even though a
+    matching record is sitting right there in the same directory. That is
+    exactly what #308's ``20260923-093349-7674ddf`` (pre-DR-0033 DUT) would
+    have done to ``20260923-005938-b62ac83`` (post-swap) on the Iq row.
+
+    Freshness is judged by ``freshness()`` -- the same DUT-content test the
+    report already applies to whatever record this returns -- so there is
+    exactly one definition of "matches the current DUT" in this script.
+
+    Fallbacks, both unchanged in behaviour: when no record's snapshot
+    matches the current DUT the newest record that *has* a snapshot is
+    returned (so a genuinely stale row still reports as stale, citing its
+    newest evidence), and when no record has a snapshot at all the newest
+    record is returned with no snapshot so the gap is still visible rather
+    than silently empty.
     """
     records_dir = SIM_DIR / slug / "records"
     snapshots_dir = SIM_DIR / slug / "netlist-snapshots"
     if not records_dir.is_dir():
         return None, None
-    for record in sorted(records_dir.glob("*.md"), reverse=True):
-        snapshot = snapshots_dir / f"{record.stem}.spice"
-        if snapshot.is_file():
-            return record, snapshot
-    # No record has a matching snapshot -- fall back to the latest record
-    # file so the gap is still visible rather than silently empty.
     records = sorted(records_dir.glob("*.md"), reverse=True)
+    newest_with_snapshot: tuple[pathlib.Path, pathlib.Path] | None = None
+    for record in records:
+        snapshot = snapshots_dir / f"{record.stem}.spice"
+        if not snapshot.is_file():
+            continue
+        if newest_with_snapshot is None:
+            newest_with_snapshot = (record, snapshot)
+        if freshness(snapshot)[0] == "fresh":
+            return record, snapshot
+    if newest_with_snapshot is not None:
+        return newest_with_snapshot
     return (records[0], None) if records else (None, None)
 
 
