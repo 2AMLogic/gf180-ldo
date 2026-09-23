@@ -840,6 +840,253 @@ class DcPathCensusAndRenderingTests(unittest.TestCase):
         self.assertEqual(runner.RUNG_UNKNOWN, report._dc_path_cell(None))
 
 
+#: The exact ladder-exhaustion tail of the committed evidence log issue #310
+#: cites (sim/quiescent-current/corners/20260915-234352-077e15b/
+#: ss_-40c_2.97v.log), reused by the gate tests below so their fixtures are
+#: ngspice's own phrasing, not a paraphrase.
+_LADDER_EXHAUSTION_TAIL = "\n".join(
+    [
+        "Note: Starting dynamic gmin stepping",
+        "Warning: Dynamic gmin stepping failed",
+        "Note: Starting true gmin stepping",
+        "Warning: True gmin stepping failed",
+        "Note: Starting source stepping",
+        "Warning: source stepping failed",
+        "Note: Transient op started",
+        "Note: Transient op finished successfully",
+    ]
+)
+
+
+def _gate_log(extra: str = "") -> str:
+    """A log that parses as a successful corner AND exhausted the ladder.
+
+    The point of the fixture is that both facts hold at once: ngspice
+    exited 0, the measurement line is present and well-formed, and the
+    operating point it came from is still not a DC solution -- the exact
+    silent-failure shape issue #310 is about.
+    """
+    return _NGSPICE_PREAMBLE + _LADDER_EXHAUSTION_TAIL + f"\n{extra}\n"
+
+
+class LadderExhaustionGateTests(unittest.TestCase):
+    """#310: the pseudo-transient `op` rung fails a DC-solve corner loudly,
+    and the same phrases in a legitimate `.tran` bench's log do not.
+
+    Both affected code paths are covered in both directions:
+    :func:`runner.run_ngspice_deck` (the sweep benches) and
+    :func:`runner.run_point` (the generic corner-grid path). No ngspice and
+    no PDK -- the gate is pure log parsing, so the ngspice invocation is
+    mocked with canned output shaped like the committed evidence.
+    """
+
+    def test_transient_analysis_detection_spells(self):
+        runs = [
+            "tran 1u 9m",
+            "  tran 20n 400u uic",
+            ".tran 1u 6m",
+            "  .tran 20n 400u",
+        ]
+        for text in runs:
+            with self.subTest(line=text.strip()):
+                self.assertTrue(runner._runs_transient_analysis(text))
+
+    def test_non_transient_statements_are_not_transient_analyses(self):
+        """`.meas tran ...` begins with the meas keyword, not `tran` -- the
+        one spelling a naive `tran` substring search would trip on."""
+        not_runs = [
+            "op",
+            "  op",
+            "dc Vsup 2.97 3.63 0.66",
+            "ac dec 20 10 10meg",
+            "meas tran vmin_load MIN v(vout) FROM=51u TO=71u",
+            "  meas tran bg_pp_light PP v(xdut_light.bg) FROM=0.2m TO=0.3m",
+            ".meas tran vpeak_full MAX v(vout_full) FROM=1u TO=6m",
+            "set units=degrees",
+            "",
+        ]
+        for text in not_runs:
+            with self.subTest(line=text.strip() or "(empty)"):
+                self.assertFalse(runner._runs_transient_analysis(text))
+
+    def test_detection_scans_every_source_not_just_the_first(self):
+        """run_point passes one line per source; a tran buried mid-manifest
+        must still exempt the bench."""
+        self.assertTrue(
+            runner._runs_transient_analysis("op", "ac dec 20 10 10meg", "tran 1u 1m")
+        )
+
+
+class RunNgspiceDeckLadderGateTests(unittest.TestCase):
+    """#310, code path 1: the shared sweep-deck wrapper."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.workdir = Path(self.tmp.name)
+
+    def _deck(self, analysis_lines: list[str]) -> Path:
+        deck = self.workdir / "deck.spice"
+        deck.write_text(
+            "\n".join(
+                [
+                    "* issue #310 gate fixture",
+                    "r1 a 0 1k",
+                    "v1 a 0 dc 1",
+                    ".control",
+                    *analysis_lines,
+                    'echo "SWEEP COMPLETE"',
+                    ".endc",
+                    ".end",
+                ]
+            )
+            + "\n"
+        )
+        return deck
+
+    def _run(self, deck: Path, stdout: str):
+        proc = unittest.mock.Mock(returncode=0, stdout=stdout, stderr="")
+        log = self.workdir / "deck.log"
+        with unittest.mock.patch("subprocess.run", return_value=proc):
+            return runner.run_ngspice_deck(deck, log, self.workdir)
+
+    def test_an_op_deck_with_the_phrases_raises(self):
+        deck = self._deck(["op", "print v(a)"])
+        with self.assertRaises(RuntimeError) as ctx:
+            self._run(deck, _gate_log() + 'echo "SWEEP COMPLETE"\n')
+        self.assertIn("pseudo-transient", str(ctx.exception))
+
+    def test_a_dc_sweep_deck_with_the_phrases_raises(self):
+        """A `dc` sweep solves an operating point per swept point; a
+        pseudo-transient rung at any of them poisons the record the same
+        way (three of the four benches named in issue #310's corpus sweep
+        are `dc` benches)."""
+        deck = self._deck(["dc Vsup 2.97 3.63 0.66"])
+        with self.assertRaises(RuntimeError):
+            self._run(deck, _gate_log() + 'echo "SWEEP COMPLETE"\n')
+
+    def test_a_tran_deck_with_the_same_phrases_does_not_raise(self):
+        """The analysis-kind gate: a `.tran` bench's initial-time-point
+        solve walks the same ladder legitimately."""
+        deck = self._deck(["tran 1u 9m", "meas tran vpp PP v(a) FROM=1u TO=9m"])
+        text = self._run(deck, _gate_log() + 'echo "SWEEP COMPLETE"\n')
+        self.assertIn("Transient op finished successfully", text)
+
+    def test_an_op_deck_without_the_phrases_does_not_raise(self):
+        """Negative control: a ladder that stopped at source stepping (or
+        never entered) is not fatal -- that is #301's marginality signal,
+        not #310's broken-evidence one."""
+        deck = self._deck(["op", "print v(a)"])
+        clean = _NGSPICE_PREAMBLE + "\n".join(
+            [
+                "Note: Starting dynamic gmin stepping",
+                "Warning: Dynamic gmin stepping failed",
+                "Note: Starting true gmin stepping",
+                "Warning: True gmin stepping failed",
+                "Note: Starting source stepping",
+                "Note: Source stepping completed",
+            ]
+        )
+        text = self._run(deck, clean + '\necho "SWEEP COMPLETE"\n')
+        self.assertIn("Source stepping completed", text)
+
+
+class RunPointLadderGateTests(unittest.TestCase):
+    """#310, code path 2: the generic corner-grid path quiescent-current
+    uses -- the bench that had no fatal-log check of any kind before."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+        self.pdk = fake_pdk(self.dir / "pdk-variant")
+        self.workdir = self.dir / "work"
+
+    def _tb(self, analyses: list[str]) -> "testbench.Testbench":
+        tb_dir = self.dir / "gate-experiment" / "testbench"
+        tb_dir.mkdir(parents=True, exist_ok=True)
+        (tb_dir / "x.spice").write_text("v1 out 0 dc {vdd_val}\n")
+        (tb_dir / "tb.json").write_text(
+            json.dumps(
+                {
+                    "name": "x",
+                    "netlist": "x.spice",
+                    "analyses": analyses,
+                    "measure": {"vout": "v(out)"},
+                }
+            )
+        )
+        return testbench.load(tb_dir)
+
+    def _point(self):
+        return corners.build_grid(
+            corners.resolve_corners(["tt"]), (-40.0,), [3.3]
+        )[0]
+
+    def _run(self, tb, stdout: str) -> "runner.PointResult":
+        proc = unittest.mock.Mock(returncode=0, stdout=stdout, stderr="")
+        with unittest.mock.patch("subprocess.run", return_value=proc):
+            return runner.run_point(tb, self.pdk, self._point(), self.workdir)
+
+    def test_an_op_corner_whose_measurements_parsed_still_fails(self):
+        """The core #310 repro: exit 0, `m_vout` present and well-formed,
+        and an operating point that is not a DC solution. The old code
+        recorded this as status=ok; the gate must fail it."""
+        result = self._run(self._tb(["op"]), _gate_log("m_vout = 1.234e+00"))
+        self.assertEqual("failed", result.status)
+        self.assertIn("pseudo-transient", result.message)
+        # The measurement is still reported for diagnosis, and the #301
+        # attribution agrees the corner sat on the pseudo-transient rung.
+        self.assertEqual(1.234, result.measurements["vout"])
+        self.assertEqual([], result.missing)
+        self.assertEqual("pseudo-transient", result.dc_path.rung)
+
+    def test_a_tran_corner_with_the_same_phrases_stays_ok(self):
+        result = self._run(
+            self._tb(["tran 1u 9m", "meas tran vpp PP v(out) FROM=1u TO=9m"]),
+            _gate_log("m_vout = 1.234e+00"),
+        )
+        self.assertEqual("ok", result.status)
+        self.assertEqual([], result.missing)
+
+    def test_the_gate_fires_before_the_missing_measurement_check(self):
+        """When both defects hold, the diagnosis must name the root cause
+        (a non-DC snapshot), not the symptom (nothing parsed)."""
+        result = self._run(self._tb(["op"]), _gate_log())
+        self.assertEqual("failed", result.status)
+        self.assertIn("pseudo-transient", result.message)
+
+    def test_the_committed_evidence_log_now_fails_loudly(self):
+        """Issue #310's own manual-verification step, replayed: the exact
+        committed log the issue cites must trip the gate. Read in isolation
+        -- the record itself is append-only evidence and is not touched."""
+        log = (
+            SIM_DIR
+            / "quiescent-current"
+            / "corners"
+            / "20260915-234352-077e15b"
+            / "ss_-40c_2.97v.log"
+        )
+        if not log.is_file():  # pragma: no cover - record removed upstream
+            self.skipTest(f"{log} is not committed any more")
+        offenders = runner._ladder_exhaustion_lines(log.read_text(errors="replace"))
+        self.assertTrue(
+            offenders, "the committed #310 evidence log no longer shows the rung"
+        )
+
+    def test_the_committed_corpus_still_matches_these_phrases(self):
+        """Pin the gate's phrases against real committed ngspice output, the
+        same way DcPathClassificationTests pins the ladder's -- if a future
+        ngspice reworded one, this fails loudly instead of quietly passing
+        every pseudo-transient corner."""
+        corpus = list(SIM_DIR.glob("*/corners/*/*.log"))
+        self.assertTrue(corpus, "no committed corner logs to pin against")
+        blob = "\n".join(p.read_text(errors="replace") for p in corpus).lower()
+        for phrase in ("transient op", "source stepping failed"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, blob)
+
+
 class PvtLogTests(unittest.TestCase):
     """#161: the shared read_measurements/report_minmax/report_flag helpers
     consolidated out of current-limit/enable-shutdown/soft-start's three

@@ -138,6 +138,39 @@ _UNDEFINED_VECTOR_LET_RE = re.compile(
     r'RHS\s+"v\([^"]*\)"\s+invalid', re.IGNORECASE
 )
 
+# The DC continuation ladder's last resort (issue #310): every rung above it
+# failed ("Warning: source stepping failed") and ngspice "solved" the
+# operating point with a pseudo-transient run ("Note: Transient op started"
+# / "Note: Transient op finished successfully"). ngspice exits 0 and prints
+# every requested measurement, but the values it reports are a snapshot of
+# the synthetic transient's internal state, not a converged DC solution --
+# committed evidence shows the mode directly:
+# sim/quiescent-current/corners/20260915-234352-077e15b/ss_-40c_2.97v.log
+# reports `iq_en_ua = -137.99`, a *negative* no-load supply current, i.e.
+# capacitor displacement current, which no DC operating point has.
+#
+# Like _UNDEFINED_VECTOR_LET_RE above (and unlike FATAL_LOG_PATTERNS), this
+# is deliberately NOT folded into the flat fatal tuple: the same phrases are
+# routine in a `.tran` bench's log, where ngspice's initial-time-point
+# solve walks the same ladder and a pseudo-transient initial condition does
+# not invalidate the transient that follows. The gate is analysis-kind
+# gated -- it applies only to a deck whose analyses declare no `.tran` --
+# which is why it lives as a separate pattern checked via
+# _ladder_exhaustion_lines()/_runs_transient_analysis() rather than as a
+# FATAL_LOG_PATTERNS entry (the same structural reason _UNDEFINED_VECTOR_LET_RE
+# stays out of that tuple).
+_LADDER_EXHAUSTION_RE = re.compile(
+    r"transient op|source stepping failed", re.IGNORECASE
+)
+
+# An analysis statement that runs a transient sweep, in either spelling a
+# deck uses: a `.tran` card (`.tran 20n 400u`) or a control-block `tran`
+# line (`tran 1u 9m`, indented or not). Measurement lines never match:
+# `.meas tran ...` / `meas tran ...` begin with the `meas` keyword, so
+# requiring `tran` at the statement start (optionally after `.` and
+# whitespace) keeps those out.
+_TRANSIENT_ANALYSIS_RE = re.compile(r"(?im)^\s*\.?\s*tran\s")
+
 
 # ---------------------------------------------------------------------------
 # DC continuation-ladder attribution (issue #301)
@@ -270,6 +303,39 @@ def classify_dc_path(text: str | None) -> DcPath:
     return DcPath(rung, completions, entries)
 
 
+def _ladder_exhaustion_lines(text: str) -> list[str]:
+    """Lines showing the DC ladder fell to its pseudo-transient rung (#310).
+
+    Returns up to three offender lines -- the same truncation the
+    ``FATAL_LOG_RE`` check in :func:`run_ngspice_deck` applies -- for error
+    messages and test assertions. Empty means the log shows no
+    ladder-exhaustion phrase. Substring-based, not line-anchored, for the
+    same reason :func:`classify_dc_path` is: ngspice writes these notes to
+    stderr while the analysis writes to stdout, and the two interleave
+    mid-line.
+    """
+    if not text:
+        return []
+    return [
+        ln for ln in text.splitlines() if _LADDER_EXHAUSTION_RE.search(ln)
+    ][:3]
+
+
+def _runs_transient_analysis(*analysis_texts: str) -> bool:
+    """Whether any of the given analysis sources declares a `.tran` run.
+
+    :func:`run_point` passes the manifest's ``analyses`` lines;
+    :func:`run_ngspice_deck` passes the rendered deck it just ran. Anything
+    else -- ``op``, ``dc``, ``ac``, or a deck with no transient statement at
+    all -- is a DC-solve bench as far as issue #310's gate is concerned:
+    every value such a bench reports is (or linearizes around) an operating
+    point, so a pseudo-transient rung poisons it the same way in each case.
+    """
+    return any(
+        _TRANSIENT_ANALYSIS_RE.search(text) for text in analysis_texts if text
+    )
+
+
 class NgspiceMissing(RuntimeError):
     pass
 
@@ -287,7 +353,7 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
 
     Writes ngspice's combined stdout+stderr to ``log`` unconditionally (so
     the log is available for diagnosis even on failure), then raises
-    :class:`RuntimeError` unless all four checks pass:
+    :class:`RuntimeError` unless all five checks pass:
 
     1. ``ngspice`` exited 0.
     2. The output does not match :data:`FATAL_LOG_RE` (a fatal condition
@@ -300,7 +366,13 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
        is deliberately NOT in :data:`FATAL_LOG_PATTERNS` -- see that
        pattern's own comment for why (it collides with an unrelated,
        expected non-fatal ``.meas`` outcome).
-    4. The output contains the ``SWEEP COMPLETE`` marker the caller's own
+    4. If the deck declares no `.tran` analysis, the output does not match
+       :data:`_LADDER_EXHAUSTION_RE` -- ngspice fell through its whole DC
+       continuation ladder and reported a pseudo-transient snapshot as the
+       operating point (issue #310). Analysis-kind gated for the same
+       reason check 3's pattern is kept separate: a `.tran` bench's
+       initial-time-point solve walks the same ladder legitimately.
+    5. The output contains the ``SWEEP COMPLETE`` marker the caller's own
        deck template prints at the end of a successful run.
 
     Returns the combined stdout+stderr text on success, for the caller to
@@ -337,6 +409,15 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
             f"ngspice's .let/v(...) referenced a vector that does not exist "
             f"in the netlist: {bad} (see {log})"
         )
+    if not _runs_transient_analysis(deck.read_text()):
+        exhausted = _ladder_exhaustion_lines(text)
+        if exhausted:
+            raise RuntimeError(
+                f"ngspice exhausted its DC continuation ladder and fell "
+                f"back to the pseudo-transient op ({exhausted}); the "
+                f"reported operating point is an unsettled transient "
+                f"snapshot, not a converged DC solution (see {log})"
+            )
     if "SWEEP COMPLETE" not in text:
         raise RuntimeError(f"sweep did not complete (see {log})")
     return text
@@ -893,6 +974,13 @@ def run_point(
 ) -> PointResult:
     """Simulate one PVT point. Never raises for simulation failure.
 
+    One simulation failure is detected here rather than by the caller's
+    checks: on a DC-solve bench (no `.tran` analysis), a log showing the
+    DC continuation ladder exhausted -- the pseudo-transient `op` fallback
+    of issue #310 -- fails the corner outright, because every measurement
+    ngspice printed came from an unsettled transient snapshot rather than
+    a converged operating point.
+
     ``workdir`` holds the generated deck (scratch, disposable). ``log_dir``
     -- when given -- is where the raw ngspice output lands as
     ``<corner-id>.log``; that is the ``sim/<slug>/corners/<record-id>/``
@@ -941,6 +1029,34 @@ def run_point(
     dc_path = classify_dc_path(output)
     measurements = parse_measurements(output)
     missing = [name for name in tb.measure if name not in measurements]
+
+    # #310: a DC-solve bench (no .tran analysis) whose log shows the ladder
+    # fell through source stepping reports an unsettled transient snapshot
+    # as its operating point. That must fail the corner even when every
+    # requested measurement parsed -- a number parsed out of a non-DC
+    # snapshot is exactly the silent failure this gate exists to catch.
+    # `.tran` benches are exempt: their initial-time-point solve walks the
+    # same ladder, and a pseudo-transient initial condition does not
+    # invalidate the transient that follows.
+    if not _runs_transient_analysis(*tb.analyses):
+        exhausted = _ladder_exhaustion_lines(output)
+        if exhausted:
+            return PointResult(
+                point=point,
+                status="failed",
+                measurements=measurements,
+                missing=missing,
+                seconds=elapsed,
+                deck=deck_path.name,
+                log=log_path.name,
+                message=(
+                    "pseudo-transient op fallback: DC continuation ladder "
+                    f"exhausted ({exhausted[0].strip()}); the reported "
+                    "operating point is an unsettled transient snapshot, "
+                    "not a converged DC solution"
+                ),
+                dc_path=dc_path,
+            )
 
     if missing:
         errors = "; ".join(_ERROR_RE.findall(output)[:3])
