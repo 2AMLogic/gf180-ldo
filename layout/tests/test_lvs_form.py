@@ -179,5 +179,34 @@ class NamingConventionTests(unittest.TestCase):
             )
 
 
+class UnrenderedDeviceLineTests(unittest.TestCase):
+    """The family-agnostic backstop behind drclvs.py's SIM_FORM_RE guard."""
+
+    def test_a_hierarchical_subcircuit_call_is_not_a_device(self):
+        self.assertEqual(
+            lvs_form.unrendered_device_lines("Xamp IN OUT VDD VSS error_amp\n"), []
+        )
+
+    def test_a_bjt_in_simulation_form_is_reported(self):
+        """A family SIM_FORM_RE does not name, so nothing else would catch it."""
+        line = "Xq1 C B E npn_05p00x05p00 m=1"
+        self.assertEqual(lvs_form.unrendered_device_lines(line + "\n"), [line])
+
+    def test_a_rewritten_export_has_no_stragglers(self):
+        out, _ = lvs_form.rewrite_passives(PASSIVES_EXPORT)
+        self.assertEqual(lvs_form.unrendered_device_lines(out), [])
+
+    def test_an_unrewritten_export_reports_both_passives(self):
+        self.assertEqual(len(lvs_form.unrendered_device_lines(PASSIVES_EXPORT)), 2)
+
+    def test_structural_lines_are_never_reported(self):
+        self.assertEqual(
+            lvs_form.unrendered_device_lines(
+                ".subckt cell A B\n*.PININFO A:B B:B\nM1 A B A A nfet_03v3 W=2u\n.ends\n"
+            ),
+            [],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

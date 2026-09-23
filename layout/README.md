@@ -206,8 +206,14 @@ it, and only on lines that carry a complete `r_width`/`r_length` or
 `c_width`/`c_length` pair — the parameter names every PDK passive symbol's
 `format` uses, which is what makes the translation cover the whole family
 without enumerating flavours. Anything it declines to touch is still a hard
-failure. `lvs_form.py`'s module docstring records why this lives here rather
-than in repo-local `.sym` overrides.
+failure — first through the existing simulation-form guard, then through a
+family-agnostic backstop that rejects any *remaining* `X`-prefixed line
+carrying a `key=value` parameter tail. That tail is the tell: every device
+symbol's `format` ends in one, a hierarchical subcircuit symbol's
+(`@name @pinlist @symname`) does not, so a device family nobody has needed
+yet cannot sail through by not being named in a regex. `lvs_form.py`'s module
+docstring records why this lives here rather than in repo-local `.sym`
+overrides.
 
 `drclvs_passives` is what proves it end to end: **one `ppolyf_u_1k` H-poly
 resistor** (1 µm × 10 µm), **one `cap_mim_2f0` MIM cap** (20 µm × 20 µm) and

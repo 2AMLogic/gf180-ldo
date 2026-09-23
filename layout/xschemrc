@@ -29,7 +29,23 @@
 #### **name each device instance with the SPICE element letter its class
 #### needs** -- `M*` for MOS, `R*` for resistors, `C*` for capacitors --
 #### because `lvs_format` starts with a bare `@name` and that letter is what
-#### tells the reader which element it is looking at.
+#### tells the reader which element it is looking at. This is not merely a
+#### convention: layout/lvs_form.py refuses to render a passive whose name
+#### does not start with the right letter, rather than guess.
+####
+#### IMPORTANT: this switch only reaches the FETs. In the installed PDK,
+#### `lvs_format` is present on nfet_*.sym / pfet_*.sym and on NOTHING else --
+#### every resistor and capacitor symbol has a `format` and no `lvs_format`,
+#### so with `lvs_netlist 1` they still come out as X-prefixed simulation-form
+#### subcircuit calls (issue #313). layout/lvs_form.py renders those as
+#### primitive R/C elements after the export; layout/drclvs.py applies it,
+#### then runs the simulation-form guard, then a family-agnostic backstop
+#### that rejects any REMAINING X-prefixed line carrying a parameter tail --
+#### so an unhandled X-rendered device class (a BJT, say) is a loud failure
+#### rather than a silently mis-read netlist. Device families whose `format`
+#### does not start with `@spiceprefix` are outside that backstop; the
+#### diodes are the one such family in this PDK, and nothing in this design
+#### uses one.
 ####
 #### Requires xschem >= 3.4.6 (the repo pins 3.4.7 -- see
 #### docs/environment-setup.md). xschem 3.4.4, which is what Debian/Ubuntu

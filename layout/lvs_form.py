@@ -81,7 +81,7 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["LvsFormError", "rewrite_passives"]
+__all__ = ["LvsFormError", "rewrite_passives", "unrendered_device_lines"]
 
 
 class LvsFormError(RuntimeError):
@@ -192,3 +192,36 @@ def rewrite_passives(text: str) -> tuple[str, int]:
     if not text.endswith("\n"):
         return "\n".join(out), count
     return "\n".join(out) + "\n", count
+
+
+def unrendered_device_lines(text: str) -> list[str]:
+    """X-prefixed lines that are still a *device*, not a subcircuit call.
+
+    ``drclvs.py``'s ``SIM_FORM_RE`` guard names the device families it knows
+    about (FETs and the passives above), which means a family nobody has
+    needed yet -- a diode, a BJT -- would sail through it in simulation form
+    and be compared as an empty subcircuit. This is the family-agnostic
+    backstop for that: it does not ask *which* device a line is, only whether
+    it is one.
+
+    The discriminator is the trailing ``key=value`` parameter list. Every
+    gf180mcu device symbol's ``format`` string ends in one (``L=@L W=@W ...``,
+    ``r_width=@W ...``, ``area='...' pj='...'``, ``m=@m``), whereas a
+    hierarchical subcircuit symbol's is ``@name @pinlist @symname`` -- bare
+    nets and a cell name, no parameters. So an ``X`` line with a parameter
+    tail is a device rendered from a ``format`` attribute, and in an LVS-form
+    netlist that is always wrong; an ``X`` line without one is an ordinary
+    subcircuit instantiation and is left alone.
+
+    Run this *after* ``rewrite_passives()`` and after the family-specific
+    guard, so the lines it reports are exactly the ones nothing else claimed.
+    """
+    offenders = []
+    for line in text.splitlines():
+        tokens = line.split()
+        if not tokens or tokens[0][:1] not in ("X", "x"):
+            continue
+        head, params = _split_params(tokens)
+        if len(head) >= 3 and params:
+            offenders.append(line)
+    return offenders

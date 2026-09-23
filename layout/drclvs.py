@@ -221,7 +221,11 @@ CELLS: dict[str, CellSpec] = {
 }
 
 sys.path.insert(0, str(LAYOUT_DIR))
-from lvs_form import LvsFormError, rewrite_passives  # noqa: E402
+from lvs_form import (  # noqa: E402
+    LvsFormError,
+    rewrite_passives,
+    unrendered_device_lines,
+)
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.pdk import Pdk, PdkNotFound, find_pdk  # noqa: E402
@@ -431,6 +435,25 @@ def export_netlist(pdk: Pdk, spec: CellSpec, outdir: Path) -> str:
             "the switch.\n"
             f"  `xschem --version` here: {tool_version('xschem', ['--version'])}\n"
             "  This repo pins 3.4.7; see docs/environment-setup.md.\n"
+            f"--- exported ---\n{text}"
+        )
+    # Family-agnostic backstop behind SIM_FORM_RE, which only names the device
+    # families this repo has needed so far: anything still X-prefixed AND
+    # carrying a parameter tail is a device rendered from a symbol's `format`,
+    # and KLayout's reader would silently compare it as an empty subcircuit.
+    stragglers = unrendered_device_lines(text)
+    if stragglers:
+        raise StageError(
+            "the exported netlist still contains device line(s) in xschem's "
+            "SIMULATION form that layout/lvs_form.py does not know how to "
+            "render as a primitive SPICE element:\n"
+            + "".join(f"    {line}\n" for line in stragglers)
+            + "  KLayout's SPICE reader would turn each of these into a call "
+            "to an undefined subcircuit and compare it as an empty circuit, "
+            "so the LVS verdict would be meaningless rather than wrong in an "
+            "obvious way.\n"
+            "  Add the family to layout/lvs_form.py (see its _FAMILIES table) "
+            "if this design needs the device.\n"
             f"--- exported ---\n{text}"
         )
     if f".subckt {spec.cell}" not in text:
