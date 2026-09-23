@@ -263,6 +263,20 @@ def ngspice_major_version(banner: str | None) -> str | None:
     return f"ngspice-{match.group(1)}" if match else None
 
 
+def sha256_of(path: Path) -> str:
+    """SHA-256 of the file at ``path``, read in 1 MiB chunks.
+
+    Chunked rather than a single ``read()`` because the callers hash
+    executables (an ngspice build is tens of megabytes) and there is no
+    reason to hold one in memory to fingerprint it.
+    """
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def ngspice_binary_sha256() -> str:
     """SHA-256 of the ``ngspice`` executable currently resolved on ``PATH``.
 
@@ -286,11 +300,7 @@ def ngspice_binary_sha256() -> str:
             "  macOS:  brew install ngspice\n"
             "  Debian: apt-get install ngspice"
         )
-    digest = hashlib.sha256()
-    with open(exe, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_of(Path(exe))
 
 
 class NgspiceIdentityMismatch(RuntimeError):
