@@ -341,10 +341,20 @@ delete it**, because the load has no term left in the equations to remove.
 The worked case is `sim/psrr-vs-freq` at `fs_125c_3.63v` in record
 `20260923-084323-a6c95f8` — `dc_vout_v = −64.75 V`, `dc_iload_ma = 0`,
 `psrr_1k_db = 0.0013`. Both harness-integrity checks caught it. It
-reproduces only against that record's DUT netlist (`git show
-a6c95f8:design/netlist/ldo_core.spice`, sha `53827e92…`); on the netlist
-committed since, the same corner converges to the physical root. What it is,
-measured rather than assumed:
+reproduces only against that record's DUT netlist; on the netlist committed
+since (DR-0033's resistor flavours, DR-0034's pass-device resize), the same
+corner converges to the physical root — record
+`20260923-232958-2b4849d` has it at `dc_vout_v = 1.7991 V`,
+`dc_iload_ma = 1`. To reproduce the failing state:
+
+```bash
+git show a6c95f8:design/netlist/ldo_core.spice \
+    > sim/.work/ldo_core_a6c95f8.spice        # sha 53827e92…
+python3 sim/run_corners.py psrr-vs-freq --corners fs --temps 125 --no-write \
+    --dut-netlist sim/.work/ldo_core_a6c95f8.spice
+```
+
+What it is, measured rather than assumed:
 
 - **It is not a compliance-tightness problem.** At the reported state the
   bound is already *maximally* engaged (`f = 0.0` exactly, `i(vlmeas) = 0`).
