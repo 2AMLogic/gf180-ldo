@@ -138,6 +138,137 @@ _UNDEFINED_VECTOR_LET_RE = re.compile(
 )
 
 
+# ---------------------------------------------------------------------------
+# DC continuation-ladder attribution (issue #301)
+# ---------------------------------------------------------------------------
+#
+# ngspice does not solve a DC operating point with one algorithm. It walks a
+# *continuation ladder*, dropping to the next rung only when the previous one
+# fails to converge:
+#
+#   0. the first-guess Newton solve (no continuation at all)
+#   1. dynamic gmin stepping
+#   2. true gmin stepping
+#   3. source stepping
+#   4. a last-resort pseudo-transient ("transient op")
+#
+# Which rung a corner lands on is a property of the *numerical* path, not of
+# the circuit. Issue #301 measured a 2x2 (two DUT netlists x seeded/unseeded
+# deck, one host, one ngspice, one PDK) in which `sim/quiescent-current`'s
+# PASS/FAIL verdict flipped between two builds that are electrically
+# identical on this bench to six significant figures -- DR-0033's poly
+# resistor flavour swap moved which rung the one marginal corner caught on,
+# and nothing in the evidence recorded that it had moved. A seed tuned
+# against yesterday's rung is not evidence; a record of which rung each
+# corner used is.
+#
+# So: classify every corner's DC solve by the deepest rung it reached and
+# carry that into the record. This asserts nothing and changes no deck -- it
+# only makes "the rung moved" attributable instead of silent, the same way
+# #182's ngspice binary sha256 made a silent toolchain swap attributable.
+#
+# The phrases below are ngspice's own, verbatim, as they appear in the
+# already-committed corner logs under `sim/*/corners/` (ngspice-46, the
+# pinned toolchain). Matching is case-insensitive and substring-based, NOT
+# line-anchored, because ngspice writes these notes to stderr while the
+# analysis writes to stdout: the two interleave mid-line, and the corpus
+# contains real lines like
+# `" Reference value :  0.00000e+00Note: Starting dynamic gmin stepping"`.
+#: Ladder rungs in the order ngspice descends them, each with the success
+#: phrase it prints when that rung is the one that solved the point.
+CONTINUATION_LADDER: tuple[tuple[str, str], ...] = (
+    ("dynamic-gmin", "Dynamic gmin stepping completed"),
+    ("true-gmin", "True gmin stepping completed"),
+    ("source-stepping", "Source stepping completed"),
+    ("pseudo-transient", "Transient op finished successfully"),
+)
+
+#: ngspice always enters the ladder at rung 1, so counting this phrase
+#: counts how many DC solves in a log needed continuation at all. (A `dc`
+#: sweep runs one solve per swept point, so a single log can hold many.)
+LADDER_ENTRY_PHRASE = "Starting dynamic gmin stepping"
+
+#: Rung name for a solve that converged on the first-guess Newton pass --
+#: ngspice prints *nothing* in that case, so it is identified by the absence
+#: of any ladder phrase rather than by a phrase of its own.
+RUNG_DIRECT = "direct"
+
+#: The ladder was entered but no rung reported success: ngspice found no DC
+#: solution. Distinct from ``RUNG_DIRECT`` (never needed the ladder) and from
+#: ``RUNG_UNKNOWN`` (never got to look).
+RUNG_NO_SOLUTION = "no-dc-solution"
+
+#: No ngspice output to classify (a timeout, or a caller that did not supply
+#: any). Deliberately not conflated with ``RUNG_DIRECT``: "converged
+#: immediately" and "we never saw the log" must not render the same.
+RUNG_UNKNOWN = "unknown"
+
+#: Every rung name this module can emit, deepest last among the real rungs.
+RUNG_NAMES: tuple[str, ...] = (
+    RUNG_DIRECT,
+    *(name for name, _ in CONTINUATION_LADDER),
+    RUNG_NO_SOLUTION,
+    RUNG_UNKNOWN,
+)
+
+
+@dataclass(frozen=True)
+class DcPath:
+    """Which continuation-ladder rung(s) a corner's DC solve(s) landed on.
+
+    ``rung`` is the *deepest* rung reached anywhere in the log -- the useful
+    single-value summary, because a corner that needs source stepping at one
+    swept point is exactly as numerically marginal as one that needs it at
+    all of them. ``completions`` keeps the per-rung tally so a `dc` sweep's
+    log is not flattened to a single word, and ``ladder_entries`` is how many
+    solves needed continuation at all (0 means every solve converged on the
+    first Newton pass).
+
+    Nothing here is a pass/fail gate. Issue #310 proposes treating the
+    ``pseudo-transient`` rung as fatal; that is a separate, complementary
+    change -- this type only reports.
+    """
+
+    rung: str
+    completions: dict[str, int]
+    ladder_entries: int
+
+    def as_dict(self) -> dict:
+        return {
+            "rung": self.rung,
+            "completions": dict(self.completions),
+            "ladder_entries": self.ladder_entries,
+        }
+
+
+def classify_dc_path(text: str | None) -> DcPath:
+    """Attribute one ngspice log to the DC continuation rung(s) it used.
+
+    ``text`` is the combined stdout+stderr of a single ngspice run -- what
+    :func:`run_point` writes to ``corners/<record-id>/<corner-id>.log`` and
+    what :func:`run_ngspice_deck` returns. ``None`` (or an empty string)
+    yields :data:`RUNG_UNKNOWN` rather than a guess.
+    """
+    if not text:
+        return DcPath(RUNG_UNKNOWN, {}, 0)
+    lowered = text.lower()
+    completions = {
+        name: lowered.count(phrase.lower())
+        for name, phrase in CONTINUATION_LADDER
+        if lowered.count(phrase.lower())
+    }
+    entries = lowered.count(LADDER_ENTRY_PHRASE.lower())
+    if not entries and not completions:
+        return DcPath(RUNG_DIRECT, {}, 0)
+    # Deepest rung wins: CONTINUATION_LADDER is in descent order, so the last
+    # one with a completion is the one that actually produced the answer.
+    rung = RUNG_NO_SOLUTION
+    for name, _ in CONTINUATION_LADDER:
+        if completions.get(name):
+            rung = name
+    return DcPath(rung, completions, entries)
+
+
 class NgspiceMissing(RuntimeError):
     pass
 
@@ -176,6 +307,13 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     want a non-raising, tuple-returning contract instead should catch
     ``RuntimeError`` at the call site (as ``loop-stability``'s
     ``run_point()`` does).
+
+    The returned text is also what :func:`classify_dc_path` consumes, so a
+    sweep testbench that wants issue #301's DC continuation-rung attribution
+    gets it by calling ``classify_dc_path(text)`` on this return value --
+    there is nothing bench-specific to port. No sweep driver does that yet;
+    :func:`run_point` (the generic corner-grid path, which
+    ``quiescent-current`` uses) records it for every corner already.
     """
     proc = subprocess.run(
         [NGSPICE, "-b", str(deck)],
@@ -706,6 +844,12 @@ class PointResult:
     deck: str = ""
     log: str = ""
     message: str = ""
+    # Which DC continuation rung this corner's op solve landed on (#301).
+    # Defaults to "unknown" so a PointResult built by hand (tests, a driver
+    # that has no ngspice output) never claims a rung it did not observe.
+    dc_path: DcPath = field(
+        default_factory=lambda: DcPath(RUNG_UNKNOWN, {}, 0)
+    )
 
     def as_dict(self) -> dict:
         record = self.point.as_dict()
@@ -716,6 +860,7 @@ class PointResult:
                 "seconds": round(self.seconds, 3),
                 "deck": self.deck,
                 "log": self.log,
+                "dc_path": self.dc_path.as_dict(),
             }
         )
         if self.missing:
@@ -788,6 +933,11 @@ def run_point(
     elapsed = time.monotonic() - started
     log_path.write_text(output)
 
+    # #301: attribute this corner's DC solve to a continuation rung before
+    # anything else looks at the output, so the attribution is recorded for
+    # failing and erroring corners too -- those are precisely the ones whose
+    # rung a reader wants to compare against the last run's.
+    dc_path = classify_dc_path(output)
     measurements = parse_measurements(output)
     missing = [name for name in tb.measure if name not in measurements]
 
@@ -805,6 +955,7 @@ def run_point(
             deck=deck_path.name,
             log=log_path.name,
             message=first_error or errors or f"ngspice exit {returncode}, no measurements parsed",
+            dc_path=dc_path,
         )
 
     return PointResult(
@@ -814,6 +965,7 @@ def run_point(
         seconds=elapsed,
         deck=deck_path.name,
         log=log_path.name,
+        dc_path=dc_path,
     )
 
 
