@@ -146,6 +146,11 @@ class CellSpec:
     substrate_net: str = "VSS"
     # One-line human description, quoted verbatim in --record's run record.
     description: str = ""
+    # What a passing run of THIS cell does not establish, quoted verbatim in
+    # --record's run record. Left empty for a real block, where the generic
+    # "certifies exactly this cell, nothing more" note is the right one; a
+    # flow vehicle sets it so no record can be read as a claim about the LDO.
+    scope_note: str = ""
 
     def __post_init__(self) -> None:
         # Structural guard, not a convention: a CellSpec that would clobber a
@@ -179,6 +184,10 @@ TESTCELL_SPEC = CellSpec(
     xschem_library_paths=(TESTCELL_DIR,),
     substrate_net="VSS",
     description="one nfet_03v3, W=2 um, L=0.28 um, nf=1",
+    scope_note=(
+        "It says **nothing** about the LDO. The cell is one transistor; no "
+        "block-level layout exists yet."
+    ),
 )
 
 PASSIVES_SPEC = CellSpec(
@@ -193,6 +202,11 @@ PASSIVES_SPEC = CellSpec(
     description=(
         "one ppolyf_u_1k H-poly resistor, one cap_mim_2f0 MIM cap, and one "
         "2-finger nfet_03v3 -- the passive-bearing flow vehicle (issue #313)"
+    ),
+    scope_note=(
+        "It says **nothing** about the LDO. The cell is three unconnected "
+        "devices that exist only to prove the flow handles a netlist whose "
+        "devices are not all FETs; no block-level layout exists yet."
     ),
 )
 
@@ -1002,16 +1016,16 @@ def write_record(rid: str, summary: dict, pdk: Pdk, spec: CellSpec) -> Path:
     drc = summary["pdk_drc"]
     warnings = summary["lvs"]["warnings"]
     schematic_rel = spec.schematic.relative_to(REPO_ROOT)
-    is_full_block = spec.key != TESTCELL_SPEC.key
-    scope_note = (
-        f"- It certifies exactly `{spec.cell}` as netlisted from "
-        f"`{schematic_rel}`, nothing more or less. A full-`ldo_core` DRC/LVS "
-        "claim requires running this same flow against `ldo_core`'s own "
-        "top-level schematic and its full layout."
-        if is_full_block
-        else "- It says **nothing** about the LDO. The cell is one transistor; "
-        "no block-level layout exists yet."
+    scope_note = "- " + (
+        spec.scope_note
+        or (
+            f"It certifies exactly `{spec.cell}` as netlisted from "
+            f"`{schematic_rel}`, nothing more or less. A full-`ldo_core` "
+            "DRC/LVS claim requires running this same flow against "
+            "`ldo_core`'s own top-level schematic and its full layout."
+        )
     )
+    controls = ", ".join(sorted(summary["lvs_negative_controls"]))
     body = f"""# DRC/LVS run `{rid}` -- `{spec.key}`
 
 Produced by `python3 layout/drclvs.py --cell {spec.key} --record`. Append-only:
@@ -1041,8 +1055,9 @@ xschem's `lvs_netlist` form from `{schematic_rel}`.
 ## What this does and does not establish
 
 - The flow runs end to end: PDK PCell -> GDS -> DRC (two decks) -> LVS against
-  a netlist exported from the schematic source, with negative controls proving
-  the compare is live in both topology and device parameters.
+  a netlist exported from the schematic source, with {len(summary['lvs_negative_controls'])}
+  negative control(s) ({controls}) proving the compare is live in each of
+  those respects rather than silently comparing nothing.
 {scope_note}
 - `klt drc`'s deck is a curated subset (see `layout/README.md`, "Coverage,
   honestly"); the PDK deck's {drc['rule_categories']} categories are the number
