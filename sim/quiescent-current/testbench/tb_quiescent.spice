@@ -81,3 +81,49 @@ Xdut_full VIN_FULL VOUT_FULL VIN_FULL 0 LOOP_FULL LOOP_FULL VREF ldo_core
 Vilc ILC 0 DC 50m
 Bload_full VOUT_FULL NLOAD_FULL I = 'v(ilc) * 0.5 * (1 + tanh((v(vout_full) - 0.2) / 0.05))'
 Vlmeas_full NLOAD_FULL 0 DC 0
+
+* --- DC seed: see tb.json's "nodeset" block (#301) ----------------------
+* The sink above is necessary but NOT sufficient, and the gap is not a
+* second DC root -- it is the DC solve itself. Every one of this deck's 81
+* PVT points fails ngspice's first, all-zero-guess Newton solve (three
+* ldo_core instances plus a 50 mA sink in one matrix is a hard cold start),
+* so every point is really solved by ngspice's continuation ladder, and
+* which rung catches is incidental to the design. Measured on the
+* unmodified deck: 70/81 land on dynamic gmin stepping, 9 on true gmin
+* stepping, 1 on source stepping -- and at ss_-40c_2.97v (weakest process,
+* coldest, lowest supply) all four rungs fail and ngspice falls through to
+* its last-resort pseudo-transient op. That rung does not solve DC at all;
+* it reports an unsettled transient snapshot, provably so:
+*   v(Xdut_full.Xsoftstart.HG) = 1.0809 V, when the ONLY DC-legal value of
+*     that node is EN (= VIN = 2.97 V) -- HG sits on an RC (XRh_ss to EN,
+*     XCh_ss to VSS) whose capacitor is an open circuit at DC
+*   v(Xdut_full.Xsoftstart.SSR) = 0.6216 V vs. its settled 2.3477 V
+*   i(Vamm_en) = -140.937 uA -- a NEGATIVE supply current on an instance
+*     with no load at all, i.e. capacitor displacement current, which no DC
+*     operating point has
+* The sink is not at fault: at the reported VOUT_FULL = -47.855 mV it
+* passes 0.5*(1 + tanh((-0.047855 - 0.2)/0.05)) * 50 mA = 2.473 uA, exactly
+* the iload_full_ma = 0.0024732 the run reports. #46 deleted the deep
+* sub-ground DC root (vout_full = -28.65 V) and that deletion holds; what
+* survives here is an unsettled transient reported as a DC point, which no
+* sink shape can delete because the failure is in the solve, not in the
+* solution set.
+*
+* The fix is a starting point, never a bound. tb.json's "nodeset" places
+* the two ENABLED instances on the regulating branch before the first
+* Newton pass -- VOUT at the ratified 1.8 V target, FB at the 1.2 V
+* reference the 300k/600k divider defines, and both pass-gate clamps
+* (Xilimit's CLG, Xsoftstart's HG) parked at VIN, i.e. off -- the same node
+* targets and reasoning as sim/loop-stability/testbench/sweep.py's
+* dc_seed_lines(). Xdut_dis is deliberately NOT seeded: it is in shutdown,
+* and its physical solution is the all-zero guess ngspice already starts
+* from. ngspice releases a .nodeset after the first solve pass, so it
+* selects which solution Newton reaches without constraining it, and
+* tb.json's vout_full_v / iload_full_ma checks still gate every corner
+* unchanged. Measured, not asserted: unmodified vs. seeded, full 81-point
+* grid back to back on one host, iq_en_ua / iq_full_ua / iload_full_ma /
+* vout_full_v are bit-identical at all 80 other corners; only iq_dis_ua (a
+* sub-nanoamp leakage row, bound 3 uA) moves, by <= 2.8 pA -- a couple of
+* ngspice's own 1 pA abstol. With the seed ss_-40c_2.97v is solved by
+* source stepping, a real DC method, and NO corner reaches the
+* pseudo-transient rung.
