@@ -14,31 +14,39 @@ LDO layout yet.** What lives here today is the *flow* and the *plan*:
 ```bash
 python3 layout/drclvs.py --check-env    # is everything installed?
 python3 layout/drclvs.py                # build, export, DRC ×2, LVS, controls
+python3 layout/drclvs.py --cell passives   # ... on the passive-bearing vehicle
 python3 layout/drclvs.py --check        # ... and the committed netlist must be current
 python3 layout/drclvs.py --record       # ... and write layout/records/<record-id>.md
 ```
 
-`drclvs.py` is a **generalized driver, not a testcell-only script**: the seven
-stages above take a `CellSpec` (GDS generator, LVS reference schematic,
-substrate net, where the exported netlist is committed) rather than hardcoded
-constants. `--cell testcell` (the default) selects the one registered today;
-a real block's layout registers its own `CellSpec` in `drclvs.py`'s `CELLS`
-dict and drives it with `--cell <key>` — see that file's module docstring for
-the exact contract. The two LVS negative controls (stage 6/7) currently key
-off the netlist's first MOS (`M*`) element line, so an all-passive cell (e.g.
-a resistor-only feedback divider) will need its own mutation pair rather than
-reusing `control_topology`/`control_parameter` verbatim.
+`drclvs.py` is a **generalized driver, not a testcell-only script**: the stages
+above take a `CellSpec` (GDS generator, LVS reference schematic, substrate net,
+where the exported netlist is committed) rather than hardcoded constants.
+`--cell testcell` (the default) and `--cell passives` are the two registered
+today, both of them *flow vehicles* rather than design blocks; a real block's
+layout registers its own `CellSpec` in `drclvs.py`'s `CELLS` dict and drives it
+with `--cell <key>` — see that file's module docstring for the exact contract.
+
+The stage **count** is a property of the cell. Stages 1–5 always run; stage 6
+onwards is one LVS negative control per corruption the netlist can express, so
+a FET-only cell has 7 stages and one that also contains a resistor and a
+capacitor has 9. The two MOS controls still key off the netlist's first `M*`
+element line, so an *all*-passive cell (e.g. a resistor-only feedback divider)
+will need its own topology mutation rather than reusing `control_topology`
+verbatim.
 
 A run takes about a minute and prints one line per stage:
 
 ```
-[1/7] layout      : drclvs_testcell.gds (2592 bytes)
-[2/7] netlist     : 1 device line(s), LVS form
-[3/7] klt drc     : clean (0 violation(s), curated subset)
-[4/7] pdk drc     : 0 violation(s) across 640 rule categories (41 rule tables)
-[5/7] lvs         : MATCH
-[6/7] control topo: gate shorted to drain -> MISMATCH (expected)
-[7/7] control para: device width doubled -> MISMATCH (expected)
+[1/9] layout      : drclvs_passives.gds (45508 bytes)
+[2/9] netlist     : 3 device line(s), LVS form
+[3/9] klt drc     : clean (0 violation(s), curated subset)
+[4/9] pdk drc     : 0 violation(s) across 642 rule categories (41 rule tables)
+[5/9] lvs         : MATCH
+[6/9] control topology  : gate shorted to drain -> MISMATCH (expected)
+[7/9] control parameter : device width doubled -> MISMATCH (expected)
+[8/9] control passive-r : resistor length doubled -> MISMATCH (expected)
+[9/9] control passive-c : capacitor length doubled -> MISMATCH (expected)
 ```
 
 Exit status is 0 only if every stage passed. On failure the run directory
@@ -50,7 +58,8 @@ it.
 
 ```
 layout/
-  drclvs.py                          the one command (see "The seven stages")
+  drclvs.py                          the one command (see "The stages")
+  lvs_form.py                        renders passives as primitive R/C elements
   floorplan.md                       the floorplan and matching plan (issue #15)
   area_estimate.py                   core-area estimate from design/netlist/
   xschemrc                           design/xschemrc + `lvs_netlist 1`
@@ -59,6 +68,7 @@ layout/
     drclvs_testcell.sym              (exists only to force a real `.subckt`)
     gen_gds.py                       the test cell, layout side (a generator)
     netlist/drclvs_testcell.spice    the exported LVS reference netlist
+  passives/                          same four files for the passive vehicle
   tests/                             stdlib unittest, no PDK/klayout needed
   records/<record-id>.md             append-only run records
 ```
@@ -168,7 +178,57 @@ The two sides are kept honest against each other by construction:
   demands a byte-for-byte match — the same staleness-plus-reproducibility gate
   `design/netlist.py --check` applies.
 
-## The seven stages
+## The passive-bearing vehicle
+
+A cell whose only device is a FET cannot notice that the flow is broken for
+anything else — and it was. The gf180mcu PDK's xschem symbols carry an
+`lvs_format` attribute **only on the FETs**; every resistor and every capacitor
+symbol has a `format` and nothing else. So `lvs_netlist 1` renders the FETs as
+primitive `M` elements and leaves the passives in xschem's *simulation* form,
+which KLayout's SPICE reader turns into a call to an undefined subcircuit
+instead of a device (issue #313):
+
+```
+XRbias NBIAS RBT VSS ppolyf_u_1k r_width=1u r_length=1000u m=1     <- simulation form
+XCc    NZ OUT       cap_mim_2f0_m3m4_noshield c_width=48u c_length=48u m=1
+```
+
+`layout/lvs_form.py` renders those as the primitive elements the deck's own
+SPICE reader delegate understands, carrying `l` and `w` across faithfully:
+
+```
+Rbias NBIAS RBT VSS ppolyf_u_1k l=1000u w=1u m=1
+Cc    NZ OUT       cap_mim_2f0_m3m4_noshield l=48u w=48u m=1
+```
+
+The rewrite runs **before** `drclvs.py`'s simulation-form guard, not instead of
+it, and only on lines that carry a complete `r_width`/`r_length` or
+`c_width`/`c_length` pair — the parameter names every PDK passive symbol's
+`format` uses, which is what makes the translation cover the whole family
+without enumerating flavours. Anything it declines to touch is still a hard
+failure. `lvs_form.py`'s module docstring records why this lives here rather
+than in repo-local `.sym` overrides.
+
+`drclvs_passives` is what proves it end to end: **one `ppolyf_u_1k` H-poly
+resistor** (1 µm × 10 µm), **one `cap_mim_2f0` MIM cap** (20 µm × 20 µm) and
+**one 2-finger `nfet_03v3`** (W = 6 µm total, L = 0.28 µm), each built from the
+PDK's own PCell, sharing no nets with each other. Like the test cell it is not
+part of the LDO and is not meant to grow. It earns its keep three ways a
+single-FET cell cannot:
+
+- the resistor and the cap are the devices `lvs_form.py` exists for, and stages
+  8 and 9 prove the deck really compares their geometry;
+- the **multi-finger** FET checks that the deck's own multifinger merge lands
+  one device — its two interdigitated source straps carry the same label and
+  nothing straps them in metal, so the merge is doing the work;
+- the MIM cap is the only device here whose terminals are not on metal1/poly2.
+  For the 5LM / MIM-option-B stack this repo builds against they are metal4 and
+  metal5, which ties the layout, the deck's `mim_option`/`metal_level`/`mim_cap`
+  switches and the schematic's `model=cap_mim_2f0_m4m5_noshield` into one
+  self-checking loop. Get any of the three wrong and the device extracts as
+  nothing at all.
+
+## The stages
 
 **1. Build the layout.** `klayout -b -r layout/testcell/gen_gds.py`.
 
@@ -231,18 +291,28 @@ The deck reports its own verdict in its log and exits 0 either way, so the log i
 the contract; `drclvs.py` demands exactly one of the two verdict strings, so a
 deck that fell over before comparing is an error rather than a silent pass.
 
-**6 & 7. Negative controls.** The same compare, twice more, against deliberately
-corrupted copies of the netlist. Both **must** mismatch:
+**6 onwards. Negative controls.** The same compare, once more per control,
+against deliberately corrupted copies of the netlist. Every one **must**
+mismatch:
 
-| Control | Mutation | What it would mean if it matched |
-| --- | --- | --- |
-| topology | gate shorted to drain | a 4-net circuit compared equal to a 3-net one — the compare is not looking at connectivity |
-| parameter | device width doubled | device parameters are not being compared at all |
+| Control | Mutation | Registered when | What it would mean if it matched |
+| --- | --- | --- | --- |
+| topology | gate shorted to drain | always | a 4-net circuit compared equal to a 3-net one — the compare is not looking at connectivity |
+| parameter | device width doubled | always | device parameters are not being compared at all |
+| passive-r | resistor length doubled | the netlist has an `R` element | resistor geometry is not being compared at all |
+| passive-c | capacitor length doubled | the netlist has a `C` element | capacitor geometry is not being compared at all |
 
 These are not decoration. A "match" from an LVS run is not evidence unless a
 *known-wrong* netlist fails: a mis-wired invocation that silently compares
 nothing also "passes", and a compare that checks connectivity while ignoring
 parameters would wave through a mis-sized transistor.
+
+The passive pair is load bearing for a reason particular to this PDK's deck:
+its SPICE reader delegate registers resistors and capacitors with the `R` and
+`C` parameters **disabled** (`custom_classes.lvs`), so a netlist claiming a
+resistance 30× off the truth legitimately still matches. Geometry is the only
+thing being compared for those devices, which makes "is the geometry actually
+compared?" a question worth answering with a control rather than an assumption.
 
 ## Coverage, honestly
 
@@ -296,7 +366,7 @@ bringing in a GDS from elsewhere should check its dbu before believing a
 with the record-id convention `sim/` uses (`<YYYYMMDD>-<HHMMSS>-<short-sha>`).
 Re-runs mint a new record; records are never edited in place. Each one carries
 the tool versions, the PDK variant and open_pdks hash, both DRC results with
-their rule-category counts, the LVS verdict and both control verdicts.
+their rule-category counts, the LVS verdict and every control verdict.
 
 The run directory itself (`layout/.work/`) is scratch and gitignored — the
 `.lyrdb` / `.lvsdb` databases are large, machine-specific and regenerable. The
