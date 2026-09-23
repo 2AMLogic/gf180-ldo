@@ -29,6 +29,30 @@ That single size clears the base target **and** both stretch targets: 300 mV @
 50 mA (2.5× margin), 200 mV @ 50 mA (1.7× margin), and 300 mV @ 100 mA (1.16×
 margin), all at the worst corner of the full matrix.
 
+> **Update (issue #139 / `DR-0032`, 2026-09-22): the design ships W = 2 mm, and
+> this recommendation is not implementable as written.** Nothing measured in
+> this section is retracted — the tables here are device-level and remain
+> correct as such — but two closed-loop constraints that a device-level table
+> cannot see decide the width:
+>
+> - **4 mm breaks a ratified row.** The current limit's small inverse-fold
+>   grows with pass-device width, putting short-circuit dissipation at
+>   346.049 mW against `DR-0005`'s ratified ≤ 346 mW Thermal ceiling (measured
+>   at ff / 125 °C / 3.63 V).
+> - **Gain margin caps the width at ≈ 2.5 mm.** A wider device's `Cgg` drops
+>   the pass-gate pole; at 50 mA / `C_eff` = 1 µF / ESR = 500 mΩ — inside
+>   `DR-0018`'s ratified envelope — the loop's gain margin falls 12.36 dB
+>   (2.0 mm) → 10.47 dB (2.4 mm) → 9.76 dB (2.6 mm) → 8.49 dB (3.0 mm) against
+>   a ratified ≥ 10 dB bound.
+> - **The 2.53 mm "200 mV @ 50 mA" row below does not clear that stretch in
+>   closed loop**: measured 212.592 mV at ss / 125 °C, because the ratified
+>   dropout measurement (`DR-0020`) reads the regulation knee of the closed
+>   loop, ~5 % worse than the open-device `Rds` figure this table derives from.
+>
+> The stretch needs ≥ ≈ 2.7 mm and the ratified gain margin affords ≈ 2.5 mm,
+> so it is out of reach by widening alone. See
+> `spec/decision-records/DR-0032-pass-device-width-is-capped-by-loop-gain-margin.md`.
+
 If only the base 300 mV @ 50 mA target has to hold, **W ≈ 1.8 mm** is the
 measured minimum (`fets/results/summary_sizing.csv`, `rds_target_ohm = 6.0`,
 `supply_class = dropout_testpoint`), and W = 2 mm measures 259 mV at the worst

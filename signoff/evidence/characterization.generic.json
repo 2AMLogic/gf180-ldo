@@ -2,11 +2,11 @@
   "schema_version": 1,
   "kind": "generic",
   "status": "pass",
-  "summary": "T1 item 8: sim/CHARACTERIZATION.md is the one aggregated, current, per-spec-row rollup for this block, and it names the sim/<slug>/records/ evidence record behind every verdict. It is generated (sim/build_characterization_report.py), never hand-edited, and CI regenerates and diffs it on every push, so it cannot drift from the committed evidence. Item 8 asks for the aggregation artifact to exist and be current, not for every row to pass: this report currently reads FAIL on Current limit and Thermal, MIXED on Startup, and marks nearly every row's underlying sim record STALE against the current design/netlist/*.spice. Those are item 5's gap, tracked there as unmet, not item 8's. Stability reads PASS against the DR-0018-ratified envelope (issue #276), with the wider DR-0001 full-matrix result shown alongside rather than driving the verdict. See signoff/README.md for the full reading.",
+  "summary": "T1 item 8: sim/CHARACTERIZATION.md is the one aggregated, current, per-spec-row rollup for this block, and it names the sim/<slug>/records/ evidence record behind every verdict. It is generated (sim/build_characterization_report.py), never hand-edited, and CI regenerates and diffs it on every push, so it cannot drift from the committed evidence. Item 8 asks for the aggregation artifact to exist and be current, not for every row to pass: this report currently reads MIXED on Startup and marks most rows' underlying sim record STALE against the current design/netlist/*.spice. Those are item 5's gap, tracked there as unmet, not item 8's. Current limit and Thermal read PASS as of issue #139's re-run against DR-0005's ratified 62-95 mA / <= 346 mW rows (they read FAIL while the head record was still graded against the superseded 65-80 mA / <= 290 mW ones). Stability reads PASS against the DR-0018-ratified envelope (issue #276), with the wider DR-0001 full-matrix result shown alongside rather than driving the verdict. See signoff/README.md for the full reading.",
   "source": "sim/CHARACTERIZATION.md",
   "provenance": {
     "input": {
-      "content_hash": "sha256:632e85490196a518b67397b7adb35e09fc9db008d2be50a0d958d915566b3096",
+      "content_hash": "sha256:913e6056bc0ec6dc990ac728d3458f998b3f42942c952ab6c1316b34fef66851",
       "role": "source"
     }
   }
