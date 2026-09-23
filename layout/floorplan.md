@@ -1,8 +1,10 @@
 # Floorplan and matching plan
 
-Issue #15. **This is a plan, not a layout** — no GDS exists yet. Its job is to
-fix the physical commitments that are expensive to revisit once drawing starts:
-how the pass array is segmented and strapped, which devices have to be
+Issue #15. **This is a plan, not a layout** — with one exception: §4.1's
+feedback divider is now drawn and LVS-verified (issue #286, see "As drawn"
+there). Everything else below is still a commitment rather than a GDS. Its job
+is to fix the physical commitments that are expensive to revisit once drawing
+starts: how the pass array is segmented and strapped, which devices have to be
 common-centroid and how well, where the output is sensed, and whether the whole
 block fits the ratified area budget.
 
@@ -416,6 +418,37 @@ arrangement    one row of 20 strips at 2.4 um pitch (PRES.2 = 0.4 um space)
   were absent; with it, ~0.02 mV.
 - The tap between unit 12 and unit 13 is the metal-mask option DR-0003 asks
   for: re-tapping it is a single-layer change.
+
+**As drawn (issue #286).** This section is no longer only a plan: the array
+is drawn by [`layout/divider/gen_gds.py`](divider/gen_gds.py) and verified
+end to end by `python3 layout/drclvs.py --cell divider` (DRC clean on both
+decks, LVS `MATCH` device-by-device against
+[`divider/fb_divider.sch`](divider/fb_divider.sch), both negative controls
+mismatching). Every number above is as drawn — 2.0 µm strips at 2.4 µm pitch,
+31.8 µm units, both centroids on position 9.5, one dummy each end — and
+`layout/tests/test_divider_layout.py` re-checks them against this document's
+targets rather than trusting the prose. Two things the drawing settled that
+the plan had left implicit:
+
+- **Both legs are linked on M1, but on different tracks.** The
+  interdigitation makes every bottom-leg link jump over a top-leg strip, so
+  the two legs' link sets interleave and cannot share one planar channel.
+  The bottom leg's links run in the channels just outside the strips' heads;
+  the top leg's run *over* the resistor bodies — inside the M1 routing
+  keep-out this section already reserves for the string's own links. Nothing
+  leaves Metal1 and no link is in poly, so the matching argument above is
+  unchanged.
+- **The per-unit substrate ties are replaced by this section's own ring.**
+  The PDK's resistor PCell puts a p-tap column beside every strip, which
+  would wall off the left routing channel; the generator removes them in
+  favour of the single guard / tap ring this section already asks for.
+
+The as-drawn footprint is 37.68 × 52.46 µm = **1976 µm²** including that ring
+and both routing channels, against §6's 1622 µm² for the strip field alone —
+i.e. the ring and channels cost 354 µm², 0.35 % of the area budget. §6's
+estimate is unchanged: it budgets the strip field and applies the `res`
+packing factor (0.75) for exactly this overhead, and 1622/0.75 = 2163 µm² is
+more than the 1976 µm² drawn.
 
 ### 4.2 Error-amp input pair and mirror load
 
@@ -914,10 +947,20 @@ manual check to run against the first real GDS.
 
 **Matching**
 
-- [ ] Divider is 18 identical units, interdigitated with both centroids at the
+- [x] Divider is 18 identical units, interdigitated with both centroids at the
       row middle, dummy at each end, linked in metal not poly (§4.1).
-- [ ] Divider total is still 900 kΩ — DR-0001's ~2 µA preload has not moved.
-- [ ] Divider tap is a single-metal-layer change (DR-0003's mask option).
+      *Drawn and LVS-verified: record `20260923-003210-b6b0635`, which states
+      the as-drawn arrangement against this section's targets; the centroid
+      and unit-count arithmetic is re-checked by
+      `layout/tests/test_divider_layout.py` on every CI run.*
+- [x] Divider total is still 900 kΩ — DR-0001's ~2 µA preload has not moved.
+      *18 × 50 kΩ as drawn; `test_the_ratio_is_the_ratified_one`. Note the LVS
+      deck compares `W`/`L` and not `R` (see the record), so this is a
+      geometric claim against `sim/devchar`'s measured sheet, not an
+      LVS-verified resistance.*
+- [x] Divider tap is a single-metal-layer change (DR-0003's mask option).
+      *The tap is one Metal1 link between two adjacent positions (17/18);
+      `test_the_tap_joins_two_adjacent_positions_on_one_side`.*
 - [ ] Input pair is 360 µm² per side, 2-D common centroid, ≥ 2 dummy fingers per
       row end (#9's stated requirement).
 - [ ] Every matched pair's centroid is ≥ 150 µm from the pass-array centroid,

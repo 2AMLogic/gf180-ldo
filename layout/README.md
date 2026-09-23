@@ -1,11 +1,15 @@
 # layout/ — GDS, DRC and LVS
 
 Physical verification for this repo, on the gf180mcu open PDK. **There is no
-LDO layout yet.** What lives here today is the *flow* and the *plan*:
+top-level LDO layout yet** — one block cell is drawn (the feedback divider);
+the rest is still plan. What lives here today is:
 
 - the flow — a documented, one-command DRC + LVS invocation, proven end to end
   against a deliberately trivial test cell, so that whoever lays the block out
   inherits a working loop instead of building one (the rest of this file);
+- the first real cell — [`divider/`](divider/), `floorplan.md` §4.1's
+  18-unit common-centroid feedback divider, drawn and verified through that
+  same flow ("The feedback divider" below);
 - the plan — [`floorplan.md`](floorplan.md), the pass-array segmentation and
   metal strategy, the common-centroid matching plan, the Kelvin-sense scheme
   and the core-area estimate, with [`area_estimate.py`](area_estimate.py)
@@ -14,20 +18,19 @@ LDO layout yet.** What lives here today is the *flow* and the *plan*:
 ```bash
 python3 layout/drclvs.py --check-env    # is everything installed?
 python3 layout/drclvs.py                # build, export, DRC ×2, LVS, controls
+python3 layout/drclvs.py --cell divider # ... for the feedback divider
 python3 layout/drclvs.py --check        # ... and the committed netlist must be current
 python3 layout/drclvs.py --record       # ... and write layout/records/<record-id>.md
 ```
 
 `drclvs.py` is a **generalized driver, not a testcell-only script**: the seven
 stages above take a `CellSpec` (GDS generator, LVS reference schematic,
-substrate net, where the exported netlist is committed) rather than hardcoded
-constants. `--cell testcell` (the default) selects the one registered today;
-a real block's layout registers its own `CellSpec` in `drclvs.py`'s `CELLS`
-dict and drives it with `--cell <key>` — see that file's module docstring for
-the exact contract. The two LVS negative controls (stage 6/7) currently key
-off the netlist's first MOS (`M*`) element line, so an all-passive cell (e.g.
-a resistor-only feedback divider) will need its own mutation pair rather than
-reusing `control_topology`/`control_parameter` verbatim.
+substrate net, its own pair of LVS negative controls, where the exported
+netlist is committed) rather than hardcoded constants. `--cell testcell` (the
+default) is the one-transistor bring-up vehicle; `--cell divider` is the
+feedback divider. A further block's layout registers its own `CellSpec` in
+`drclvs.py`'s `CELLS` dict and drives it with `--cell <key>` — see that file's
+module docstring for the exact contract.
 
 A run takes about a minute and prints one line per stage:
 
@@ -59,6 +62,12 @@ layout/
     drclvs_testcell.sym              (exists only to force a real `.subckt`)
     gen_gds.py                       the test cell, layout side (a generator)
     netlist/drclvs_testcell.spice    the exported LVS reference netlist
+  divider/
+    plan.py                          floorplan.md §4.1's arrangement, as numbers
+    gen_gds.py                       the divider, layout side (a generator)
+    fb_divider.sch                   the divider, schematic side
+    fb_divider.sym                   (fixes the `.subckt` port order)
+    netlist/fb_divider.spice         the exported LVS reference netlist
   tests/                             stdlib unittest, no PDK/klayout needed
   records/<record-id>.md             append-only run records
 ```
@@ -168,9 +177,92 @@ The two sides are kept honest against each other by construction:
   demands a byte-for-byte match — the same staleness-plus-reproducibility gate
   `design/netlist.py --check` applies.
 
+## The feedback divider
+
+`--cell divider` is the first cell here that is part of the LDO:
+[`floorplan.md` §4.1](floorplan.md#41-feedback-divider--the-term-simulation-cannot-see)'s
+18-unit `ppolyf_u_3k` string — 6 up / 12 down, one dummy strip at each end,
+`B T B B T B B T B B T B B T B B T B` at a 2.4 µm pitch — which is what
+`design/netlist/ldo_core.spice`'s ideal `Rtop` / `Rbot` pair becomes in
+silicon. It is here rather than deferred because **the divider's dominant
+error term cannot be simulated at all**: the PDK's resistor subcircuits
+hard-code `mis_r = 0` and the high-sheet `ppolyf_u_*k` cards carry no local
+mismatch term (`sim/devchar/CONCLUSIONS.md` §2), so the drawn common centroid
+is the only mitigation the project has, and an LVS-verified drawing of it is
+the only evidence available that it is the arrangement the budget assumed.
+
+`layout/divider/plan.py` is that arrangement as numbers, imported by both the
+generator and `layout/tests/test_divider_layout.py` so the two cannot drift;
+the test asserts both legs' centroids land on §4.1's stated **9.5**, the
+string is still 900 kΩ tapped 600 k / 300 k, and the committed reference
+netlist really is an 18-unit series chain tapped after twelve.
+
+Four things about this cell are worth knowing before drawing the next one,
+because none of them is obvious and all four are properties of the PDK rather
+than of this design:
+
+- **The PDK's `ppolyf_u_3k` xschem symbol has no `lvs_format`.** Under
+  `layout/xschemrc`'s `lvs_netlist 1` it therefore falls back to `format` —
+  an ngspice subcircuit call (`XR1 … r_width=… r_length=…`) that KLayout's
+  SPICE reader cannot read, and whose `r_width`/`r_length` would not reach the
+  reader's `W`/`L` parameters even if it could. `fb_divider.sch` supplies the
+  missing rendering **per instance** (`lvs_format="@name @pinlist @model
+  W=@W L=@L m=@m"`) rather than copying a PDK symbol into this repo. The MOS
+  symbols do ship an `lvs_format`; the resistor ones do not.
+- **`poly_res` is not a free switch.** `rule_decks/res_extraction.lvs` wraps
+  the high-sheet flavours in a `case POLY_RES`, so exactly one of `1k`/`2k`/
+  `3k` is extracted per run. A `ppolyf_u_3k` cell run under the default `1k`
+  extracts *nothing* and mismatches. It is a `CellSpec` field for that reason.
+- **Leaving every LVS option off is what turns simplification _on_.**
+  `gf180mcu.lvs` derives `SIMPLIFY` as "`net_only`, `top_lvl_pins`,
+  `combine`, `purge` and `purge_nets` are all false", and `netlist.simplify`
+  collapses series/parallel chains **in the extracted netlist only**. Left
+  alone it folds the 18 drawn units into two lumped resistors, so the compare
+  could no longer tell an 18-unit string from one long strip — precisely the
+  property DR-0003 asks the divider to have. `CellSpec.simplify_extracted`
+  turns it off (by turning `top_lvl_pins` on), and the divider's LVS `MATCH`
+  is therefore a device-by-device compare of all twenty strips.
+- **The resistor PCell's own substrate tie had to go.** It draws a p-tap
+  column 0.71 µm to the left of *each* strip, which leaves room for exactly
+  one Metal1 track in the left routing channel. `gen_gds.py` removes the
+  twenty per-unit columns (asserting shape-by-shape that nothing else lives
+  in that x window) and replaces them with the single guard / substrate-tap
+  ring §4.1 asks for. It also fills the 0.04 µm slots the tiled PCell leaves
+  between adjacent head implants, which would otherwise be 38 × **PP.2** and
+  76 × **SB.15b** violations — artefacts of tiling a PCell drawn to stand
+  alone, not of the plan's pitch.
+
+### `klayout -b -r` swallows `SystemExit`
+
+A generator script's assertions are only worth writing if they are audible.
+They are not, by default: a bare `raise SystemExit("…")` under `klayout -b -r`
+prints **nothing** and the klayout process still exits **0** (checked on
+KLayout 0.28.16). `drclvs.py` does catch the failure — stage 1 requires the
+`.gds` to exist and raises otherwise — but the message it prints is "layout
+build produced no …", i.e. the symptom rather than the cause, and the real
+diagnostic is gone.
+
+`divider/gen_gds.py` therefore routes every assertion through a `_fail()`
+helper that writes to stderr (which `drclvs.py` captures into the run
+directory's `build-gds.log`) before exiting. Any new generator should do the
+same. `testcell/gen_gds.py` still uses bare `SystemExit`; its assertions are
+correspondingly silent.
+
+One as-drawn deviation from §4.1's prose, recorded here and in §4.1 itself:
+the plan says the units are "joined on M1", and they are — but the two legs
+use **different Metal1 tracks**. The interdigitation makes every bottom-leg
+link jump over a top-leg strip, so the two legs' link sets interleave and
+cannot share a planar channel. The bottom leg's links run in the channels
+just outside the heads; the top leg's run over the resistor bodies, inside
+the M1 keep-out §4.1 already reserves for them.
+`test_divider_layout.LinkRoutabilityTests` holds both halves of that
+argument, so it is a check rather than a claim.
+
 ## The seven stages
 
-**1. Build the layout.** `klayout -b -r layout/testcell/gen_gds.py`.
+**1. Build the layout.** `klayout -b -r <the cell's gen_gds.py>` — e.g.
+`layout/testcell/gen_gds.py`, or `layout/divider/gen_gds.py` for `--cell
+divider`.
 
 **2. Export the schematic netlist.** xschem headless, ERC on, through
 `layout/xschemrc`. That file is `design/xschemrc` plus one switch,
@@ -234,15 +326,47 @@ deck that fell over before comparing is an error rather than a silent pass.
 **6 & 7. Negative controls.** The same compare, twice more, against deliberately
 corrupted copies of the netlist. Both **must** mismatch:
 
-| Control | Mutation | What it would mean if it matched |
-| --- | --- | --- |
-| topology | gate shorted to drain | a 4-net circuit compared equal to a 3-net one — the compare is not looking at connectivity |
-| parameter | device width doubled | device parameters are not being compared at all |
+| Cell kind | Control | Mutation | What it would mean if it matched |
+| --- | --- | --- | --- |
+| MOS (`testcell`) | topology | gate shorted to drain | a 4-net circuit compared equal to a 3-net one — the compare is not looking at connectivity |
+| MOS (`testcell`) | parameter | device width doubled | device parameters are not being compared at all |
+| all-passive (`divider`) | topology | two adjacent taps of the string shorted | a string with one unit shorted out compared equal to the intact one |
+| all-passive (`divider`) | parameter | unit resistor width doubled | device parameters are not being compared at all |
 
 These are not decoration. A "match" from an LVS run is not evidence unless a
 *known-wrong* netlist fails: a mis-wired invocation that silently compares
 nothing also "passes", and a compare that checks connectivity while ignoring
 parameters would wave through a mis-sized transistor.
+
+**Which pair runs is a property of the cell** (`CellSpec.controls`), not of
+`drclvs.py`. That is load bearing rather than tidy: the MOS pair keys off the
+netlist's first `M*` element line, so pointed at a resistor-only cell it
+would have had nothing to mutate — **two stages that quietly did nothing,
+behind a stage-5 `MATCH` that then meant nothing**. `drclvs.py` therefore
+
+- requires every registered cell to carry one topology control **and** one
+  parameter control (`REQUIRED_CONTROL_TAGS`), and
+- proves, **before stage 3 runs**, that each of them actually changes *this*
+  cell's netlist — a control that cannot be applied, or that runs and returns
+  the netlist unchanged, is a hard error (`ControlNotApplicable`), never a
+  skipped stage.
+
+`layout/tests/test_drclvs.py` holds that contract without needing a PDK,
+including both directions of the mismatch (MOS controls against the passive
+cell and vice versa).
+
+Two details the passive pair had to get right, both of them properties of the
+PDK's own deck rather than of this repo:
+
+- **Scale a *dimension*, not the resistance.** `rule_decks/custom_classes.lvs`
+  defines the poly-resistor device class as `BResistor`, which does
+  `enable_parameter('R', false)` and compares only `W` and `L`. A control that
+  scaled `R=` would never fire — the exact "control that is not a control"
+  failure these stages exist to rule out.
+- **Short an *internal* tap, not a port.** Renaming one of the cell's own
+  ports would change the pin list rather than the connection graph, which is a
+  different and weaker corruption; `control_short_adjacent_taps` refuses to do
+  it.
 
 ## Coverage, honestly
 

@@ -6,10 +6,16 @@ name: CI
 #                                       PVT smoke run; gracefully SKIPs the
 #                                       smoke stage, exit 0, when ngspice/PDK
 #                                       are unavailable)
-#   - layout/tests/test_drclvs.py     (stdlib unittest, no PDK/klayout/xschem
+#   - layout/tests/                   (stdlib unittest, no PDK/klayout/xschem
 #                                       needed -- covers layout/drclvs.py's
-#                                       record-writing path only, not the
-#                                       DRC/LVS stages themselves)
+#                                       record-writing path, its --cell
+#                                       registry, the LVS negative-control
+#                                       contract (a registered control that
+#                                       cannot corrupt its own cell's netlist
+#                                       must be a hard error, issue #286),
+#                                       layout/area_estimate.py, and the
+#                                       feedback divider's arrangement --
+#                                       but not the DRC/LVS stages themselves)
 #   - sim/build_characterization_report.py (regenerated and diffed against
 #                                       the committed sim/CHARACTERIZATION.md
 #                                       -- fails the build if they diverge,

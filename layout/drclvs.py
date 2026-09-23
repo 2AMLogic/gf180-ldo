@@ -3,6 +3,7 @@
 
     python3 layout/drclvs.py                     # bring-up test cell (default)
     python3 layout/drclvs.py --cell testcell      # same, named explicitly
+    python3 layout/drclvs.py --cell divider      # the feedback-divider array
     python3 layout/drclvs.py --check             # same, plus: the committed netlist must be current
     python3 layout/drclvs.py --check-env         # report which tools/PDK are visible, then stop
     python3 layout/drclvs.py --record            # also write layout/records/<record-id>.md
@@ -16,19 +17,19 @@ Driving a real block through this flow
 This file used to be hardcoded to the one-transistor bring-up test cell
 (issue #14). It is now a **generalized driver**: the seven stages below take a
 :class:`CellSpec` -- a GDS generator script, an LVS reference schematic, a
-substrate net, and where the exported netlist is committed -- rather than
-module-level constants for the test cell specifically. ``CELLS`` at the top of
-this file is the registry a real block's layout plugs into; add an entry there
-(see ``TESTCELL_SPEC`` for the shape) and drive it with ``--cell <key>``.
-Nothing about stages 1-7 is test-cell-specific; only ``TESTCELL_SPEC`` and its
-generator (``layout/testcell/gen_gds.py``) are.
+substrate net, this cell's own pair of LVS negative controls, and where the
+exported netlist is committed -- rather than module-level constants for the
+test cell specifically. ``CELLS`` is the registry a real block's layout plugs
+into; add an entry there (see ``TESTCELL_SPEC`` / ``DIVIDER_SPEC`` for the
+shape) and drive it with ``--cell <key>``. Nothing about stages 1-7 is
+cell-specific; only the ``CellSpec``\\ s and their generators are.
 
 What this runs, in order
 ------------------------
 
-1. **Build the layout.** ``klayout -b -r layout/testcell/gen_gds.py`` draws the
-   test cell from the PDK's own ``nfet`` PCell (correct by construction) and
-   adds the four net labels LVS needs.
+1. **Build the layout.** ``klayout -b -r <the cell's gen_gds.py>``, which draws
+   the cell from the PDK's *own* PCells (correct by construction) and adds the
+   net labels LVS needs.
 2. **Export the schematic netlist.** ``xschem`` headless, ERC on, through
    ``layout/xschemrc`` -- which is ``design/xschemrc`` plus ``lvs_netlist 1``,
    so devices render from the PDK symbols' ``lvs_format`` (``M1 D G S VSS
@@ -46,9 +47,11 @@ What this runs, in order
 5. **LVS.** The PDK's own ``gf180mcu.lvs`` deck, layout vs. the netlist from
    step 2.
 6. **LVS negative control -- topology.** The same compare against a copy of that
-   netlist with the device's gate shorted to its drain. Must report a mismatch.
-7. **LVS negative control -- device parameters.** And against a copy with the
-   device width doubled but the topology untouched. Must also report a
+   netlist with the connection graph deliberately corrupted (for a MOS cell:
+   the device's gate shorted to its drain; for an all-passive one: two
+   adjacent taps of the string shorted). Must report a mismatch.
+7. **LVS negative control -- device parameters.** And against a copy with a
+   device dimension doubled but the topology untouched. Must also report a
    mismatch.
 
    Steps 6 and 7 are not decoration. Without them, "LVS passed" is not evidence
@@ -57,10 +60,22 @@ What this runs, in order
    ignores device parameters would wave through a mis-sized transistor. Each
    control isolates one of those.
 
+   **Which pair runs is a property of the cell**, not of this file:
+   ``CellSpec.controls``. A MOS-keyed mutation cannot corrupt a resistor-only
+   netlist and vice versa, so a cell registers the pair that matches its own
+   devices (``MOS_CONTROLS`` / ``PASSIVE_CONTROLS``). That every registered
+   control can in fact corrupt this cell's netlist is checked **before stage
+   3** by ``check_controls_apply()``, and a control that cannot is a hard
+   error -- never a silently skipped stage, because a run that printed
+   ``lvs: MATCH`` with inert controls behind it would be reporting a pass it
+   has not earned.
+
 Nothing here is LDO-specific in stages 1-7 themselves: only the registered
 ``CellSpec`` is. The bring-up test cell (``testcell``, the default) is one
-transistor and exists only to prove the flow; driving a real block through it
-means registering that block's own ``CellSpec`` in ``CELLS`` below.
+transistor and exists only to prove the flow; ``divider`` is the first real
+block cell (layout/floorplan.md §4.1's feedback-divider array). Driving
+another block through the flow means registering its own ``CellSpec`` in
+``CELLS`` below.
 """
 
 from __future__ import annotations
@@ -69,6 +84,7 @@ import argparse
 import dataclasses
 import difflib
 import glob
+import importlib.util
 import json
 import os
 import re
@@ -77,13 +93,59 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 LAYOUT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = LAYOUT_DIR.parent
 TESTCELL_DIR = LAYOUT_DIR / "testcell"
+DIVIDER_DIR = LAYOUT_DIR / "divider"
 RECORDS_DIR = LAYOUT_DIR / "records"
 WORK_DIR = LAYOUT_DIR / ".work"
 XSCHEMRC = LAYOUT_DIR / "xschemrc"
+
+# A registered cell must carry one negative control of each kind: one that
+# corrupts the connection graph and one that corrupts a device parameter
+# while leaving the graph alone. Those are two independent ways for an LVS
+# invocation to be comparing less than it appears to, and a cell with only
+# one of them has only half an evidence chain (layout/README.md, "6 & 7.
+# Negative controls").
+REQUIRED_CONTROL_TAGS = ("topology", "parameter")
+
+
+class StageError(RuntimeError):
+    """A stage could not run at all (missing tool, bad invocation)."""
+
+
+@dataclasses.dataclass(frozen=True)
+class Control:
+    """One LVS negative control: a deliberate corruption that MUST mismatch.
+
+    ``mutate`` takes the exported netlist text and returns a corrupted copy.
+    It is a per-:class:`CellSpec` field rather than a module-global, because
+    what counts as a corruption is a property of the cell's *devices*: the
+    MOS pair below keys off an ``M*`` element line and does not exist in an
+    all-passive cell, while the resistor pair keys off an ``R*`` line and
+    does not exist in a cell with no resistors.
+    """
+
+    tag: str
+    # Raises StageError when it cannot be applied to this netlist at all.
+    mutate: Callable[[str], str]
+    # One line, quoted in the stage output and in the --record run record.
+    what: str
+    # What a MATCH from this control would prove about the LVS invocation.
+    implication: str
+
+
+class ControlNotApplicable(StageError):
+    """A registered negative control cannot corrupt this cell's netlist.
+
+    Deliberately NOT a silent skip. A control that does not fire leaves the
+    stage it belongs to reporting nothing, and an LVS ``MATCH`` with no
+    working control behind it is not evidence at all -- so this is raised
+    (and, via ``StageError`` handling in ``main()``, exits nonzero) rather
+    than letting the run report a pass.
+    """
 
 
 @dataclasses.dataclass(frozen=True)
@@ -112,30 +174,34 @@ class CellSpec:
     # symbol references resolve (e.g. design/ for a cell that instantiates
     # design/error_amp.sym and friends).
     xschem_library_paths: tuple[Path, ...]
+    # The two (or more) LVS negative controls stages 6..N run against this
+    # cell. See REQUIRED_CONTROL_TAGS: a cell must register a topology
+    # control and a parameter control, and every one of them must actually
+    # apply to this cell's netlist (check_controls_apply, called before any
+    # LVS run, turns "this control does nothing here" into a hard error).
+    controls: tuple[Control, ...]
     # The schematic's bulk/substrate port == the LVS deck's lvs_sub switch.
     substrate_net: str = "VSS"
+    # The LVS deck's `poly_res` switch: which high-sheet ppolyf_u_* flavour
+    # the deck extracts. A `case POLY_RES` in rule_decks/res_extraction.lvs
+    # means exactly one of 1k/2k/3k is recognised per run, so a cell built
+    # from ppolyf_u_3k units is unextractable -- and mismatches -- under the
+    # default. Not a free choice: it is which flavour the cell is drawn in.
+    poly_res: str = "1k"
+    # Whether the LVS deck may collapse series/parallel device chains in the
+    # EXTRACTED netlist before comparing (`netlist.simplify`). Harmless for a
+    # cell whose devices cannot be combined; for a unit-resistor string it
+    # erases the very structure the layout exists to prove, so such a cell
+    # sets this False. See run_lvs() for how the deck's switches express it.
+    simplify_extracted: bool = True
     # One-line human description, quoted verbatim in --record's run record.
     description: str = ""
+    # Extra markdown sections --record appends to the run record: whatever
+    # this cell's own verification claim needs stated alongside the verdicts
+    # (for a matched array, the as-drawn matching against floorplan.md's
+    # numeric target). Derived, not typed in -- see _divider_record_note().
+    record_notes: str = ""
 
-
-TESTCELL_SPEC = CellSpec(
-    key="testcell",
-    cell="drclvs_testcell",
-    top_cell="DRCLVS_TESTCELL",
-    gen_gds=TESTCELL_DIR / "gen_gds.py",
-    schematic=TESTCELL_DIR / "drclvs_testcell.sch",
-    netlist_dir=TESTCELL_DIR / "netlist",
-    xschem_library_paths=(TESTCELL_DIR,),
-    substrate_net="VSS",
-    description="one nfet_03v3, W=2 um, L=0.28 um, nf=1",
-)
-
-# The registry a real block's layout plugs into -- add an entry here (see
-# TESTCELL_SPEC's fields) and drive it with `--cell <key>`. `testcell` is the
-# only entry today because no block layout exists yet (issue #173).
-CELLS: dict[str, CellSpec] = {
-    TESTCELL_SPEC.key: TESTCELL_SPEC,
-}
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.pdk import Pdk, PdkNotFound, find_pdk  # noqa: E402
@@ -160,10 +226,6 @@ VARIANT_SWITCHES = {
 # xschem's `format` (simulation) rendering of a PDK device, which must NOT
 # appear in an LVS-form netlist. See layout/xschemrc.
 SIM_FORM_RE = re.compile(r"^\s*[Xx]\S+\s+.*\b(nfet|pfet|ppolyf|npolyf|cap_)", re.M)
-
-
-class StageError(RuntimeError):
-    """A stage could not run at all (missing tool, bad invocation)."""
 
 
 # --------------------------------------------------------------------------
@@ -354,15 +416,46 @@ def export_netlist(pdk: Pdk, spec: CellSpec, outdir: Path) -> str:
     return header + text
 
 
-def _mos_line(text: str) -> tuple[str, list[str]]:
+# --------------------------------------------------------------------------
+# the LVS negative controls (stages 6..N)
+#
+# Each registered cell carries its own pair, because a mutation is only a
+# control if it can actually be applied to that cell's devices: the MOS pair
+# below cannot corrupt a resistor-only cell, and the passive pair cannot
+# corrupt a cell with no resistors. `check_controls_apply()` makes that a
+# hard error up front rather than a stage that quietly reports nothing.
+# --------------------------------------------------------------------------
+
+def _element_line(text: str, letter: str, what: str) -> tuple[str, list[str]]:
+    """The first SPICE element line of class ``letter`` (`M`, `R`, ...)."""
     for line in text.splitlines():
         tokens = line.split()
-        if len(tokens) >= 6 and tokens[0].upper().startswith("M"):
+        if len(tokens) >= 6 and tokens[0].upper().startswith(letter.upper()):
             return line, tokens
-    raise StageError(
-        "could not build the LVS negative controls: no MOS element line found "
-        "in the exported netlist"
+    raise ControlNotApplicable(
+        f"no {what} element line (`{letter.upper()}*`) in the exported netlist"
     )
+
+
+def _mos_line(text: str) -> tuple[str, list[str]]:
+    return _element_line(text, "M", "MOS")
+
+
+def _resistor_line(text: str) -> tuple[str, list[str]]:
+    return _element_line(text, "R", "resistor")
+
+
+def _subckt_ports(text: str) -> set[str]:
+    """The cell's own port names -- nets a control must not rename away."""
+    for line in text.splitlines():
+        tokens = line.split()
+        if tokens and tokens[0].lower() == ".subckt":
+            return set(tokens[2:])
+    return set()
+
+
+def _rename_net(text: str, victim: str, survivor: str) -> str:
+    return re.sub(rf"(?<![\w.]){re.escape(victim)}(?![\w.])", survivor, text)
 
 
 def control_topology(text: str) -> str:
@@ -392,11 +485,291 @@ def control_parameter(text: str) -> str:
         re.sub(r"^W=2u$", "W=4u", token, flags=re.IGNORECASE) for token in tokens
     ]
     if resized == tokens:
-        raise StageError(
-            "could not build the LVS parameter control: expected a `W=2u` "
-            f"parameter on the device line, got: {line}"
+        raise ControlNotApplicable(
+            "expected a `W=2u` parameter on the first MOS element line, got: "
+            f"{line}"
         )
     return text.replace(line, " ".join(resized))
+
+
+def control_short_adjacent_taps(text: str) -> str:
+    """Short the first resistor's two taps together -- a topology corruption.
+
+    The all-passive counterpart of ``control_topology``. Renaming one of the
+    first unit's terminals to the other collapses two adjacent taps of the
+    string into one node: the unit is shorted out and the graph loses a net,
+    which no relabelling can undo -- the same reason ``control_topology``
+    shorts rather than swaps (layout/README.md, "What LVS here does not
+    check").
+
+    The renamed net must not be one of the cell's own ports: renaming a port
+    would change the *pin list* rather than the internal topology, which is a
+    different (and weaker) corruption.
+    """
+    _line, tokens = _resistor_line(text)
+    ports = _subckt_ports(text)
+    a, b = tokens[1], tokens[2]
+    if b not in ports:
+        victim, survivor = b, a
+    elif a not in ports:
+        victim, survivor = a, b
+    else:
+        raise ControlNotApplicable(
+            f"both taps of the first resistor ({a}, {b}) are cell ports, so "
+            "shorting them would change the pin list rather than the internal "
+            "topology"
+        )
+    return _rename_net(text, victim, survivor)
+
+
+def control_unit_width(text: str) -> str:
+    """Double the first resistor's drawn width -- a parameter corruption.
+
+    The all-passive counterpart of ``control_parameter``, and deliberately
+    **not** a change to the resistance value: the gf180mcu LVS deck's own
+    ``BResistor`` class (rule_decks/custom_classes.lvs) does
+    ``enable_parameter('R', false)`` and compares only ``W`` and ``L``, so a
+    scaled ``R=`` would be a control that never fires. Doubling ``W`` leaves
+    the connection graph untouched, so this control isolates the parameter
+    compare exactly as stage 7's MOS version does.
+    """
+    line, tokens = _resistor_line(text)
+    resized = []
+    hits = 0
+    for token in tokens:
+        match = re.fullmatch(
+            r"(W)=([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)([a-zA-Z]*)",
+            token,
+            flags=re.IGNORECASE,
+        )
+        if match and hits == 0:
+            hits += 1
+            resized.append(f"{match.group(1)}={float(match.group(2)) * 2:g}{match.group(3)}")
+        else:
+            resized.append(token)
+    if not hits:
+        raise ControlNotApplicable(
+            "expected a `W=` parameter on the first resistor element line, "
+            f"got: {line}"
+        )
+    return text.replace(line, " ".join(resized))
+
+
+MOS_CONTROLS = (
+    Control(
+        tag="topology",
+        mutate=control_topology,
+        what="gate shorted to drain",
+        implication="a 4-net circuit compared equal to a 3-net one",
+    ),
+    Control(
+        tag="parameter",
+        mutate=control_parameter,
+        what="device width doubled",
+        implication="device parameters are not being compared at all",
+    ),
+)
+
+PASSIVE_CONTROLS = (
+    Control(
+        tag="topology",
+        mutate=control_short_adjacent_taps,
+        what="two adjacent taps shorted",
+        implication="a string with one unit shorted out compared equal to the "
+        "intact one",
+    ),
+    Control(
+        tag="parameter",
+        mutate=control_unit_width,
+        what="unit resistor width doubled",
+        implication="device parameters are not being compared at all",
+    ),
+)
+
+
+def require_control_pair(spec: CellSpec) -> None:
+    """Every registered cell must carry one control of each required kind."""
+    tags = [control.tag for control in spec.controls]
+    missing = [tag for tag in REQUIRED_CONTROL_TAGS if tag not in tags]
+    duplicated = sorted({tag for tag in tags if tags.count(tag) > 1})
+    if missing or duplicated:
+        raise StageError(
+            f"cell {spec.key!r} registers controls {tags} -- it must register "
+            f"exactly one of each of {list(REQUIRED_CONTROL_TAGS)}"
+            + (f"; missing {missing}" if missing else "")
+            + (f"; duplicated {duplicated}" if duplicated else "")
+        )
+
+
+def apply_control(spec: CellSpec, control: Control, text: str) -> str:
+    """Corrupt ``text`` with ``control``, or fail loudly.
+
+    Two ways to fail, both hard errors rather than skips:
+
+    * the mutation cannot be applied at all (no element of the right class,
+      no parameter of the right name) -- ``ControlNotApplicable``;
+    * the mutation *runs* but returns the netlist unchanged. That is the
+      dangerous one: an unchanged "corrupted" netlist compares MATCH, and a
+      loop that treated MATCH-on-a-no-op as a pass would report a stage that
+      proved nothing. There is no netlist for which a no-op mutation is
+      correct, so this is always a bug in the registered control.
+    """
+    try:
+        mutated = control.mutate(text)
+    except ControlNotApplicable as exc:
+        raise ControlNotApplicable(
+            f"cell {spec.key!r} registers the {control.tag} control "
+            f"({control.what}), but it does not apply to this cell's netlist: "
+            f"{exc}.\n"
+            "  An LVS MATCH is not evidence unless a known-wrong netlist "
+            "demonstrably fails, so a control that cannot corrupt this cell is "
+            "a hard error, not a skipped stage. Register a control pair that "
+            "matches the cell's devices (see MOS_CONTROLS / PASSIVE_CONTROLS)."
+        ) from exc
+    if mutated == text:
+        raise ControlNotApplicable(
+            f"cell {spec.key!r}'s {control.tag} control ({control.what}) ran "
+            "but produced a netlist identical to the original -- it would "
+            "'mismatch' nothing and the stage would prove nothing."
+        )
+    return mutated
+
+
+def check_controls_apply(spec: CellSpec, text: str) -> None:
+    """Prove every registered control corrupts this netlist, before any LVS.
+
+    Run up front, so a cell whose controls do not apply fails *before* stage
+    5 prints ``lvs: MATCH`` -- the failure mode this guards against is a run
+    that reports a match and only afterwards discovers its controls were
+    inert.
+    """
+    require_control_pair(spec)
+    for control in spec.controls:
+        apply_control(spec, control, text)
+
+
+# --------------------------------------------------------------------------
+# the cell registry
+# --------------------------------------------------------------------------
+
+def _load_module(name: str, path: Path):
+    """Import a file by path, under a name of our choosing.
+
+    Used for ``layout/divider/plan.py``, which is also imported -- under
+    KLayout's interpreter, from its own directory -- by the divider's GDS
+    generator. Loading it by path rather than by ``sys.path`` insertion keeps
+    a bare module name like ``plan`` out of this process's import namespace.
+    """
+    module_spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(module_spec)
+    # Register before executing: `@dataclass` resolves its annotations
+    # through `sys.modules[cls.__module__]`, so a module that defines one
+    # raises AttributeError if it is not there yet.
+    sys.modules[name] = module
+    module_spec.loader.exec_module(module)
+    return module
+
+
+def _divider_record_note() -> str:
+    """The divider's as-drawn matching, against floorplan.md's own targets.
+
+    Derived from `layout/divider/plan.py` (the arrangement the generator
+    draws) and `layout/area_estimate.py` (the mismatch arithmetic the area
+    budget was closed with), so a record can never quote a centroid or a
+    sigma the drawing does not have.
+    """
+    plan = _load_module("divider_plan", DIVIDER_DIR / "plan.py")
+    area = _load_module("divider_area_estimate", LAYOUT_DIR / "area_estimate.py")
+    _footprint, sigma3 = area.divider_field()
+    pattern = "".join(
+        "T" if p in plan.TOP_POSITIONS else "B" for p in plan.ACTIVE_POSITIONS
+    )
+    top_k = len(plan.TOP_POSITIONS) * plan.UNIT_KOHM
+    bot_k = len(plan.BOT_POSITIONS) * plan.UNIT_KOHM
+    return f"""## Matching, as drawn
+
+Against `layout/floorplan.md` §4.1's numeric targets. Every figure below is
+read out of `layout/divider/plan.py` -- the constants the generator actually
+draws -- not transcribed from the document, and
+`layout/tests/test_divider_layout.py` re-checks them against §4.1 on every CI
+run.
+
+| Property | §4.1's target | As drawn |
+| --- | --- | --- |
+| Unit | 50 kOhm `ppolyf_u_3k`, W = 2 um, L = 31.8 um | {plan.UNIT_KOHM:g} kOhm, W = {plan.UNIT_W_UM:g} um, L = {plan.UNIT_L_UM:g} um |
+| String | 18 units, 6 up / 12 down | {len(plan.ACTIVE_POSITIONS)} units, {len(plan.TOP_POSITIONS)} up / {len(plan.BOT_POSITIONS)} down |
+| Value | 900 kOhm total, tapped 600 k / 300 k | {top_k + bot_k:g} kOhm, tapped {bot_k:g} k / {top_k:g} k |
+| Arrangement | `B T B B T B B T B B T B B T B B T B` | `{" ".join(pattern)}` |
+| Pitch | 2.4 um (2.0 um strip + PRES.2's 0.4 um) | {plan.PITCH_UM:g} um ({plan.UNIT_W_UM:g} + {plan.PITCH_UM - plan.UNIT_W_UM:g}) |
+| Dummies | one strip at each end | {len(plan.DUMMY_POSITIONS)}, at positions {", ".join(str(p) for p in plan.DUMMY_POSITIONS)} |
+| **Top-leg centroid** | **9.5** | **{plan.centroid(plan.TOP_POSITIONS):g}** |
+| **Bottom-leg centroid** | **9.5** | **{plan.centroid(plan.BOT_POSITIONS):g}** |
+| Divider mismatch | 1.68 mV (3 sigma), vs. #9's budgeted 3.36 mV | {sigma3:.2f} mV (3 sigma) |
+
+Both centroids landing on the same position is the *whole* claim this cell
+exists to support, and it is the one term in the output-accuracy budget that
+**cannot be simulated against this PDK at all**: the resistor subcircuits
+hard-code `mis_r = 0` and the high-sheet `ppolyf_u_*k` cards carry no local
+mismatch term (`sim/devchar/CONCLUSIONS.md` §2). The 3-sigma figure above is
+therefore an arithmetic projection from a *proxy* coefficient (`ppolyf_u`'s
+disabled `par_r = 0.021`, the proxy `README.md` note 3 sanctions), not a
+measured or simulated result -- and it can only be claimed at all because the
+drawn arrangement is the one it assumes, which is what this record's LVS
+verdict establishes.
+
+## What this LVS verdict does not cover
+
+- **Resistance is not a compared parameter.** The deck's `BResistor` class
+  (`rule_decks/custom_classes.lvs`) does `enable_parameter('R', false)` and
+  compares `W` and `L` only. The match above therefore says the drawn
+  *geometry* is the netlisted geometry, not that any resistance value is
+  right. (It also means the deck's own nominal 3.0 kOhm/sq would call each
+  unit 47.7 kOhm rather than 50 kOhm -- the 50 kOhm comes from
+  `sim/devchar`'s measured effective sheet, 3.145 kOhm/sq, and is what the
+  drawn 31.8 um length is sized from.)
+- **Pin order is not checked here**, as for every cell in this flow -- see
+  `layout/README.md`, "What LVS here does *not* check".
+"""
+
+
+TESTCELL_SPEC = CellSpec(
+    key="testcell",
+    cell="drclvs_testcell",
+    top_cell="DRCLVS_TESTCELL",
+    gen_gds=TESTCELL_DIR / "gen_gds.py",
+    schematic=TESTCELL_DIR / "drclvs_testcell.sch",
+    netlist_dir=TESTCELL_DIR / "netlist",
+    xschem_library_paths=(TESTCELL_DIR,),
+    controls=MOS_CONTROLS,
+    substrate_net="VSS",
+    description="one nfet_03v3, W=2 um, L=0.28 um, nf=1",
+)
+
+DIVIDER_SPEC = CellSpec(
+    key="divider",
+    cell="fb_divider",
+    top_cell="FB_DIVIDER",
+    gen_gds=DIVIDER_DIR / "gen_gds.py",
+    schematic=DIVIDER_DIR / "fb_divider.sch",
+    netlist_dir=DIVIDER_DIR / "netlist",
+    xschem_library_paths=(DIVIDER_DIR,),
+    controls=PASSIVE_CONTROLS,
+    substrate_net="VSS",
+    poly_res="3k",
+    simplify_extracted=False,
+    description=(
+        "18 ppolyf_u_3k units (W=2 um, L=31.8 um) + 2 dummies, "
+        "common-centroid 6 up / 12 down -- layout/floorplan.md §4.1"
+    ),
+    record_notes=_divider_record_note(),
+)
+
+# The registry a real block's layout plugs into -- add an entry here (see the
+# two above for the shape) and drive it with `--cell <key>`.
+CELLS: dict[str, CellSpec] = {
+    TESTCELL_SPEC.key: TESTCELL_SPEC,
+    DIVIDER_SPEC.key: DIVIDER_SPEC,
+}
 
 
 # --------------------------------------------------------------------------
@@ -528,11 +901,24 @@ def run_lvs(
         "scale": "false",
         "schematic_simplify": "false",
         "net_only": "false",
-        "top_lvl_pins": "false",
+        # NOT a stray switch: gf180mcu.lvs derives its own SIMPLIFY as
+        # "net_only, top_lvl_pins, combine, purge and purge_nets are ALL
+        # false" -- i.e. leaving every option off is what *enables*
+        # `netlist.simplify`, which collapses series/parallel device chains
+        # in the extracted netlist (and only there: `schematic.simplify` is
+        # gated separately, and off). For a one-device cell that is
+        # invisible. For a unit-resistor string it is not: it collapses the
+        # 18 drawn units into two lumped resistors, so the compare would
+        # stop being able to tell an 18-unit string from one long strip --
+        # exactly the property DR-0003 asks the divider to have. Turning
+        # `top_lvl_pins` on is what switches SIMPLIFY off, and it is the
+        # option with no other cost here, because creating the top-level
+        # pins is a step `netlist.simplify` was performing anyway.
+        "top_lvl_pins": "false" if spec.simplify_extracted else "true",
         "combine": "false",
         "purge": "false",
         "purge_nets": "false",
-        "poly_res": "1k",
+        "poly_res": spec.poly_res,
         "mim_cap": "2",
         **variant_switches(pdk),
     }
@@ -652,6 +1038,18 @@ def run(args: argparse.Namespace) -> int:
     print(f"[2/7] netlist     : {len(device_lines)} device line(s), LVS form")
     summary["netlist_devices"] = len(device_lines)
 
+    # ---- the evidence contract, checked before anything can report a pass -
+    # Stages 6/7 only mean something if this cell's registered controls can
+    # actually corrupt this cell's netlist. Prove that NOW, so that a cell
+    # whose controls do not apply fails here rather than after stage 5 has
+    # already printed `lvs: MATCH`.
+    check_controls_apply(spec, netlist_text)
+    print(
+        "      controls  : "
+        + ", ".join(f"{c.tag} ({c.what})" for c in spec.controls)
+        + " -- all applicable"
+    )
+
     # ---- 3. klt drc ------------------------------------------------------
     klt_report = run_klt_drc(gds, run_dir / f"{spec.cell}.klt-drc.json")
     klt_ok = klt_report["status"] == "clean"
@@ -701,41 +1099,28 @@ def run(args: argparse.Namespace) -> int:
         failures.append(f"LVS reported a mismatch; see {lvs['lvsdb']}")
 
     # ---- 6/7. LVS negative controls -------------------------------------
-    # NOTE: both mutations below key off the first MOS (`M*`) element line in
-    # the netlist (see _mos_line) -- true of every cell registered in CELLS
-    # today, but a future all-passive cell (e.g. a resistor-only feedback
-    # divider) would need its own mutation pair rather than reusing these
-    # verbatim. Generalizing that is left to whichever increment first
-    # registers such a cell.
-    controls = {
-        "topology": (
-            control_topology,
-            "gate shorted to drain",
-            "a 4-net circuit compared equal to a 3-net one",
-        ),
-        "parameter": (
-            control_parameter,
-            "device width doubled",
-            "device parameters are not being compared at all",
-        ),
-    }
+    # Which mutations these are is a property of `spec`, not of this file:
+    # a MOS cell and an all-passive cell need different corruptions, and
+    # check_controls_apply() above has already proved this cell's pair bites.
     summary["lvs_negative_controls"] = {}
-    for index, (tag, (mutate, what, implication)) in enumerate(controls.items(), 6):
-        bad = run_dir / f"{spec.cell}.control-{tag}.spice"
-        bad.write_text(mutate(netlist_text))
+    for index, control in enumerate(spec.controls, 6):
+        bad = run_dir / f"{spec.cell}.control-{control.tag}.spice"
+        bad.write_text(apply_control(spec, control, netlist_text))
         result = run_lvs(
-            pdk, spec, gds, bad, run_dir, run_dir / f"lvs-control-{tag}.log", f"control-{tag}"
+            pdk, spec, gds, bad, run_dir,
+            run_dir / f"lvs-control-{control.tag}.log", f"control-{control.tag}",
         )
-        summary["lvs_negative_controls"][tag] = {
-            "match": result["match"], "mutation": what,
+        summary["lvs_negative_controls"][control.tag] = {
+            "match": result["match"], "mutation": control.what,
         }
         verdict = "MISMATCH (expected)" if not result["match"] else "MATCH -- WRONG"
-        print(f"[{index}/7] control {tag[:4]}: {what} -> {verdict}")
+        print(f"[{index}/7] control {control.tag[:4]}: {control.what} -> {verdict}")
         if result["match"]:
             failures.append(
-                f"the LVS {tag} negative control ({what}) MATCHED, which means "
-                f"{implication}. The LVS invocation is not actually comparing "
-                "what it appears to compare -- a 'match' from it is worthless."
+                f"the LVS {control.tag} negative control ({control.what}) "
+                f"MATCHED, which means {control.implication}. The LVS "
+                "invocation is not actually comparing what it appears to "
+                "compare -- a 'match' from it is worthless."
             )
 
     print()
@@ -839,6 +1224,8 @@ xschem's `lvs_netlist` form from `{schematic_rel}`.
   honestly"); the PDK deck's {drc['rule_categories']} categories are the number
   worth quoting.
 """
+    if spec.record_notes:
+        body += "\n" + spec.record_notes.rstrip("\n") + "\n"
     if warnings:
         body += "\n## LVS deck notes\n\n"
         for warning in warnings:
