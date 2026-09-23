@@ -950,10 +950,17 @@ C {devices/lab_pin.sym} 980 -1000 0 0 {name=l_mdisss_g sig_type=std_logic lab=SD
 C {devices/lab_pin.sym} 1020 -970 0 0 {name=l_mdisss_s sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 1020 -1000 0 0 {name=l_mdisss_b sig_type=std_logic lab=VSS}
 C {symbols/pfet_03v3.sym} 1200 -1000 0 0 {name=Mtop_ss model=pfet_03v3 L=2u W=1u nf=1 m=1}
-C {devices/lab_pin.sym} 1180 -1000 0 0 {name=l_mtopss_g sig_type=std_logic lab=VREF}
+C {devices/lab_pin.sym} 1180 -1000 0 0 {name=l_mtopss_g sig_type=std_logic lab=VCEIL}
 C {devices/lab_pin.sym} 1220 -970 0 0 {name=l_mtopss_d sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 1220 -1030 0 0 {name=l_mtopss_s sig_type=std_logic lab=SSR}
 C {devices/lab_pin.sym} 1220 -1000 0 0 {name=l_mtopss_b sig_type=std_logic lab=VIN}
+C {symbols/ppolyf_u_3k.sym} 1400 -1000 0 0 {name=Rceil_ss model=ppolyf_u_3k W=1u L=1208u m=1}
+C {devices/lab_pin.sym} 1400 -1030 0 0 {name=l_rceilss_p sig_type=std_logic lab=VCEIL}
+C {devices/lab_pin.sym} 1400 -970 0 0 {name=l_rceilss_m sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 1380 -1000 0 0 {name=l_rceilss_b sig_type=std_logic lab=VSS}
+C {devices/cccs.sym} 1600 -1000 0 0 {name=Fceil_ss vnam=Vbsense_ss value=1.0}
+C {devices/lab_pin.sym} 1600 -1030 0 0 {name=l_fceilss_p sig_type=std_logic lab=VCEIL}
+C {devices/lab_pin.sym} 1600 -970 0 0 {name=l_fceilss_m sig_type=std_logic lab=VSS}
 C {devices/res.sym} 0 -900 0 0 {name=Rgma_ss value=200k footprint=1206 device=resistor m=1}
 C {devices/lab_pin.sym} 0 -930 0 0 {name=l_rgmass_p sig_type=std_logic lab=VIN}
 C {devices/lab_pin.sym} 0 -870 0 0 {name=l_rgmass_m sig_type=std_logic lab=GMSA}

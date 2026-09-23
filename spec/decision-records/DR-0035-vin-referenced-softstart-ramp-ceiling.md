@@ -1,6 +1,8 @@
 # DR-0035: reference the soft-start ramp ceiling to `VIN`, not to `VREF` — the ratified PSRR row closes with 9.6 dB of margin, and the Iq the branches burn after hand-over comes back with it
 
-- **Status**: proposed 2026-09-23 (issue #302 / this pull request) — per the
+- **Status**: ratified 2026-09-23 (PR #323 merged 2026-09-23T21:18:57Z;
+  implemented by the issue #302 implementation pull request). Originally:
+  proposed 2026-09-23 (issue #302 / this pull request) — per the
   2026-08-19 ratification-via-PR policy (2AMLogic/2am#357, the mechanism used
   for DR-0005/PR #137, DR-0006/PR #127, DR-0018/PR #199, DR-0023/PR #217,
   DR-0024/PR #228, DR-0026/PR #258 and DR-0031/PR #305), the operator's review
