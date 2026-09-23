@@ -245,8 +245,11 @@ deck), a single nodeset value tuned to one bias point may still leave some
 grid points on the wrong root, in which case treat that as a genuine open
 problem per `sim/README.md` (see #40) rather than as evidence.
 
-**Compliance-limited load sinks (#46) delete the unphysical root instead of
-biasing the solver away from it.** `nodeset` above is a *hint* — for a
+**Compliance-limited load sinks (#46) delete the *sink-sustained* unphysical
+root instead of biasing the solver away from it.** (That qualifier is load
+bearing and was added by #304 — see "What the bound cannot reach" below for
+the sub-ground states it does *not* delete, and why no choice of knee can.)
+`nodeset` above is a *hint* — for a
 testbench that sweeps load current or PVT supply inside one deck (a
 `.dc`/`.tran` sweep, or several DUT instances sharing one deck), a single
 nodeset tuned to one bias point was found (#40, #46) to still leave a
@@ -294,7 +297,12 @@ Vlmeas NLOAD 0 DC 0
   "the sink is ideal to 1.3e-14" from a claim into a per-corner-checked fact.
   Pair it with a `vout`-range check where the deck has one (`dc_vout_v`,
   `vout_full_v`) so a record asserts *both* that the sink stayed ideal and
-  that the solver landed on the physical root.
+  that the solver landed on the physical root. The two together are also a
+  *discriminator*, not just two checks: a sub-ground `vout` reported
+  alongside the **commanded** load current is the sink-sustained root this
+  section deletes, while a sub-ground `vout` reported alongside **zero**
+  delivered current (`i(vlmeas) = 0`) is a state the sink was never in a
+  position to delete — see immediately below.
 
 Two properties of the fix are worth knowing, both established by hand at
 `tt_27c_3.30v` under #46 and reproducible with `ngspice -b` on a deck under
@@ -317,6 +325,92 @@ Two properties of the fix are worth knowing, both established by hand at
   iteration over one matrix, so a pathological branch drags its deck-mates
   with it — do not assume a sibling measurement is trustworthy just because
   its own sub-circuit looks innocent.
+
+**What the bound cannot reach (#304): a sub-ground `.op` reported with
+`i(vlmeas) = 0` is outside the sink's reach by construction.** Below its
+knee the sink contributes *exactly* zero current and zero conductance —
+`f(VOUT) = 0.5*(1 + tanh((VOUT − 0.2)/0.05))` underflows to `0.0` in IEEE
+double for every `VOUT ≤ −0.7530773732699249 V`, because `tanh` of anything
+past `−19.06` rounds to `−1.0` exactly. The load network is then
+electrically *absent* from
+the DC equations at that node: `Bload` is 0 A, and `Resr`/`Cout` are a DC
+open. Whatever the solver reports down there is a property of the DUT
+netlist plus its supplies alone, and **no reparameterisation of the load can
+delete it**, because the load has no term left in the equations to remove.
+
+The worked case is `sim/psrr-vs-freq` at `fs_125c_3.63v` in record
+`20260923-084323-a6c95f8` — `dc_vout_v = −64.75 V`, `dc_iload_ma = 0`,
+`psrr_1k_db = 0.0013`. Both harness-integrity checks caught it. It
+reproduces only against that record's DUT netlist (`git show
+a6c95f8:design/netlist/ldo_core.spice`, sha `53827e92…`); on the netlist
+committed since, the same corner converges to the physical root. What it is,
+measured rather than assumed:
+
+- **It is not a compliance-tightness problem.** At the reported state the
+  bound is already *maximally* engaged (`f = 0.0` exactly, `i(vlmeas) = 0`).
+  Re-running the corner with `(knee, softness)` of `(0.5, 0.05)`,
+  `(1.0, 0.05)`, `(0.2, 0.01)`, `(0.2, 0.002)`, `(0.5, 0.01)` and
+  `(1.0, 0.2)` all land on the physical root — but so does the strictly
+  **looser** `(0.05, 0.2)`. A bound that "fixes" the corner by being loosened
+  is not the mechanism; it is a perturbation of the solver's path. **Do not
+  tune the knee against a failing corner** — it is coin-flipping, and it
+  leaves the section's guarantee false everywhere else.
+- **It is not a second physical solution either — it is not a solution at
+  all.** Three independent measurements, all on the unmodified deck:
+  1. *Every* element attached to `VOUT` is evaluated as feeding current
+     *into* it at the accepted point (the pass PFET at `Vgs = 1.4e−4 V` and
+     `|Vds| = 68.4 V` — far outside a 3.3 V device's validity — is evaluated
+     at `Id = 959 µA`; the feedback divider adds `72 µA`; `FB`, `ISNS` and
+     `VTH` all sit *above* `VOUT`), while the only element that could absorb
+     any of it is evaluated at exactly `0 A`. A node with strictly positive
+     net injection is not a DC solution.
+  2. The answer is **seed-dependent**: seeding `.nodeset v(vout) = −64.75`
+     converges to `−64.7147`, and re-seeding *that* value converges to
+     `−64.7800` — two "answers" 65 mV apart, which is exactly
+     `reltol × |V| = 1e−3 × 64.75 V`, the slack SPICE's *relative*
+     convergence test allows at a node that far from ground.
+  3. Seeded directly on the state so the solver starts on it, **one decade
+     of `reltol` destroys it**: at `reltol = 1e−3` plain Newton accepts it
+     without even entering the continuation ladder; at `1e−4`, `1e−5`,
+     `1e−6` (and with `abstol = 1e−15 vntol = 1e−9`) the deck cannot
+     converge there at all and returns the physical root.
+
+  So the mechanism is the **DC continuation path**: `Dynamic gmin stepping`
+  — the ladder's *first* rung (see "DC continuation-ladder attribution",
+  #301) — walks out to a deeply sub-ground excursion and is told it has
+  converged by a relative test that is worth ~1 mA of KCL residual out
+  there. Consistent with that, every perturbation of the path alone, with
+  the sink untouched, returns the physical root: `gminsteps=0` (drops
+  straight to source stepping), `gminsteps=20`, `gmin=1e−13`, `reltol=1e−4`,
+  `noopiter`, `.nodeset v(vout)=1.8` — and so does inserting a 0 V ammeter
+  in the DUT's output lead, which is an electrical no-op.
+- **Do not "fix" it with a load-side clamp.** The tempting next step — have
+  the load *source* current below ground, modelling a real load's ESD/body
+  diode — makes things strictly worse, and was measured:
+  `Bclamp 0 VOUT I = '1.0*(−0.5−v(vout))*0.5*(1+tanh((−0.5−v(vout))/0.05))'`
+  makes the deck converge to `VOUT = −0.4994 V` from *every* start including
+  a cold one, seed-independent to seven digits. It replaces a fragile
+  numerical artefact with a robust, genuine unphysical root. The reason is
+  structural: with `VOUT` forced, this DUT sources ~76 mA anywhere below its
+  regulation point (loop saturated, pass device on), so *any* continuous
+  load current that rises from 0 above ground to something large below it
+  must cross 76 mA somewhere below ground — and every crossing is a root.
+  The as-built sink absorbs *nothing* below its knee, so there is no
+  crossing and that whole family stays deleted (seeding `v(vout)` at `−0.2`
+  or `−0.6` returns the physical root).
+
+**The reusable part — how to tell a false convergence from a genuine second
+root.** Re-solve the deck *seeded on the reported state*
+(`.nodeset v(<node>)=<reported value>`) at `reltol = 1e-3` (as-shipped) and
+again at `1e-4`. A genuine root survives both and lands on the same value to
+several digits; a false convergence is accepted only by the looser test and
+evaporates at the tighter one. Seed-sensitivity is the corroborating tell: a
+genuine root is seed-independent to machine precision, a false one moves by
+about `reltol × |V|`. Run it before writing "second physical solution" in a
+record or a decision record — and keep the verdict out of the shipped deck:
+tightening `reltol` deck-wide to suppress one corner is a repo-wide
+numerics change that would move every recorded number, so it belongs in an
+issue of its own, not in a deck fix.
 
 This is a **testbench fix, not a harness-mechanism change** — no new
 manifest field or runner code is needed, it is plain SPICE inside the
