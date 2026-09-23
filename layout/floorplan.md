@@ -36,48 +36,63 @@ claim into a check CI runs.
 | --- | --- | --- |
 | Core area budget | **< 0.1 mm² total core, pass FET included, excluding pads and sealring** | `README.md` Area row (ratified). Note this is *stricter* than #15's original framing of "excluding the pass-FET pad ring" — the pass device counts. |
 | Load / thermal | 50 mA; **92 mW** continuous worst case (3.63 V in, 1.8 V out); **≤ 346 mW** into a sustained short at the 95 mA limit ceiling | `README.md` Thermal row |
-| Dropout | < 300 mV, binding at ss / 125 °C / Vin = 2.10 V; measured **267.383 mV** at the shipped W = 2 mm → **32.6 mV of margin** (caveat below) | `sim/dropout-vs-load/records/20260922-235227-74f117f.md`, the head record — the same 267.383 mV the `20260905-202233-3093ea1` and `20260821-091219-4fcc251` records report, re-measured against the current netlist under #139 |
+| Dropout | < 300 mV, binding at ss / 125 °C / Vin = 2.10 V; measured **193.200 mV** at the shipped W = 2.8 mm → **106.8 mV of margin** (caveat below). The `< 200 mV` stretch column is met too, 27/27 corners | `sim/dropout-vs-load/records/20260923-131752-a992b52.md`, the head record, minted against the widened pass device under #294 / `DR-0034`. It was 267.383 mV / 32.6 mV of margin at the 2 mm device this plan was originally written against |
 | Stability envelope | DR-0018's **narrowed** envelope: 0.1–50 mA, C_eff = 1 µF nominal, **ESR ≥ 200 mΩ** — not DR-0001's wider window | `README.md` Stability row; DR-0018 |
 | Offset budget | Amp pair + mirror **2.33 mV (3σ) input-referred** on **360 µm²** of input-pair area; divider **3.36 mV (3σ)** output-referred; 18 mV one-sided available, used 7.40 mV | `design/error_amp.md` §3 (#9) |
 | Divider mismatch is unsimulable | PDK resistor subcircuits hard-code `mis_r = 0`; the high-sheet `ppolyf_u_*k` cards carry no mismatch term at all | `sim/devchar/CONCLUSIONS.md` §2; `README.md` note 3 |
-| Pass-device width | **Final: W = 2 mm** (N = 40), decided 2026-09-22. Neither wider candidate survived measurement: 2.53 mm does not clear the < 200 mV stretch in closed loop (212.592 mV at ss / 125 °C), devchar's 4 mm breaks DR-0005's ≤ 346 mW Thermal row (346.049 mW), and **any width ≥ ~2.6 mm breaks DR-0018's ratified GM ≥ 10 dB** at 50 mA / 1 µF / 500 mΩ — while the stretch needs ≥ ~2.7 mm | issue #139; `spec/decision-records/DR-0032-pass-device-width-is-capped-by-loop-gain-margin.md`; `sim/devchar/CONCLUSIONS.md` §1 |
+| Pass-device width | **Final: W = 2.8 mm** (N = 40 unit cells of `W=70u nf=1`), decided 2026-09-23. `DR-0033`'s poly re-flavour returned 2.09 dB of loop gain margin, which moved the gain-margin ceiling from `DR-0032`'s ≈ 2.5 mm to between 3.00 mm (630/630) and 3.20 mm (628/630); 2.8 mm clears the < 200 mV dropout stretch 27/27 while leaving 1.21 dB of GM and 3.65° of PM on `DR-0018`'s ratified envelope. devchar's 4 mm is still out, on `DR-0005`'s ≤ 346 mW Thermal row (346.049 mW) | issue #294; `spec/decision-records/DR-0034-the-dropout-stretch-unlocks-on-margin-dr-0033-already-delivered.md`; issue #139 / `DR-0032` (the superseded 2 mm decision); `sim/devchar/CONCLUSIONS.md` §1 |
 | Model binning | `pfet_03v3`/`nfet_03v3` bins are selected on **W/NF**, with W edges 0.22 / 0.5 / 1.2 / 10 / 100.001 µm and L edges 0.28 / 0.5 / 1.2 / 10 / 50.001 µm | DR-0025 (ratified 2026-09-18) |
 | Vth temperature coefficient | **−1.0 mV/°C**, both polarities (−1.044 nFET, −1.078 pFET at L = 0.28 µm, typical corner) | computed from `sim/devchar/fets/results/vth.csv` |
 | Divider resistor TC | **−1293 ppm/°C** (`ppolyf_u_3k`), and it cancels *only* to the extent both legs are at the same temperature | `sim/devchar/CONCLUSIONS.md` §2 |
 | Metal stack | `gf180mcuD` = 5 routing layers. Thickness **0.54 µm** (Metal1–Metal4), **1.19 µm** (Metal5). Sheet resistance min / **nom** / max = 0.076 / **0.090** / 0.104 Ω/sq (M1–M4) and 0.050 / **0.060** / 0.070 Ω/sq (M5). Via1–Via4 0.0 / **4.5** / 15.0 Ω per cut. Contact 5.2 Ω (p+). | `libs.ref/gf180mcu_fd_sc_mcu{7,9}t5v0/techlef/*.tlef`; `libs.tech/magic/gf180mcuD.tech` `resist`/`contact` (agrees at nom) |
 | EM current density | **DC AVERAGE 0.67 mA/µm** of drawn width (Metal1–Metal4), **1.5 mA/µm** (Metal5), **0.18 mA per cut** (Via1–Via4) — unit convention derived in §8.1, not assumed. **No limit published for the `CON` contact layer**: 129 µA/cut placeholder per DR-0030 (§8.3) | `libs.ref/*/techlef/*.tlef` `DCCURRENTDENSITY`; DR-0030 (proposed) |
 
-**#139 has since closed at W = 2 mm (N = 40), and this document did not have to
-move to absorb it.** It was written to hold at any of the three candidate
-widths — §3 defines the array as *N identical unit cells* and every EM, IR,
-thermal and area number below is still given at all of them — so the decision
-simply selects the 2 mm column of each table and leaves the plan itself intact.
-The wider columns are kept rather than deleted: they are the measured cost of a
-future widening, and `DR-0032` records that a widening only becomes available
-once the loop can afford ~1.9 dB more gain margin at 50 mA / 1 µF / 500 mΩ.
+**#139 closed at W = 2 mm (N = 40); #294 / `DR-0034` re-opened and closed it
+again at W = 2.8 mm (still N = 40, on a 70 µm unit cell), and this document
+still did not have to move to absorb it.** It was written to hold at any
+candidate width — §3 defines the array as *N identical unit cells* and every
+EM, IR, thermal and area number below is given at more than one of them — so
+the decision selects a column rather than rewriting the plan. The ~1.9 dB of
+gain margin `DR-0032` said a widening was waiting on arrived with `DR-0033`'s
+poly-resistor re-flavour, which is why the decision moved; the measured
+ceiling is now between 3.00 mm and 3.20 mm rather than ≈ 2.5 mm.
 
-**Caveat on the 32.6 mV dropout margin that §3.4's IR budget is carved out of.**
-`sim/CHARACTERIZATION.md` marks the Dropout row **PASS / fresh** as of #139's
-re-run against the current netlist (it read PASS / STALE while the head record
-predated the soft-start work), but that PASS is *conditional on DR-0020* — the
-regulation-knee measurement definition, which is `Status: proposed`, not
+**Every per-width number in §3.3–§3.6 below is stated at 2.00 mm and 4.00 mm,
+and every one of them improves monotonically with width** — EM current density
+per µm, array IR (the via seas scale with array area), and thermal spreading
+resistance all fall as the device widens. The 2.00 mm columns are therefore a
+**conservative bound** on the shipped 2.8 mm device, not a description of it;
+where a sentence below reads "the shipped 2 mm device" it is naming the
+worst-case column, and the margin it quotes is the one the plan is designed
+against. The one number that moved the *other* way is `DR-0005`'s Thermal
+margin, which is not a layout term: 0.785 mW at 2 mm, 0.414 mW at 2.8 mm
+(`DR-0034`).
+
+**Caveat on the dropout margin that §3.4's IR budget is carved out of.**
+`sim/CHARACTERIZATION.md` marks the Dropout row **PASS / fresh** as of #294's
+re-run against the current netlist, but that PASS is *conditional on DR-0020* —
+the regulation-knee measurement definition, which is `Status: proposed`, not
 ratified. If DR-0020 is rejected the row reverts to FAIL on the superseded
 fixed-headroom metric and there is no positive margin to spend at all. §3.4
-therefore treats 32.6 mV as the **best case** and spends only 12 % of it at
-nominal metal (25 % at the max-metal corner); the same 80 mΩ budget is what
-this plan would ask for regardless, so the conclusion does not move with
-DR-0020 — but the *stated margin ratio* does, and this document should not be
-cited as independent evidence that the dropout row passes.
+therefore treats the measured margin as the **best case** and spends only 4 %
+of it at nominal metal (7 % at the max-metal corner, against 12 % / 25 % of the
+32.6 mV the 2 mm device had); the same 80 mΩ budget is what this plan would ask
+for regardless, so the conclusion does not move with DR-0020 — but the *stated
+margin ratio* does, and this document should not be cited as independent
+evidence that the dropout row passes.
 
 ---
 
 ## 2. Summary of the commitments
 
-1. **Pass array is N unit cells of `pfet_03v3 L=0.28u W=50u nf=1`**, `N = W_total / 50`.
-   #139 / `DR-0032` settled `W_total` at **2 mm, i.e. N = 40**. Any future
-   re-sizing is a change to N alone — no geometry, no model bin, no
-   metal-strategy change (§3.1) — but it is gated on loop gain margin, not on
-   anything in this document (`DR-0032`).
+1. **Pass array is N unit cells of `pfet_03v3 L=0.28u W=70u nf=1`**,
+   `N = W_total / 70`. #294 / `DR-0034` settled `W_total` at **2.8 mm, i.e.
+   N = 40** (#139 / `DR-0032` had settled 2 mm on a 50 µm unit; the unit width
+   grew with the array so that N, and with it the exact 1/40 `Msense` replica
+   of item 2, did not have to change). Any future re-sizing is a change to N
+   or to the unit width — no model bin, no metal-strategy change (§3.1) — but
+   it is gated on loop gain margin, not on anything in this document
+   (`DR-0034`).
 2. **`Xilimit`'s `Msense` is M of the *same* unit cell**, placed inside the
    array, with M chosen so `N/M = 40`. That makes the replica ratio exact by
    construction instead of by two independently maintained W values (§3.2).
@@ -593,39 +608,45 @@ divider                  0      1622      7992        9615
 error_amp             1530      6872      2717       11119
 ldo_ilimit             401      1510       614        2524
 ldo_softstart          197     15522      3273       18993
-pass_array            1725         0         0        1725
+pass_array            2395         0         0        2395
 ----------------------------------------------------------
-device footprint                                     43976
+device footprint                                     44646
 
 kind               footprint   packing    occupied
 --------------------------------------------------
 fet_small               2129      0.35        6082
-fet_pass                1725      0.70        2464
+fet_pass                2395      0.70        3422
 res                    25526      0.75       34034
 mim                    14596      0.90       16218
 --------------------------------------------------
-occupied                                     58798
+occupied                                     59756
 MIM stacked                                  -9731  (60% of MIM)
-subtotal                                     49067
-routing x1.15                                 7360
+subtotal                                     50025
+routing x1.15                                 7504
 ==================================================
-CORE ESTIMATE                                56428  um^2 = 0.0564 mm^2
-                                              56.4  % of the 0.1 mm^2 budget
-                                              43.6  % margin
+CORE ESTIMATE                                57529  um^2 = 0.0575 mm^2
+                                              57.5  % of the 0.1 mm^2 budget
+                                              42.5  % margin
 ```
 
-**Across #139's three candidates** (`--pass-width 2000 | 2530 | 4000`):
+**Across the candidate widths** (`--pass-width 2000 | 2530 | 2800 | 4000`; the
+what-if widths override `Mpass` only, so each row carries the shipped 70 µm
+`Msense`, worth ~43 µm² of the difference against the historical rows):
 
 | pass-device width | pass array occupied | core estimate | margin |
 | --- | --- | --- | --- |
-| **2.00 mm (shipped — decided, `DR-0032`)** | **2 464 µm²** | **0.0564 mm²** | **43.6 %** |
-| 2.53 mm (stretch) | 3 070 µm² | **0.0571 mm²** | **42.9 %** |
-| 4.00 mm (devchar) | 4 750 µm² | **0.0591 mm²** | **40.9 %** |
+| 2.00 mm (was shipped, `DR-0032`) | 2 507 µm² | **0.0565 mm²** | **43.5 %** |
+| 2.53 mm (devchar's "200 mV" row) | 3 114 µm² | **0.0572 mm²** | **42.8 %** |
+| **2.80 mm (shipped — decided, `DR-0034`)** | **3 422 µm²** | **0.0575 mm²** | **42.5 %** |
+| 4.00 mm (devchar) | 4 794 µm² | **0.0591 mm²** | **40.9 %** |
 
 **The budget closes at every candidate.** Doubling the pass device from 2 mm to
-4 mm costs **2 286 µm², 2.3 % of the area budget** — it moves the margin from
-43.6 % to 40.9 %. `test_estimate_fits_the_budget_at_every_issue_139_candidate`
-keeps this true as the design changes.
+4 mm costs **2 287 µm², 2.3 % of the area budget** — it moves the margin from
+43.5 % to 40.9 %, and the decided 2.8 mm spends 1.0 % of the budget against the
+2 mm column. `test_estimate_fits_the_budget_at_every_issue_139_candidate` keeps
+this true as the design changes. **Area was never the binding coupling on this
+width, and it still is not** — `DR-0034` decided 2.8 mm on gain margin and
+dropout.
 
 > **Issue #279 / DR-0033 (2026-09-22) — where this table moved, and why.** The
 > figures above are **after** `error_amp`'s `Rz`, `Rbufb` and `Rza` were

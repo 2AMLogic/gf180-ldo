@@ -146,16 +146,21 @@ over the < 0.1 mm^2 core area budget. See the evidence record for the full
 worst-corner table and the follow-up issue this hands to the next
 compensation iteration.
 
-Pass device Mpass: pfet_03v3, L=0.28u (model minimum), W=2000u (2 mm),
-nf=40, m=1. This is a SIMPLIFICATION of the full ~4 mm / 40-unit-cell
-sizing the ratified spec calls for (needed to clear 300 mV dropout @
-50 mA at the worst corner) -- 2 mm is the guidance's stated acceptable
-size for THIS issue's DC-sanity loop-closure test only, at effectively no
-load beyond the feedback divider's ~6 uA. The full sizing (and the
-unit-cell partitioning a layout needs for matching) is layout-phase work,
-out of scope here. NOTE (issue #11): Xilimit's Msense is a 1/40 replica of
-Mpass at equal L and equal per-finger width, so re-sizing Mpass without
-re-scaling Msense moves the current limit by the same factor.
+Pass device Mpass: pfet_03v3, L=0.28u (model minimum), W=2800u (2.8 mm),
+nf=40, m=1 -- i.e. N = 40 unit cells of W=70u nf=1. The width is DECIDED,
+not a placeholder: issue #294 / DR-0034 settled it at 2.8 mm after the
+poly-resistor re-flavour of DR-0033 returned 2.09 dB of loop gain margin
+(DR-0018's 630-point envelope moved from 12.08 dB to 14.17 dB worst-case
+GM), which is what DR-0032 had measured the < 200 mV dropout stretch to be
+short of. At 2.8 mm the stretch clears 27/27 corners (193.200 mV worst,
+ss/125 C) while DR-0018's envelope stays 630/630 with 1.21 dB of GM and
+3.65 deg of PM to spare. Issue #8's original 2 mm was a DC-sanity
+simplification of sim/devchar's ~4 mm device-level sizing; 4 mm is still
+ruled out, by DR-0005's ratified <= 346 mW Thermal row (DR-0032). NOTE
+(issue #11): Xilimit's Msense is a 1/40 replica of Mpass at equal L and
+equal per-finger width, so re-sizing Mpass without re-scaling Msense moves
+the current limit by the same factor -- Msense moved 50u -> 70u with this
+change, holding the ratio exact.
 
 Current limit (issue #11): Xilimit (design/ldo_ilimit.sch) adds the
 constant-current (brickwall) clamp the ratified spec's Current-limit row
@@ -185,7 +190,7 @@ C {devices/iopin.sym} -700 300 0 0 {name=p_vss lab=VSS}
 C {devices/opin.sym} -100 -700 0 0 {name=p_erramp_out lab=ERRAMP_OUT}
 C {devices/ipin.sym} 100 -700 0 0 {name=p_pass_gate lab=PASS_GATE}
 C {devices/ipin.sym} -700 500 0 0 {name=p_vref lab=VREF}
-C {symbols/pfet_03v3.sym} 300 -100 0 0 {name=Mpass model=pfet_03v3 L=0.28u W=2000u nf=40 m=1}
+C {symbols/pfet_03v3.sym} 300 -100 0 0 {name=Mpass model=pfet_03v3 L=0.28u W=2800u nf=40 m=1}
 C {devices/lab_pin.sym} 280 -100 0 0 {name=l_mpass_g sig_type=std_logic lab=PASS_GATE}
 C {devices/lab_pin.sym} 320 -70 0 0 {name=l_mpass_d sig_type=std_logic lab=VOUT}
 C {devices/lab_pin.sym} 320 -130 0 0 {name=l_mpass_s sig_type=std_logic lab=VIN}

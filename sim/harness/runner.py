@@ -23,8 +23,9 @@ DEFAULT_TIMEOUT_S = 300
 #
 # gf180mcu's `pfet_03v3`/`nfet_03v3` cards are binned on (L, W) and the widest
 # declared bin stops at `wmax = 100.001 um`. `design/netlist/ldo_core.spice`'s
-# pass device is `W=2000u nf=40` -- 40 fingers of 50 um each -- so it lands in
-# a declared bin (`pfet_03v3.12`) only if bin selection divides W by NF.
+# pass device is `W=2800u nf=40` -- 40 fingers of 70 um each (it was 40 of
+# 50 um before issue #294 / DR-0034 widened it) -- so it lands in a declared
+# bin (`pfet_03v3.12`) only if bin selection divides W by NF.
 #
 # Whether ngspice does that is neither a netlist nor a PDK property: it is
 # ngspice's own `wnflag`, which is 1 only under HSPICE/Spectre compatibility

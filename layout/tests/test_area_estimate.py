@@ -52,8 +52,9 @@ class GeometryModelTests(unittest.TestCase):
         devices = ae.collect()
         passfet = next(d for d in devices if d.name == "XMpass")
         self.assertEqual(passfet.block, "pass_array")
-        # As shipped: W = 2000 um over nf = 40 -> 50 um per finger.
-        self.assertLessEqual(2000.0 / 40, ae.DF_MAX_W)
+        # As shipped since #294 / DR-0034: W = 2800 um over nf = 40 -> 70 um
+        # per finger (it was 2000 um / 50 um per finger before that).
+        self.assertLessEqual(2800.0 / 40, ae.DF_MAX_W)
 
     def test_resistor_ladder_pitch_uses_pres2(self):
         # A 1 um x 100 um segment: one segment, heads at both ends, PRES.2
