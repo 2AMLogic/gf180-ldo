@@ -521,6 +521,13 @@ components:
   **Measured ceiling on `Rz`**: 6 MΩ passes 0.1–50 mA everywhere; 7 MΩ already
   loses corners at 1–50 mA (the heavy-load crossover climbs past the buffer
   and BG poles); 9 MΩ loses them all.
+  **§6.14 supersedes this reading (issue #279, 2026-09-22).** The number was
+  taken on the pre-`Mrza` topology against DR-0001's full, wider matrix, and
+  §6.13 has since made `Rz` "nearly free at the amplifier level". Re-measured
+  on the current committed design across DR-0018's ratified envelope, 7.00 MΩ
+  reads **630/630 at 54.86°** of worst-corner phase margin — the frontier is a
+  slope of ≈ −1.1°/+10 % of `Rz`, not the cliff this sentence describes. Do
+  not carry this bullet forward as a live constraint; see §6.14.
 - `gm(MIN)/Cc` **is** the amplifier's 1 kHz gain, i.e. §4's PSRR budget.
   **Measured ceiling on `Cc`**: 4.80 pF gives worst-corner `psrr_ldo_1k_db`
   = 50.0 dB against the ratified 50 dB floor; 7.4 pF measures 46.3 dB, a hard
@@ -548,13 +555,13 @@ proposed spec change are
 Two parameters are now on a frontier and therefore layout-sensitive, and both
 need to be constraints in the floorplan rather than discoveries in extraction:
 
-- `Rz` is a 6 MΩ `ppolyf_u_1k` serpentine sitting directly in the compensation
-  path; its distributed capacitance to substrate is not a parasitic to absorb
-  later. Its **process** spread is also not covered by present evidence —
-  `sim/loop-stability/`'s corner axis varies the MOS sections only and holds
-  `res_*` typical, while the measured frontier is steep in `Rz` (6 MΩ passes,
-  7 MΩ does not). A resistor-corner axis on that matrix is a required
-  follow-up.
+- `Rz` is a 6.17 MΩ `ppolyf_u_3k` ladder (`ppolyf_u_1k` until issue #279 /
+  DR-0031) sitting directly in the compensation path; its distributed
+  capacitance to substrate is not a parasitic to absorb later. Its **process**
+  spread **is** covered now — issue #54 added `res_ff`/`res_ss` to
+  `sim/loop-stability/`'s corner axis, which is why this paragraph's original
+  "required follow-up" is discharged, and §6.14 re-measures the frontier the
+  original sentence called steep (at 7.00 MΩ it is 630/630, not a failure).
 - `Cc` at 4.80 pF has ≈ 0 dB of PSRR margin, so any parasitic capacitance
   added to the `NZ`/`OUT` net comes straight off the ratified PSRR row.
 - **(§6.13, issue #51)** `Mrza` is a 12 µm/9 µm pfet whose **gate area is a
@@ -563,7 +570,8 @@ need to be constraints in the floorplan rather than discoveries in extraction:
   amplifier bench bar in *both* directions from it (too small → `peak_excess_db`
   positive, too large → `gain_1k_db` under the PSRR budget line). Its n-well
   must be tied to `N1`, its own source, not to `VDD` — the body effect would
-  move the load current at which it turns on. `Rza` is 600 kΩ of `ppolyf_u_1k`
+  move the load current at which it turns on. `Rza` is 600 kΩ of
+  `ppolyf_u_3k` (`ppolyf_u_1k` until #279/DR-0031)
   in the same compensation path as `Rz` and inherits the same note; it is the
   device that sets `Rz_eff`'s heavy-load floor, so a layout that lands it high
   gives back the 1–50 mA columns and one that lands it low re-opens the
@@ -1169,7 +1177,7 @@ A 24× `Rz` range against a 500× load range, i.e. `Rz ∝ I_load^−1/2`.
 | device | value | what it is |
 |---|---|---|
 | `Mrza` | `pfet_03v3` 12 µm/9 µm, S = `N1`, D = `NRZA`, B = `N1`, G = `BG` | triode replica in parallel with `Rz` |
-| `Rza` | `ppolyf_u_1k` 1 µm × 600 µm (600 kΩ), `NRZA` → `NZ` | series floor that flattens the law |
+| `Rza` | `ppolyf_u_3k` 1 µm × 197.09 µm (617 kΩ; `ppolyf_u_1k` 1 µm × 600 µm until #279/DR-0031, same resistance), `NRZA` → `NZ` | series floor that flattens the law |
 
 - **It is a resistor and nothing else.** The `Rz`/`Cc` branch carries no DC
   current (measured: `V(N1) = V(NZ) = 2.551086 V` to every printed digit), so
@@ -1301,6 +1309,81 @@ current). Then re-cut §4's PSRR budget against the closed-loop measurement.
 Only then narrow DR-0001's box, at the 0.33 µF end of the cap window and at no
 load, which is a product decision and not a Builder's.
 
+### 6.14 The resistor flavours: `Rz`/`Rza`/`Rbufb` go dense, `Rbias` cannot (issue #279, DR-0031)
+
+`layout/floorplan.md` §6 measured this cell's four poly resistors at **23 990
+µm² of occupied area — 24 % of the ratified `< 0.1 mm²` core budget**, and
+`sim/devchar/CONCLUSIONS.md` §2 offers `ppolyf_u_3k` at 3.04× the sheet for the
+same drawn width. #279 asked whether to take it. The answer is **yes for three
+of the four**, and the one that cannot move is not the one the issue expected.
+
+**The cost of the swap, measured rather than quoted.** §2 of `CONCLUSIONS.md`
+quotes a *process* spread (40 % ff→ss for `1k`/`2k`, 50 % for `3k`). What the
+loop actually sees is the full corner × temperature product, because
+`sim/loop-stability/` sweeps both. Normalised to each flavour's own
+`res_typical`/27 °C value (measured this session against the committed models):
+
+| flavour | min (res_ff/125 °C) | max (res_ss/−40 °C) | span |
+|---|---|---|---|
+| `ppolyf_u_1k` | 0.7464 | 1.2884 | 1.726× |
+| `ppolyf_u_2k` | 0.6987 | 1.3537 | 1.938× |
+| `ppolyf_u_3k` | 0.6550 | 1.4101 | 2.153× |
+
+Note that `ppolyf_u_2k` is **not** "today's spread at twice the density": its
+process spread matches `1k` at ±20 %, but its temperature coefficient is
+`3k`'s (−1293 ppm/°C against −694), so its total span is 1.938×.
+
+**The `Rz` ceiling in §6.4 is stale.** Re-measured across DR-0018's ratified
+envelope (630 points, full 63-point PVT grid), `Rz` scaled alone, everything
+else as committed:
+
+| `Rz` (res_typical/27 °C) | points passing | worst PM |
+|---|---|---|
+| 6.17 MΩ (as committed) | 630/630 | 55.75° |
+| 6.50 MΩ (+5.3 %) | 630/630 | 55.39° |
+| 7.00 MΩ (+13.4 %) | **630/630** | **54.86°** |
+
+§6.4's "7 MΩ already loses corners" does not reproduce. The slope is ≈ −1.1°
+of phase margin per +10 % of `Rz`, against a 10.75° cushion.
+
+**What binds instead is Iq, and only through `Rbias`.** Of the four, only
+`Rbias` sits in a branch carrying DC current — it *is* the master bias
+reference, `I ≈ (VDD − Vgs(MB1))/Rbias`. The other three do not:
+
+- `Rz` and `Rza` are in the Miller branch, which §6.13 measures as carrying no
+  DC current at all (`V(N1) = V(NZ)` to every printed digit — the same fact
+  that puts `Mrza` at `Vds = 0`);
+- `Rbufb` feeds `Mbufb`'s **gate**, a DC open, so it sets only the
+  `1/(2π·Rbufb·Cgg)` isolation pole and no current.
+
+So the amp's `iq_ua`, and the closed-loop `iq_en_ua`/`iq_full_ua`, are
+**bit-identical to the committed baseline** when `Rz`, `Rza` and `Rbufb` move —
+and move by +1.97 µA at `ff_125c_3.63v` when `Rbias` does, breaking the
+amplifier's own 15 µA allocation (16.95 µA) *and* the ratified `Iq < 30 µA`
+row (30.68 µA). `ppolyf_u_2k` on `Rbias` costs +0.97 µA and breaks the
+amp-level bar alone. Full table and the rejected alternatives: DR-0031.
+
+**What the taken swap costs and buys**, at the worst corner of each grid:
+
+| | `1k` (before) | `Rz`+`Rza`+`Rbufb` → `3k` (now) |
+|---|---|---|
+| `loop-stability`, DR-0018 envelope (630 pts) | 630/630, worst PM 55.75° | 630/630, worst PM 55.58° |
+| `amp-openloop` `peak_excess_db` ≤ 1 dB (DR-0008) | 0.408 | **0.141** |
+| `amp-openloop` `gain_1k_db` ≥ 53.5 dB | 53.774 | 53.776 |
+| `amp-openloop` `iq_ua` ≤ 15 µA | 14.978 | 14.978 |
+| `psrr-dc` `psrr_ldo_1k_db` ≥ 50 dB | 50.252 | 50.254 |
+| `quiescent-current` `iq_full_ua` ≤ 30 µA | 28.710 | 28.710 |
+| core area estimate | 0.0735 mm² | **0.0564 mm²** |
+
+The one number that moves materially is `peak_excess_db`, and it moves the
+right way — 2.9× more margin on DR-0008's precondition, which §6.13 records as
+the bar that pins `Rza` at 600 kΩ. `Rbufb`'s flavour is the term responsible —
+`Rz`+`Rza` alone read +0.281 dB, and adding `Rbufb` takes it to +0.141 dB. The
+mechanism is not established here beyond "`Rbufb` sets the buffer's gate
+isolation pole and that pole is in the local loop"; the improvement is
+recorded as measured, not claimed as designed, and nothing in this design
+leans on it.
+
 ## 7. Handoffs
 
 | Issue | What to take |
@@ -1314,20 +1397,28 @@ load, which is a product decision and not a Builder's.
 ## 8. Area
 
 Rough active area, for the < 0.1 mm² core row (excludes routing and the pass
-device):
+device). **Updated for issue #279 / DR-0031's flavour swap** — the
+`ppolyf_u_1k` column is what this table read before it, kept so the delta is
+visible rather than quietly overwritten. `layout/area_estimate.py` is the
+authoritative, re-derivable version of this table; the drawn areas below are
+the hand figure it refines.
 
-| Item | Area |
-|---|---|
-| `Rbias` (1 µm × 1000 µm, `ppolyf_u_1k`) | 1000 µm² |
-| `Cc` (49 µm × 49 µm MIM, 4.80 pF) | 2401 µm² |
-| `Rz` (1 µm × 6000 µm, `ppolyf_u_1k`, 6 MΩ) | ≈ 6000 µm² |
-| `Rbufb` (1 µm × 5000 µm, `ppolyf_u_1k`, 5 MΩ) | ≈ 5000 µm² |
-| Transistor gate area (all 13 devices) | ≈ 1990 µm² |
-| **Total** | **≈ 16 400 µm² ≈ 0.0164 mm²** — 16 % of the core budget |
+| Item | Drawn area (was) | Drawn area (now) |
+|---|---|---|
+| `Rbias` (1 µm × 1000 µm, `ppolyf_u_1k`) | 1000 µm² | 1000 µm² (unchanged — DR-0031) |
+| `Cc` (49 µm × 49 µm MIM, 4.80 pF) | 2401 µm² | 2401 µm² |
+| `Rz` (6.17 MΩ) | ≈ 6000 µm² (`1k`, 1 µm × 6000 µm) | **≈ 1971 µm²** (`3k`, 1 µm × 1970.88 µm) |
+| `Rbufb` (5.14 MΩ) | ≈ 5000 µm² (`1k`, 1 µm × 5000 µm) | **≈ 1642 µm²** (`3k`, 1 µm × 1642.40 µm) |
+| `Rza` (0.62 MΩ, §6.13) | ≈ 600 µm² (`1k`, 1 µm × 600 µm) | **≈ 197 µm²** (`3k`, 1 µm × 197.09 µm) |
+| `Mrza` gate (12 µm × 9 µm, §6.13) | 108 µm² | 108 µm² |
+| Transistor gate area (all 13 devices) | ≈ 1990 µm² | ≈ 1990 µm² |
+| **Total** | **≈ 17 100 µm²** — 17 % of the core budget | **≈ 9310 µm²** — 9.3 % of the core budget |
 
-**#51 §6.13 adds two items**, both small: `Rza` (1 µm × 600 µm `ppolyf_u_1k`)
-≈ 600 µm², and `Mrza` (12 µm × 9 µm) 108 µm² of gate — ≈ 700 µm² together,
-taking the total to ≈ 17 100 µm² (≈ 17 % of the core budget). `Mrza`'s
+Every swapped instance holds its `res_typical`/27 °C resistance to within
+0.01 %; only the corner spread changes, and §6.14 measures what that costs.
+
+**#51 §6.13 added two items**, both small: `Rza` and `Mrza` (12 µm × 9 µm,
+108 µm² of gate), together the last two rows above. `Mrza`'s
 gate area is a *compensation* value, not a layout convenience: it is the
 adaptive `Cf` of §6.13, and §6.13's own table shows the design failing a
 bench bar in both directions from it. It must be laid out to its drawn
@@ -1340,13 +1431,17 @@ and `Mbuf` (150 → 30 µm²) give up ≈ 660 µm² of gate area between them, a
 ≈ 2.4 µm² added by `MTAIL`. Nothing in the cell grew. `Cc`, `Rz`, `Rbias` and
 `Rbufb` — the four items that dominate the total — are untouched.
 
-#51 moved `Rz` from `ppolyf_u` to `ppolyf_u_1k`. At 6 MΩ the `ppolyf_u`
-flavour (369 Ω/sq, 2.69 µm² per square) would be ≈ 43 700 µm² — 44 % of the
-whole core-area row for one resistor — against ≈ 6000 µm² for `ppolyf_u_1k`.
-The cost of the swap is `ppolyf_u`'s much better temperature coefficient
-(−27.9 ppm/°C, 1.24 % total spread, `sim/devchar/CONCLUSIONS.md` §2), but
-temperature **is** swept in `sim/loop-stability/`'s matrix, so whatever
-tempco `ppolyf_u_1k` has is measured rather than assumed. Process spread on
-poly sheet resistance is **not** covered — see the note in §6 and in DR-0007's
-Consequences: the loop-stability corner axis holds the `res_*` sections
-typical, and `Rz` is now a first-order compensation parameter.
+#51 moved `Rz` from `ppolyf_u` to `ppolyf_u_1k`, and #279/DR-0031 has since
+moved it again to `ppolyf_u_3k`. At 6.17 MΩ the original `ppolyf_u` flavour
+(369 Ω/sq, 2.69 µm² per square) would be ≈ 43 700 µm² — 44 % of the whole
+core-area row for one resistor — against ≈ 6000 µm² for `ppolyf_u_1k` and
+≈ 1971 µm² for `ppolyf_u_3k`. The cost each time is corner spread:
+`ppolyf_u`'s excellent temperature coefficient (−27.9 ppm/°C, 1.24 % total
+spread, `sim/devchar/CONCLUSIONS.md` §2) against `ppolyf_u_1k`'s
+−694 ppm/°C and `ppolyf_u_3k`'s −1293 ppm/°C plus a ±25 % rather than ±20 %
+process corner. **Both temperature *and* the `res_ff`/`res_ss` process corners
+are now swept** — issue #54 added the two `res_*` process corners to
+`sim/loop-stability/`'s axis precisely because `Rz` is a first-order
+compensation parameter, so the note this paragraph used to carry (that process
+spread on poly sheet was uncovered) no longer applies. §6.14 is the
+measurement of what the `ppolyf_u_3k` spread costs; DR-0031 is the decision.
