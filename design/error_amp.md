@@ -1367,7 +1367,7 @@ amp-level bar alone. Full table and the rejected alternatives: DR-0033.
 
 | | `1k` (before) | `Rz`+`Rza`+`Rbufb` → `3k` (now) |
 |---|---|---|
-| `loop-stability`, DR-0018 envelope (630 pts) | 630/630, worst PM 55.75° | 630/630, worst PM 55.58° |
+| `loop-stability`, DR-0018 envelope (630 pts) | 630/630, worst PM 55.75° | 630/630, worst PM 55.45° (`sim/loop-stability/records/20260923-000113-a406143.md`) |
 | `amp-openloop` `peak_excess_db` ≤ 1 dB (DR-0008) | 0.408 | **0.141** |
 | `amp-openloop` `gain_1k_db` ≥ 53.5 dB | 53.774 | 53.776 |
 | `amp-openloop` `iq_ua` ≤ 15 µA | 14.978 | 14.978 |
