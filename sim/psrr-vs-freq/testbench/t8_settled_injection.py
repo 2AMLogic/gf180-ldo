@@ -22,11 +22,13 @@ HOW (DR-0031 section 2.2's instrument, made a committed driver)
 A 0 V ammeter (`Vt8_inj`) is inserted in series with `Mgmc_ss`'s drain lead --
 the element's single point of contact with FB -- in a copy of the COMMITTED
 `design/netlist/ldo_core.spice`, written next to the raw logs so the run is
-auditable. An ideal 0 V source is a short at DC and in AC, so the operating
-point and every transfer are identical to the unmodified netlist's; the
-driver re-measures psrr_1k_db in the same deck and prints it, and a reader can
-diff it against the sibling harness record of the same bench to confirm that
-(to the printed digit).
+auditable. An ideal 0 V source is a short at DC and in AC, so the circuit is
+electrically the unmodified netlist's; the driver re-measures psrr_1k_db in the
+same deck and prints it, so a reader can diff it against the sibling harness
+record of the same bench. Measured for issue #302 over both 45-point grids:
+agreement to <= 1.9 mdB at every corner, and to the printed digit at the
+binding corners -- the residue is the extra matrix row moving the DC
+continuation path's last digits, not a circuit difference.
 
 Everything else is the named harness bench, UNMODIFIED: its stimulus fragment
 (`tb_psrr.spice` / `tb_psrr_50ma.spice`), its PVT grid, its manifest options

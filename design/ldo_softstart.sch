@@ -102,9 +102,10 @@ through the pass device's dead zone, which is the ~230 us acquisition lag
 #43 measured, could not shrink further, and could only damp (Rz_ss).
 
 The rectification is what makes hand-over clean: SSR finishes ABOVE VREF
-(Mtop_ss's ceiling, measured 1.53-2.16 V), so a source-only injection is
-hard off after hand-over and contributes exactly zero DC error to the +/-2 %
-output-accuracy budget. It does not need a comparator, a switch or a timer to
+(Mtop_ss's ceiling, measured 2.23-3.23 V since #302/DR-0035 -- a fixed
+~0.39-0.74 V below VIN; 1.53-2.16 V, VREF-referenced, before that), so a
+source-only injection is hard off after hand-over and contributes exactly
+zero DC error to the +/-2 % output-accuracy budget. It does not need a comparator, a switch or a timer to
 disengage: it disengages because its own argument goes through zero.
 
 WHAT #189 HAD TO ADD, AND WHY (the enable edge is not free)
@@ -216,19 +217,54 @@ HOW THE RAMP IS GENERATED
   is between Vtn and ~Vtn-0.2 V, Mdis_ss is still shunting a few percent of
   the ramp current.
 
-  Mtop_ss is the ramp's ceiling: a PMOS with its gate on VREF and its source
-  on SSR, so it starts sinking the ramp current once SSR is about a Vsg above
-  VREF and holds SSR there. Below VREF it is a cutoff device with picoamps in
-  it, so it does not bend the part of the ramp that matters. The ceiling only
-  has to be ABOVE VREF (so the injection stays hard-rectified after
-  handover) and BELOW VIN_min (so nothing floats), and it is between those
-  two by a wide margin at every corner.
+  Mtop_ss is the ramp's ceiling: a PMOS with its gate on VCEIL and its
+  source on SSR, so it starts sinking the ramp current once SSR is about a
+  Vsg above VCEIL and holds SSR there. Below VREF it is a cutoff device with
+  picoamps in it, so it does not bend the part of the ramp that matters.
+
+  VCEIL IS VIN-REFERENCED (#302, spec/decision-records/DR-0035). Rceil_ss
+  (ppolyf_u_3k, 1208 squares) hangs from VIN and Fceil_ss pulls the SAME
+  Iref_ss that Rss_bias sets (a 1:1 tap off Vbsense_ss) through it, so
+
+      V(VCEIL) = VIN - Iref_ss * Rceil_ss = VIN - VREF * (Rceil_ss/Rss_bias)
+               = VIN - 1.2 V * 1.208      = VIN - 1.4496 V
+
+  -- a RESISTOR RATIO times VREF, not an absolute: measured 1.44944-1.44952 V
+  over all 45 PVT corners (sim/psrr-vs-freq/corners/20260923-215111-
+  397894a0-t8/t8.csv). Until #302 the gate sat on VREF itself. That
+  ceiling was ground-referenced, so the forward bias it left standing across
+  the mirror's reference stack at settled, VIN - V(SSR) - |Vsg|, grew
+  one-for-one with VIN on a weak-inversion stack whose current is
+  exponential in it: 17.6 nA of residual into FB (inside T1) with a
+  109.9 nA/V supply slope, which Rtop turns into 33 mV/V at VOUT -- the
+  ratified PSRR row failed by 20.6 dB at ff_125c_3.63v (DR-0031). With the
+  ceiling referenced to VIN that forward bias no longer contains VIN, and
+  the slope is 0.0328 nA/V worst-case (T8, <= 10.5 nA/V; see
+  design/softstart_injection_compensation.md section 3).
+
+  The ceiling has to stay ABOVE VREF at every corner (DR-0023's rectification
+  event is V(SSR) crossing VREF) and BELOW VIN (so Mtop_ss can clamp at all
+  and nothing is left to a leakage balance). Measured settled: V(SSR) >=
+  2.2275 V (1.03 V above VREF, at ff_125c_2.97v) and VIN - V(SSR) >= 0.3949 V
+  (at ss_-40c_3.63v). DR-0035 section 3 swept Rceil_ss from 800 to 2200 um:
+  the row holds from ~800 to ~1800 um and fails at 2200 um (the ceiling at
+  VIN_min falls back toward VREF), so 1208 um is a point near the middle of
+  a -34 %/+49 % window, not a tuned value. Mtop_ss's gate is >= 1.52 V (at
+  VIN_min), so it cannot conduct until V(SSR) is ~1 V ABOVE the hand-over
+  point: below hand-over this change is electrically inert in this device.
+
+  Rceil_ss and Rss_bias are a RATIO PAIR and must stay the same flavour: a
+  flavour change to one (e.g. issue #292's candidate move of Rss_bias to
+  ppolyf_u_1k) must move the other with it, or VCEIL's offset picks up the
+  two flavours' sheet-resistance corner spread.
 
 ENABLE / SHUTDOWN
 
   Minv_p/Minv_n: the local EN -> ENB inverter, the same two-device idiom
   error_amp and ldo_ilimit each carry their own copy of.
-  Mben_ss (gate EN): opens the bias branch -- Iref_ss and the ramp go to 0.
+  Mben_ss (gate EN): opens the bias branch -- Iref_ss and the ramp go to 0,
+  and with them Fceil_ss's tap, so VCEIL rests at VIN (no current in
+  Rceil_ss) and Mtop_ss sits in cutoff.
   Mdis_ss (gate SD): resets SSR to 0 (SD is high whenever ENB is).
   Mpre_b_ss (gate ENB): opens the FB pre-charge path.
   Mgme_ss (gate EN): breaks the injection transconductor's ground return, so
@@ -622,9 +658,17 @@ DESTABILIZED THE HOLD-RELEASE TRANSIENT AT MOST OF THE PVT MATRIX
 
 WHAT IS IDEALIZED HERE
 
-  Fss_ramp: an ideal CCCS standing in for a large-ratio mirror off a bias
-  generator this repo has not designed. It is now the ONLY idealization left
-  in this cell's injection path.
+  Fss_ramp and Fceil_ss: ideal CCCSs off the SAME Vbsense_ss ammeter,
+  standing in for mirror legs off a bias generator this repo has not
+  designed (the same idealization ldo_ilimit's Fbias carries). Fss_ramp
+  (k_ss = 0.0060) charges the ramp; Fceil_ss (1:1, added by #302/DR-0035)
+  sets VCEIL's offset below VIN. Until #302 Fss_ramp was the ONLY
+  idealization in this cell's injection path; it no longer is. Fceil_ss's
+  idealization is bounded rather than open: DR-0035 section 4 shunted VCEIL
+  to AC ground through a finite output resistance (DC-preserving) and the
+  worst psrr_1k_db moved 0.076 dB from infinity down to 3 Mohm, against
+  9.6 dB of margin -- a single pfet_03v3 mirror leg at ~0.4 uA is well above
+  3 Mohm, so building it as a real leg is not expected to move the result.
 
   THE INJECTION ITSELF IS NO LONGER IDEALIZED (#246). #189's behavioural
   source
@@ -725,6 +769,14 @@ SIZING AS BUILT
 
   Rss_bias  ppolyf_u_3k, 1000 squares  ~3.1 Mohm  -> Iref_ss ~ 0.39 uA
   k_ss      0.0060                                -> I_ramp  ~ 2.3 nA
+  Rceil_ss  ppolyf_u_3k, 1208 squares  ~3.7 Mohm  VIN -> VCEIL (#302/DR-0035)
+  Fceil_ss  1.0 x Iref_ss                         -> VIN - V(VCEIL) = VREF x
+            1.208 = 1.4496 V nominal, 1.44944-1.44952 V measured over PVT.
+            Same flavour as Rss_bias ON PURPOSE (the ratio is the design
+            quantity -- see HOW THE RAMP IS GENERATED). Adds ~Iref_ss
+            (~0.4 uA) of standing current VIN -> VSS while enabled and
+            ~1208 um2 of drawn poly.
+  Mtop_ss   pfet 1 um / 2 um, gate VCEIL (was VREF until #302)
   Css       60 um x 12 um cap_mim_2f0             ~1.44 pF  (issue #212,
             DR-0024: was 60 um x 60 um / ~7.2 pF -- a 5x area cut, I_ramp
             and every other element on this bias branch UNCHANGED, so the
