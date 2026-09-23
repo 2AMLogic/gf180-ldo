@@ -430,6 +430,36 @@ Exit codes: `0` pass · `1` a check failed · `2` a simulation failed or did not
 converge · `3` environment problem (no ngspice, no PDK, bad manifest,
 unjustified PVT subset).
 
+### DC solve path attribution (#301)
+
+Every corner is also attributed to the rung of ngspice's DC continuation
+ladder its operating-point solve landed on — `direct` (the first-guess
+Newton pass converged), `dynamic-gmin`, `true-gmin`, `source-stepping`, or
+the last-resort `pseudo-transient`. It shows up in three places:
+
+- the live progress line, as `[dc:<rung>]` on every corner;
+- a `dc path` column in the record's per-corner Result table, suffixed
+  `(xN)` when one log held several solves (a `dc` sweep runs one per swept
+  point);
+- a **DC solve path** census under the spread table, and a machine-readable
+  `record["dc_paths"]` / per-point `record["points"][i]["dc_path"]`.
+
+This asserts nothing and changes no deck. Its job is to make "the solver
+moved" attributable rather than silent: issue #301 measured
+`sim/quiescent-current`'s verdict flipping between two DUT netlists that are
+electrically identical on that bench to six significant figures, purely
+because one marginal corner changed rung. See `sim/README.md` → "A verdict
+can move without the circuit moving" for how to read it (and for why tuning
+a deck's `.nodeset` against a rung is the wrong response).
+
+`runner.classify_dc_path(text)` is the whole mechanism and takes one
+argument: a corner's combined ngspice stdout+stderr. `run_point()` — the
+generic grid path every manifest-driven bench uses, `quiescent-current`
+included — calls it automatically. A sweep testbench with its own driver
+(`sim/loop-stability`, `sim/soft-start-loop-gain`) can adopt it by calling
+`classify_dc_path()` on the text `run_ngspice_deck()` already returns; there
+is nothing bench-specific to port, and no such bench has been migrated yet.
+
 Generated decks land in `sim/.work/<experiment-slug>/<record-id>/` and are
 git-ignored, so a failing corner can be reproduced by hand with
 `ngspice -b sim/.work/<slug>/<record-id>/<corner-id>.spice`.
