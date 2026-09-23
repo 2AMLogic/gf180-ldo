@@ -191,7 +191,7 @@ def main() -> int:
     cpath = logdir / "t8.csv"
     cols = list(measure)
     with cpath.open("w", newline="") as fh:
-        w = csv.writer(fh)
+        w = csv.writer(fh, lineterminator="\n")
         w.writerow(["corner_id", "status", *cols, "T8", "T1_settled"])
         for cid, status, m in rows:
             t8 = m.get("t8_na_per_v")
