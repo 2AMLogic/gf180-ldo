@@ -12,9 +12,10 @@ data extracted from the PDK models, decision records, a reproducible PVT
 corner-running simulation harness, four xschem schematics covering the full
 LDO hierarchy (core, error amplifier, current limit, soft start) with
 corner-swept simulation evidence behind them, and a DRC/LVS-clean physical
-verification flow proven end to end on a one-transistor test cell (see
-[`layout/README.md`](layout/README.md)) — but no layout of the LDO block
-itself yet, and no silicon. Read every number here as a simulation result
+verification flow proven end to end on a one-transistor test cell and on the
+first real block cell, the feedback divider (see
+[`layout/README.md`](layout/README.md)) — but no layout of the LDO block as a
+whole yet, and no silicon. Read every number here as a simulation result
 against an open PDK's models, with the corner and testbench that produced it
 recorded alongside it.
 
@@ -329,23 +330,28 @@ corner definitions and how to write a testbench.
 
 ## Physical verification (DRC / LVS)
 
-The DRC/LVS flow is up, on a one-transistor test cell — **there is no LDO
-layout yet**. It needs KLayout and `klt` on top of the simulation tools:
+The DRC/LVS flow is up, on a one-transistor test cell and on the feedback
+divider — **there is no top-level LDO layout yet**. It needs KLayout and `klt`
+on top of the simulation tools:
 
 ```bash
 python3 layout/drclvs.py --check-env   # are klayout / klt / xschem / the PDK visible?
 python3 layout/drclvs.py               # DRC (two decks) + LVS + negative controls
+python3 layout/drclvs.py --cell divider  # ... the same, on the feedback divider
 ```
 
 See [`layout/README.md`](layout/README.md) for what each stage establishes, what
 "DRC clean" does and does not mean here, and the tool caveats worth knowing
 before believing a result.
 
-What *does* exist ahead of the layout is the plan for it:
+What *does* exist ahead of the rest of the layout is the plan for it:
 [`layout/floorplan.md`](layout/floorplan.md) fixes the pass-array segmentation
-and 50 mA metal strategy, the common-centroid matching plan (including the
-divider, whose mismatch this PDK's models cannot simulate at all — note 3), the
-Kelvin-sense scheme, and the core-area estimate against the Area row.
+and 50 mA metal strategy, the common-centroid matching plan, the
+Kelvin-sense scheme, and the core-area estimate against the Area row. Its §4.1
+is no longer only a plan: the feedback divider — whose mismatch this PDK's
+models cannot simulate at all (note 3), making the drawn common centroid the
+only mitigation available — is drawn and LVS-verified against that section's
+own numbers.
 
 ```bash
 python3 layout/area_estimate.py        # core-area estimate from design/netlist/
@@ -358,7 +364,7 @@ This block's proposal for Open Circuit Design's Chipalooza Challenge #5
 [`docs/chipalooza/challenge-5-proposal.md`](docs/chipalooza/challenge-5-proposal.md) —
 block type, I/O mapped to the slot budget, functional description, a target
 spec table re-derived from `sim/`, and a bench test plan, all stated honestly
-against this repository's current maturity (no GDS yet).
+against this repository's current maturity (no top-level GDS yet).
 
 ## License
 
