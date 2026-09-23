@@ -462,7 +462,7 @@ class TestStabilityRowUsesEnvelopeVerdict(unittest.TestCase):
         stability_section = report.split("### Stability")[1].split("###")[0]
         self.assertIn("DR-0018", stability_section)
         self.assertIn("630/630", stability_section)
-        self.assertIn("2939/4536", stability_section)
+        self.assertIn("2974/4536", stability_section)
 
 
 if __name__ == "__main__":
