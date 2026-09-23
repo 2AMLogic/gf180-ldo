@@ -848,7 +848,8 @@ def render_record(record: dict, experiment: str) -> str:
     lines += [
         f"- Model binning: deck pins `.options {MODEL_BINNING_OPTION}`"
         " -- gf180mcu bins on the per-finger width W/NF, and the pass device"
-        " (`W=2000u nf=40`) resolves to a declared bin only with it; without it"
+        " (`W=2800u nf=40`, i.e. 70 um per finger) resolves to a declared bin"
+        " only with it; without it"
         " ngspice hard-errors rather than clamping, so a record either carries"
         " this setting or does not exist (issue #214,"
         " spec/decision-records/DR-0025)",

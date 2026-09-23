@@ -462,7 +462,11 @@ class TestStabilityRowUsesEnvelopeVerdict(unittest.TestCase):
         stability_section = report.split("### Stability")[1].split("###")[0]
         self.assertIn("DR-0018", stability_section)
         self.assertIn("630/630", stability_section)
-        self.assertIn("2974/4536", stability_section)
+        # Tracks whichever loop-stability record is currently head, so it moves
+        # with the design: 2974/4536 at the 2 mm pass device, 2790/4536 since
+        # issue #294 / DR-0034 widened it to 2.8 mm (the wider DR-0001 window
+        # is outside DR-0018's ratified envelope and is not graded here).
+        self.assertIn("2790/4536", stability_section)
 
 
 if __name__ == "__main__":

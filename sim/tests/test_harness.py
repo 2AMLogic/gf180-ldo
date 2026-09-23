@@ -350,7 +350,7 @@ class DeckTests(unittest.TestCase):
     def test_deck_pins_model_bin_selection(self):
         """#214 / DR-0025: bin selection must not be a host property.
 
-        gf180mcu bins on the per-finger width; the pass device (`W=2000u
+        gf180mcu bins on the per-finger width; the pass device (`W=2800u
         nf=40`) resolves to a declared bin only when ngspice divides W by NF,
         which is `wnflag`, which is off by default. Without the card in the
         deck the setting comes from whichever host's `~/.spiceinit` is in
