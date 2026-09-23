@@ -344,7 +344,7 @@ The worked case is `sim/psrr-vs-freq` at `fs_125c_3.63v` in record
 reproduces only against that record's DUT netlist; on the netlist committed
 since (DR-0033's resistor flavours, DR-0034's pass-device resize), the same
 corner converges to the physical root — record
-`20260923-232958-2b4849d` has it at `dc_vout_v = 1.7991 V`,
+`20260923-233113-1a8fcf7` has it at `dc_vout_v = 1.7991 V`,
 `dc_iload_ma = 1`. To reproduce the failing state:
 
 ```bash
@@ -398,9 +398,18 @@ What it is, measured rather than assumed:
   the load *source* current below ground, modelling a real load's ESD/body
   diode — makes things strictly worse, and was measured:
   `Bclamp 0 VOUT I = '1.0*(−0.5−v(vout))*0.5*(1+tanh((−0.5−v(vout))/0.05))'`
-  makes the deck converge to `VOUT = −0.4994 V` from *every* start including
-  a cold one, seed-independent to seven digits. It replaces a fragile
-  numerical artefact with a robust, genuine unphysical root. The reason is
+  makes the deck converge to `VOUT = −0.4994 V` **from a cold start**
+  (measured at the same `fs_125c_3.63v` on the `a6c95f8` DUT netlist), and
+  it is robust there in a way the state above is not: the whole
+  continuation ladder fails out at it (dynamic gmin → true gmin → source
+  stepping) instead of escaping, and every sub-ground seed probed
+  (`−0.2`, `−0.6`, `−64.75`) lands on the same value to eight digits
+  (`−0.49938898 V`) rather than drifting by `reltol × |V|`. What it does
+  *not* do is remove the physical root — it adds a **second** one that an
+  unbiased start falls into: with the clamp installed,
+  `.nodeset v(vout)=1.8` still returns `dc_vout_v = 1.7991029 V`,
+  `dc_iload_ma = 1`. So the clamp trades a fragile numerical artefact for a
+  robust, genuine unphysical root, and buys nothing. The reason is
   structural: with `VOUT` forced, this DUT sources ~76 mA anywhere below its
   regulation point (loop saturated, pass device on), so *any* continuous
   load current that rises from 0 above ground to something large below it
