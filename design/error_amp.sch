@@ -74,7 +74,7 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      mirrors to MTAIL (1:1) and M2N (5:3). No start-up
                      circuit is needed: unlike a beta-multiplier this
                      topology has no zero-current degenerate state.
-                     FLAVOUR (issue #279 / DR-0031): Rbias is the ONLY poly
+                     FLAVOUR (issue #279 / DR-0033): Rbias is the ONLY poly
                      resistor in this cell that carries DC current -- it IS
                      Iref -- so it keeps the narrow-spread ppolyf_u_1k
                      (+-20% process, -694 ppm/degC). Rz, Rza and Rbufb sit

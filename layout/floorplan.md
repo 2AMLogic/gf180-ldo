@@ -95,10 +95,10 @@ cited as independent evidence that the dropout row passes.
 6. **Core estimate 0.0564 mm² at the decided 2 mm width — 43.6 % margin**
    (0.0564 – 0.0591 mm² across #139's full candidate range, i.e. 40.9 % margin
    at the widest of them) (§6). Was 0.0735 – 0.0761 mm² / 23.9 % before
-   `DR-0031` redrew `error_amp`'s `Rz`/`Rbufb`/`Rza` in `ppolyf_u_3k`.
+   `DR-0033` redrew `error_amp`'s `Rz`/`Rbufb`/`Rza` in `ppolyf_u_3k`.
 7. **Dominant area term is the poly-resistor field, not the pass device.** The
    pass array is 2.5–4.8 kµm²; the resistors are 34 kµm² (§6, was 49 kµm²
-   before `DR-0031`). This contradicted #139's stated premise that "the pass
+   before `DR-0033`). This contradicted #139's stated premise that "the pass
    device is the single largest contributor" to the area budget, and it is why
    #139 was able to decide its width on dropout, gain-margin and thermal
    grounds with no area veto — the binding constraint turned out to be gain
@@ -627,7 +627,7 @@ CORE ESTIMATE                                56428  um^2 = 0.0564 mm^2
 43.6 % to 40.9 %. `test_estimate_fits_the_budget_at_every_issue_139_candidate`
 keeps this true as the design changes.
 
-> **Issue #279 / DR-0031 (2026-09-22) — where this table moved, and why.** The
+> **Issue #279 / DR-0033 (2026-09-22) — where this table moved, and why.** The
 > figures above are **after** `error_amp`'s `Rz`, `Rbufb` and `Rza` were
 > redrawn in `ppolyf_u_3k` at unchanged nominal resistance. Before that change
 > the core estimate read **73 480 µm² (0.0735 mm², 26.5 % margin)** with
@@ -638,7 +638,7 @@ keeps this true as the design changes.
 > `ff_125c_3.63v`, breaking the ratified `Iq < 30 µA` row. The full
 > evidence — including a fresh re-measurement of the `Rz` ceiling this
 > document previously cited from `error_amp.md` §6.4 — is in
-> [`DR-0031`](../spec/decision-records/DR-0031-poly-resistor-flavour-is-set-by-dc-current-not-by-area.md).
+> [`DR-0033`](../spec/decision-records/DR-0033-poly-resistor-flavour-is-set-by-dc-current-not-by-area.md).
 
 ### What actually consumes the area
 
@@ -653,12 +653,12 @@ keeps this true as the design changes.
 | 7 | `Rdiv` — the planned 18-unit divider string | 2 163 µm² | 2.2 % |
 | 8 | `Rbias` — 1.03 MΩ, the design's only remaining `ppolyf_u_1k` device | 1 904 µm² | 1.9 % |
 
-**This contradicts #139's premise, by more than before `DR-0031`.** #139's
+**This contradicts #139's premise, by more than before `DR-0033`.** #139's
 coupling #3 states that "the pass device is the single largest contributor" to
 the `< 0.1 mm²` budget. It is not: at the *widest* candidate it is 4.6 % of the
 budget and third on the list (2.3 % and sixth at the 2 mm width #139 settled
 on — 1618 µm² drawn, 2 311 µm² occupied). The poly-resistor field is **34 % of
-the budget** (down from 49 % before `DR-0031`'s flavour swap) and the MIM
+the budget** (down from 49 % before `DR-0033`'s flavour swap) and the MIM
 capacitors are another **16 %**. #139 duly decided its width on dropout,
 current-limit-replica, gain-margin and thermal grounds; the area coupling it
 listed is real but an order of magnitude smaller than it assumed, and it never
@@ -674,7 +674,7 @@ Two consequences for whoever draws this:
   10 000 µm² single-plate ceiling; `test_no_single_mim_plate_exceeds_mim8b`
   watches that edge.
 - **The `error_amp` resistor-flavour lever has now been pulled** (issue #279,
-  [`DR-0031`](../spec/decision-records/DR-0031-poly-resistor-flavour-is-set-by-dc-current-not-by-area.md)),
+  [`DR-0033`](../spec/decision-records/DR-0033-poly-resistor-flavour-is-set-by-dc-current-not-by-area.md)),
   and three quarters of it was free. `Rz`, `Rbufb` and `Rza` are redrawn in
   `ppolyf_u_3k` at unchanged nominal resistance, recovering **17 052 µm²,
   17.1 % of the budget**; `Rbias` stays `ppolyf_u_1k` because it is the only
@@ -747,7 +747,7 @@ Why the zones sit where they do:
 | **P** — pass array | Hard against the pad edge, nothing between it and the VIN/VOUT landings; long axis parallel to the pad edge so the 50 µm exit edge faces the bus | §3.4 — 1.80 mV of dropout per square of M4‖M5 bus |
 | **A** — amp core | Opposite edge from P. Centroid ~195 µm from P's centroid, comfortably past the 150 µm rule | §4's gradient table |
 | **D** — divider | Beside A, also ≥ 150 µm from P; short `FB` route to A's `INP`; `VOUT_S` arrives as its own trunk from the south-east corner | §4.1, §5 |
-| **R** — resistor field | The middle band, because it is 34 % of the area (49 % before DR-0031), is thermally insensitive (both legs of any ratio are inside it), and is the only block big enough to host the MIM plates above it | §6 |
+| **R** — resistor field | The middle band, because it is 34 % of the area (49 % before DR-0033), is thermally insensitive (both legs of any ratio are inside it), and is the only block big enough to host the MIM plates above it | §6 |
 | **I**, **S** | Tucked into the resistor field's lower corners, near the nets they serve (`I` near the pass array for `Msense`/`ISNS`; `S` near `FB`) | routing length |
 | MIM plates | On M2/M3 over **R**, never over **A**, **D**, or the `VOUT_S`/`FB` routes | MIM.10 + the shielding rule below |
 
@@ -1009,7 +1009,7 @@ manual check to run against the first real GDS.
   `ppolyf_u_3k` would recover ~16 % of the area budget but changes the corner
   spread on a steep stability frontier; needed a loop-stability re-run, so it
   was a separate issue, not a layout choice. **Resolved, partly taken**:
-  [`DR-0031`](../spec/decision-records/DR-0031-poly-resistor-flavour-is-set-by-dc-current-not-by-area.md)
+  [`DR-0033`](../spec/decision-records/DR-0033-poly-resistor-flavour-is-set-by-dc-current-not-by-area.md)
   swaps `Rz`, `Rbufb` and `Rza` (**17 052 µm², 17.1 % of the budget**) and
   rejects `Rbias`, whose wider corner spread breaks the ratified `Iq < 30 µA`
   row. The "steep stability frontier" premise was re-measured and did not

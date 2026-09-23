@@ -556,7 +556,7 @@ Two parameters are now on a frontier and therefore layout-sensitive, and both
 need to be constraints in the floorplan rather than discoveries in extraction:
 
 - `Rz` is a 6.17 MΩ `ppolyf_u_3k` ladder (`ppolyf_u_1k` until issue #279 /
-  DR-0031) sitting directly in the compensation path; its distributed
+  DR-0033) sitting directly in the compensation path; its distributed
   capacitance to substrate is not a parasitic to absorb later. Its **process**
   spread **is** covered now — issue #54 added `res_ff`/`res_ss` to
   `sim/loop-stability/`'s corner axis, which is why this paragraph's original
@@ -571,7 +571,7 @@ need to be constraints in the floorplan rather than discoveries in extraction:
   positive, too large → `gain_1k_db` under the PSRR budget line). Its n-well
   must be tied to `N1`, its own source, not to `VDD` — the body effect would
   move the load current at which it turns on. `Rza` is 600 kΩ of
-  `ppolyf_u_3k` (`ppolyf_u_1k` until #279/DR-0031)
+  `ppolyf_u_3k` (`ppolyf_u_1k` until #279/DR-0033)
   in the same compensation path as `Rz` and inherits the same note; it is the
   device that sets `Rz_eff`'s heavy-load floor, so a layout that lands it high
   gives back the 1–50 mA columns and one that lands it low re-opens the
@@ -1177,7 +1177,7 @@ A 24× `Rz` range against a 500× load range, i.e. `Rz ∝ I_load^−1/2`.
 | device | value | what it is |
 |---|---|---|
 | `Mrza` | `pfet_03v3` 12 µm/9 µm, S = `N1`, D = `NRZA`, B = `N1`, G = `BG` | triode replica in parallel with `Rz` |
-| `Rza` | `ppolyf_u_3k` 1 µm × 197.09 µm (617 kΩ; `ppolyf_u_1k` 1 µm × 600 µm until #279/DR-0031, same resistance), `NRZA` → `NZ` | series floor that flattens the law |
+| `Rza` | `ppolyf_u_3k` 1 µm × 197.09 µm (617 kΩ; `ppolyf_u_1k` 1 µm × 600 µm until #279/DR-0033, same resistance), `NRZA` → `NZ` | series floor that flattens the law |
 
 - **It is a resistor and nothing else.** The `Rz`/`Cc` branch carries no DC
   current (measured: `V(N1) = V(NZ) = 2.551086 V` to every printed digit), so
@@ -1309,7 +1309,7 @@ current). Then re-cut §4's PSRR budget against the closed-loop measurement.
 Only then narrow DR-0001's box, at the 0.33 µF end of the cap window and at no
 load, which is a product decision and not a Builder's.
 
-### 6.14 The resistor flavours: `Rz`/`Rza`/`Rbufb` go dense, `Rbias` cannot (issue #279, DR-0031)
+### 6.14 The resistor flavours: `Rz`/`Rza`/`Rbufb` go dense, `Rbias` cannot (issue #279, DR-0033)
 
 `layout/floorplan.md` §6 measured this cell's four poly resistors at **23 990
 µm² of occupied area — 24 % of the ratified `< 0.1 mm²` core budget**, and
@@ -1361,7 +1361,7 @@ So the amp's `iq_ua`, and the closed-loop `iq_en_ua`/`iq_full_ua`, are
 and move by +1.97 µA at `ff_125c_3.63v` when `Rbias` does, breaking the
 amplifier's own 15 µA allocation (16.95 µA) *and* the ratified `Iq < 30 µA`
 row (30.68 µA). `ppolyf_u_2k` on `Rbias` costs +0.97 µA and breaks the
-amp-level bar alone. Full table and the rejected alternatives: DR-0031.
+amp-level bar alone. Full table and the rejected alternatives: DR-0033.
 
 **What the taken swap costs and buys**, at the worst corner of each grid:
 
@@ -1397,7 +1397,7 @@ leans on it.
 ## 8. Area
 
 Rough active area, for the < 0.1 mm² core row (excludes routing and the pass
-device). **Updated for issue #279 / DR-0031's flavour swap** — the
+device). **Updated for issue #279 / DR-0033's flavour swap** — the
 `ppolyf_u_1k` column is what this table read before it, kept so the delta is
 visible rather than quietly overwritten. `layout/area_estimate.py` is the
 authoritative, re-derivable version of this table; the drawn areas below are
@@ -1405,7 +1405,7 @@ the hand figure it refines.
 
 | Item | Drawn area (was) | Drawn area (now) |
 |---|---|---|
-| `Rbias` (1 µm × 1000 µm, `ppolyf_u_1k`) | 1000 µm² | 1000 µm² (unchanged — DR-0031) |
+| `Rbias` (1 µm × 1000 µm, `ppolyf_u_1k`) | 1000 µm² | 1000 µm² (unchanged — DR-0033) |
 | `Cc` (49 µm × 49 µm MIM, 4.80 pF) | 2401 µm² | 2401 µm² |
 | `Rz` (6.17 MΩ) | ≈ 6000 µm² (`1k`, 1 µm × 6000 µm) | **≈ 1971 µm²** (`3k`, 1 µm × 1970.88 µm) |
 | `Rbufb` (5.14 MΩ) | ≈ 5000 µm² (`1k`, 1 µm × 5000 µm) | **≈ 1642 µm²** (`3k`, 1 µm × 1642.40 µm) |
@@ -1431,7 +1431,7 @@ and `Mbuf` (150 → 30 µm²) give up ≈ 660 µm² of gate area between them, a
 ≈ 2.4 µm² added by `MTAIL`. Nothing in the cell grew. `Cc`, `Rz`, `Rbias` and
 `Rbufb` — the four items that dominate the total — are untouched.
 
-#51 moved `Rz` from `ppolyf_u` to `ppolyf_u_1k`, and #279/DR-0031 has since
+#51 moved `Rz` from `ppolyf_u` to `ppolyf_u_1k`, and #279/DR-0033 has since
 moved it again to `ppolyf_u_3k`. At 6.17 MΩ the original `ppolyf_u` flavour
 (369 Ω/sq, 2.69 µm² per square) would be ≈ 43 700 µm² — 44 % of the whole
 core-area row for one resistor — against ≈ 6000 µm² for `ppolyf_u_1k` and
@@ -1444,4 +1444,4 @@ are now swept** — issue #54 added the two `res_*` process corners to
 `sim/loop-stability/`'s axis precisely because `Rz` is a first-order
 compensation parameter, so the note this paragraph used to carry (that process
 spread on poly sheet was uncovered) no longer applies. §6.14 is the
-measurement of what the `ppolyf_u_3k` spread costs; DR-0031 is the decision.
+measurement of what the `ppolyf_u_3k` spread costs; DR-0033 is the decision.

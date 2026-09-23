@@ -1,4 +1,4 @@
-# DR-0031: A poly resistor's flavour is chosen by whether it carries DC current, not by its area — `Rbias` stays `ppolyf_u_1k`, the rest of `error_amp`'s field goes to `ppolyf_u_3k`
+# DR-0033: A poly resistor's flavour is chosen by whether it carries DC current, not by its area — `Rbias` stays `ppolyf_u_1k`, the rest of `error_amp`'s field goes to `ppolyf_u_3k`
 
 - **Status**: proposed (issue #279 / this pull request). **This record
   proposes no change to any ratified `README.md` row.** Every ratified bar it
