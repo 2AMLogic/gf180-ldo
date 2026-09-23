@@ -39,6 +39,33 @@ out to be the wrong thing to worry about**:
   made `Rz` "nearly free at the amplifier level", and DR-0018 has since
   narrowed what is claimed. The frontier today is a slope of roughly **−1.1°
   of phase margin per +10 % of `Rz`** against a 10.75° cushion, not a cliff.
+
+  **Where the cliff actually is.** The rungs above stop at 7 MΩ because that is
+  the number §6.4 names; the ladder was continued far past it, holding the
+  `ppolyf_u_1k` flavour and scaling only `Rz`'s drawn length, over the
+  240-point binding-corner subset of the same envelope (`res_ss`/`ss`/`tt`/`res_ff`
+  × −40/125 °C × 3 supplies × 5 loads × 2 ESR — which contains every worst
+  point the full 630-point envelope reports):
+
+  | `Rz` nominal | points failing | worst PM | | `Rz` nominal | points failing | worst PM |
+  |---|---|---|---|---|---|---|
+  | 6 MΩ (shipped) | 0/240 | 55.75° | | 10.5 MΩ | 0/240 | 51.53° |
+  | 7 MΩ | 0/240 | 54.66° | | 12 MΩ | 0/240 | 50.35° |
+  | 8 MΩ | 0/240 | 53.69° | | 15 MΩ | 0/240 | 48.13° |
+  | 9 MΩ | 0/240 | 52.78° | | **18 MΩ** | **6/240** | **46.02°** |
+
+  8 MΩ was also confirmed on the full 630-point envelope: **630/630**, worst
+  PM 53.68°, worst GM 11.60 dB. Phase margin falls ≈ 5.4° per *doubling* of
+  `Rz` and the first failures appear only at **3× the shipped value**. So the
+  quantity this decision has to be affordable inside is not 17 % of headroom
+  but roughly **150 %**, against a flavour change that moves worst-corner `Rz`
+  from 1.288× to 1.410× of nominal — **9.5 %**. This is what makes the swap a
+  cheap option rather than a close call, and it is why §6.4's sentence must not
+  be cited as a live bound again.
+
+  *(This ladder is a second, independent measurement of the same frontier, run
+  on a different host in a parallel session of this issue and merged in here;
+  it agrees with the three rungs above to the printed digit at 6 MΩ.)*
 - **The corner spread is affordable where it only sets a frequency.** Swapping
   all four to `ppolyf_u_3k` at unchanged nominal resistance moves the worst
   in-envelope phase margin by **−0.17°** (55.75° → 55.58°, 630/630 both ways)
@@ -204,6 +231,25 @@ Three things this table settles:
   and `ldo_core.spice` both change, so every `sim/` record's freshness stamp
   moves. This pull request re-runs and re-records `loop-stability` (full
   4536-point matrix), `amp-openloop`, `psrr-dc`, `amp-selfosc`,
-  `quiescent-current` and `psrr-vs-freq`, and regenerates
-  `sim/CHARACTERIZATION.md`. The remaining rows were already STALE against the
-  pre-existing head and are not made worse by this change.
+  `quiescent-current`, `psrr-vs-freq`, `psrr-vs-freq-50ma` and
+  `dropout-vs-load`, and regenerates `sim/CHARACTERIZATION.md`. The remaining
+  rows were already STALE against the pre-existing head and are not made worse
+  by this change — **except `current-limit`**, whose record is hand-written
+  rather than harness-generated and is therefore not re-minted here, so the
+  ratified **Current limit** and **Thermal** rows go fresh → STALE. Both were
+  re-run and reproduce **bit-identically** (onset at `Vout` = 1.764 V
+  62.0097 … 93.8256 mA, `pshort_mw` 345.215 mW at `ff_125c_3.63v`), so the loss
+  is bookkeeping, not a measurement change. Net over the 12 testable rows:
+  **5 fresh / 7 stale → 3 fresh / 9 stale**.
+- **The PSRR row's verdict does not move, and is not this record's.** Main's
+  `DR-0031` (PR #305, merged while this branch was in flight) minted a FAIL
+  pair against the *pre-swap* netlist and bisected the cause to the soft-start
+  injection element's settled residual. Those two records carry the newest
+  record-ids the report generator sees, so they are superseded here by a pair
+  re-run on the post-swap netlist — same FAIL, same three corners, marginally
+  better at every one of the 45. Nothing in this record claims to fix it; the
+  gap stays tracked as issue #302.
+- **This record was drafted as `DR-0031` and renumbered to `DR-0033`.** PR #305
+  took `DR-0031` on `main` at 2026-09-23T09:02Z. Issue #292 — filed out of an
+  earlier draft of this record — still cites the old number by URL, and should
+  be re-pointed at this one when it is next touched.
