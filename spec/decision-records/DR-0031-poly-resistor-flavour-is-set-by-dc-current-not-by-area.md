@@ -188,6 +188,18 @@ Three things this table settles:
   stale** and is annotated as such in this pull request, with the fresh
   measurement beside it. It is not deleted — §6.4 is a record of what was
   measured when it was measured.
+- **The rule is not currently applied uniformly, and that is a lead, not just
+  an inconsistency.** Two other blocks set a bias current through a
+  `ppolyf_u_3k` resistor: `ldo_ilimit`'s `Rbias` (1 µm × 360 µm, 1.13 MΩ) and
+  `ldo_softstart`'s `Rss_bias` (1 µm × 1000 µm, 3.13 MΩ). By this record's
+  criterion both should be `ppolyf_u_1k`. Nothing is broken today — the
+  ratified Iq row passes at 28.71 µA — but converting them would *buy back* Iq
+  headroom at the fast/hot corner for ≈ 6 kµm², which the newly-recovered 43.6 %
+  of area margin can now afford. That matters because **DR-0019 records the
+  amplifier's `iq_ua` allocation as the thing foreclosing the buffer-bandwidth
+  lever that would close DR-0001's remaining 0.33 µF gap**. This record does
+  **not** make that change — it is a different block, a different verification
+  chain, and an unmeasured hypothesis — but it is filed as **issue #292**.
 - **Everything with a netlist hash in it must be re-run.** `error_amp.spice`
   and `ldo_core.spice` both change, so every `sim/` record's freshness stamp
   moves. This pull request re-runs and re-records `loop-stability` (full
