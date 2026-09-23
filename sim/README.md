@@ -309,12 +309,17 @@ the same way as `ngspice binary sha256` and `Host`:
   reports `iq_en_ua = -137.99` — a *negative* no-load supply current, i.e.
   capacitor displacement current, which no DC operating point has — and the
   corner's bench checks only caught it by luck (see #310's "Why it
-  matters"). The harness therefore fails such a corner outright, on both
-  code paths (`run_point()` and `run_ngspice_deck()`), gated to DC-solve
-  benches (`op`, `dc`, `ac`): a bench that declares a `.tran` analysis is
-  exempt, because its initial-time-point solve walks the same ladder and a
-  pseudo-transient initial condition does not invalidate the transient
-  that follows.
+  matters"). The harness therefore fails such a corner outright, gated to
+  DC-solve benches (`op`, `dc`, `ac`): a bench that declares a `.tran`
+  analysis is exempt, because its initial-time-point solve walks the same
+  ladder and a pseudo-transient initial condition does not invalidate the
+  transient that follows. This applies on every code path that drives
+  ngspice in this repo: `run_point()` and `run_ngspice_deck()` (#310), and
+  the standalone bash driver `sim/harness/lib/run_point.sh`'s
+  `harness_run_point()` plus `sim/devchar/lib/devchar.sh`'s `dc_run()`
+  (#317) — the latter two shell out to the same
+  `_ladder_exhaustion_lines()` / `_runs_transient_analysis()` rather than
+  keeping their own copy, so all four call sites cannot drift apart.
 
 Implementation: `sim.harness.runner.classify_dc_path()` classifies one
 corner's combined ngspice stdout+stderr; `sim.harness.report.dc_path_census()`
@@ -322,7 +327,12 @@ rolls the grid up. Both are pure log parsing — they change no deck, assert
 nothing, and run on every bench that goes through `run_point()`. Sweep
 testbenches with their own driver (`sim/loop-stability`,
 `sim/soft-start-loop-gain`) can opt in by calling `classify_dc_path()` on
-what `run_ngspice_deck()` already returns; none does yet.
+what `run_ngspice_deck()` already returns; none does yet. `dc_path` census
+reporting is `run_point()`/`run_ngspice_deck()`-specific (#301) and is not
+part of what the bash driver's ladder-exhaustion *gate* needed to port —
+`sim/harness/lib/run_point.sh` and `sim/devchar/lib/devchar.sh` fail a
+corner outright the same way, they just do not also classify/census the
+rung for corners that pass.
 
 ## Interim evidence note (for #4, device characterization)
 
