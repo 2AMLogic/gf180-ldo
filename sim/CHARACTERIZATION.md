@@ -23,7 +23,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `53827e92c2cc5e546
 | Line reg | PASS | STALE | `sim/line-regulation/records/20260905-202532-3093ea1.md` |
 | Load reg (0–50 mA) | PASS | STALE | `sim/load-regulation/records/20260905-200836-3093ea1.md` |
 | Load transient | PASS | STALE | `sim/load-transient/records/20260905-202554-3093ea1.md` |
-| PSRR | PASS | STALE | `sim/psrr-dc/records/20260807-105159-64249c6.md` (+ 2 more, see detail) |
+| PSRR | FAIL | fresh | `sim/psrr-dc/records/20260807-105159-64249c6.md` (+ 2 more, see detail) |
 | Iq (excluding load current) | PASS | STALE | `sim/quiescent-current/records/20260922-235223-74f117f.md` (+ 1 more, see detail) |
 | Current limit | PASS | fresh | `sim/current-limit/records/20260922-235227-74f117f.md` |
 | Startup | MIXED | STALE | `sim/startup/records/20260916-112114-8b551ab.md` (+ 1 more, see detail) |
@@ -102,14 +102,14 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `53827e92c2cc5e546
 
 **Ratified target**: > 50 dB @ 1 kHz and > 20 dB @ 100 kHz, at I_load = 1 mA (binding — light load) and at 50 mA, C_eff = 1 µF nominal, verified across the stability window
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: FAIL  **Fresh**: fresh
 
 - `psrr-dc` — amp-level open-loop DC term: `sim/psrr-dc/records/20260807-105159-64249c6.md` — **PASS**, fresh (matches current `error_amp`)
   - Overall: PASS
-- `psrr-vs-freq` — closed-loop, 1 mA (binding light load): `sim/psrr-vs-freq/records/20260905-200801-3093ea1.md` — **PASS**, stale
-  - Overall: PASS
-- `psrr-vs-freq-50ma` — closed-loop, 50 mA (full load): `sim/psrr-vs-freq-50ma/records/20260905-200820-3093ea1.md` — **PASS**, stale
-  - Overall: PASS
+- `psrr-vs-freq` — closed-loop, 1 mA (binding light load): `sim/psrr-vs-freq/records/20260923-084323-a6c95f8.md` — **FAIL**, fresh (matches current `ldo_core`)
+  - Overall: FAIL
+- `psrr-vs-freq-50ma` — closed-loop, 50 mA (full load): `sim/psrr-vs-freq-50ma/records/20260923-084333-a6c95f8.md` — **FAIL**, fresh (matches current `ldo_core`)
+  - Overall: FAIL
 
 ### Iq (excluding load current)
 
@@ -183,9 +183,9 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `53827e92c2cc5e546
 
 ## Tally
 
-16 ratified rows: 12 testable (11 PASS, 0 FAIL, 1 MIXED, 0 UNKNOWN), 4 N/A.
+16 ratified rows: 12 testable (10 PASS, 1 FAIL, 1 MIXED, 0 UNKNOWN), 4 N/A.
 
-Freshness among the 12 testable rows: 4 fresh, 8 stale, 0 unknown.
+Freshness among the 12 testable rows: 5 fresh, 7 stale, 0 unknown.
 
 A row is only a true current PASS if its Verdict column reads PASS **and** its Fresh column reads fresh — a stale PASS reflects a design state this repo has since moved past, not a claim about `design/netlist/ldo_core.spice` as committed today.
 
