@@ -298,6 +298,23 @@ the same way as `ngspice binary sha256` and `Host`:
   the marginal corner on one DUT created a new failure at a *different*
   corner on the next one). Any future seed must re-run that A/B on the DUT
   current at the time.
+- **The last rung is fatal, not marginal (#310).** Everything above applies
+  to the first four rungs. A log showing the ladder fell *through*
+  `source-stepping` — `Warning: source stepping failed` followed by
+  `Note: Transient op started` / `Note: Transient op finished successfully` —
+  means ngspice reported a snapshot of an unsettled synthetic transient as
+  the operating point: it exits 0 and prints every requested measurement,
+  but the values are not a DC solution. Committed evidence:
+  `sim/quiescent-current/corners/20260915-234352-077e15b/ss_-40c_2.97v.log`
+  reports `iq_en_ua = -137.99` — a *negative* no-load supply current, i.e.
+  capacitor displacement current, which no DC operating point has — and the
+  corner's bench checks only caught it by luck (see #310's "Why it
+  matters"). The harness therefore fails such a corner outright, on both
+  code paths (`run_point()` and `run_ngspice_deck()`), gated to DC-solve
+  benches (`op`, `dc`, `ac`): a bench that declares a `.tran` analysis is
+  exempt, because its initial-time-point solve walks the same ladder and a
+  pseudo-transient initial condition does not invalidate the transient
+  that follows.
 
 Implementation: `sim.harness.runner.classify_dc_path()` classifies one
 corner's combined ngspice stdout+stderr; `sim.harness.report.dc_path_census()`
