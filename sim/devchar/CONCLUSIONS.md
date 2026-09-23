@@ -63,7 +63,7 @@ margin), all at the worst corner of the full matrix.
 > **3.00 mm** (630/630 at 46.69° / 10.582 dB) and **3.20 mm** (628/630, phase
 > margin 44.56°). At the decided 2.8 mm the `< 200 mV` stretch clears **27/27**
 > corners at 193.200 mV worst case while the envelope stays 630/630 at
-> 48.65° / 11.211 dB. The first bullet above is unaffected: **4 mm still breaks
+> 48.65° / 11.210 dB. The first bullet above is unaffected: **4 mm still breaks
 > `DR-0005`'s ≤ 346 mW Thermal row**, and the Thermal margin at 2.8 mm is
 > 0.414 mW. See
 > `spec/decision-records/DR-0034-the-dropout-stretch-unlocks-on-margin-dr-0033-already-delivered.md`.

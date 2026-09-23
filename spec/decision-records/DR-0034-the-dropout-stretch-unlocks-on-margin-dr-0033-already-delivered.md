@@ -82,14 +82,24 @@ the current `main`, sweeping `Mpass`'s width with `nf` held at 40 so that the
 per-finger width tracks the total (see the Decision for why), and `Msense`
 re-scaled to keep the 1/40 replica ratio exact at every point:
 
-| `Mpass` W | per-finger | worst PM (bar ≥ 45°) | worst GM (bar ≥ 10 dB) | `DR-0018` envelope |
-|---|---|---|---|---|
-| **2.00 mm (was shipped)** | 50.0 µm | 55.44° | 14.165 dB | **630/630** |
-| 2.72 mm | 68.0 µm | 49.43° | 11.467 dB | **630/630** |
-| **2.80 mm (decided)** | **70.0 µm** | **48.65°** | **11.211 dB** | **630/630** |
-| 2.88 mm | 72.0 µm | 47.91° | 10.962 dB | **630/630** |
-| 3.00 mm | 75.0 µm | 46.69° | 10.582 dB | **630/630** |
-| 3.20 mm | 80.0 µm | 44.56° | 10.006 dB | **628/630 — FAIL** |
+| `Mpass` W | per-finger | worst PM (bar ≥ 45°) | worst GM (bar ≥ 10 dB) | `DR-0018` envelope | source |
+|---|---|---|---|---|---|
+| **2.00 mm (was shipped)** | 50.0 µm | 55.45° | 14.170 dB | **630/630** | committed `20260923-000113-a406143-matrix.csv` |
+| **2.80 mm (decided)** | **70.0 µm** | **48.65°** | **11.210 dB** | **630/630** | committed `20260923-132038-a992b52-matrix.csv` |
+| 2.88 mm | 72.0 µm | 47.91° | 10.962 dB | **630/630** | envelope-only re-run, not committed |
+| 3.00 mm | 75.0 µm | 46.69° | 10.582 dB | **630/630** | envelope-only re-run, not committed |
+| 3.20 mm | 80.0 µm | 44.56° | 10.006 dB | **628/630 — FAIL** | envelope-only re-run, not committed |
+
+The two shipped-candidate rows are read off the two *committed* full-matrix
+records' own `-matrix.csv`, filtered to the envelope; the three candidate rows
+are 630-point envelope-only runs of netlists this repo does not ship, run with
+`--no-write` and deliberately **not** minted as records (a head record for an
+unshipped netlist would hijack `sim/CHARACTERIZATION.md`'s
+most-recent-record-wins row selection — the same reasoning `DR-0032` gives).
+Reproduction commands are in Consequences below. A cross-check that the two
+extraction paths agree: the decided width's envelope reads 48.65° / 11.210 dB
+off the committed CSV and 48.65° / 11.211 dB off the raw per-point `ROW` lines
+of an independent envelope-only run — the 0.001 dB is the CSV's rounding.
 
 Two things changed versus `DR-0032`:
 
@@ -102,21 +112,25 @@ Two things changed versus `DR-0032`:
   margin sits at 10.006 dB — 0.006 dB inside its own bar. The two bars now run
   out together, so there is no third lever hiding behind the first.
 
-And the dropout side, measured at each of the same widths over the ratified
+And the dropout side, measured at each candidate width over the ratified
 27-corner dropout grid (`sim/run_corners.py dropout-vs-load --corner-set full`,
 worst corner `ss`/125 °C in every case):
 
 | `Mpass` W | worst dropout | vs. the `< 200 mV` stretch | vs. the ratified `< 300 mV` row |
 |---|---|---|---|
 | 2.00 mm | 267.383 mV | misses at 9/27 corners | passes, 32.6 mV margin |
+| 2.68 mm | 201.572 mV | **misses** | passes |
 | 2.72 mm | 198.701 mV | clears 27/27, **1.3 mV** | passes |
 | **2.80 mm (decided)** | **193.200 mV** | **clears 27/27, 6.8 mV** | **passes, 106.8 mV margin** |
 | 2.88 mm | 187.996 mV | clears 27/27, 12.0 mV | passes |
 | 3.00 mm | 180.699 mV | clears 27/27, 19.3 mV | passes |
+| 3.20 mm | 169.726 mV | clears 27/27, 30.3 mV | passes |
+| 4.00 mm | 136.603 mV | clears 27/27, 63.4 mV | passes — but fails `DR-0005` Thermal |
 
-**The two intervals now overlap.** The stretch opens at about 2.68 mm; the
-ratified envelope closes between 3.00 and 3.20 mm. `DR-0032`'s empty interval
-is a band roughly 2.68–3.1 mm wide.
+**The two intervals now overlap.** The stretch opens between 2.68 mm (misses at
+201.572 mV) and 2.72 mm; the ratified envelope closes between 3.00 mm and
+3.20 mm. `DR-0032`'s empty interval is now an open band roughly 2.7–3.1 mm
+wide, and 2.80 mm sits inside it with margin on both sides.
 
 ## Decision
 
@@ -150,15 +164,25 @@ is a band roughly 2.68–3.1 mm wide.
 All six rows re-measured against the 2.8 mm netlist, on records minted in this
 pull request (record-ids in the References section):
 
-| ratified row | bar | measured at W = 2.8 mm | margin |
-|---|---|---|---|
-| Stability (`DR-0018` envelope) | PM ≥ 45°, GM ≥ 10 dB, 630 points | 630/630, 48.65° / 11.211 dB | 3.65° / 1.21 dB |
-| Dropout @ 50 mA | < 300 mV, 27 corners | 193.200 mV worst (`ss`/125 °C), 27/27 | 106.8 mV |
-| Dropout stretch | < 200 mV | 193.200 mV worst, **27/27** | 6.8 mV |
-| Current limit (`DR-0005`) | 62–95 mA, 63 corners; never engages ≤ 50 mA | 62.0253 … 93.7746 mA, 63/63; never engages | 0.025 mA at the floor |
-| Thermal (`DR-0005`) | ≤ 346 mW into a `Vout = 0` short | 345.586 mW (`ff`/125 °C/3.63 V) | 0.414 mW |
-| Iq | < 30 µA, no load and full load | 28.7153 µA worst (81 points) | 1.28 µA |
-| Area | < 0.1 mm² core | 0.0575 mm² | 42.5 % |
+| ratified row | bar | measured at W = 2.8 mm | margin | record |
+|---|---|---|---|---|
+| Stability (`DR-0018` envelope) | PM ≥ 45°, GM ≥ 10 dB, 630 points | 630/630, 48.65° / 11.210 dB, `DR-0008` resurgence clean 0/630 | 3.65° / 1.21 dB | `loop-stability/20260923-132038-a992b52` |
+| Dropout @ 50 mA | < 300 mV, 27 corners | 193.200 mV worst (`ss`/125 °C), 27/27 | 106.8 mV | `dropout-vs-load/20260923-141156-33035d7` |
+| Dropout stretch | < 200 mV | 193.200 mV worst, **27/27** | 6.8 mV | same record |
+| Current limit (`DR-0005`) | 62–95 mA, 63 corners; never engages ≤ 50 mA | 62.0253 … 93.7746 mA, 63/63; never engages | 0.0253 mA at the floor | `current-limit/20260923-141325-33035d79` |
+| Thermal (`DR-0005`) | ≤ 346 mW into a `Vout = 0` short | 345.586 mW (`ff`/125 °C/3.63 V) | 0.414 mW | same record |
+| Iq | < 30 µA, no load and full load | 28.7153 µA worst (81 points) | 1.28 µA | `quiescent-current/20260923-141210-33035d7` |
+| Area | < 0.1 mm² core | 0.0575 mm² (`python3 layout/area_estimate.py`) | 42.5 % | n/a (not a simulation) |
+
+The one *unratified* figure that moves the wrong way is `DR-0001`'s original,
+wider cap/ESR window, which `DR-0018` explicitly stopped grading against: over
+the full 0.33–4.7 µF window at ESR ≥ 200 mΩ and 0.1–50 mA it goes from
+1640/1890 points passing at 2 mm to **1523/1890** at 2.8 mm, and the whole
+4536-point `DR-0001` matrix from 2974/4536 to 2790/4536. `README.md`'s
+Stability row states that count as measured evidence, so it is updated with
+the rest; the ratified *bar* it sits next to is untouched, and the shortfall
+is the same structural one `DR-0015`/`DR-0017`/`DR-0019` already attribute to
+`f_hi`.
 
 ## Alternatives considered
 
@@ -168,11 +192,11 @@ pull request (record-ids in the References section):
   `layout/floorplan.md` and `sim/devchar/CONCLUSIONS.md` §1 carrying a width
   rationale (`DR-0032`) that is no longer true, which is worse than either
   moving or not moving.
-- **2.72 mm — the narrowest width that clears the stretch.** Rejected: it
-  clears `< 200 mV` by **1.3 mV** at the binding corner. Dropout tracks 1/W to
-  within ~2 %, so a 1.3 mV margin is inside the measurement's own
-  reproducibility. It buys 0.26 dB of gain margin that the design does not
-  need.
+- **2.72 mm — the narrowest measured width that clears the stretch.**
+  Rejected: it clears `< 200 mV` by **1.3 mV** at the binding corner, and the
+  next width down (2.68 mm) misses at 201.572 mV. A 1.3 mV margin on a knee
+  measurement is inside the measurement's own reproducibility, so a width
+  chosen there would be a coin flip rather than a decision.
 - **2.88 mm and 3.00 mm — more dropout margin.** Rejected as a bad trade in
   the other direction: both spend the ratified `GM ≥ 10 dB` row down below
   1 dB (10.962 dB and 10.582 dB), and 3.00 mm leaves only 1.69° of phase
@@ -214,9 +238,23 @@ pull request (record-ids in the References section):
 - **`DR-0025`'s per-finger census moves but its rule does not.** `XMpass` and
   `XMsense` go from 50 µm to 70 µm per finger; still zero instances above the
   100.001 µm bin edge, so the invariant that record ratifies is intact.
+- **`DR-0001`'s original, wider cap/ESR window degrades**, from 1640/1890 to
+  1523/1890 at 0.1–50 mA / ESR ≥ 200 mΩ (2974/4536 to 2790/4536 over the whole
+  original matrix). `DR-0018` ratified the narrower envelope precisely because
+  that window was already not verified and its shortfall is structural; this
+  record spends some of the unratified surplus and says so, in `README.md`'s
+  Stability row as well as here. Anyone who later re-opens the wider window is
+  re-opening it against these numbers, not against the 2 mm ones.
 - **Every committed `sim/` record that snapshots `design/netlist/ldo_core.spice`
   is now STALE**, including rows this pull request does not re-run.
   `sim/CHARACTERIZATION.md` is regenerated to say so rather than to hide it.
+- **The DC continuation ladder moved, and the record now says so.** With
+  issue #301 / #314's rung attribution in place, the 81-point
+  `quiescent-current` grid solves on `dynamic-gmin` × 71 / `true-gmin` × 10 at
+  2.8 mm — no corner reaches source-stepping, where `ss_-40c_2.97v` sat on the
+  2 mm DUT. That is a numerical-path observation, not an electrical claim, and
+  nothing here is graded on it; it is recorded because #301's whole point is
+  that such moves used to be invisible.
 - **`DR-0032` stops being the live width rationale** and becomes the record of
   how the bound was found, and of the state in which it was true. Its
   measurements are left untouched per the append-only rule; its Status line
@@ -226,6 +264,39 @@ pull request (record-ids in the References section):
   happened to move it the right way. A two-sided bound like `DR-0032`'s should
   be re-derived, not cited, whenever anything in the forward path has changed —
   which is why this record re-ran the ceiling instead of reusing `≈ 2.5 mm`.
+
+### Reproduction
+
+Every number above is reproducible from a clean checkout of this branch. The
+four shipped-width records are minted by:
+
+```
+python3 sim/loop-stability/testbench/sweep.py -j8            # full 4536-point matrix
+python3 sim/run_corners.py dropout-vs-load --corner-set full --subset-reason '...'
+python3 sim/run_corners.py quiescent-current --corner-set full
+./sim/current-limit/testbench/run.sh                         # record written by hand
+python3 sim/build_characterization_report.py > sim/CHARACTERIZATION.md
+```
+
+The `DR-0018` envelope verdict is not a separate run: it is the committed
+`-matrix.csv` filtered to `0.1 ≤ I_load ≤ 50 mA`, `C_eff = 1 µF`,
+`ESR ≥ 200 mΩ` (630 of the 4536 rows), which is exactly what
+`sim/build_characterization_report.py` does for the Stability row.
+
+For a candidate width `W` (not shipped, not recorded): set `Mpass` to
+`L=0.28u W=<W>u nf=40` in `design/ldo_core.sch` and `Msense` to
+`L=0.28u W=<W/40>u nf=1` in `design/ldo_ilimit.sch`, run
+`python3 design/netlist.py`, then
+
+- gain/phase margin over the ratified envelope:
+  `python3 sim/loop-stability/testbench/sweep.py --no-write --loads-ma 0.1 1 10 25 50 --caps-uf 1.0 --esrs 0.2 0.5`
+- dropout: `python3 sim/run_corners.py dropout-vs-load --corner-set full --no-write`
+- thermal / current limit:
+  `NO_RECORD=1 CORNERS=ff TEMPS=125 SUPPLIES=3.63 ./sim/current-limit/testbench/run.sh`
+- area: `python3 layout/area_estimate.py --pass-width <W>`
+
+and restore the two device lines afterwards (`python3 design/netlist.py --check`
+must read clean before anything is committed).
 
 ## References
 
@@ -242,8 +313,21 @@ pull request (record-ids in the References section):
 - Pre-existing evidence re-read for the +2.09 dB claim (no new simulation):
   `sim/loop-stability/records/20260922-012628-ac57c94-matrix.csv`,
   `sim/loop-stability/records/20260923-000113-a406143-matrix.csv`
-- Records minted alongside this one (see the pull request for the exact
-  record-ids): `sim/loop-stability/records/`, `sim/dropout-vs-load/records/`,
-  `sim/current-limit/records/`, `sim/quiescent-current/records/`
+- Records minted alongside this one, all against the 2.8 mm DUT
+  (`design/netlist/ldo_core.spice` sha256 `5bfa966c…`):
+  - `sim/loop-stability/records/20260923-132038-a992b52.md` (+ `-matrix.csv`) —
+    full 4536-point matrix; its `Supersedes` field names the 2 mm head record
+    `20260923-000113-a406143` as the record it replaces as *head*, not as a
+    correction: nothing in that record is retracted
+  - `sim/dropout-vs-load/records/20260923-141156-33035d7.md` — 27/27
+  - `sim/quiescent-current/records/20260923-141210-33035d7.md` — 81/81
+  - `sim/current-limit/records/20260923-141325-33035d79.md` — 63/63, hand-written
+    per this bench's convention
+  - The loop-stability record's id carries the pre-rebase branch sha
+    (`a992b52`) because it was run before this branch was rebased onto
+    `origin/main`'s harness commit (#314, which does not touch
+    `sim/loop-stability`'s own driver). Its frozen netlist snapshot is
+    byte-identical to `design/netlist/ldo_core.spice` as committed here, which
+    is what the freshness check and every claim above actually rest on.
 - `layout/floorplan.md` §§1, 3.1–3.2, 5, 6 — the layout-side half of the same
   decision
