@@ -4,6 +4,7 @@
     python3 layout/drclvs.py                     # bring-up test cell (default)
     python3 layout/drclvs.py --cell testcell      # same, named explicitly
     python3 layout/drclvs.py --cell passives      # the passive-bearing flow vehicle
+    python3 layout/drclvs.py --cell pass_array    # the LDO's pass-device array (#285)
     python3 layout/drclvs.py --check             # same, plus: the committed netlist must be current
     python3 layout/drclvs.py --check-env         # report which tools/PDK are visible, then stop
     python3 layout/drclvs.py --record            # also write layout/records/<record-id>.md
@@ -72,10 +73,12 @@ What this runs, in order
    ``layout/lvs_form.py``). Each control isolates one of those.
 
 Nothing here is LDO-specific in the stages themselves: only the registered
-``CellSpec`` is. Both cells registered today are flow vehicles rather than
-design blocks -- ``testcell`` (the default) is one transistor, and ``passives``
-adds an H-poly resistor and a MIM cap because a FET-only cell cannot notice
-that the flow is broken for anything else (issue #313). Driving a real block
+``CellSpec`` is. Two of the three cells registered today are flow vehicles
+rather than design blocks -- ``testcell`` (the default) is one transistor, and
+``passives`` adds an H-poly resistor and a MIM cap because a FET-only cell
+cannot notice that the flow is broken for anything else (issue #313).
+``pass_array`` is the first real block: the LDO's 40-unit-cell pass device and
+its ``Msense`` replica (issue #285, under epic #173). Driving another block
 through this means registering that block's own ``CellSpec`` in ``CELLS``
 below.
 """
@@ -99,6 +102,7 @@ LAYOUT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = LAYOUT_DIR.parent
 TESTCELL_DIR = LAYOUT_DIR / "testcell"
 PASSIVES_DIR = LAYOUT_DIR / "passives"
+PASS_ARRAY_DIR = LAYOUT_DIR / "pass_array"
 RECORDS_DIR = LAYOUT_DIR / "records"
 WORK_DIR = LAYOUT_DIR / ".work"
 XSCHEMRC = LAYOUT_DIR / "xschemrc"
@@ -210,14 +214,34 @@ PASSIVES_SPEC = CellSpec(
     ),
 )
 
+PASS_ARRAY_SPEC = CellSpec(
+    key="pass_array",
+    cell="pass_array",
+    top_cell="PASS_ARRAY",
+    gen_gds=PASS_ARRAY_DIR / "gen_gds.py",
+    schematic=PASS_ARRAY_DIR / "pass_array.sch",
+    netlist_dir=PASS_ARRAY_DIR / "netlist",
+    xschem_library_paths=(PASS_ARRAY_DIR,),
+    # The pass device is a PMOS in an n-well tied to VIN; nothing in this cell
+    # touches the p-substrate, but the deck still needs a name for it.
+    substrate_net="VSS",
+    description=(
+        "40 pfet_03v3 pass unit cells (L=0.28 um, W=70 um, nf=1) plus 1 "
+        "Msense unit cell of the same cell at the array centroid -- "
+        "Mpass W=2.8 mm, N/M = 40 (issue #285)"
+    ),
+)
+
 # The registry a real block's layout plugs into -- add an entry here (see
-# TESTCELL_SPEC's fields) and drive it with `--cell <key>`. Both entries today
-# are flow vehicles, not design blocks (issue #173 tracks the first real one):
-# `testcell` proves the flow on a single FET, `passives` proves it on a cell
-# whose devices are NOT all FETs -- the case layout/lvs_form.py exists for.
+# TESTCELL_SPEC's fields) and drive it with `--cell <key>`. Two of the three
+# entries are flow vehicles rather than design blocks: `testcell` proves the
+# flow on a single FET, `passives` proves it on a cell whose devices are NOT
+# all FETs (the case layout/lvs_form.py exists for). `pass_array` is the first
+# real block -- issue #285, under epic #173.
 CELLS: dict[str, CellSpec] = {
     TESTCELL_SPEC.key: TESTCELL_SPEC,
     PASSIVES_SPEC.key: PASSIVES_SPEC,
+    PASS_ARRAY_SPEC.key: PASS_ARRAY_SPEC,
 }
 
 sys.path.insert(0, str(LAYOUT_DIR))
@@ -383,15 +407,24 @@ def deck_env(run_dir: Path) -> tuple[dict[str, str], str]:
 # stage 1 -- layout
 # --------------------------------------------------------------------------
 
-def build_gds(pdk: Pdk, spec: CellSpec, out: Path, log: Path) -> None:
+def build_gds(pdk: Pdk, spec: CellSpec, out: Path, log: Path) -> str:
+    """Draw the cell. Returns whatever the generator printed about it.
+
+    The generator is the only thing in this flow that knows what it actually
+    drew -- how many unit cells, how wide the straps came out, how many via
+    cuts fitted. ``--record`` quotes this verbatim (see ``write_record``), so
+    those as-drawn numbers land in the append-only record rather than having
+    to be transcribed by hand into it afterwards.
+    """
     cmd = [
         "klayout", "-b", "-r", str(spec.gen_gds),
         "-rd", f"out={out}",
         "-rd", f"pdk={pdk.path}",
     ]
-    run_logged(cmd, log, "layout build")
+    output = run_logged(cmd, log, "layout build")
     if not out.is_file():
         raise StageError(f"layout build produced no {out} (see {log})")
+    return output
 
 
 # --------------------------------------------------------------------------
@@ -867,7 +900,8 @@ def run(args: argparse.Namespace) -> int:
 
     # ---- 1. layout -------------------------------------------------------
     gds = run_dir / f"{spec.cell}.gds"
-    build_gds(pdk, spec, gds, run_dir / "build-gds.log")
+    generator_output = build_gds(pdk, spec, gds, run_dir / "build-gds.log")
+    summary["generator_output"] = generator_output
     # Printed once the stage count is known: how many LVS negative controls a
     # cell supports is a property of its netlist (see build_controls), so the
     # `[i/N]` denominator cannot be settled until stage 2 has run.
@@ -1090,6 +1124,15 @@ xschem's `lvs_netlist` form from `{schematic_rel}`.
         body += "\n## LVS deck notes\n\n"
         for warning in warnings:
             body += f"- {warning}\n"
+    generator_output = (summary.get("generator_output") or "").strip()
+    if generator_output:
+        body += (
+            "\n## What the generator drew\n\n"
+            f"Verbatim stdout of `{spec.gen_gds.relative_to(REPO_ROOT)}` for this\n"
+            "run -- the as-drawn geometry, measured by the generator from the\n"
+            "layout it had just built, not transcribed by hand.\n\n"
+            "```\n" + generator_output + "\n```\n"
+        )
     return write_markdown_record(rid, body, RECORDS_DIR)
 
 
