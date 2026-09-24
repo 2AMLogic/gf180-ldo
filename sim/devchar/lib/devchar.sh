@@ -55,6 +55,47 @@ EOF
 )"
 }
 
+# Fails <deck>/<log> against issue #310's DC-continuation-ladder-exhaustion
+# gate -- dc_run() below calls this on every deck it runs, mirroring the
+# gate issue #317 added to sim/harness/lib/run_point.sh's
+# harness_run_point(). Every devchar deck is an `op`/`dc`
+# device-characterization sweep with no `.tran` analysis (checked as of
+# this commit -- see that gate's own analysis-kind exemption), so this
+# always evaluates the ladder-exhaustion phrases in practice today; the
+# exemption check still runs per-deck rather than being hardcoded away, so
+# a future `.tran` devchar deck stays correctly exempt without anyone
+# having to remember this comment.
+#
+# Shells out to sim/harness/runner.py's own
+# _runs_transient_analysis()/_ladder_exhaustion_lines() rather than porting
+# their regexes to bash ERE, so this copy and run_point.sh's cannot drift
+# from runner.py or from each other.
+#
+# Prints the matched offender line(s) to stdout and returns 1 when the
+# ladder was exhausted on a non-`.tran` deck; returns 0 (no output)
+# otherwise.
+_dc_ladder_exhaustion_check() {
+  local deck="$1" log="$2"
+  python3 - "$DC_ROOT" "$deck" "$log" <<'PYEOF'
+import sys
+
+sys.path.insert(0, sys.argv[1] + "/..")
+from harness.runner import _ladder_exhaustion_lines, _runs_transient_analysis
+
+deck_text = open(sys.argv[2]).read()
+if _runs_transient_analysis(deck_text):
+    sys.exit(0)
+
+log_text = open(sys.argv[3]).read()
+exhausted = _ladder_exhaustion_lines(log_text)
+if not exhausted:
+    sys.exit(0)
+for line in exhausted:
+    print(line)
+sys.exit(1)
+PYEOF
+}
+
 # dc_csv_header <outfile> <header-line>
 # Truncates the CSV and writes the header. Provenance lives in the sibling
 # README / conclusions, not in the CSV, so the files stay machine-readable.
@@ -98,6 +139,12 @@ dc_run() {
   if grep -qE "$DC_FATAL_LOG_PATTERN" "$log"; then
     echo "FATAL: ngspice reported an error on $deck (see $log)" >&2
     grep -nE "$DC_FATAL_LOG_PATTERN" "$log" >&2
+    exit 1
+  fi
+  local ladder_offenders
+  if ! ladder_offenders="$(_dc_ladder_exhaustion_check "$deck" "$log")"; then
+    echo "FATAL: ngspice exhausted its DC continuation ladder on $deck and fell back to the pseudo-transient op; the reported operating point is an unsettled transient snapshot, not a converged DC solution (see $log)" >&2
+    printf '%s\n' "$ladder_offenders" >&2
     exit 1
   fi
   if [ -z "${DC_KEEP:-}" ]; then

@@ -23,8 +23,9 @@ DEFAULT_TIMEOUT_S = 300
 #
 # gf180mcu's `pfet_03v3`/`nfet_03v3` cards are binned on (L, W) and the widest
 # declared bin stops at `wmax = 100.001 um`. `design/netlist/ldo_core.spice`'s
-# pass device is `W=2000u nf=40` -- 40 fingers of 50 um each -- so it lands in
-# a declared bin (`pfet_03v3.12`) only if bin selection divides W by NF.
+# pass device is `W=2800u nf=40` -- 40 fingers of 70 um each (it was 40 of
+# 50 um before issue #294 / DR-0034 widened it) -- so it lands in a declared
+# bin (`pfet_03v3.12`) only if bin selection divides W by NF.
 #
 # Whether ngspice does that is neither a netlist nor a PDK property: it is
 # ngspice's own `wnflag`, which is 1 only under HSPICE/Spectre compatibility
@@ -137,6 +138,203 @@ _UNDEFINED_VECTOR_LET_RE = re.compile(
     r'RHS\s+"v\([^"]*\)"\s+invalid', re.IGNORECASE
 )
 
+# The DC continuation ladder's last resort (issue #310): every rung above it
+# failed ("Warning: source stepping failed") and ngspice "solved" the
+# operating point with a pseudo-transient run ("Note: Transient op started"
+# / "Note: Transient op finished successfully"). ngspice exits 0 and prints
+# every requested measurement, but the values it reports are a snapshot of
+# the synthetic transient's internal state, not a converged DC solution --
+# committed evidence shows the mode directly:
+# sim/quiescent-current/corners/20260915-234352-077e15b/ss_-40c_2.97v.log
+# reports `iq_en_ua = -137.99`, a *negative* no-load supply current, i.e.
+# capacitor displacement current, which no DC operating point has.
+#
+# Like _UNDEFINED_VECTOR_LET_RE above (and unlike FATAL_LOG_PATTERNS), this
+# is deliberately NOT folded into the flat fatal tuple: the same phrases are
+# routine in a `.tran` bench's log, where ngspice's initial-time-point
+# solve walks the same ladder and a pseudo-transient initial condition does
+# not invalidate the transient that follows. The gate is analysis-kind
+# gated -- it applies only to a deck whose analyses declare no `.tran` --
+# which is why it lives as a separate pattern checked via
+# _ladder_exhaustion_lines()/_runs_transient_analysis() rather than as a
+# FATAL_LOG_PATTERNS entry (the same structural reason _UNDEFINED_VECTOR_LET_RE
+# stays out of that tuple).
+_LADDER_EXHAUSTION_RE = re.compile(
+    r"transient op|source stepping failed", re.IGNORECASE
+)
+
+# An analysis statement that runs a transient sweep, in either spelling a
+# deck uses: a `.tran` card (`.tran 20n 400u`) or a control-block `tran`
+# line (`tran 1u 9m`, indented or not). Measurement lines never match:
+# `.meas tran ...` / `meas tran ...` begin with the `meas` keyword, so
+# requiring `tran` at the statement start (optionally after `.` and
+# whitespace) keeps those out.
+_TRANSIENT_ANALYSIS_RE = re.compile(r"(?im)^\s*\.?\s*tran\s")
+
+
+# ---------------------------------------------------------------------------
+# DC continuation-ladder attribution (issue #301)
+# ---------------------------------------------------------------------------
+#
+# ngspice does not solve a DC operating point with one algorithm. It walks a
+# *continuation ladder*, dropping to the next rung only when the previous one
+# fails to converge:
+#
+#   0. the first-guess Newton solve (no continuation at all)
+#   1. dynamic gmin stepping
+#   2. true gmin stepping
+#   3. source stepping
+#   4. a last-resort pseudo-transient ("transient op")
+#
+# Which rung a corner lands on is a property of the *numerical* path, not of
+# the circuit. Issue #301 measured a 2x2 (two DUT netlists x seeded/unseeded
+# deck, one host, one ngspice, one PDK) in which `sim/quiescent-current`'s
+# PASS/FAIL verdict flipped between two builds that are electrically
+# identical on this bench to six significant figures -- DR-0033's poly
+# resistor flavour swap moved which rung the one marginal corner caught on,
+# and nothing in the evidence recorded that it had moved. A seed tuned
+# against yesterday's rung is not evidence; a record of which rung each
+# corner used is.
+#
+# So: classify every corner's DC solve by the deepest rung it reached and
+# carry that into the record. This asserts nothing and changes no deck -- it
+# only makes "the rung moved" attributable instead of silent, the same way
+# #182's ngspice binary sha256 made a silent toolchain swap attributable.
+#
+# The phrases below are ngspice's own, verbatim, as they appear in the
+# already-committed corner logs under `sim/*/corners/` (ngspice-46, the
+# pinned toolchain). Matching is case-insensitive and substring-based, NOT
+# line-anchored, because ngspice writes these notes to stderr while the
+# analysis writes to stdout: the two interleave mid-line, and the corpus
+# contains real lines like
+# `" Reference value :  0.00000e+00Note: Starting dynamic gmin stepping"`.
+#: Ladder rungs in the order ngspice descends them, each with the success
+#: phrase it prints when that rung is the one that solved the point.
+CONTINUATION_LADDER: tuple[tuple[str, str], ...] = (
+    ("dynamic-gmin", "Dynamic gmin stepping completed"),
+    ("true-gmin", "True gmin stepping completed"),
+    ("source-stepping", "Source stepping completed"),
+    ("pseudo-transient", "Transient op finished successfully"),
+)
+
+#: ngspice always enters the ladder at rung 1, so counting this phrase
+#: counts how many DC solves in a log needed continuation at all. (A `dc`
+#: sweep runs one solve per swept point, so a single log can hold many.)
+LADDER_ENTRY_PHRASE = "Starting dynamic gmin stepping"
+
+#: Rung name for a solve that converged on the first-guess Newton pass --
+#: ngspice prints *nothing* in that case, so it is identified by the absence
+#: of any ladder phrase rather than by a phrase of its own.
+RUNG_DIRECT = "direct"
+
+#: The ladder was entered but no rung reported success: ngspice found no DC
+#: solution. Distinct from ``RUNG_DIRECT`` (never needed the ladder) and from
+#: ``RUNG_UNKNOWN`` (never got to look).
+RUNG_NO_SOLUTION = "no-dc-solution"
+
+#: No ngspice output to classify (a timeout, or a caller that did not supply
+#: any). Deliberately not conflated with ``RUNG_DIRECT``: "converged
+#: immediately" and "we never saw the log" must not render the same.
+RUNG_UNKNOWN = "unknown"
+
+#: Every rung name this module can emit, deepest last among the real rungs.
+RUNG_NAMES: tuple[str, ...] = (
+    RUNG_DIRECT,
+    *(name for name, _ in CONTINUATION_LADDER),
+    RUNG_NO_SOLUTION,
+    RUNG_UNKNOWN,
+)
+
+
+@dataclass(frozen=True)
+class DcPath:
+    """Which continuation-ladder rung(s) a corner's DC solve(s) landed on.
+
+    ``rung`` is the *deepest* rung reached anywhere in the log -- the useful
+    single-value summary, because a corner that needs source stepping at one
+    swept point is exactly as numerically marginal as one that needs it at
+    all of them. ``completions`` keeps the per-rung tally so a `dc` sweep's
+    log is not flattened to a single word, and ``ladder_entries`` is how many
+    solves needed continuation at all (0 means every solve converged on the
+    first Newton pass).
+
+    Nothing here is a pass/fail gate. Issue #310 proposes treating the
+    ``pseudo-transient`` rung as fatal; that is a separate, complementary
+    change -- this type only reports.
+    """
+
+    rung: str
+    completions: dict[str, int]
+    ladder_entries: int
+
+    def as_dict(self) -> dict:
+        return {
+            "rung": self.rung,
+            "completions": dict(self.completions),
+            "ladder_entries": self.ladder_entries,
+        }
+
+
+def classify_dc_path(text: str | None) -> DcPath:
+    """Attribute one ngspice log to the DC continuation rung(s) it used.
+
+    ``text`` is the combined stdout+stderr of a single ngspice run -- what
+    :func:`run_point` writes to ``corners/<record-id>/<corner-id>.log`` and
+    what :func:`run_ngspice_deck` returns. ``None`` (or an empty string)
+    yields :data:`RUNG_UNKNOWN` rather than a guess.
+    """
+    if not text:
+        return DcPath(RUNG_UNKNOWN, {}, 0)
+    lowered = text.lower()
+    completions = {
+        name: lowered.count(phrase.lower())
+        for name, phrase in CONTINUATION_LADDER
+        if lowered.count(phrase.lower())
+    }
+    entries = lowered.count(LADDER_ENTRY_PHRASE.lower())
+    if not entries and not completions:
+        return DcPath(RUNG_DIRECT, {}, 0)
+    # Deepest rung wins: CONTINUATION_LADDER is in descent order, so the last
+    # one with a completion is the one that actually produced the answer.
+    rung = RUNG_NO_SOLUTION
+    for name, _ in CONTINUATION_LADDER:
+        if completions.get(name):
+            rung = name
+    return DcPath(rung, completions, entries)
+
+
+def _ladder_exhaustion_lines(text: str) -> list[str]:
+    """Lines showing the DC ladder fell to its pseudo-transient rung (#310).
+
+    Returns up to three offender lines -- the same truncation the
+    ``FATAL_LOG_RE`` check in :func:`run_ngspice_deck` applies -- for error
+    messages and test assertions. Empty means the log shows no
+    ladder-exhaustion phrase. Substring-based, not line-anchored, for the
+    same reason :func:`classify_dc_path` is: ngspice writes these notes to
+    stderr while the analysis writes to stdout, and the two interleave
+    mid-line.
+    """
+    if not text:
+        return []
+    return [
+        ln for ln in text.splitlines() if _LADDER_EXHAUSTION_RE.search(ln)
+    ][:3]
+
+
+def _runs_transient_analysis(*analysis_texts: str) -> bool:
+    """Whether any of the given analysis sources declares a `.tran` run.
+
+    :func:`run_point` passes the manifest's ``analyses`` lines;
+    :func:`run_ngspice_deck` passes the rendered deck it just ran. Anything
+    else -- ``op``, ``dc``, ``ac``, or a deck with no transient statement at
+    all -- is a DC-solve bench as far as issue #310's gate is concerned:
+    every value such a bench reports is (or linearizes around) an operating
+    point, so a pseudo-transient rung poisons it the same way in each case.
+    """
+    return any(
+        _TRANSIENT_ANALYSIS_RE.search(text) for text in analysis_texts if text
+    )
+
 
 class NgspiceMissing(RuntimeError):
     pass
@@ -155,7 +353,7 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
 
     Writes ngspice's combined stdout+stderr to ``log`` unconditionally (so
     the log is available for diagnosis even on failure), then raises
-    :class:`RuntimeError` unless all four checks pass:
+    :class:`RuntimeError` unless all five checks pass:
 
     1. ``ngspice`` exited 0.
     2. The output does not match :data:`FATAL_LOG_RE` (a fatal condition
@@ -168,7 +366,13 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
        is deliberately NOT in :data:`FATAL_LOG_PATTERNS` -- see that
        pattern's own comment for why (it collides with an unrelated,
        expected non-fatal ``.meas`` outcome).
-    4. The output contains the ``SWEEP COMPLETE`` marker the caller's own
+    4. If the deck declares no `.tran` analysis, the output does not match
+       :data:`_LADDER_EXHAUSTION_RE` -- ngspice fell through its whole DC
+       continuation ladder and reported a pseudo-transient snapshot as the
+       operating point (issue #310). Analysis-kind gated for the same
+       reason check 3's pattern is kept separate: a `.tran` bench's
+       initial-time-point solve walks the same ladder legitimately.
+    5. The output contains the ``SWEEP COMPLETE`` marker the caller's own
        deck template prints at the end of a successful run.
 
     Returns the combined stdout+stderr text on success, for the caller to
@@ -176,6 +380,13 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     want a non-raising, tuple-returning contract instead should catch
     ``RuntimeError`` at the call site (as ``loop-stability``'s
     ``run_point()`` does).
+
+    The returned text is also what :func:`classify_dc_path` consumes, so a
+    sweep testbench that wants issue #301's DC continuation-rung attribution
+    gets it by calling ``classify_dc_path(text)`` on this return value --
+    there is nothing bench-specific to port. No sweep driver does that yet;
+    :func:`run_point` (the generic corner-grid path, which
+    ``quiescent-current`` uses) records it for every corner already.
     """
     proc = subprocess.run(
         [NGSPICE, "-b", str(deck)],
@@ -198,6 +409,15 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
             f"ngspice's .let/v(...) referenced a vector that does not exist "
             f"in the netlist: {bad} (see {log})"
         )
+    if not _runs_transient_analysis(deck.read_text()):
+        exhausted = _ladder_exhaustion_lines(text)
+        if exhausted:
+            raise RuntimeError(
+                f"ngspice exhausted its DC continuation ladder and fell "
+                f"back to the pseudo-transient op ({exhausted}); the "
+                f"reported operating point is an unsettled transient "
+                f"snapshot, not a converged DC solution (see {log})"
+            )
     if "SWEEP COMPLETE" not in text:
         raise RuntimeError(f"sweep did not complete (see {log})")
     return text
@@ -263,6 +483,20 @@ def ngspice_major_version(banner: str | None) -> str | None:
     return f"ngspice-{match.group(1)}" if match else None
 
 
+def sha256_of(path: Path) -> str:
+    """SHA-256 of the file at ``path``, read in 1 MiB chunks.
+
+    Chunked rather than a single ``read()`` because the callers hash
+    executables (an ngspice build is tens of megabytes) and there is no
+    reason to hold one in memory to fingerprint it.
+    """
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def ngspice_binary_sha256() -> str:
     """SHA-256 of the ``ngspice`` executable currently resolved on ``PATH``.
 
@@ -286,11 +520,7 @@ def ngspice_binary_sha256() -> str:
             "  macOS:  brew install ngspice\n"
             "  Debian: apt-get install ngspice"
         )
-    digest = hashlib.sha256()
-    with open(exe, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_of(Path(exe))
 
 
 class NgspiceIdentityMismatch(RuntimeError):
@@ -696,6 +926,12 @@ class PointResult:
     deck: str = ""
     log: str = ""
     message: str = ""
+    # Which DC continuation rung this corner's op solve landed on (#301).
+    # Defaults to "unknown" so a PointResult built by hand (tests, a driver
+    # that has no ngspice output) never claims a rung it did not observe.
+    dc_path: DcPath = field(
+        default_factory=lambda: DcPath(RUNG_UNKNOWN, {}, 0)
+    )
 
     def as_dict(self) -> dict:
         record = self.point.as_dict()
@@ -706,6 +942,7 @@ class PointResult:
                 "seconds": round(self.seconds, 3),
                 "deck": self.deck,
                 "log": self.log,
+                "dc_path": self.dc_path.as_dict(),
             }
         )
         if self.missing:
@@ -736,6 +973,13 @@ def run_point(
     log_dir: Path | None = None,
 ) -> PointResult:
     """Simulate one PVT point. Never raises for simulation failure.
+
+    One simulation failure is detected here rather than by the caller's
+    checks: on a DC-solve bench (no `.tran` analysis), a log showing the
+    DC continuation ladder exhausted -- the pseudo-transient `op` fallback
+    of issue #310 -- fails the corner outright, because every measurement
+    ngspice printed came from an unsettled transient snapshot rather than
+    a converged operating point.
 
     ``workdir`` holds the generated deck (scratch, disposable). ``log_dir``
     -- when given -- is where the raw ngspice output lands as
@@ -778,8 +1022,41 @@ def run_point(
     elapsed = time.monotonic() - started
     log_path.write_text(output)
 
+    # #301: attribute this corner's DC solve to a continuation rung before
+    # anything else looks at the output, so the attribution is recorded for
+    # failing and erroring corners too -- those are precisely the ones whose
+    # rung a reader wants to compare against the last run's.
+    dc_path = classify_dc_path(output)
     measurements = parse_measurements(output)
     missing = [name for name in tb.measure if name not in measurements]
+
+    # #310: a DC-solve bench (no .tran analysis) whose log shows the ladder
+    # fell through source stepping reports an unsettled transient snapshot
+    # as its operating point. That must fail the corner even when every
+    # requested measurement parsed -- a number parsed out of a non-DC
+    # snapshot is exactly the silent failure this gate exists to catch.
+    # `.tran` benches are exempt: their initial-time-point solve walks the
+    # same ladder, and a pseudo-transient initial condition does not
+    # invalidate the transient that follows.
+    if not _runs_transient_analysis(*tb.analyses):
+        exhausted = _ladder_exhaustion_lines(output)
+        if exhausted:
+            return PointResult(
+                point=point,
+                status="failed",
+                measurements=measurements,
+                missing=missing,
+                seconds=elapsed,
+                deck=deck_path.name,
+                log=log_path.name,
+                message=(
+                    "pseudo-transient op fallback: DC continuation ladder "
+                    f"exhausted ({exhausted[0].strip()}); the reported "
+                    "operating point is an unsettled transient snapshot, "
+                    "not a converged DC solution"
+                ),
+                dc_path=dc_path,
+            )
 
     if missing:
         errors = "; ".join(_ERROR_RE.findall(output)[:3])
@@ -795,6 +1072,7 @@ def run_point(
             deck=deck_path.name,
             log=log_path.name,
             message=first_error or errors or f"ngspice exit {returncode}, no measurements parsed",
+            dc_path=dc_path,
         )
 
     return PointResult(
@@ -804,6 +1082,7 @@ def run_point(
         seconds=elapsed,
         deck=deck_path.name,
         log=log_path.name,
+        dc_path=dc_path,
     )
 
 

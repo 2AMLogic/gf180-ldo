@@ -3,7 +3,7 @@
 ** sch_path: design/ldo_ilimit.sch
 .subckt ldo_ilimit VIN VOUT PASS_GATE EN VREF VSS BG
 *.PININFO VIN:B VOUT:B PASS_GATE:B EN:I VREF:I VSS:B BG:B
-XMsense ISNS PASS_GATE VIN VIN pfet_03v3 L=0.28u W=50u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
+XMsense ISNS PASS_GATE VIN VIN pfet_03v3 L=0.28u W=70u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XRsns VOUT ISNS VSS ppolyf_u r_width=5u r_length=7.6u m=10
 XMpd PB PB VIN VIN pfet_03v3 L=2u W=10u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'

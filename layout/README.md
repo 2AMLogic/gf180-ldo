@@ -1,28 +1,52 @@
 # layout/ — GDS, DRC and LVS
 
 Physical verification for this repo, on the gf180mcu open PDK. **There is no
-LDO layout yet.** What lives here today is the *flow*: a documented, one-command
-DRC + LVS invocation, proven end to end against a deliberately trivial test
-cell, so that whoever lays the block out inherits a working loop instead of
-building one.
+LDO layout yet.** What lives here today is the *flow* and the *plan*:
+
+- the flow — a documented, one-command DRC + LVS invocation, proven end to end
+  against a deliberately trivial test cell, so that whoever lays the block out
+  inherits a working loop instead of building one (the rest of this file);
+- the plan — [`floorplan.md`](floorplan.md), the pass-array segmentation and
+  metal strategy, the common-centroid matching plan, the Kelvin-sense scheme
+  and the core-area estimate, with [`area_estimate.py`](area_estimate.py)
+  re-deriving that estimate from `design/netlist/` on demand.
 
 ```bash
 python3 layout/drclvs.py --check-env    # is everything installed?
 python3 layout/drclvs.py                # build, export, DRC ×2, LVS, controls
+python3 layout/drclvs.py --cell passives   # ... on the passive-bearing vehicle
 python3 layout/drclvs.py --check        # ... and the committed netlist must be current
 python3 layout/drclvs.py --record       # ... and write layout/records/<record-id>.md
 ```
 
+`drclvs.py` is a **generalized driver, not a testcell-only script**: the stages
+above take a `CellSpec` (GDS generator, LVS reference schematic, substrate net,
+where the exported netlist is committed) rather than hardcoded constants.
+`--cell testcell` (the default) and `--cell passives` are the two registered
+today, both of them *flow vehicles* rather than design blocks; a real block's
+layout registers its own `CellSpec` in `drclvs.py`'s `CELLS` dict and drives it
+with `--cell <key>` — see that file's module docstring for the exact contract.
+
+The stage **count** is a property of the cell. Stages 1–5 always run; stage 6
+onwards is one LVS negative control per corruption the netlist can express, so
+a FET-only cell has 7 stages and one that also contains a resistor and a
+capacitor has 9. The two MOS controls still key off the netlist's first `M*`
+element line, so an *all*-passive cell (e.g. a resistor-only feedback divider)
+will need its own topology mutation rather than reusing `control_topology`
+verbatim.
+
 A run takes about a minute and prints one line per stage:
 
 ```
-[1/7] layout      : drclvs_testcell.gds (2592 bytes)
-[2/7] netlist     : 1 device line(s), LVS form
-[3/7] klt drc     : clean (0 violation(s), curated subset)
-[4/7] pdk drc     : 0 violation(s) across 642 rule categories (41 rule tables)
-[5/7] lvs         : MATCH
-[6/7] control topo: gate shorted to drain -> MISMATCH (expected)
-[7/7] control para: device width doubled -> MISMATCH (expected)
+[1/9] layout      : drclvs_passives.gds (45508 bytes)
+[2/9] netlist     : 3 device line(s), LVS form
+[3/9] klt drc     : clean (0 violation(s), curated subset)
+[4/9] pdk drc     : 0 violation(s) across 642 rule categories (41 rule tables)
+[5/9] lvs         : MATCH
+[6/9] control topology  : gate shorted to drain -> MISMATCH (expected)
+[7/9] control parameter : device width doubled -> MISMATCH (expected)
+[8/9] control passive-r : resistor length doubled -> MISMATCH (expected)
+[9/9] control passive-c : capacitor length doubled -> MISMATCH (expected)
 ```
 
 Exit status is 0 only if every stage passed. On failure the run directory
@@ -34,15 +58,39 @@ it.
 
 ```
 layout/
-  drclvs.py                          the one command (see "The seven stages")
+  drclvs.py                          the one command (see "The stages")
+  lvs_form.py                        renders passives as primitive R/C elements
+  floorplan.md                       the floorplan and matching plan (issue #15)
+  area_estimate.py                   core-area estimate from design/netlist/
   xschemrc                           design/xschemrc + `lvs_netlist 1`
   testcell/
     drclvs_testcell.sch              the test cell, schematic side
     drclvs_testcell.sym              (exists only to force a real `.subckt`)
     gen_gds.py                       the test cell, layout side (a generator)
     netlist/drclvs_testcell.spice    the exported LVS reference netlist
+  passives/                          same four files for the passive vehicle
+  tests/                             stdlib unittest, no PDK/klayout needed
   records/<record-id>.md             append-only run records
 ```
+
+## The floorplan
+
+[`floorplan.md`](floorplan.md) is the physical plan the eventual layout has to
+implement: how the pass array is segmented and strapped for 50 mA, which
+devices must be common-centroid and to what numeric target, where the output is
+Kelvin-sensed, and how the whole block fits the ratified `< 0.1 mm²` core
+budget. Its area arithmetic is not typed in by hand — it comes from
+
+```bash
+python3 layout/area_estimate.py               # the block / per-kind table
+python3 layout/area_estimate.py --devices     # ... plus every device
+python3 layout/area_estimate.py --pass-width 4000   # what-if (issue #139)
+```
+
+which reads `design/netlist/ldo_core.spice` directly, so the estimate tracks
+the design. `layout/tests/test_area_estimate.py` asserts the estimate still
+fits the budget at every candidate pass-device width, which makes the budget
+claim a check CI runs rather than a sentence that can go stale.
 
 ## Getting the tools
 
@@ -66,6 +114,37 @@ tells you which are missing.
 The PDK is found by `sim/harness/pdk.py` — the same resolver the simulation
 harness uses, so there is one implementation of "where is gf180mcu" in the repo
 and `python3 sim/run_corners.py --check-env` diagnoses a missing PDK for both.
+
+### A fifth tool you do *not* have to install: `pmap`
+
+The gf180mcu DRC and LVS decks install a Ruby `Logger` formatter that shells out
+to `pmap(1)` on **every** log line, to print the run's memory usage:
+
+```ruby
+"#{datetime}: Memory Usage (" + `pmap #{Process.pid} | tail -1`[10, 40].strip + ") : #{msg}"
+```
+
+`pmap` is procps — Linux-only, and absent from macOS and from many minimal
+Linux containers. On such a host the backtick yields `""`, `""[10, 40]` is
+`nil`, and `nil.strip` raises, so the deck dies on its **first** `logger.info`,
+before running a single rule. It fails as
+
+```
+sh: pmap: command not found
+ERROR: In .../main.drc: undefined method 'strip' for nil
+```
+
+which reads like a broken deck rather than a missing utility, and takes stages
+4–7 — i.e. every DRC number and every LVS verdict this repo is willing to
+quote — with it.
+
+`drclvs.py` therefore writes a small `pmap` stand-in into the run directory and
+puts it on `PATH` **for the deck subprocesses only** when the host has no real
+one. It reports the process's actual resident size via `ps(1)`, in the column
+layout the formatter slices, so the logged number is true rather than invented.
+Which of the two ran is recorded: the stage-4 line prints `pmap shimmed`, and
+every `--record` run carries a `pmap` row reading `host` or `shimmed`, so a
+record never implies a stock toolchain when a stage ran against a substitute.
 
 ## The test cell
 
@@ -99,7 +178,63 @@ The two sides are kept honest against each other by construction:
   demands a byte-for-byte match — the same staleness-plus-reproducibility gate
   `design/netlist.py --check` applies.
 
-## The seven stages
+## The passive-bearing vehicle
+
+A cell whose only device is a FET cannot notice that the flow is broken for
+anything else — and it was. The gf180mcu PDK's xschem symbols carry an
+`lvs_format` attribute **only on the FETs**; every resistor and every capacitor
+symbol has a `format` and nothing else. So `lvs_netlist 1` renders the FETs as
+primitive `M` elements and leaves the passives in xschem's *simulation* form,
+which KLayout's SPICE reader turns into a call to an undefined subcircuit
+instead of a device (issue #313):
+
+```
+XRbias NBIAS RBT VSS ppolyf_u_1k r_width=1u r_length=1000u m=1     <- simulation form
+XCc    NZ OUT       cap_mim_2f0_m3m4_noshield c_width=48u c_length=48u m=1
+```
+
+`layout/lvs_form.py` renders those as the primitive elements the deck's own
+SPICE reader delegate understands, carrying `l` and `w` across faithfully:
+
+```
+Rbias NBIAS RBT VSS ppolyf_u_1k l=1000u w=1u m=1
+Cc    NZ OUT       cap_mim_2f0_m3m4_noshield l=48u w=48u m=1
+```
+
+The rewrite runs **before** `drclvs.py`'s simulation-form guard, not instead of
+it, and only on lines that carry a complete `r_width`/`r_length` or
+`c_width`/`c_length` pair — the parameter names every PDK passive symbol's
+`format` uses, which is what makes the translation cover the whole family
+without enumerating flavours. Anything it declines to touch is still a hard
+failure — first through the existing simulation-form guard, then through a
+family-agnostic backstop that rejects any *remaining* `X`-prefixed line
+carrying a `key=value` parameter tail. That tail is the tell: every device
+symbol's `format` ends in one, a hierarchical subcircuit symbol's
+(`@name @pinlist @symname`) does not, so a device family nobody has needed
+yet cannot sail through by not being named in a regex. `lvs_form.py`'s module
+docstring records why this lives here rather than in repo-local `.sym`
+overrides.
+
+`drclvs_passives` is what proves it end to end: **one `ppolyf_u_1k` H-poly
+resistor** (1 µm × 10 µm), **one `cap_mim_2f0` MIM cap** (20 µm × 20 µm) and
+**one 2-finger `nfet_03v3`** (W = 6 µm total, L = 0.28 µm), each built from the
+PDK's own PCell, sharing no nets with each other. Like the test cell it is not
+part of the LDO and is not meant to grow. It earns its keep three ways a
+single-FET cell cannot:
+
+- the resistor and the cap are the devices `lvs_form.py` exists for, and stages
+  8 and 9 prove the deck really compares their geometry;
+- the **multi-finger** FET checks that the deck's own multifinger merge lands
+  one device — its two interdigitated source straps carry the same label and
+  nothing straps them in metal, so the merge is doing the work;
+- the MIM cap is the only device here whose terminals are not on metal1/poly2.
+  For the 5LM / MIM-option-B stack this repo builds against they are metal4 and
+  metal5, which ties the layout, the deck's `mim_option`/`metal_level`/`mim_cap`
+  switches and the schematic's `model=cap_mim_2f0_m4m5_noshield` into one
+  self-checking loop. Get any of the three wrong and the device extracts as
+  nothing at all.
+
+## The stages
 
 **1. Build the layout.** `klayout -b -r layout/testcell/gen_gds.py`.
 
@@ -139,10 +274,18 @@ and it is a **13-rule curated subset**. See "Coverage, honestly" below.
 way the PDK's own `run_drc.py` assembles it: `main.drc`, then every rule table
 (minus the flat-mode `*_split` variants, matching what `run_drc.py` does in deep
 mode), then `tail.drc`, with `layers_def.drc` copied beside the generated deck.
-41 rule tables, 642 rule categories. `drclvs.py` assembles the deck itself
+41 rule tables, and ~640 rule categories. `drclvs.py` assembles the deck itself
 rather than shelling out to `run_drc.py`, which needs `docopt` and drives its
 own parallel run/report layout; what we want is one deck, one report, one exit
 status. **This is the DRC number worth quoting.**
+
+Quote it from a *record*, not from this file: the category count is a property
+of the deck **as the installed KLayout builds it**, not of the PDK alone. At
+the same open_pdks hash it was 642 under KLayout 0.28.16 (record
+`20260801-075800-9419809`) and is 640 under 0.30.10 (record
+`20260922-215349-74f117f`). What matters for a DRC claim is that the count is
+large and non-zero — see the zero-category trap immediately below — and that
+the violation count beside it is zero.
 
 A deck that runs but registers *zero* rule categories produces an empty report
 that is indistinguishable from a clean one — that is what a mis-assembled deck
@@ -154,18 +297,28 @@ The deck reports its own verdict in its log and exits 0 either way, so the log i
 the contract; `drclvs.py` demands exactly one of the two verdict strings, so a
 deck that fell over before comparing is an error rather than a silent pass.
 
-**6 & 7. Negative controls.** The same compare, twice more, against deliberately
-corrupted copies of the netlist. Both **must** mismatch:
+**6 onwards. Negative controls.** The same compare, once more per control,
+against deliberately corrupted copies of the netlist. Every one **must**
+mismatch:
 
-| Control | Mutation | What it would mean if it matched |
-| --- | --- | --- |
-| topology | gate shorted to drain | a 4-net circuit compared equal to a 3-net one — the compare is not looking at connectivity |
-| parameter | device width doubled | device parameters are not being compared at all |
+| Control | Mutation | Registered when | What it would mean if it matched |
+| --- | --- | --- | --- |
+| topology | gate shorted to drain | always | a 4-net circuit compared equal to a 3-net one — the compare is not looking at connectivity |
+| parameter | device width doubled | always | device parameters are not being compared at all |
+| passive-r | resistor length doubled | the netlist has an `R` element | resistor geometry is not being compared at all |
+| passive-c | capacitor length doubled | the netlist has a `C` element | capacitor geometry is not being compared at all |
 
 These are not decoration. A "match" from an LVS run is not evidence unless a
 *known-wrong* netlist fails: a mis-wired invocation that silently compares
 nothing also "passes", and a compare that checks connectivity while ignoring
 parameters would wave through a mis-sized transistor.
+
+The passive pair is load bearing for a reason particular to this PDK's deck:
+its SPICE reader delegate registers resistors and capacitors with the `R` and
+`C` parameters **disabled** (`custom_classes.lvs`), so a netlist claiming a
+resistance 30× off the truth legitimately still matches. Geometry is the only
+thing being compared for those devices, which makes "is the geometry actually
+compared?" a question worth answering with a control rather than an assumption.
 
 ## Coverage, honestly
 
@@ -219,7 +372,7 @@ bringing in a GDS from elsewhere should check its dbu before believing a
 with the record-id convention `sim/` uses (`<YYYYMMDD>-<HHMMSS>-<short-sha>`).
 Re-runs mint a new record; records are never edited in place. Each one carries
 the tool versions, the PDK variant and open_pdks hash, both DRC results with
-their rule-category counts, the LVS verdict and both control verdicts.
+their rule-category counts, the LVS verdict and every control verdict.
 
 The run directory itself (`layout/.work/`) is scratch and gitignored — the
 `.lyrdb` / `.lvsdb` databases are large, machine-specific and regenerable. The
@@ -238,8 +391,25 @@ generically against [klayout-tools](https://github.com/2AMLogic/klayout-tools):
 - [#163](https://github.com/2AMLogic/klayout-tools/issues/163) (existing, part
   of the `klt lvs` epic) — commented with two requirements this bring-up
   surfaced: the simulation-vs-LVS netlist-form split, and the need for negative
-  controls in the contract. `klt` has no LVS verb today, which is why stage 5
-  drives the PDK's deck directly.
+  controls in the contract. `klt` had no LVS verb when stage 5 was written,
+  which is why it drives the PDK's deck directly; see the note below the list.
+- [#2308](https://github.com/2AMLogic/klayout-tools/issues/2308) — no verb
+  reports a deck's **rule values**, so pre-layout arithmetic (everything
+  `area_estimate.py` computes) hard-codes constants transcribed out of Ruby
+  comment strings in the PDK's rule decks. `klt deck info` gives a content hash
+  and device classes; `klt drc` needs a stream. Filed from `floorplan.md` §10.
+- [#2333](https://github.com/2AMLogic/klayout-tools/issues/2333) — `klt drc
+  --engine klayout` runs a PDK's **driver script** as-is, so the driver's host
+  assumptions become klt's; a missing host utility aborts the deck before any
+  rule runs, and the surfaced error blames the deck. This is the generic form
+  of the `pmap` problem above. Asks for either deck composition from the rule
+  tables alone, or a preflight that names the missing utility.
 
-When `klt` grows `lvs` and PDK-deck support, stages 4 and 5 should collapse into
-`klt` calls and this file should shrink accordingly.
+`klt` has since grown both of the verbs this section's older entries wanted:
+`klt drc --engine klayout` (PDK-native DRC-DSL decks, #173) and `klt extract` /
+`klt lvs` (headless extraction and compare, the #163 epic) — as of `klt 0.4.0`,
+which is newer than stages 4 and 5 here. **Collapsing those two stages into
+`klt` calls is real, available work, but it is not a free swap**: the negative
+controls and the verdict-string contract in stage 5 are what make an LVS
+"match" evidence at all, and any move has to carry them across and show the
+same cell reaching the same verdict both ways before the old path is retired.

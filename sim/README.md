@@ -141,7 +141,11 @@ fields:
   Links. A record MAY report more than one spec point extracted from the
   same sweep (e.g. PSRR at 1 kHz and 100 kHz) as separate line items under
   Result, each with its own pass/fail — the sweep is run once, but every
-  claim it substantiates gets an explicit, unambiguous verdict.
+  claim it substantiates gets an explicit, unambiguous verdict. Records
+  minted by `sim/run_corners.py` additionally carry a **`dc path`** column
+  and a **DC solve path** census inside Result — see "A verdict can move
+  without the circuit moving" below. It is attribution, never a verdict: no
+  rung value has ever made a record pass or fail.
 - **Links** — paths to the testbench file(s), the frozen netlist snapshot,
   and the raw per-corner logs used to produce this record.
 - **Timestamp / author** — when the record was created and who (human or
@@ -248,6 +252,87 @@ historical split (census, and what a cross-fingerprint comparison may and may
 not conclude): `docs/environment-setup.md` → "The ngspice-46 builds already
 in `sim/*/records/` are an accepted, historical split". Per the append-only
 rule above, none of those records are regenerated to reconcile it.
+
+## A verdict can move without the circuit moving: the DC solve path (#301)
+
+The caveat above is about the toolchain *binary* changing underneath a
+record. There is a second, closely-related way two records can disagree with
+no electrical change between them, and it happens on one fixed binary: the
+**DC continuation ladder**.
+
+ngspice does not solve a DC operating point with one algorithm. It tries the
+first-guess Newton solve, and on non-convergence descends a ladder of
+continuation methods, taking the first one that converges:
+
+| rung | what ngspice prints when this rung solved the point |
+|---|---|
+| `direct` | *(nothing — the first Newton pass converged)* |
+| `dynamic-gmin` | `Dynamic gmin stepping completed` |
+| `true-gmin` | `True gmin stepping completed` |
+| `source-stepping` | `Source stepping completed` |
+| `pseudo-transient` | `Transient op finished successfully` |
+
+Which rung a corner lands on is a property of the numerical path, not of the
+circuit. Issue #301 measured a 2×2 on `sim/quiescent-current` — two DUT
+netlists × a seeded/unseeded deck, one host, one ngspice binary, one PDK —
+in which the bench's overall verdict flipped between two builds whose
+`iq_en_ua` agrees to six significant figures at every corner. DR-0033 (a
+poly-resistor *flavour* swap, electrically neutral on this bench) had moved
+which rung the one marginal corner caught on, and nothing in the recorded
+evidence said so.
+
+So every `sim/run_corners.py` record now reports, per corner, the deepest
+rung that corner's DC solve(s) reached, plus a grid-level census. Read it
+the same way as `ngspice binary sha256` and `Host`:
+
+- **A census difference between two records is a real difference**, even
+  when every printed measurement matches — those corners' solutions came
+  from different algorithms.
+- **A deep rung is not a failure.** ngspice descends the ladder on its own,
+  and the answer it returns is still checked by the same `tb.json` checks as
+  any other corner. The rung marks *marginality*, so a corner sitting on
+  `source-stepping` today is the one to expect to move tomorrow.
+- **Do not tune a deck against a rung.** A `.nodeset` DC seed chosen to move
+  one corner up the ladder is validated against a numerical path, not
+  physics; issue #301's own 2×2 is the counter-example (the seed that fixed
+  the marginal corner on one DUT created a new failure at a *different*
+  corner on the next one). Any future seed must re-run that A/B on the DUT
+  current at the time.
+- **The last rung is fatal, not marginal (#310).** Everything above applies
+  to the first four rungs. A log showing the ladder fell *through*
+  `source-stepping` — `Warning: source stepping failed` followed by
+  `Note: Transient op started` / `Note: Transient op finished successfully` —
+  means ngspice reported a snapshot of an unsettled synthetic transient as
+  the operating point: it exits 0 and prints every requested measurement,
+  but the values are not a DC solution. Committed evidence:
+  `sim/quiescent-current/corners/20260915-234352-077e15b/ss_-40c_2.97v.log`
+  reports `iq_en_ua = -137.99` — a *negative* no-load supply current, i.e.
+  capacitor displacement current, which no DC operating point has — and the
+  corner's bench checks only caught it by luck (see #310's "Why it
+  matters"). The harness therefore fails such a corner outright, gated to
+  DC-solve benches (`op`, `dc`, `ac`): a bench that declares a `.tran`
+  analysis is exempt, because its initial-time-point solve walks the same
+  ladder and a pseudo-transient initial condition does not invalidate the
+  transient that follows. This applies on every code path that drives
+  ngspice in this repo: `run_point()` and `run_ngspice_deck()` (#310), and
+  the standalone bash driver `sim/harness/lib/run_point.sh`'s
+  `harness_run_point()` plus `sim/devchar/lib/devchar.sh`'s `dc_run()`
+  (#317) — the latter two shell out to the same
+  `_ladder_exhaustion_lines()` / `_runs_transient_analysis()` rather than
+  keeping their own copy, so all four call sites cannot drift apart.
+
+Implementation: `sim.harness.runner.classify_dc_path()` classifies one
+corner's combined ngspice stdout+stderr; `sim.harness.report.dc_path_census()`
+rolls the grid up. Both are pure log parsing — they change no deck, assert
+nothing, and run on every bench that goes through `run_point()`. Sweep
+testbenches with their own driver (`sim/loop-stability`,
+`sim/soft-start-loop-gain`) can opt in by calling `classify_dc_path()` on
+what `run_ngspice_deck()` already returns; none does yet. `dc_path` census
+reporting is `run_point()`/`run_ngspice_deck()`-specific (#301) and is not
+part of what the bash driver's ladder-exhaustion *gate* needed to port —
+`sim/harness/lib/run_point.sh` and `sim/devchar/lib/devchar.sh` fail a
+corner outright the same way, they just do not also classify/census the
+rung for corners that pass.
 
 ## Interim evidence note (for #4, device characterization)
 

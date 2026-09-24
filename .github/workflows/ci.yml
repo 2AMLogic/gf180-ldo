@@ -16,6 +16,18 @@ name: CI
 #                                       enforcing README.md's "regenerate
 #                                       after any sim/ record lands" rule; no
 #                                       PDK/ngspice needed, see issue #216)
+#   - signoff/check.sh                (re-grades this block's T1 state from
+#                                       signoff/block-manifest.json via `klt
+#                                       signoff --manifest` and fails if a
+#                                       pinned content_hash no longer matches
+#                                       its artifact or the committed
+#                                       signoff/records/t1-tier-report.json no
+#                                       longer matches a fresh run -- so the
+#                                       verdict of record rots loudly instead
+#                                       of silently, see issue #270. Needs klt
+#                                       (fetched by uvx) but no PDK/KLayout:
+#                                       --manifest mode only reads committed
+#                                       JSON envelopes.)
 #
 # CLAUDE.md's "headless only" flow keeps the default PR path free of any PDK
 # or GUI dependency: `harness-selftest` below runs on every push/PR and never
@@ -82,6 +94,52 @@ jobs:
         # under sim/*/records/, design/netlist/*.spice, and README.md's own
         # spec table, and its own module docstring documents byte-identical
         # output on an unchanged tree.
+
+      - name: Verify decision-record numbers are unique
+        run: |
+          dupes="$(ls spec/decision-records/DR-*.md \
+            | grep -oE 'DR-[0-9]+' | sort | uniq -d)"
+          if [ -n "$dupes" ]; then
+            echo "::error::two or more spec/decision-records/ files claim the same DR number: $(echo "$dupes" | tr '\n' ' ')-- renumber the one that merged second into the next free slot (issue #268)."
+            exit 1
+          fi
+        # DR numbers are stable cross-referenced identifiers repo-wide, so a
+        # duplicate makes every bare "DR-00NN" citation ambiguous. Two sessions
+        # each reading "next free number" off origin/main inside the same
+        # ten-minute window is enough to collide (PR #263 / PR #264, both
+        # DR-0027, 2026-09-19 -- issue #268). This runs on push to main too, so
+        # the second merge of a colliding pair fails immediately rather than
+        # waiting for a human to notice.
+
+  signoff-tier-report:
+    name: T1 tier report (klt signoff --manifest, no PDK required)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv (fetches the pinned klt revision for signoff/check.sh)
+        run: python3 -m pip install --upgrade uv
+
+      - name: Re-grade this block's T1 state
+        run: bash signoff/check.sh
+        # signoff/records/t1-tier-report.json is the verdict of record that
+        # issue #79 (the gap-to-T1 tracker) cites instead of keeping its own
+        # hand-maintained checkbox list. It is only worth citing if it cannot
+        # rot: this step re-runs `klt signoff --manifest` and fails when a
+        # pinned content_hash no longer matches the artifact it covers, or
+        # when the committed record no longer matches a fresh run. Both are
+        # real news -- either this block's evidence moved or the T1 checklist
+        # did (it grew an eleventh item on 2026-09-17, klayout-tools#2025,
+        # which invalidated every hand-read that predates it). See
+        # signoff/README.md and signoff/check.sh's header, including why the
+        # klt revision is pinned there rather than tracking PyPI.
+        #
+        # No PDK/KLayout/ngspice needed: --manifest mode only reads committed
+        # JSON envelopes and the tier doc bundled with klt itself.
 
   pvt-smoke:
     name: PVT smoke run against gf180mcu (ngspice + PDK)
