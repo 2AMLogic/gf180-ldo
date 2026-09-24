@@ -273,7 +273,7 @@ def format_report(g: ArrayGeometry, i_load_ma: float = I_LOAD_MA) -> tuple[str, 
         lines.append(f"  {key:<18} {nominal[key]:7.2f} mOhm nom   {maximum[key]:7.2f} mOhm max")
     lines.append(
         f"  bus run left       {squares_left_for_the_bus(nominal['total']):7.2f} squares "
-        f"of M4 || M5 per side at the nominal corner (design rule: <= 0.75)"
+        f"of M4 || M5 per side at the nominal corner (design rule: <= 0.70)"
     )
     ok = all(row.ok for row in rows)
     return "\n".join(lines), ok
