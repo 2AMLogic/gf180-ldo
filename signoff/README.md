@@ -81,7 +81,7 @@ requires of the claimant rather than of the tool.
 | 2 | `unmet` / `no_evidence` | **Genuinely absent.** There is no LDO layout. `layout/` holds the proven DRC/LVS *flow* and a one-transistor test cell, not the block. |
 | 3 | `unmet` / `no_evidence` | No `klt drc` envelope for this block exists, because item 2 does not. The test cell's DRC run is evidence about the test cell. |
 | 4 | `unmet` / `no_evidence` | Same: no LVS compare of this block exists to cite. |
-| 5 | `unmet` / `no_evidence` | Corner evidence exists in quantity under `sim/*/records/`, but as Markdown records from this repo's own harness, not `klt sim` JSON envelopes — nothing here is gradeable yet. `sim/CHARACTERIZATION.md` also reads FAIL on PSRR (issue #289 / `DR-0031`), MIXED on Startup, and marks most rows' records STALE against the current `design/netlist/*.spice`. This item is the block's largest real gap, and it is an `unmet` row rather than a caveat buried in prose. |
+| 5 | `unmet` / `no_evidence` | Corner evidence exists in quantity under `sim/*/records/`, but as Markdown records from this repo's own harness, not `klt sim` JSON envelopes — nothing here is gradeable yet. `sim/CHARACTERIZATION.md` also reads FAIL on PSRR (issue #289 / `DR-0031`), FAIL on Line reg and Output (issue #325's re-mint, same `DR-0031` residual at the same corner family), MIXED on Startup, and marks half the rows' records STALE against the current `design/netlist/*.spice`. This item is the block's largest real gap, and it is an `unmet` row rather than a caveat buried in prose. |
 | 6 | `unmet` / `no_evidence` | `sim/mc-output-accuracy/` is a real Monte Carlo campaign, but there is no `klt yield` report — the only kind item 6 accepts. |
 | 7 | `unmet` / `no_evidence` | No layout, so no `klt pex`. Item 7 rejects every other evidence kind, so there is nothing weaker that could stand in. |
 | 8 | **`met`** | Cites `evidence/characterization.generic.json`, a generic envelope wrapping `sim/CHARACTERIZATION.md`. See below. |
@@ -99,13 +99,20 @@ so it cannot drift from the committed evidence.
 
 Item 8 asks for that aggregation artifact to exist and be current. It does
 **not** ask for every row in it to pass, and this `met` verdict must not be
-read as if it did: the report currently reads **FAIL on PSRR**, **MIXED on
-Startup**, and marks most rows' underlying sim record **STALE** against the
+read as if it did: the report currently reads **FAIL on PSRR**, **FAIL on Line
+reg** (and therefore on **Output**, which counts line regulation inside its
+±2% window), **MIXED on Startup**, and marks half the rows' underlying sim
+record **STALE** against the
 current `design/netlist/*.spice`. Those are item 5's subject matter, and item 5
 is `unmet` above. (PSRR went PASS → FAIL on 2026-09-23 when issue #289's
 re-run superseded a stale PASS pair from 2026-09-05; the rollup surfacing a
 real design gap rather than concealing it is the property item 8 grades. Root
-cause: `spec/decision-records/DR-0031`; the gap itself is issue #302.) One green row out of eleven is not a claim about this block's
+cause: `spec/decision-records/DR-0031`; the gap itself is issue #302. Line reg
+and Output went PASS → FAIL on 2026-09-24 the same way: issue #325's re-mint
+superseded a 2026-09-05 record that was stale against DR-0033/DR-0034, and
+`ff_125c_3.30v` now reads 8.2345 mV/V against the ratified < 5 mV/V row —
+the same supply-dependent soft-start injection residual `DR-0031` measures,
+at the same corner family, so it is tracked under issue #302 too.) One green row out of eleven is not a claim about this block's
 performance. (Current limit and Thermal read FAIL here until issue #139's
 re-run restated them against `DR-0005`'s **ratified** 62–95 mA / ≤ 346 mW rows
 rather than the superseded 65–80 mA / ≤ 290 mW ones; no measured number moved.)
