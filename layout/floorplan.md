@@ -48,25 +48,28 @@ claim into a check CI runs.
 | EM current density | **DC AVERAGE 0.67 mA/µm** of drawn width (Metal1–Metal4), **1.5 mA/µm** (Metal5), **0.18 mA per cut** (Via1–Via4) — unit convention derived in §8.1, not assumed. **No limit published for the `CON` contact layer**: 129 µA/cut placeholder per DR-0030 (§8.3) | `libs.ref/*/techlef/*.tlef` `DCCURRENTDENSITY`; DR-0030 (proposed) |
 
 **#139 closed at W = 2 mm (N = 40); #294 / `DR-0034` re-opened and closed it
-again at W = 2.8 mm (still N = 40, on a 70 µm unit cell), and this document
-still did not have to move to absorb it.** It was written to hold at any
-candidate width — §3 defines the array as *N identical unit cells* and every
-EM, IR, thermal and area number below is given at more than one of them — so
-the decision selects a column rather than rewriting the plan. The ~1.9 dB of
-gain margin `DR-0032` said a widening was waiting on arrived with `DR-0033`'s
-poly-resistor re-flavour, which is why the decision moved; the measured
-ceiling is now between 3.00 mm and 3.20 mm rather than ≈ 2.5 mm.
+again at W = 2.8 mm (still N = 40, on a 70 µm unit cell).** The plan's
+*structure* held — §3 defines the array as *N identical unit cells*, and the
+replica rule of §3.2 survived the widening untouched because the widening was
+taken in the **unit cell** (50 µm → 70 µm) rather than in the unit count. What
+did have to move is §3's per-width arithmetic, which was keyed to the 50 µm
+unit: re-keying it to the shipped device is #330, and §3 below is the result.
+The ~1.9 dB of gain margin `DR-0032` said a widening was waiting on arrived
+with `DR-0033`'s poly-resistor re-flavour, which is why the decision moved; the
+measured ceiling is now between 3.00 mm and 3.20 mm rather than ≈ 2.5 mm.
 
-**Every per-width number in §3.3–§3.6 below is stated at 2.00 mm and 4.00 mm,
-and every one of them improves monotonically with width** — EM current density
-per µm, array IR (the via seas scale with array area), and thermal spreading
-resistance all fall as the device widens. The 2.00 mm columns are therefore a
-**conservative bound** on the shipped 2.8 mm device, not a description of it;
-where a sentence below reads "the shipped 2 mm device" it is naming the
-worst-case column, and the margin it quotes is the one the plan is designed
-against. The one number that moved the *other* way is `DR-0005`'s Thermal
-margin, which is not a layout term: 0.785 mW at 2 mm, 0.414 mW at 2.8 mm
-(`DR-0034`).
+**Every per-width number in §3.1–§3.6 below is stated at the shipped 2.80 mm
+device**, with the superseded 2.00 mm and the wider 4.00 mm candidates kept
+beside it, and every one of them improves monotonically with width — EM current
+density per µm, array IR (the via counts scale with array area), and thermal
+spreading resistance all fall as the device widens. The 2.00 mm columns are
+therefore a **conservative bound**, not a description of what ships. Two
+exceptions to the monotonicity, both stated where they occur: `DR-0005`'s
+Thermal margin, which is not a layout term, moved the *other* way (0.785 mW at
+2 mm, 0.414 mW at 2.8 mm, `DR-0034`); and §3.4's array IR is now a
+**measurement of the as-drawn cell** rather than an estimate, and it comes out
+3.3 mΩ worse than the 2 mm estimate — for reasons of strap topology, not of
+width.
 
 **Caveat on the dropout margin that §3.4's IR budget is carved out of.**
 `sim/CHARACTERIZATION.md` marks the Dropout row **PASS / fresh** as of #294's
@@ -128,15 +131,27 @@ evidence that the dropout row passes.
 The array is a single interdigitated finger stack built from one repeated unit:
 
 ```
-unit cell U  =  pfet_03v3  L = 0.28 um  W = 50 um  nf = 1
-Mpass        =  N x U in parallel      N = W_total / 50 um
+unit cell U  =  pfet_03v3  L = 0.28 um  W = 70 um  nf = 1
+Mpass        =  N x U in parallel      N = W_total / 70 um
 ```
 
-| #139 candidate | N | stack dimension | active area | drain regions | current per drain region |
-| --- | --- | --- | --- | --- | --- |
-| **2.00 mm (shipped — decided, `DR-0032`)** | **40** | **32.4 µm** | **1618 µm²** | **20** | **2.50 mA** |
-| 2.53 mm (stretch) | 51 | 41.2 µm | 2058 µm² | 25 | 2.00 mA |
-| 4.00 mm (devchar) | 80 | 64.4 µm | 3218 µm² | 40 | 1.25 mA |
+| Candidate | unit cell | N | stack dimension | active area | drain regions | contacts per region | current per drain region |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2.00 mm (superseded, `DR-0032`) | `W = 50 µm` | 40 | 32.4 µm | 1618 µm² | 20 | 100 | 2.50 mA |
+| 2.53 mm (the old stretch candidate) | `W = 50 µm` | 51 | 41.2 µm | 2058 µm² | 25 | 100 | 2.00 mA |
+| **2.80 mm (shipped — decided, `DR-0034`)** | **`W = 70 µm`** | **40** | **32.4 µm** | **2265 µm²** | **20** | **140** | **2.50 mA** |
+| 4.00 mm (devchar) | `W = 50 µm` | 80 | 64.4 µm | 3218 µm² | 40 | 100 | 1.25 mA |
+
+**`DR-0034` widened the unit cell, not the unit count.** Going from 2.00 mm to
+2.80 mm moved `W/nf` from 50 µm to 70 µm at a fixed **N = 40**, which is why
+§3.2's replica rule (`N / M = 40`, M = 1) did not have to move and why the
+drain-region count and the per-region current are unchanged at 20 and 2.50 mA.
+What grew is the *length of each drain region* — 140 contacts and 134 via1 cuts
+carry the same 2.50 mA that 100 contacts and 96 cuts carried at the 50 µm unit,
+which is where §3.3's EM relief comes from. The first real layout draws exactly
+this: 40 pass unit cells of `L=0.28u W=70u nf=1` plus one `Msense` cell of the
+same unit at the array centroid
+([`layout/records/20260924-213542-3ec8f89.md`](records/20260924-213542-3ec8f89.md)).
 
 The stack dimension is `N·(L + 0.52) + 0.36`, where 0.52 µm is a shared
 contacted source/drain region (CO.7 + CO.1 + CO.7 = 0.15 + 0.22 + 0.15) and the
@@ -144,7 +159,7 @@ two outer regions are 0.44 µm (CO.7 + CO.1 + CO.4). Both exceed `DF.6_LV`'s
 0.24 µm minimum COMP extension beyond the gate (the 3.3 V variant; `DF.6_MV` is
 0.4 µm and does not apply), so the contacted pitch — not DF.6 — sets the stack.
 
-**Why 50 µm per finger, and what is actually free here.** To first order the
+**Why 70 µm per finger, and what is actually free here.** To first order the
 active area is `W_total × (L + 0.52) = 0.8 × W_total` *regardless of how the
 width is segmented* — halving the finger width doubles the finger count and the
 number of source/drain regions stays proportional. Segmentation is therefore
@@ -160,12 +175,18 @@ grounds:
   `.12` into the `W [1.2, 10)` bin — a *different model card*, which would make
   the layout's device no longer the one every `sim/` record was taken against
   (§4.4).
-- **50 µm** sits mid-decade inside `[10, 100]`, keeps EM comfortable at the
-  strap pitch chosen in §3.3, and is what `design/ldo_core.sch` and
-  `design/ldo_ilimit.sch` already ship — so adopting it costs no schematic
-  change and no re-simulation. If post-layout EM analysis against real foundry
-  limits (§8) demands more headroom, the unit may be halved to `W = 50 µm,
-  nf = 2` (25 µm per finger) **without leaving the bin**.
+- **70 µm** sits mid-decade inside `[10, 100]`, keeps EM comfortable at the
+  strap pitch chosen in §3.3, and is what `design/netlist/ldo_core.spice` ships
+  (`XMpass … W=2800u nf=40`, `XMsense … W=70u nf=1`) — so adopting it costs no
+  schematic change and no re-simulation. The same argument held at the 50 µm
+  unit this plan was first written against; widening it to 70 µm under
+  `DR-0034` kept every one of these constraints satisfied, and bought 1.4× on
+  every row that scales with the unit width — the contact and via1 rows of
+  §3.3's EM table and of §3.4's IR table alike. If post-layout EM analysis
+  against real foundry limits (§8) demands more headroom, the unit may be
+  halved to `W = 70 µm, nf = 2` (35 µm per finger) **without leaving the bin**;
+  the wall is 100 µm, so `N = 40` cannot buy more than 4.00 mm of total width
+  at this unit count.
 
 ### 3.2 The current-limit replica belongs inside the array
 
@@ -177,22 +198,30 @@ a row that is *already* FAIL in `sim/CHARACTERIZATION.md`.
 **Floorplan rule: draw `Msense` as M copies of the same unit cell U, physically
 inside the pass array, and set M so that `N / M = 40`.**
 
-| #139 candidate | N | M | ratio |
-| --- | --- | --- | --- |
-| **2.00 mm (decided, `DR-0032`)** | **40** | **1** | **40** |
-| 2.53 mm | 51 | — | 51 is not divisible by 40; use N = 40 or 80 (see below) |
-| 4.00 mm | 80 | 2 | 40 |
+| Candidate | unit cell | N | M | ratio |
+| --- | --- | --- | --- | --- |
+| 2.00 mm (superseded, `DR-0032`) | `W = 50 µm` | 40 | 1 | 40 |
+| 2.53 mm | `W = 50 µm` | 51 | — | 51 is not divisible by 40; use N = 40 or 80 (see below) |
+| **2.80 mm (shipped — decided, `DR-0034`)** | **`W = 70 µm`** | **40** | **1** | **40** |
+| 4.00 mm | `W = 50 µm` | 80 | 2 | 40 |
 
 This makes the replica ratio a property of the drawn geometry rather than of two
 independently edited `W=` strings. It also pushed back on 2.53 mm as a
 candidate: 2.53 mm is the *minimum* width for the < 200 mV stretch, not a
 preferred value, and it does not give an integer replica ratio at a 50 µm unit
 (nor, as #139 went on to measure, does it actually clear the stretch —
-212.592 mV at ss / 125 °C). **#139 closed at 2 mm (N = 40, M = 1)**, the row
-this table already had, so the replica is a single unit cell placed at the array
-centroid. The 4 mm row remains the only *wider* candidate with an exact integer
-ratio at this unit, which is what made it the layout-preferred candidate before
-`DR-0032` measured it out on the ratified Thermal and gain-margin rows.
+212.592 mV at ss / 125 °C). **#139 closed at 2 mm (N = 40, M = 1); #294 /
+`DR-0034` re-opened it and closed it again at 2.8 mm on the same N = 40,
+M = 1 row**, by widening the unit cell rather than the unit count — so the
+replica is still a single unit cell placed at the array centroid, and the
+drawn cell is exactly that
+([`layout/records/20260924-213542-3ec8f89.md`](records/20260924-213542-3ec8f89.md):
+"40 pass unit cells … plus 1 Msense unit cell of the same cell at the array
+centroid … N/M = 40"). The 4 mm row remains the only *wider* candidate with an
+exact integer ratio at the 50 µm unit, which is what made it the
+layout-preferred candidate before `DR-0032` measured it out on the ratified
+Thermal and gain-margin rows; at the shipped 70 µm unit the same width would
+be N = 40 of a 100 µm cell, i.e. hard against DF.2b's wall.
 
 Placement, so that `Msense` tracks:
 
@@ -211,8 +240,11 @@ Placement, so that `Msense` tracks:
 
 ### 3.3 Metal strategy — electromigration
 
-Current path: channel → contacts → M1 finger straps → M2 orthogonal
-interdigitated straps → M3/M4/M5 interdigitated VIN/VOUT plates → bus → pad.
+Current path: channel → contacts → M1 finger straps → M2 straps → M3/M4/M5
+interdigitated VIN/VOUT rows → bus → pad. This section sizes the orthogonal
+collector at M2; the as-drawn cell moves it up to M3 and runs M2 along the
+finger instead — see the note at the end of this section for what that changes
+and what it does not.
 
 **The limits below are the PDK's own**, from the `DCCURRENTDENSITY AVERAGE`
 entries in the standard-cell tech LEFs
@@ -225,31 +257,62 @@ shows the derivation. The one exception is the `CON` contact layer, which
 carries no current-density entry at all; [§8.3](#83-the-contact-layer--the-one-remaining-assumption)
 and DR-0030 cover it.
 
-| Level | Geometry | Peak, W = 2 mm | Peak, W = 4 mm | Published DC limit | Margin (2 mm) |
-| --- | --- | --- | --- | --- | --- |
-| Drain contacts | 0.22 µm, 0.50 µm pitch (CO.1 / CO.2b), 100 per region | 25.0 µA each | 12.5 µA | **not published** — DR-0030's 129 µA placeholder, by cut-area scaling from Via1 (§8.3) | 5.2× |
-| M1 finger strap | 0.44 µm wide, tapped by via1 + M2 every 5 µm | 0.284 mA/µm | 0.142 mA/µm | 0.67 mA/µm | **2.4×** |
-| Via1 | 0.26 µm (V1.1), 0.52 µm pitch, ~96 per strap | 26.0 µA each | 13.0 µA | 180 µA per cut | 6.9× |
-| M2 strap | 2.2 µm wide on a 5 µm D/S period, **stitched to M3 every 5 µm** | 0.178 mA/µm | 0.089 mA/µm | 0.67 mA/µm | 3.8× |
-| Array exit, M3+M4+M5 | 50 µm exit edge; capacity 50 µm × (0.67 + 0.67 + 1.5) = 142 mA | 50 mA | 50 mA | — | **2.8×** |
+Geometry below is stated at the shipped `W = 70 µm` unit (§3.1); the retained
+`W = 4 mm` column is the devchar candidate at N = 80 of a 50 µm unit, where a
+drain region is half the current over half the length.
 
-The binding row is **M1 at 2.4×** on the shipped 2 mm device; every other level
-has ≥ 2.8×, and at 4 mm the whole table doubles. Nothing here needs the device
-to be re-segmented.
+| Level | Geometry at the 70 µm unit | Peak, W = 2.8 mm | Peak, W = 4 mm | Published DC limit | Margin (2.8 mm) |
+| --- | --- | --- | --- | --- | --- |
+| Drain contacts | 0.22 µm, 0.50 µm pitch (CO.1 / CO.2b), 140 per region | 17.9 µA each | 12.5 µA | **not published** — DR-0030's 129 µA placeholder, by cut-area scaling from Via1 (§8.3) | 7.2× |
+| M1 finger strap | 0.44 µm wide, tapped by via1 + M2 every 5 µm | 0.203 mA/µm | 0.142 mA/µm | 0.67 mA/µm | **3.3×** |
+| Via1 | 0.26 µm (V1.1), 0.52 µm pitch, ~134 per strap | 18.7 µA each | 13.0 µA | 180 µA per cut | 9.6× |
+| M2 strap | 2.2 µm wide on a 5 µm D/S period, **stitched to M3 every 5 µm** | 0.125 mA/µm | 0.089 mA/µm | 0.67 mA/µm | 5.3× |
+| Array exit, M3+M4+M5 | 70 µm exit edge; capacity 70 µm × (0.67 + 0.67 + 1.5) = 199 mA | 50 mA | 50 mA | — | **4.0×** |
+
+The binding row is **M1 at 3.3×** on the shipped 2.8 mm device; every other
+level has ≥ 4.0×. (At the superseded 2 mm / 50 µm unit the same rows read
+25.0 µA, 0.284 mA/µm, 26.0 µA, 0.178 mA/µm and 142 mA of exit capacity, with
+M1 binding at 2.4× — widening the *unit* rather than the *count* is what bought
+the difference, because it spread each drain region's unchanged 2.50 mA over
+1.4× the contacts, cuts and strap length.) Nothing here needs the device to be
+re-segmented.
 
 Two of those rows are load-bearing rather than decorative:
 
 - **The M1 strap only works because it is tapped, not because it is wide.** A
   0.44 µm strap carrying a whole drain region's 2.5 mA end-to-end would be
-  5.7 mA/µm — **8.5× over the published 0.67 mA/µm limit**. Tapping it with a
-  via1 column and an M2 strap every 5 µm cuts the peak to 0.284 mA/µm.
-  **Via1 must be a full column along every source and drain strap, not a via
-  per strap.**
+  5.7 mA/µm — **8.5× over the published 0.67 mA/µm limit**, and that number does
+  not improve with the unit width because the whole region's current still
+  crosses the same 0.44 µm. Tapping it with a via1 column and an M2 strap every
+  5 µm cuts the peak to 0.203 mA/µm. **Via1 must be a full column along every
+  source and drain strap, not a via per strap.**
 - **The M2 strap only works because M3 is stitched to it.** Without an M3
-  plate, each M2 strap has to carry its whole 5 mA slice to the array edge:
-  1.14 mA/µm, **1.7× over the limit — a fail, not a thin margin**. With M3
-  stitched at a 5 µm pitch the peak falls to 0.178 mA/µm. **M3 over the array
-  is not optional.**
+  plate, each M2 strap has to carry its whole 3.57 mA slice out to the two array
+  edges: 0.81 mA/µm, **1.2× over the limit — a fail, not a thin margin** (it was
+  1.14 mA/µm, 1.7× over, at the 2 mm device). With M3 stitched at a 5 µm pitch
+  the peak falls to 0.125 mA/µm. **M3 over the array is not optional.**
+
+**What the first real layout drew, and where it leaves this table.**
+[`layout/records/20260924-213542-3ec8f89.md`](records/20260924-213542-3ec8f89.md)
+(#285, DRC clean on both decks, LVS `MATCH`) runs **M2 *along* the finger**
+rather than orthogonal to it, because the full via1 column this section
+requires can only be met by a level that covers the strap along its whole
+length; **the orthogonality moves up one level, to M3**, which takes the current
+out of the cell on 12 VOUT rows landed on both cell edges. Three consequences
+for the table above:
+
+- **M1 is no longer the binding EM row.** As drawn it runs at **0.024 mA/µm —
+  27.4×** — because a 0.38 µm strap with M2 directly above it never carries more
+  than half a via pitch of collected current, rather than a 5 µm tap span's
+  worth.
+- **The as-drawn binding row is the via2 ISNS strap at 2.3×**, with M2 and the
+  M3/M4 exit rows at 2.5× and M5 at 3.4×. Every level is inside its published
+  limit, and `layout/tests/test_pass_array.py` re-checks that against geometry
+  the generator measures from what it just drew.
+- **The two rows that depend only on the unit width came out exactly as this
+  table predicts**: 17.9 µA/cut on the contacts (7.2×) and 18.7 µA/cut on via1
+  (9.6×). Those are the rows §3.1's widening was supposed to move, and they
+  moved by the predicted 1.4×.
 
 M2/M3/M4/M5 alternate VIN and VOUT with ≥ 40 % coverage each; M2.2b / M3.2b /
 M4.2b / M5.2b require 0.3 µm (not 0.28 µm) of space once a shape exceeds 10 µm
@@ -259,51 +322,89 @@ in both directions, which every one of these plates does.
 
 Series metal resistance between the VIN pad and the pass source, and between the
 pass drain and the Kelvin tap, adds **directly** to dropout at 50 mA. The
-binding case is the shipped 2 mm device, which has 32.6 mV of dropout margin.
+binding case is the shipped 2.8 mm device, which has 106.8 mV of dropout margin
+(193.200 mV measured at ss / 125 °C / Vin = 2.10 V, §1 — read that row's
+DR-0020 caveat before treating the margin as banked; the 2 mm device this
+section was first written against had 32.6 mV).
 
 The tech LEFs give this a corner spread the magic tech file's single value
 hides: M1–M4 sheet is **0.076 / 0.090 / 0.104 Ω/sq** and a via cut is
 **0.0 / 4.5 / 15.0 Ω** across the min / nom / max views. A max-corner via is
 **3.3×** a nominal one, so the budget is stated at both corners:
 
-- **Nominal metal: ≤ 80 mΩ total = 4.0 mV at 50 mA** — 12 % of the 2 mm
-  dropout margin. Split 40 mΩ per side.
-- **Max-corner metal: ≤ 160 mΩ total = 8.0 mV** — 25 % of the 2 mm margin.
-  This is the joint worst case of an ss / 125 °C *device* corner (where the
-  267.4 mV was measured) with max-corner *metal*, which are independent axes.
+- **Nominal metal: ≤ 80 mΩ total = 4.0 mV at 50 mA** — 4 % of the 2.8 mm
+  dropout margin (it was 12 % of the 2 mm device's). Split 40 mΩ per side.
+- **Max-corner metal: ≤ 160 mΩ total = 8.0 mV** — 7 % of the 2.8 mm margin
+  (25 % at 2 mm). This is the joint worst case of an ss / 125 °C *device*
+  corner (where the 193.200 mV was measured) with max-corner *metal*, which are
+  independent axes.
 
-| Term, one side | W = 2 mm, nom | W = 2 mm, max | W = 4 mm, nom | W = 4 mm, max |
-| --- | --- | --- | --- | --- |
-| Drain contacts (2000 / 4000 at 5.2 Ω) | 2.60 mΩ | 2.60 mΩ | 1.30 mΩ | 1.30 mΩ |
-| Via1 column (1920 / 3840 cuts) | 2.34 mΩ | 7.81 mΩ | 1.17 mΩ | 3.91 mΩ |
-| Via2–Via4 seas at 0.52 µm pitch (2958 / 5917 cuts per level) | 4.56 mΩ | 15.21 mΩ | 2.28 mΩ | 7.61 mΩ |
-| M1/M2/M3 distributed, tapped as in §3.3 | 2.00 mΩ | 2.31 mΩ | 2.00 mΩ | 2.31 mΩ |
-| **Array subtotal** | **11.5 mΩ** | **27.9 mΩ** | **6.8 mΩ** | **15.1 mΩ** |
-| **Remaining for the bus run** | **28.5 mΩ** | **52.1 mΩ** | **33.2 mΩ** | **64.9 mΩ** |
+The array half of that budget is no longer an estimate. The VOUT-side terms
+below are **measured from the as-drawn cell** by `layout/pass_array/em_budget.py`
+— cut counts, strap widths and row counts taken from the geometry the generator
+had just built — and recorded in
+[`layout/records/20260924-213542-3ec8f89.md`](records/20260924-213542-3ec8f89.md)
+(#285):
+
+| Term, one side, VOUT | As drawn at W = 2.8 mm, nom | As drawn, max | (2 mm estimate, nom / max) |
+| --- | --- | --- | --- |
+| Drain contacts (20 × 140 = 2800 at 5.2 Ω) | 1.86 mΩ | 1.86 mΩ | 2.60 / 2.60 mΩ |
+| Via1 column (20 × 134 = 2680 cuts) | 1.68 mΩ | 5.60 mΩ | 2.34 / 7.81 mΩ |
+| Via2, one cut column per M2/M3 crossing (20 × 48 = 960 cuts) | 4.69 mΩ | 15.62 mΩ | 4.56 / 15.21 mΩ — the estimate lumped Via2–Via4 as *seas* at 0.52 µm pitch, 2958 cuts per level |
+| Via3 sea (12 × 165 = 1980 cuts) | 2.27 mΩ | 7.58 mΩ | *(in the row above)* |
+| Via4 sea (12 × 165 = 1980 cuts) | 2.27 mΩ | 7.58 mΩ | *(in the row above)* |
+| M1/M2/M3 distributed, tapped as in §3.3 | 2.00 mΩ | 2.31 mΩ | 2.00 / 2.31 mΩ |
+| **Array subtotal** | **14.77 mΩ** | **40.54 mΩ** | 11.5 / 27.9 mΩ |
+| **Remaining for the bus run** | **25.23 mΩ** | **39.46 mΩ** | 28.5 / 52.1 mΩ |
+
+**The measured array is 3.3 mΩ worse than the plan's estimate, and the
+difference is all via2.** The estimate assumed Via2–Via4 could be *seas* at the
+0.52 µm pitch — which presumes a plate on the level below. The as-drawn M2 is a
+0.50 µm strap comb on the 0.80 µm finger pitch (§3.3's note), so a via2 crossing
+fits **one cut column, not a sea**: 960 cuts where the estimate had 2958 per
+level, i.e. 4.69 mΩ nominal / 15.62 mΩ max on via2 alone against 4.56 / 15.21
+for the whole via2/3/4 group. Contacts and via1 came in *better* than the
+estimate, by the unit widening of §3.1, but nowhere near enough to cover it —
+and the gap is wider than the 3.3 mΩ headline, because that headline compares
+the drawn 2.8 mm array against the estimate **as this section wrote it, at
+2 mm**; scaled to 2.8 mm the estimate's via seas would have fallen with array
+area and predicted ≈ 8.8 mΩ nominal. Both measured columns are still
+comfortably inside the 40 mΩ (nom) / 80 mΩ (max) per-side budget — nothing
+fails — but the bus-run allowance below is smaller than the estimate promised,
+so the design rule moves with it.
 
 The bus is the term that drives the floorplan, because it is the only one that
 scales with *distance*:
 
 > **M4 ‖ M5 = 36.0 mΩ per square nominal (41.8 mΩ max) = 1.80 mV (2.09 mV) of
-> dropout per square at 50 mA.** The remaining allowance buys **0.79 squares**
-> at the shipped 2 mm device (0.92 at 4 mm) — and the *nominal* corner binds,
-> not the max one, because the max-corner budget doubles faster than the
-> max-corner resistance rises. Design rule: **≤ 0.75 squares of M4 ‖ M5 per
-> side.** A 60 µm-wide bus may therefore run **~45 µm**, a 100 µm-wide bus
-> **~75 µm**.
+> dropout per square at 50 mA.** The remaining allowance buys **0.70 squares**
+> on the as-drawn array (0.94 at the max corner) — and the *nominal* corner
+> binds, not the max one, because the max-corner budget doubles faster than the
+> max-corner resistance rises. Design rule: **≤ 0.70 squares of M4 ‖ M5 per
+> side**, measured, not estimated
+> ([`layout/records/20260924-213542-3ec8f89.md`](records/20260924-213542-3ec8f89.md)).
+> A 60 µm-wide bus may therefore run **~42 µm**, a 100 µm-wide bus **~70 µm**.
+> This rule was **≤ 0.75 squares (~45 µm / ~75 µm)** while the array subtotal
+> was the 11.5 mΩ estimate; it is now the whole of what the measured array
+> leaves, with no rounding-down margin on top, so a top-level assembly that
+> spends it all spends the per-side budget exactly.
 
-Note the via seas, not the metal, are the array's dominant internal term at the
-max corner (15.2 of 27.9 mΩ at 2 mm). They are already at maximum density —
-V1.2a's 0.26 µm cut spacing puts the sea at a 0.52 µm pitch and there is no
-further lever except array area, which is why widening the pass device per #139
-would have halved this term for free. #139 kept 2 mm (`DR-0032`), so this plan
-must live inside the 27.9 mΩ max-corner column — which it does, with 52.1 mΩ
-left for the bus run.
+Note the vias, not the metal, are the array's dominant internal term at the max
+corner (30.8 of 40.54 mΩ as drawn; 9.2 of 14.77 mΩ at nominal). Via3/Via4 are
+already at maximum density — V1.2a's 0.26 µm cut spacing puts those seas at a
+0.52 µm pitch and there is no further lever except array area. **Via2 is the one
+that is not at maximum density**, and it is the dominant single term: it is
+limited by the as-drawn M2 comb pitch rather than by a via rule, so widening the
+M2 strap (or giving via2 a second column per crossing) is the lever if a future
+top-level assembly needs more than 0.70 squares of bus run. That is a change to
+the cell, not to this budget.
 
 That is the reason §7 puts the pass array hard against the pad edge with nothing
 between it and the VIN/VOUT landings. It is not a preference: a pass array
-placed 200 µm inboard on a 60 µm-wide bus is 3.33 squares per side, 240 mΩ,
-**12 mV of dropout — more than a third of the 2 mm margin — spent on metal.**
+placed 200 µm inboard on a 60 µm-wide bus is 3.33 squares per side — 120 mΩ per
+side against a 40 mΩ allowance, 240 mΩ in total, **12 mV of dropout spent on
+metal** (11 % of the 2.8 mm margin; it was more than a third of what the 2 mm
+device had).
 
 **The amplifier's VDD is VIN.** Tap it *upstream* of the array's VIN bus drop,
 at the pad, so the amp's supply does not move with load current. The cost of
@@ -324,25 +425,28 @@ On-die spreading resistance for the array treated as an isothermal source of
 equivalent radius `a` on a silicon half-space, `R = 1/(4·k·a)` with
 `k ≈ 100 W/(m·K)` at 125 °C:
 
-| #139 candidate | active area | a_eq | R_spread | ΔT at 92 mW | ΔT at 346 mW (sustained short) |
+| Candidate | active area | a_eq | R_spread | ΔT at 92 mW | ΔT at 346 mW (sustained short) |
 | --- | --- | --- | --- | --- | --- |
-| 2.00 mm | 1618 µm² | 22.7 µm | 110.2 K/W | **10.1 K** | **38.0 K** |
-| 2.53 mm | 2058 µm² | 25.6 µm | 97.7 K/W | 8.9 K | 33.7 K |
-| 4.00 mm | 3218 µm² | 32.0 µm | 78.1 K/W | **7.1 K** | **26.9 K** |
+| 2.00 mm (superseded, 50 µm unit) | 1618 µm² | 22.7 µm | 110.2 K/W | 10.1 K | 38.0 K |
+| 2.53 mm (50 µm unit) | 2058 µm² | 25.6 µm | 97.7 K/W | 8.9 K | 33.7 K |
+| **2.80 mm (shipped, 70 µm unit)** | **2265 µm²** | **26.9 µm** | **93.1 K/W** | **8.5 K** | **32.1 K** |
+| 4.00 mm (devchar, N = 80 of a 50 µm unit) | 3218 µm² | 32.0 µm | 78.1 K/W | **7.1 K** | **26.9 K** |
 
 Consequences:
 
 - **At continuous rating the array is fine**: 7–10 K of local rise above the
-  die. Keep it as **one block** rather than splitting it — splitting buys a few
-  kelvin and costs the short bus run §3.4 depends on.
+  die, **8.5 K** at the shipped 2.8 mm. Keep it as **one block** rather than
+  splitting it — splitting buys a few kelvin and costs the short bus run §3.4
+  depends on.
 - **Under a sustained short the on-die spreading term alone is 27–38 K**, on top
   of whatever θJA the package contributes. `README.md`'s Thermal row delegates
   θJA and sustained-short survivability to the package/integration spec; this
   is the on-die half of that number, and it was a further (secondary) argument
-  for #139 widening the device — 4 mm would have removed 11 K of it. #139 kept
-  2 mm (`DR-0032`), so the **38.0 K** row is the one that stands: it is a
-  package/integration input, not a row this block can improve without the gain
-  margin to pay for a wider device.
+  for widening the device. `DR-0034` shipped 2.8 mm, so the **32.1 K** row is
+  the one that stands — 5.9 K better than the 2 mm device's 38.0 K, and 5.2 K
+  short of what 4 mm would have given. It is a package/integration input, not a
+  row this block can improve further without the gain margin to pay for a wider
+  device.
 - **The array is a heat source that every matched pair in the block sits in.**
   That is the subject of §4.
 
@@ -521,8 +625,8 @@ Checked for every device this plan re-segments or is tempted to:
 
 | Device | `W/nf` as drawn | Bin | Re-segmentation verdict |
 | --- | --- | --- | --- |
-| `Mpass` | 50 µm | `[10, 100.001]` | free to move anywhere in 10–100 µm; 25 µm and 100 µm both stay in bin |
-| `Msense` | 50 µm | `[10, 100.001]` | same — M unit cells of 50 µm each is safe |
+| `Mpass` | 70 µm (`W=2800u nf=40`) | `[10, 100.001]` | free to move anywhere in 10–100 µm; 35 µm and 100 µm both stay in bin |
+| `Msense` | 70 µm (`W=70u nf=1`) | `[10, 100.001]` | same — M unit cells of 70 µm each is safe |
 | `MIN1`/`MIN2` | **10 µm — exactly on the edge** | `[10, 100.001]` (edges are lower-inclusive) | **do not re-segment.** `nf = 12` gives 5 µm and drops into `[1.2, 10)`, a different card |
 | `MLD1`/`MLD2` | 8 µm | `[1.2, 10)` | splitting to `nf = 2` (4 µm) stays in bin — safe, and this plan does it |
 | `MB1` / `MTAIL` | 6 / 6.6 µm | `[1.2, 10)` | splitting to `nf = 2` (3 / 3.3 µm) stays in bin |
@@ -765,7 +869,7 @@ Why the zones sit where they do:
 
 | Zone | Placement rule | Driven by |
 | --- | --- | --- |
-| **P** — pass array | Hard against the pad edge, nothing between it and the VIN/VOUT landings; long axis parallel to the pad edge so the 50 µm exit edge faces the bus | §3.4 — 1.80 mV of dropout per square of M4‖M5 bus |
+| **P** — pass array | Hard against the pad edge, nothing between it and the VIN/VOUT landings; long axis parallel to the pad edge so the 70 µm exit edge faces the bus | §3.4 — 1.80 mV of dropout per square of M4‖M5 bus |
 | **A** — amp core | Opposite edge from P. Centroid ~195 µm from P's centroid, comfortably past the 150 µm rule | §4's gradient table |
 | **D** — divider | Beside A, also ≥ 150 µm from P; short `FB` route to A's `INP`; `VOUT_S` arrives as its own trunk from the south-east corner | §4.1, §5 |
 | **R** — resistor field | The middle band, because it is 34 % of the area (49 % before DR-0033), is thermally insensitive (both legs of any ratio are inside it), and is the only block big enough to host the MIM plates above it | §6 |
@@ -902,9 +1006,18 @@ wrong, by 1.49×, in the unsafe direction.
 **The only assumption in §3.3 is therefore the contact limit**, taken as
 **129 µA per cut** by scaling Via1's published 0.18 mA by cut area
 (`0.18 mA × (0.22 / 0.26)² = 0.129 mA`). Area scaling is the conservative
-choice — width scaling would give 0.152 mA. At 25.0 µA per contact the plan has
-5.2× margin against it, so it survives a contact limit up to 5× more
-restrictive than this proxy.
+choice — width scaling would give 0.152 mA. At **17.9 µA per contact** on the
+shipped 2.8 mm device (§3.1's 70 µm unit puts 140 contacts under each drain
+region; it was 25.0 µA at the 50 µm unit) the plan has **7.2× margin** against
+it, so it survives a contact limit up to 7× more restrictive than this proxy.
+The as-drawn cell measures the same 17.9 µA/cut
+([`layout/records/20260924-213542-3ec8f89.md`](records/20260924-213542-3ec8f89.md)).
+**`DR-0030`'s own text still quotes 25.0 µA / 5.2×**, because it was written
+against the then-shipped 2 mm device; the placeholder it records (129 µA), its
+derivation and its four triggers are unchanged, and the margin has moved in the
+*safe* direction — the margin is a property of the device, not of the
+placeholder, so a downstream claim should quote the margin of the device it is
+about.
 
 That placeholder is no longer a note inside this document: it is
 [`DR-0030`](../spec/decision-records/DR-0030-contact-layer-em-placeholder.md)
@@ -914,8 +1027,10 @@ falsifiable revisit triggers. The two that bear on this plan directly:
 
 - **the margin trigger** — if any change pushes the worst-case per-contact
   current above **43 µA** (= 129/3), the placeholder stops being survivable on
-  margin alone. At 2 mm the worst case is 25.0 µA, and #139's wider candidates
-  move *away* from the trigger, not toward it;
+  margin alone. On the shipped 2.8 mm device the worst case is 17.9 µA (25.0 µA
+  at the superseded 2 mm / 50 µm unit), and every wider candidate — or any
+  further widening of the unit cell — moves *away* from the trigger, not toward
+  it;
 - **the mechanism caveat** — a contact lands on silicide over diffusion, a via
   on aluminium, so scaling one to the other is a proxy whose *mechanism* may be
   wrong and not merely whose magnitude may be off. Margin cannot buy that back.
@@ -1044,8 +1159,11 @@ manual check to run against the first real GDS.
   all fed that decision — and all three were outranked by a constraint outside
   this document: `DR-0018`'s ratified GM ≥ 10 dB, which caps the pass device at
   ≈ 2.5 mm while the < 200 mV dropout stretch needs ≥ ≈ 2.7 mm. The wider
-  columns in §3.1, §3.3, §3.4, §3.5 and §6 are kept as the measured cost of a
-  widening that becomes available only if the loop later affords it.
+  columns in §3.1, §3.3, §3.5 and §6 are kept as the measured cost of a
+  widening that becomes available only if the loop later affords it — which
+  **#294 / `DR-0034` then did**, at W = 2.8 mm on a 70 µm unit cell. §3 is
+  keyed to that device; §3.4's array IR is no longer a per-width estimate at
+  all but a measurement of the drawn cell (#285, #330).
 - **[klayout-tools#2308](https://github.com/2AMLogic/klayout-tools/issues/2308)**
   — per CLAUDE.md's friction protocol. Every geometric constant in
   `area_estimate.py` (CO.1, CO.3, CO.4, CO.7, `DF.6_LV`, DF.2b, PRES.1, PRES.2,
