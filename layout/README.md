@@ -15,6 +15,7 @@ LDO layout yet.** What lives here today is the *flow* and the *plan*:
 python3 layout/drclvs.py --check-env    # is everything installed?
 python3 layout/drclvs.py                # build, export, DRC ×2, LVS, controls
 python3 layout/drclvs.py --cell passives   # ... on the passive-bearing vehicle
+python3 layout/drclvs.py --cell pass_array # ... on the LDO's pass-device array
 python3 layout/drclvs.py --check        # ... and the committed netlist must be current
 python3 layout/drclvs.py --record       # ... and write layout/records/<record-id>.md
 ```
@@ -22,10 +23,12 @@ python3 layout/drclvs.py --record       # ... and write layout/records/<record-i
 `drclvs.py` is a **generalized driver, not a testcell-only script**: the stages
 above take a `CellSpec` (GDS generator, LVS reference schematic, substrate net,
 where the exported netlist is committed) rather than hardcoded constants.
-`--cell testcell` (the default) and `--cell passives` are the two registered
-today, both of them *flow vehicles* rather than design blocks; a real block's
-layout registers its own `CellSpec` in `drclvs.py`'s `CELLS` dict and drives it
-with `--cell <key>` — see that file's module docstring for the exact contract.
+`--cell testcell` (the default) and `--cell passives` are *flow vehicles* rather
+than design blocks; `--cell pass_array` is the first real one — the LDO's
+40-unit-cell pass device and its `Msense` replica (issue #285, under epic
+#173). A block's layout registers its own `CellSpec` in `drclvs.py`'s `CELLS`
+dict and drives it with `--cell <key>` — see that file's module docstring for
+the exact contract.
 
 The stage **count** is a property of the cell. Stages 1–5 always run; stage 6
 onwards is one LVS negative control per corruption the netlist can express, so
@@ -69,6 +72,14 @@ layout/
     gen_gds.py                       the test cell, layout side (a generator)
     netlist/drclvs_testcell.spice    the exported LVS reference netlist
   passives/                          same four files for the passive vehicle
+  pass_array/                        the pass-device array (issue #285)
+    pass_array.sch / .sym            its LVS reference, restating ldo_core's
+                                     Mpass and Msense (see the .sch's own note)
+    gen_gds.py                       N unit cells + M Msense cells of the SAME
+                                     cell, plus the 50 mA metal stack
+    em_budget.py                     the EM/IR arithmetic gen_gds.py fails the
+                                     build on, checked against floorplan.md §1
+    netlist/pass_array.spice         the exported LVS reference netlist
   tests/                             stdlib unittest, no PDK/klayout needed
   records/<record-id>.md             append-only run records
 ```
