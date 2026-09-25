@@ -463,10 +463,14 @@ class TestStabilityRowUsesEnvelopeVerdict(unittest.TestCase):
         self.assertIn("DR-0018", stability_section)
         self.assertIn("630/630", stability_section)
         # Tracks whichever loop-stability record is currently head, so it moves
-        # with the design: 2974/4536 at the 2 mm pass device, 2790/4536 since
-        # issue #294 / DR-0034 widened it to 2.8 mm (the wider DR-0001 window
-        # is outside DR-0018's ratified envelope and is not graded here).
-        self.assertIn("2790/4536", stability_section)
+        # with the design: 2974/4536 at the 2 mm pass device, 2790/4536 once
+        # issue #294 / DR-0034 widened it to 2.8 mm, 2791/4536 since issue #259
+        # / DR-0028 gated the soft-start FB-injection element's branch supply
+        # (one point better -- the gated element is off at the settled operating
+        # point this bench measures, so it barely touches the loop). The wider
+        # DR-0001 window is outside DR-0018's ratified envelope and is not
+        # graded here.
+        self.assertIn("2791/4536", stability_section)
 
 
 class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):

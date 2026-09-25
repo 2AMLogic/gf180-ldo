@@ -24,14 +24,14 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `132c1f316adffc707
 | Load reg (0–50 mA) | PASS | STALE | `sim/load-regulation/records/20260924-055204-b88285c.md` |
 | Load transient | PASS | STALE | `sim/load-transient/records/20260905-202554-3093ea1.md` |
 | PSRR | FAIL | STALE | `sim/psrr-dc/records/20260923-005717-000bdc6.md` (+ 2 more, see detail) |
-| Iq (excluding load current) | PASS | STALE | `sim/quiescent-current/records/20260923-141210-33035d7.md` (+ 1 more, see detail) |
+| Iq (excluding load current) | UNKNOWN | STALE | `sim/quiescent-current/records/20260925-002900-c76efb0.md` (+ 1 more, see detail) |
 | Current limit | PASS | STALE | `sim/current-limit/records/20260923-141325-33035d79.md` |
 | Startup | MIXED | STALE | `sim/startup/records/20260916-112114-8b551ab.md` (+ 1 more, see detail) |
 | Enable / shutdown | PASS | STALE | `sim/enable-shutdown/records/20260905-232555-3093ea1.md` |
 | Thermal | PASS | STALE | `sim/current-limit/records/20260923-141325-33035d79.md` |
 | Output noise | N/A | N/A | see note below |
 | Area | N/A | N/A | see note below |
-| Stability | PASS | STALE | `sim/loop-stability/records/20260923-132038-a992b52.md` |
+| Stability | PASS | fresh | `sim/loop-stability/records/20260925-000348-c76efb0.md` |
 
 ## Detail
 
@@ -115,10 +115,10 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `132c1f316adffc707
 
 **Ratified target**: < 30 µA at no load **and** at full load — binds ff / 125 °C / 3.63 V
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: UNKNOWN  **Fresh**: STALE
 
-- `quiescent-current`: `sim/quiescent-current/records/20260923-141210-33035d7.md` — **PASS**, stale
-  - Overall: PASS
+- `quiescent-current`: `sim/quiescent-current/records/20260925-002900-c76efb0.md` — **UNKNOWN**, fresh (matches current `ldo_core`)
+  - Overall: ERROR
 - `enable-shutdown` — same run also substantiates this row's full-load enabled-state clause: `sim/enable-shutdown/records/20260905-232555-3093ea1.md` — **PASS**, stale
   - Overall (Enable/shutdown, ratified bounds): PASS / Overall (Iq, ratified < 30 µA at full load): PASS
 
@@ -176,16 +176,16 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `132c1f316adffc707
 
 **Ratified target**: stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 48.65 deg / 11.21 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1523/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and DR-0019, which measures that lever foreclosed by the amplifier's own iq_ua allocation (issue #147). 0 mA (no external load) remains outside the envelope per DR-0007.
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: PASS  **Fresh**: fresh
 
-- `loop-stability` — verdict is computed from this record's own committed `-matrix.csv`, filtered to the ratified DR-0018 envelope (0.1-50 mA, C_eff = 1 uF, ESR >= 200 mOhm), not from the record's full-matrix prose verdict -- that prose states DR-0001's ORIGINAL, wider 4536-point matrix, which this row no longer claims (DR-0018, ratified 2026-09-15). The wider-matrix result is kept visible alongside the envelope verdict below, not dropped; points outside the envelope are covered by DR-0018 (cap/ESR) and DR-0007 (0 mA) -- subset accounting cross-checked in sim/loop-stability/records/20260922-022122-ac57c94.md: `sim/loop-stability/records/20260923-132038-a992b52.md` — **PASS**, stale
-  - envelope (DR-0018, 0.1-50 mA / C_eff=1uF nominal / ESR>=200 mOhm): **PASS** -- 630/630 points passing, worst PM 48.65 deg / worst GM 11.21 dB, DR-0008 resurgence flagged 0/630; full matrix (DR-0001's original, wider window): 2790/4536 passing
+- `loop-stability` — verdict is computed from this record's own committed `-matrix.csv`, filtered to the ratified DR-0018 envelope (0.1-50 mA, C_eff = 1 uF, ESR >= 200 mOhm), not from the record's full-matrix prose verdict -- that prose states DR-0001's ORIGINAL, wider 4536-point matrix, which this row no longer claims (DR-0018, ratified 2026-09-15). The wider-matrix result is kept visible alongside the envelope verdict below, not dropped; points outside the envelope are covered by DR-0018 (cap/ESR) and DR-0007 (0 mA) -- subset accounting cross-checked in sim/loop-stability/records/20260922-022122-ac57c94.md: `sim/loop-stability/records/20260925-000348-c76efb0.md` — **PASS**, fresh (matches current `ldo_core`)
+  - envelope (DR-0018, 0.1-50 mA / C_eff=1uF nominal / ESR>=200 mOhm): **PASS** -- 630/630 points passing, worst PM 48.65 deg / worst GM 11.20 dB, DR-0008 resurgence flagged 0/630; full matrix (DR-0001's original, wider window): 2791/4536 passing
 
 ## Tally
 
-16 ratified rows: 12 testable (8 PASS, 3 FAIL, 1 MIXED, 0 UNKNOWN), 4 N/A.
+16 ratified rows: 12 testable (7 PASS, 3 FAIL, 1 MIXED, 1 UNKNOWN), 4 N/A.
 
-Freshness among the 12 testable rows: 0 fresh, 12 stale, 0 unknown.
+Freshness among the 12 testable rows: 1 fresh, 11 stale, 0 unknown.
 
 A row is only a true current PASS if its Verdict column reads PASS **and** its Fresh column reads fresh — a stale PASS reflects a design state this repo has since moved past, not a claim about `design/netlist/ldo_core.spice` as committed today.
 

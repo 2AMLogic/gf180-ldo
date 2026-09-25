@@ -5,10 +5,10 @@
   request proposes; per the 2026-08-19 ratification-via-PR policy
   (2AMLogic/2am#357, the mechanism used for DR-0005/PR #137, DR-0006/PR #127,
   DR-0018/PR #199, DR-0023/PR #217, DR-0024/PR #228, DR-0026/PR #258 and
-  DR-0027/PR #264), the operator's review and approval **of that pull
+  DR-0029/PR #264), the operator's review and approval **of that pull
   request** is the ratification act itself. Until it merges, this line is a
   proposal, not yet true of `main`.
-  **Unlike DR-0023/DR-0026/DR-0027, this record's pull request DOES change
+  **Unlike DR-0023/DR-0026/DR-0029, this record's pull request DOES change
   `design/`, and that ordering is deliberate rather than an oversight.**
   Issue #259's acceptance criteria require the mechanism's Iq recovery,
   T1-T7 and 163-point transient behaviour to be measured on the full grids
@@ -16,8 +16,8 @@
   uncommitted netlist: `sim/soft-start/testbench/run.sh` refuses an
   `LDO_NETLIST` override unless `NO_RECORD=1`, and `sim/run_corners.py`
   stamps every record with the committed export's own provenance. A
-  four-corner `--no-write` spot check was the most DR-0027 could offer for
-  exactly this reason, and DR-0027's own "Decision" section asks the next
+  four-corner `--no-write` spot check was the most DR-0029 could offer for
+  exactly this reason, and DR-0029's own "Decision" section asks the next
   attempt to go to the full grids. The only way to satisfy that is to commit
   the two devices on the branch and run the benches against them, which is
   what the first commit of this pull request does. If the operator declines
@@ -25,11 +25,25 @@
   characterization of a rejected variant.
 - **Date**: 2026-09-19
 - **Decided by**: agent-builder (issue #259) -- **proposing**. Supersedes
-  nothing; **continues** `DR-0027-softstart-injection-branch-gating-negative-
+  nothing; **continues** `DR-0029-softstart-injection-branch-gating-negative-
   result.md`, which proposed this same gate without a bleed, measured a
   blocking DC-convergence failure at `ss_-40c_2.97v`, and named the bleed as
   one of two untested alternatives. That record stays as filed (it is not
   wrong; it is the negative result this one builds on).
+- **Citation note (2026-09-25)**: every reference below to the negative-result
+  record reads `DR-0029`, not the `DR-0027` this record was first drafted
+  against. That record merged as `DR-0027` in PR #264 six minutes after PR #263
+  merged the unrelated `DR-0027-wnflag-facts-reproduce-across-ngspice-majors.md`
+  into the same slot, and `main` renumbered the later one to `DR-0029` (see
+  that record's own "Status" note, and issue #268 for the collision that
+  prompted CI's duplicate-DR check). `DR-0027` on `main` is the wnflag record
+  and nothing in this record refers to it; the citations were rewritten here
+  when this branch merged `main` forward, not because the cited content moved.
+  `design/ldo_softstart.sch`'s three citations were rewritten with them (it is
+  a design document, not evidence). The two `DR-0027` mentions inside
+  `sim/soft-start/records/20260919-073737-de8b468.md` are **deliberately left
+  as minted**: `sim/` records are append-only, and what a record said at run
+  time is the thing being preserved. Read them as `DR-0029`.
 
 ## Context
 
@@ -94,7 +108,7 @@ an existing internal node, not a new signal:
 **`Rgmg_ss` is what makes it safe, and it is not optional.** The loop just
 described is regenerative: starving the branches lowers `Ia`, which lowers
 the stack's reference current, which raises `GMRM`, which starves the
-branches harder. DR-0027 prototyped exactly this gate *without* a bleed and
+branches harder. DR-0029 prototyped exactly this gate *without* a bleed and
 measured the consequence -- at `ss_-40c_2.97v` (slow process, cold, minimum
 supply, where the branch currents are already smallest) ngspice's dynamic-
 gmin, true-gmin and source-stepping continuations all failed and the
@@ -134,7 +148,7 @@ host, same ngspice-46, same pinned PDK. **81/81 PASS.**
 | `sf_125c_3.63v` | 23.3693 -> **18.3544** (-5.015) | 23.2712 -> **18.2571** (-5.014) | 1.79721 -> 1.79474 |
 | `ff_125c_3.30v` | 23.7709 -> **20.2214** (-3.549) | 24.1733 -> **20.6307** (-3.543) | 1.79839 -> 1.79767 |
 | `tt_27c_3.30v` (nominal) | 15.3622 -> **14.0056** (-1.357) | 15.2568 -> **13.9002** (-1.357) | 1.79934 -> 1.79934 |
-| `ss_-40c_2.97v` (DR-0027's failure) | 8.8988 -> **8.89883** (+0.00003) | 8.80826 -> **8.80829** | 1.79948 -> 1.79948 |
+| `ss_-40c_2.97v` (DR-0029's failure) | 8.8988 -> **8.89883** (+0.00003) | 8.80826 -> **8.80829** | 1.79948 -> 1.79948 |
 
 - **Iq falls at 80 of 81 points and rises at none.** The one non-negative
   delta is `ss_-40c_2.97v` at **+0.00003 uA** (30 pA, the printed
@@ -156,7 +170,7 @@ host, same ngspice-46, same pinned PDK. **81/81 PASS.**
   At the nominal corner it is bit-identical to five figures. The mechanism
   is T1/T4 at the hot, high-supply corners (evidence section 2).
 - **The same corner keeps being the hard one, and that is informative.**
-  `ss_-40c_2.97v` is where DR-0027's un-bled prototype had no physical DC
+  `ss_-40c_2.97v` is where DR-0029's un-bled prototype had no physical DC
   solution -- and it is also the single row the *ideal-source* baseline
   record `20260915-234352-077e15b.md` itself failed to solve physically,
   months before any of this. That corner's difficulty is a property of this
@@ -246,6 +260,67 @@ movement is inside that failing mechanism's own variation, not that it is
 zero**; the per-point list is in the record's §1 so the reading can be
 checked.
 
+### 6. Re-measurement against the merged DUT (2026-09-25)
+
+Everything in sections 1-5 was measured on the DUT this branch started from
+(`de8b468`). Merging `main` forward brought DR-0033's poly-resistor flavour
+swap and DR-0034's 2.8 mm pass device, both of which move the DUT netlist
+sha and make every record above stale against the device this record would
+actually ratify. The 81-point Iq grid was therefore re-run against the
+merged device -- `sim/quiescent-current/records/20260925-002900-c76efb0.md`
+-- with the ungated baseline taken from `main`'s own
+`design/netlist/ldo_core.spice` on the same host, the same pinned
+ngspice-46 and the same pinned PDK, so the two sides differ only by the four
+netlist lines this record adds.
+
+| at `ff_125c_3.63v` (binding) | `main`, ungated | this record, gated | delta |
+|---|---|---|---|
+| `iq_en_ua` (no-load clause) | 27.3882 | **22.2696** | -5.119 |
+| `iq_full_ua` (full-load clause, the binding one) | 28.7153 | **23.7329** | -4.982 |
+| `vout_full_v` | 1.79357 | **1.78833** | -5.24 mV |
+
+Headroom to the ratified `< 30 uA` row: **1.28 -> 6.27 uA** at full load,
+2.61 -> 7.73 uA at no load. The recovery, and the settled-accuracy price
+paid for it (-6.43 -> -11.67 mV against the +/-36 mV allocation), both
+survive the merge essentially unchanged from section 1's numbers.
+
+**One corner has no recorded verdict, and it is the corner DR-0029 named.**
+`ss_-40c_2.97v` exhausts ngspice's DC continuation ladder -- dynamic gmin,
+true gmin and source stepping all fail -- and falls to the pseudo-transient
+rung, which issue #310's gate correctly refuses to accept as an operating
+point. The record is `Overall: ERROR`, and `sim/CHARACTERIZATION.md`'s Iq
+row consequently reads **UNKNOWN**. `main`'s ungated netlist solves that
+corner on the same host (81/81), so the gate causes it; it is not inherited.
+
+**It is a continuation-ladder failure, not an absent root -- a different and
+weaker finding than DR-0029's.** Applying `sim/harness/README.md`'s
+discriminator, the physical solution exists and is reachable: with
+`.options noopiter` and nothing else changed, the same deck converges to
+`iq_en_ua = 8.8991333574`, `vout_full_v = 1.7994814741`, agreeing with
+`main`'s ungated value at that corner (8.89913 / 1.79948) to six digits --
+consistent with section 1's +30 pA delta, i.e. the gate barely moves Iq at
+the coldest, slowest corner. Perturbing the path any other way
+(`gminsteps=0`, `gminsteps=20`, `reltol=1e-4`, seeding `V(VING)` at 2.9 V or
+2.0 V) does **not** reach it. DR-0029 concluded "no physical DC solution" at
+this corner for the un-bled prototype; this record can only support the
+weaker "the shipped ladder does not reach the solution", and says so rather
+than inheriting the stronger claim.
+
+**The bleed is not the lever, and was not used as one.** `Rgmg_ss` was swept
+at the failing corner: `r_length` 75u (~225 kohm) converges, while 150u
+(as-built, ~450 kohm), 100u, 50u and 30u all fail. Non-monotonic in the
+bleed current is the coin-flipping signature `sim/harness/README.md` and
+issue #304 both warn against, so the as-built 450 kohm is left alone. The
+gap is a harness one -- the runner has no rung that retries an exhausted
+ladder -- and is filed as such rather than absorbed into this record's
+sizing.
+
+**Sections 2-5 are NOT re-measured against the merged DUT.** The 63-corner
+hand-over transfer (T1-T7) and the 163-point transient set still cite
+`sim/soft-start/records/20260919-073737-de8b468.md`, taken against the
+pre-merge device. Those conclusions are stated as of that DUT and are not
+claimed of the merged one.
+
 ## What this record does NOT claim
 
 - **Not that the adder is eliminated.** 70.6 % of it at the binding corner;
@@ -265,7 +340,7 @@ checked.
 
 - **A larger bleed** (or none at all). The recovery scales with the bleed:
   450 kohm throttles the post-release branch current about 2.8x, and a
-  larger value recovers more. DR-0027's zero-bleed limit is the extreme case
+  larger value recovers more. DR-0029's zero-bleed limit is the extreme case
   and does not converge at `ss_-40c_2.97v`. Where between 450 kohm and
   infinity the DC solution stops being well determined is **not measured
   here** -- 450 kohm is the first value tried and it converges at 81/81
@@ -273,7 +348,7 @@ checked.
   A follow-on that wants the remaining ~2 uA should sweep the bleed with the
   `ss_-40c_2.97v` convergence check as its bound, not assume it is free.
 - **Gate the branches' return path instead of the supply side**, mirroring
-  `Mgme_ss`'s existing NMOS-on-the-return idiom (DR-0027's first untested
+  `Mgme_ss`'s existing NMOS-on-the-return idiom (DR-0029's first untested
   alternative). Still untested. It was not pursued because the branches'
   returns are *already* gated by `Mgme_ss` for enable, so a second series
   NMOS there stacks two devices' `Vds` under `GMIA`, which is the headroom
@@ -302,14 +377,14 @@ checked.
   transimpedance) remains the next decision, exactly as DR-0023's
   Consequences and `design/softstart_injection_compensation.md` §3 (R4)
   state. This record does not touch it.
-- `spec/decision-records/DR-0027-...` stays filed as the negative result it
+- `spec/decision-records/DR-0029-...` stays filed as the negative result it
   is; its "Alternatives considered" second bullet is the one this record
   takes.
 
 ## Related
 
 - Issue #259 -- this record's origin.
-- DR-0027 -- the same gate without a bleed, and the convergence failure that
+- DR-0029 -- the same gate without a bleed, and the convergence failure that
   made the bleed necessary.
 - DR-0023 -- ratified the cascoded mirror whose cutoff event this mechanism
   piggybacks on; its rectification-by-cutoff property is unchanged.

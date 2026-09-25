@@ -428,7 +428,7 @@ HOW THE INJECTION IS GENERATED, AS DEVICES (#191, CASCODED BY #246/DR-0023)
   which lowers the stack's reference current, which raises GMRM, which
   starves the branches harder. Left unbounded it has a second, non-physical
   operating point, and that is measured rather than feared --
-  spec/decision-records/DR-0027 prototyped exactly this mechanism WITHOUT a
+  spec/decision-records/DR-0029 prototyped exactly this mechanism WITHOUT a
   bleed and found no physical DC solution at ss_-40c_2.97v (the coldest,
   slowest corner, where the branches' own currents are already smallest);
   ngspice's dynamic-gmin, true-gmin and source-stepping continuations all
@@ -863,7 +863,7 @@ SIZING AS BUILT
   Rgmg_ss   ppolyf_u_3k, 150 squares   ~450 kohm   VIN -> VING, the bleed that
                                          keeps GMIA/GMRM/GMSUM determined
                                          when Mgmg_ss is off. NOT optional:
-                                         DR-0027 measured what happens
+                                         DR-0029 measured what happens
                                          without it. A real PDK resistor
                                          (unlike Rgma_ss/Rgmb_ss) because
                                          nothing here depends on its ratio to
@@ -963,7 +963,7 @@ SIZING AS BUILT
     Against the ideal-Binj_ss baseline the whole element's adder goes
     +0.0001...+7.1766 -> +0.0001...+2.1080 uA, i.e. 70.6% of the worst-corner
     adder recovered. The remainder is the 450 kohm bleed's own throughput,
-    which is the deliberate price of the convergence bound DR-0027 measured
+    which is the deliberate price of the convergence bound DR-0029 measured
     the need for.
     The cost is settled accuracy at the hot, high-supply corners: worst-corner
     settled output 1.79357 -> 1.78833 V at ff_125c_3.63v, i.e. -6.43 ->
@@ -972,6 +972,50 @@ SIZING AS BUILT
     sim/soft-start/records/20260919-073737-de8b468.md; T5 stays 63/63, T6/T7
     do not regress, T1/T4 improve, T2/T3 do not move, and two already-failing
     transient clauses lose a point each (that record's section 1 names them).
+
+  RE-MEASURED AGAINST THE MERGED DUT, 2026-09-25. Everything above was
+  measured on the DUT this branch started from. Merging main forward brought
+  DR-0033's poly-resistor flavour swap and DR-0034's 2.8 mm pass device, both
+  of which move the DUT netlist sha, so the whole 81-point grid was re-run
+  against the merged device: sim/quiescent-current/records/
+  20260925-002900-c76efb0.md, with the ungated baseline taken from main's own
+  ldo_core.spice on the same host, same ngspice, same pinned PDK.
+
+    The recovery survives the merge, essentially unchanged. At ff_125c_3.63v
+    enabled Iq goes 27.3882 -> 22.2696 uA (-5.119) and the binding FULL-LOAD
+    clause goes 28.7153 -> 23.7329 uA (-4.982). Headroom against the ratified
+    < 30 uA row: 1.28 -> 6.27 uA at full load, 2.61 -> 7.73 uA at no load.
+    The settled-accuracy cost is also unchanged: 1.79357 -> 1.78833 V at that
+    corner, i.e. -6.43 -> -11.67 mV against the +/-36 mV allocation.
+
+    ONE CORNER HAS NO RECORDED VERDICT, AND IT IS THE ONE DR-0029 NAMED.
+    ss_-40c_2.97v exhausts ngspice's DC continuation ladder (dynamic gmin ->
+    true gmin -> source stepping all fail) and falls to the pseudo-transient
+    rung, which #310's gate correctly refuses to accept as an operating
+    point. The record is therefore Overall: ERROR and the Iq row of
+    sim/CHARACTERIZATION.md reads UNKNOWN. Main's ungated netlist solves the
+    same corner on the same host (81/81, via source stepping), so this is
+    caused by the gate, not inherited.
+
+    IT IS A LADDER FAILURE, NOT AN ABSENT ROOT -- WHICH IS A DIFFERENT AND
+    WEAKER FINDING THAN DR-0029'S. Applying sim/harness/README.md's
+    discriminator, the physical solution is there and is reachable: with
+    .options noopiter and nothing else changed, the same deck converges to
+    iq_en_ua = 8.8991333574 uA and vout_full_v = 1.7994814741 V, agreeing
+    with main's ungated value at that corner (8.89913 / 1.79948) to six
+    digits -- i.e. the gate barely moves Iq at the coldest, slowest corner,
+    exactly as the +30 pA delta above already said. Perturbing the path
+    without .options noopiter (gminsteps=0, gminsteps=20, reltol=1e-4, and
+    seeding V(VING) at 2.9 V or 2.0 V) does NOT reach it.
+
+    THE BLEED IS NOT THE LEVER, AND WAS NOT TREATED AS ONE. Rgmg_ss was swept
+    at the failing corner: r_length 75u (~225 kohm) converges, but 150u
+    (as-built, ~450 kohm), 100u, 50u and 30u all fail. Non-monotonic in the
+    bleed current is the coin-flipping signature sim/harness/README.md and
+    #304 both warn against -- a value picked because it happened to converge
+    is not a fix -- so the as-built 450 kohm is deliberately left alone and
+    the gap is filed as a harness issue (the runner has no rung that retries
+    an exhausted ladder) rather than papered over with a sizing change.
 
   The 6.27 uA of remaining headroom (full-load clause, the binding one --
   see above) is still a real constraint on anything that follows: the R4
