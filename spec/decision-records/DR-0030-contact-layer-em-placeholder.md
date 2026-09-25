@@ -86,12 +86,23 @@ is the part a margin cannot buy back:
   cut in a long row carries more than its share" correction) is published for
   either `CON` or the vias.
 
-**The margin that makes the placeholder survivable.** At the shipped W = 2 mm
-pass device, `layout/floorplan.md` §3.3's worst case is 25.0 µA per drain
-contact, i.e. **5.2× margin** against 129 µA. The plan therefore survives a real
-contact limit up to 5× more restrictive than this proxy. That margin covers the
+**The margin that makes the placeholder survivable.** At the shipped
+W = 2.8 mm pass device (`DR-0034` / #294 — N = 40 on a 70 µm unit cell, which
+puts 140 contacts under each 2.50 mA drain region), `layout/floorplan.md` §3.3's
+worst case is 17.9 µA per drain contact, i.e. **7.2× margin** against 129 µA.
+That is an as-drawn measurement, not an estimate: the `pass_array` cell (#285)
+reports the same 17.9 µA/cut —
+`layout/records/20260924-213542-3ec8f89.md`. The plan therefore survives a real
+contact limit up to 7× more restrictive than this proxy. That margin covers the
 *magnitude* being wrong; it does not cover the *mechanism* being wrong, which is
 what the revisit triggers are for.
+
+*History*: this record was written against the superseded W = 2 mm device
+(`DR-0032`, a 50 µm unit at the same N = 40, so 100 contacts per drain region),
+where the same worst case was 25.0 µA, i.e. 5.2× margin. The margin is a
+property of the device, not of the placeholder: it moves on every pass-device or
+contact-array re-size, while the 129 µA placeholder and its triggers below do
+not.
 
 ### Revisit triggers (falsifiable, re-runnable)
 
@@ -123,8 +134,9 @@ and get a yes/no answer to — none requires a judgement call.
    pass-device re-size, a re-segmentation, a contact-array change, a current
    limit increase — pushes the worst-case per-contact current above
    **43 µA** (= 129/3), the placeholder stops being survivable on margin alone
-   and must be replaced with a real number before that change lands. At
-   2 mm today the worst case is 25.0 µA; note that this trigger fires on a
+   and must be replaced with a real number before that change lands. On the
+   shipped 2.8 mm device the worst case is 17.9 µA (it was 25.0 µA at the 2 mm
+   device this record was written against); note that this trigger fires on a
    pass device made *narrower*, not wider (fewer contacts sharing 50 mA), so
    #139's 2.53 mm and 4 mm candidates both move away from it.
 
@@ -187,8 +199,11 @@ and get a yes/no answer to — none requires a judgement call.
   reviewer has a number to check against, not a box to tick.
 - **Any downstream EM claim about the contact layer inherits this caveat.** A
   claim of the form "the contact array is EM-clean at 50 mA" is only ever a
-  claim of "…against DR-0030's 129 µA placeholder, with 5.2× margin", and must
-  be written that way.
+  claim of "…against DR-0030's 129 µA placeholder, with *N*× margin — at
+  *this* device", and must be written that way: the margin quoted is the margin
+  of the device the claim is about, not a number frozen into this record. The
+  placeholder (129 µA) does not move with a re-size; the margin does — it is
+  **7.2×** on the shipped 2.8 mm device and was 5.2× on the superseded 2 mm one.
 - **This placeholder cannot carry a tape-out sign-off on its own.** If this
   block goes to silicon through a shuttle that requires a foundry EM sign-off,
   trigger 2 has to be satisfied first — the margin argument is a design
