@@ -101,6 +101,9 @@ import pya  # noqa: F401  (provided by the KLayout interpreter)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import em_budget  # noqa: E402
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from gen_gds_common import _fail, _label, _load_pdk_pcells, _rd  # noqa: E402
+
 TOP_CELL = "PASS_ARRAY"
 
 # gf180mcu database unit, as declared by the PDK's own KLayout tech file
@@ -200,40 +203,6 @@ L_METAL5_LABEL = (81, 10)
 VIN, VOUT, ISNS, GATE = "VIN", "VOUT", "ISNS", "PASS_GATE"
 
 
-def _fail(message):
-    """Abort with ``message`` actually visible.
-
-    ``klayout -b -r`` swallows a bare ``SystemExit``'s message *and* still
-    exits 0, so a generator that aborts this way looks to its caller like a
-    silent success that happened to write no file. Printing to stderr first is
-    what makes the reason survive; ``layout/drclvs.py``'s "layout build
-    produced no <path>" check is the backstop for the exit status.
-    """
-    print(f"gen_gds.py: {message}", file=sys.stderr)
-    raise SystemExit(f"gen_gds.py: {message}")
-
-
-def _rd(name, default=None):
-    """Read a -rd switch (KLayout injects them as globals)."""
-    value = globals().get(name, default)
-    if value is None:
-        _fail(f"missing required switch -rd {name}=...")
-    return value
-
-
-def _load_pdk_pcells(pdk_path):
-    """Register the PDK's KLayout-API PCell library and return its name."""
-    macros = os.path.join(pdk_path, "libs.tech", "klayout", "tech", "pymacros")
-    if not os.path.isdir(macros):
-        _fail(f"no PCell library at {macros}")
-    sys.path.insert(0, macros)
-    os.environ["GF_PDK_OPTION"] = PDK_OPTION
-    from klayout_api_cells import gf180mcu_klayoutapi  # noqa: E402
-
-    gf180mcu_klayoutapi()
-    return "gf180mcu_klayoutapi"
-
-
 # ---------------------------------------------------------------------------
 # small geometry helpers
 # ---------------------------------------------------------------------------
@@ -276,11 +245,6 @@ def _insert_region(cell, layout, layer, region):
 def _ring(layout, outer, inner):
     """Annulus between two micron boxes, as a Region."""
     return pya.Region(outer.to_itype(layout.dbu)) - pya.Region(inner.to_itype(layout.dbu))
-
-
-def _label(cell, layout, layer, name, x_um, y_um):
-    point = pya.Point(int(round(x_um / layout.dbu)), int(round(y_um / layout.dbu)))
-    cell.shapes(layout.layer(*layer)).insert(pya.Text(name, pya.Trans(point)))
 
 
 def _grid(lo, hi, size, pitch, enclosure):
@@ -619,7 +583,7 @@ def _worst_same_net_pitch(nets):
 
 
 def build(out_path, pdk_path):
-    library = _load_pdk_pcells(pdk_path)
+    library = _load_pdk_pcells(pdk_path, PDK_OPTION)
     layout = pya.Layout()
     layout.dbu = DBU_UM
     top = layout.create_cell(TOP_CELL)
