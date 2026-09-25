@@ -1012,12 +1012,11 @@ region; it was 25.0 µA at the 50 µm unit) the plan has **7.2× margin** agains
 it, so it survives a contact limit up to 7× more restrictive than this proxy.
 The as-drawn cell measures the same 17.9 µA/cut
 ([`layout/records/20260924-213542-3ec8f89.md`](records/20260924-213542-3ec8f89.md)).
-**`DR-0030`'s own text still quotes 25.0 µA / 5.2×**, because it was written
-against the then-shipped 2 mm device; the placeholder it records (129 µA), its
-derivation and its four triggers are unchanged, and the margin has moved in the
-*safe* direction — the margin is a property of the device, not of the
-placeholder, so a downstream claim should quote the margin of the device it is
-about.
+**`DR-0030` now records the 2.8 mm device's 17.9 µA / 7.2× margin**, with the
+2 mm figures preserved only as history. The placeholder it records (129 µA), its
+derivation, and its four revisit triggers remain unchanged. The margin is a property
+of the device, not of the placeholder — a downstream claim should quote the margin
+of the device it is about.
 
 That placeholder is no longer a note inside this document: it is
 [`DR-0030`](../spec/decision-records/DR-0030-contact-layer-em-placeholder.md)
@@ -1037,9 +1036,10 @@ falsifiable revisit triggers. The two that bear on this plan directly:
 
 Until DR-0030 is superseded by a real published number, **any EM claim this repo
 makes about the contact layer must carry this caveat** — a claim of "the contact
-array is EM-clean at 50 mA" is only ever "…against DR-0030's 129 µA placeholder,
-with 5.2× margin". The metal and via rows carry no such caveat: they may be
-cited as PDK data.
+array is EM-clean at 50 mA" is only ever a claim of "…against DR-0030's 129 µA
+placeholder, with *N*× margin — at this device", where the margin quoted is the
+margin of the device the claim is about, not a number frozen into the record.
+The metal and via rows carry no such caveat: they may be cited as PDK data.
 
 ### 8.4 Two further assumptions, unrelated to EM
 
