@@ -862,6 +862,35 @@ SIZING AS BUILT
   DR-0027 is a different, unrelated record. See the renumbered record's
   "Numbering" section.)
 
+  Re-measured 2026-09-30 (#259 / DR-0036) on main after #306's resistor
+  flavours and #316's 2.8 mm pass device, same 81-point grid, 81/81 PASS:
+  at ff_125c_3.63v iq_en_ua is 27.3882 uA and iq_full_ua 28.7153 uA, so the
+  binding full-load headroom is 1.285 uA -- the 1.29 uA figure above, held
+  to three digits through two intervening design changes. The 28.0411 /
+  28.71 uA numbers earlier in this note are the 2026-09-18 record's and are
+  left as written (sim/ is append-only); cite these when a current figure is
+  wanted.
+
+  DO NOT recover this adder at the branches. DR-0036 measures the branch-
+  supply gating mechanism DR-0029 proposed and DR-0028 / PR #267 implemented
+  (one pfet between VIN and a new VING node both degeneration resistors move
+  onto, gated by GMRM, plus a bleed across it) head to head on one tree
+  against DR-0035's VIN-referenced ramp ceiling. Gating recovers 4.982 uA of
+  iq_full at the binding corner and costs 5.201 dB of the ratified > 50 dB
+  PSRR row where it ALREADY fails, plus 5.24 mV of settled accuracy
+  (-6.430 -> -11.670 mV worst corner), because putting any device between VIN
+  and the branches puts VING below VIN and adds (VIN - VING) to the forward
+  bias across the mirror's reference stack (DR-0031 section 2.3, issue #303).
+  The ramp ceiling recovers MORE -- 5.270 uA -- while that same PSRR row goes
+  29.4286 -> 61.8942 dB (PASS) and the worst settled error goes -6.430 ->
+  -1.170 mV, because raising the ceiling raises both branch gate references
+  toward VIN so the branches starve themselves. PR #267 was closed unmerged
+  at the operator's direction on 2026-09-30; the recovery this note's adder
+  is owed rides on issue #302 / DR-0035, not on a switch added here. T1-T5
+  are NOT what blocks gating (63 corners, no newly-failing corner, T1 and T4
+  both 1/63 -> 12/63) -- DR-0036 section 4 records that so it is not
+  re-investigated.
+
   Added area, #246 update: the injection transconductor is
   EIGHT pfet/nfet 03v3 devices at 4 um2 each (Mgma_ss, Mgmb_ss, Mgmd_ss,
   Mgmm_ss, Mgmr_ss, Mgmo_ss, and #246's two cascodes Mgmrc_ss and Mgmc_ss) =
