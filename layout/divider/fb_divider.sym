@@ -1,0 +1,38 @@
+v {xschem version=3.4.7 file_version=1.2
+
+* fb_divider -- symbol for the feedback divider's LVS reference cell (#286).
+*
+* Nothing simulates this cell: it exists so that xschem netlists
+* fb_divider.sch as a real `.subckt` with a fixed port order. Without a
+* symbol xschem infers the port order from the ipin/opin/iopin instance
+* order in the schematic, which is not something a reviewer can read off
+* the file. `design/netlist/ldo_core.spice` keeps the divider as the ideal
+* `Rtop`/`Rbot` pair; this cell is the drawn array those two become, and
+* `layout/drclvs.py --cell divider` is what compares the two sides.
+*
+* PORT ORDER -- must match the iopin order in the schematic, and is what
+* layout/divider/gen_gds.py's net labels are asserted against:
+*
+*     VOUT_S  FB  VSS
+
+}
+G {}
+K {type=subcircuit
+format="@name @pinlist @symname"
+template="name=x1"
+}
+V {}
+S {}
+E {}
+P 4 5 -60 -60 60 -60 60 60 -60 60 -60 -60 {}
+B 5 -62.5 -42.5 -57.5 -37.5 {name=VOUT_S dir=inout}
+L 7 -80 -40 -60 -40 {}
+T {VOUT_S} -55 -44 0 0 0.2 0.2 {}
+B 5 -62.5 -2.5 -57.5 2.5 {name=FB dir=inout}
+L 7 -80 0 -60 0 {}
+T {FB} -55 -4 0 0 0.2 0.2 {}
+B 5 -62.5 37.5 -57.5 42.5 {name=VSS dir=inout}
+L 7 -80 40 -60 40 {}
+T {VSS} -55 36 0 0 0.2 0.2 {}
+T {@symname} -35 -6 0 0 0.3 0.3 {}
+T {@name} -60 -72 0 0 0.2 0.2 {}
