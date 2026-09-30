@@ -42,14 +42,32 @@ for arg in "$@"; do
   esac
 done
 
-echo "== 1/3 harness unit tests (no PDK required) =="
+echo "== 1/4 harness unit tests (no PDK required) =="
 if ! python3 -m unittest discover -s "${SIM_DIR}/tests" -t "${SIM_DIR}/tests"; then
   echo "FAIL: harness unit tests"
   exit 1
 fi
 
 echo
-echo "== 2/3 environment =="
+echo "== 2/4 shell driver gate tests (no PDK required) =="
+# sim/harness/lib/run_point.sh / sim/devchar/lib/devchar.sh drive ngspice
+# directly (deliberately standalone -- see sim/current-limit/testbench/run.sh
+# and sim/devchar/lib/devchar.sh's own headers) rather than through
+# sim/harness/runner.py, so python3 -m unittest above never exercises them.
+# This is their own regression coverage for issue #310's DC-continuation-
+# ladder-exhaustion gate (propagated to these standalone drivers by issue
+# #317): a stubbed `ngspice` on PATH, no real PDK/ngspice needed.
+if ! bash "${SIM_DIR}/harness/lib/test_run_point.sh"; then
+  echo "FAIL: sim/harness/lib/test_run_point.sh"
+  exit 1
+fi
+if ! bash "${SIM_DIR}/devchar/lib/test_devchar.sh"; then
+  echo "FAIL: sim/devchar/lib/test_devchar.sh"
+  exit 1
+fi
+
+echo
+echo "== 3/4 environment =="
 if ! python3 "${SIM_DIR}/run_corners.py" --check-env; then
   if [ "${REQUIRE_PDK}" -eq 1 ]; then
     echo "FAIL: environment check failed -- see the ngspice/PDK detail above"
@@ -77,7 +95,7 @@ if ! python3 "${SIM_DIR}/run_corners.py" --check-env; then
 fi
 
 echo
-echo "== 3/3 end-to-end PVT smoke run =="
+echo "== 4/4 end-to-end PVT smoke run =="
 if [ "${QUICK}" -eq 1 ]; then
   echo "    --quick: one-point grid. Per-point bounds are graded; grid-level"
   echo "    spread checks are UNGRADED (a spread over one sample is undefined)"

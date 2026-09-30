@@ -147,10 +147,19 @@ class CellRegistryTests(unittest.TestCase):
         self.assertIs(drclvs.CELLS["testcell"], drclvs.TESTCELL_SPEC)
         self.assertEqual(drclvs.TESTCELL_SPEC.key, "testcell")
 
+    def test_the_passive_vehicle_is_registered(self):
+        self.assertIn("passives", drclvs.CELLS)
+        self.assertIs(drclvs.CELLS["passives"], drclvs.PASSIVES_SPEC)
+
     def test_cell_spec_paths_exist_in_the_repo(self):
-        spec = drclvs.TESTCELL_SPEC
-        self.assertTrue(spec.gen_gds.is_file(), spec.gen_gds)
-        self.assertTrue(spec.schematic.is_file(), spec.schematic)
+        for spec in drclvs.CELLS.values():
+            self.assertTrue(spec.gen_gds.is_file(), spec.gen_gds)
+            self.assertTrue(spec.schematic.is_file(), spec.schematic)
+            # a .sym beside the .sch is what forces a real `.subckt` line
+            self.assertTrue(
+                spec.schematic.with_suffix(".sym").is_file(),
+                spec.schematic.with_suffix(".sym"),
+            )
 
     def test_unknown_cell_is_rejected_by_argument_parsing(self):
         with self.assertRaises(SystemExit):
@@ -315,6 +324,171 @@ class PassiveControlTests(unittest.TestCase):
         """`R` is disabled in the deck's BResistor, so scaling it never fires."""
         mutated = drclvs.control_unit_width(self.text)
         self.assertNotIn("R=", mutated)
+
+
+class NetlistDirGuardTests(unittest.TestCase):
+    """A CellSpec must not be able to clobber a simulation netlist.
+
+    Stage 2 writes `netlist_dir/<cell>.spice` unconditionally when --check is
+    absent, so a spec pointing netlist_dir at design/netlist/ would silently
+    overwrite the simulation netlist design/netlist.py generates and every
+    sim/ testbench sources -- a corruption nothing re-checks until a sim run
+    breaks (issue #313). The guard is in CellSpec.__post_init__, so the bad
+    spec cannot be constructed at all.
+    """
+
+    def test_a_layout_owned_netlist_dir_is_accepted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = dataclasses.replace(
+                drclvs.TESTCELL_SPEC, netlist_dir=Path(tmp) / "netlist"
+            )
+            self.assertEqual(spec.netlist_dir, Path(tmp) / "netlist")
+
+    def test_the_simulation_netlist_dir_itself_is_refused(self):
+        with self.assertRaises(ValueError) as caught:
+            dataclasses.replace(
+                drclvs.TESTCELL_SPEC, netlist_dir=drclvs.SIM_NETLIST_DIR
+            )
+        self.assertIn("design/netlist", str(caught.exception).replace(os.sep, "/"))
+
+    def test_a_subdirectory_of_the_simulation_netlist_dir_is_refused(self):
+        with self.assertRaises(ValueError):
+            dataclasses.replace(
+                drclvs.TESTCELL_SPEC,
+                netlist_dir=drclvs.SIM_NETLIST_DIR / "lvs",
+            )
+
+    def test_an_unnormalized_path_to_it_is_refused_too(self):
+        """`..`-walking into design/netlist/ is the same mistake spelled out."""
+        with self.assertRaises(ValueError):
+            dataclasses.replace(
+                drclvs.TESTCELL_SPEC,
+                netlist_dir=drclvs.LAYOUT_DIR / ".." / "design" / "netlist",
+            )
+
+    def test_every_registered_cell_writes_somewhere_layout_owns(self):
+        for spec in drclvs.CELLS.values():
+            self.assertTrue(
+                drclvs.LAYOUT_DIR.resolve() in spec.netlist_dir.resolve().parents,
+                f"{spec.key}: {spec.netlist_dir}",
+            )
+
+
+# One FET and one of each passive, in the LVS form stage 2 produces.
+NETLIST = """\
+.subckt cell D G S VSS RP RM CT CB
+M1 D G S VSS nfet_03v3 L=0.28u W=6u nf=2 m=1
+R1 RM RP VSS ppolyf_u_1k l=10u w=1u m=1
+C1 CT CB cap_mim_2f0_m4m5_noshield l=20u w=20u m=1
+.ends
+"""
+
+
+class ControlParameterTests(unittest.TestCase):
+    """control_parameter() must work on any cell's first MOS line.
+
+    Regression test for the gap #313 closes: it used to substitute the literal
+    token `W=2u` -> `W=4u` and raise StageError otherwise, so it worked on the
+    one-transistor bring-up cell and died on every other cell.
+    """
+
+    def test_doubles_an_integer_width(self):
+        out = drclvs.control_parameter(NETLIST)
+        self.assertIn("M1 D G S VSS nfet_03v3 L=0.28u W=12u nf=2 m=1", out)
+
+    def test_still_doubles_the_original_testcell_width(self):
+        out = drclvs.control_parameter(
+            "M1 D G S VSS nfet_03v3 L=0.28u W=2u nf=1 m=1\n"
+        )
+        self.assertIn("W=4u", out)
+
+    def test_doubles_a_fractional_width_without_float_noise(self):
+        out = drclvs.control_parameter(
+            "M1 D G S VSS nfet_03v3 L=0.28u W=0.22u nf=1 m=1\n"
+        )
+        self.assertIn("W=0.44u", out)
+
+    def test_carries_the_unit_suffix_through(self):
+        out = drclvs.control_parameter(
+            "MB1 D G S VSS nfet_03v3 L=6u W=360U nf=6 m=1\n"
+        )
+        self.assertIn("W=720U", out)
+
+    def test_leaves_every_other_parameter_alone(self):
+        out = drclvs.control_parameter(NETLIST)
+        self.assertIn("L=0.28u", out)
+        self.assertIn("nf=2", out)
+        # and the passives are untouched by the MOS control
+        self.assertIn("R1 RM RP VSS ppolyf_u_1k l=10u w=1u m=1", out)
+
+    def test_a_mos_line_with_no_width_is_still_a_loud_error(self):
+        with self.assertRaises(drclvs.StageError):
+            drclvs.control_parameter("M1 D G S VSS nfet_03v3 L=0.28u nf=1 m=1\n")
+
+    def test_a_netlist_with_no_mos_line_is_still_a_loud_error(self):
+        with self.assertRaises(drclvs.StageError):
+            drclvs.control_parameter("R1 A B VSS ppolyf_u_1k l=10u w=1u m=1\n")
+
+
+class ControlSetTests(unittest.TestCase):
+    """The control set is a property of the netlist, not a fixed list."""
+
+    def test_a_fet_only_netlist_gets_exactly_the_two_mos_controls(self):
+        controls = drclvs.build_controls(
+            "M1 D G S VSS nfet_03v3 L=0.28u W=2u nf=1 m=1\n"
+        )
+        self.assertEqual(sorted(controls), ["parameter", "topology"])
+
+    def test_a_passive_bearing_netlist_gets_one_control_per_element_class(self):
+        controls = drclvs.build_controls(NETLIST)
+        self.assertEqual(
+            sorted(controls),
+            ["parameter", "passive-c", "passive-r", "topology"],
+        )
+
+    def test_the_resistor_control_doubles_only_the_resistor_length(self):
+        mutate = drclvs.build_controls(NETLIST)["passive-r"].mutate
+        out = mutate(NETLIST)
+        self.assertIn("R1 RM RP VSS ppolyf_u_1k l=20u w=1u m=1", out)
+        # the capacitor and the FET are untouched
+        self.assertIn("C1 CT CB cap_mim_2f0_m4m5_noshield l=20u w=20u m=1", out)
+        self.assertIn("M1 D G S VSS nfet_03v3 L=0.28u W=6u nf=2 m=1", out)
+
+    def test_the_capacitor_control_doubles_only_the_capacitor_length(self):
+        mutate = drclvs.build_controls(NETLIST)["passive-c"].mutate
+        out = mutate(NETLIST)
+        self.assertIn("C1 CT CB cap_mim_2f0_m4m5_noshield l=40u w=20u m=1", out)
+        self.assertIn("R1 RM RP VSS ppolyf_u_1k l=10u w=1u m=1", out)
+
+    def test_the_topology_control_still_shorts_gate_to_drain(self):
+        out = drclvs.control_topology(NETLIST)
+        self.assertIn("M1 D D S VSS nfet_03v3", out)
+
+    def test_the_all_passive_divider_keeps_its_own_pair_plus_the_length_control(self):
+        """The cell's registered pair is the base; the netlist adds to it.
+
+        The divider registers PASSIVE_CONTROLS (the MOS pair cannot apply to
+        it), and because its netlist carries `R` lines with a length, the
+        resistor-length control is added on top -- three controls, all of
+        which check_controls_apply() proves bite before any LVS runs.
+        """
+        spec = drclvs.DIVIDER_SPEC
+        text = committed_netlist(spec)
+        controls = drclvs.check_controls_apply(spec, text)
+        self.assertEqual(sorted(controls), ["parameter", "passive-r", "topology"])
+        self.assertIs(controls["topology"], drclvs.PASSIVE_CONTROLS[0])
+        self.assertIs(controls["parameter"], drclvs.PASSIVE_CONTROLS[1])
+        for control in controls.values():
+            self.assertNotEqual(control.mutate(text), text)
+
+    def test_check_controls_apply_returns_the_set_the_stages_run(self):
+        for key, spec in drclvs.CELLS.items():
+            with self.subTest(cell=key):
+                text = committed_netlist(spec)
+                self.assertEqual(
+                    sorted(drclvs.check_controls_apply(spec, text)),
+                    sorted(drclvs.build_controls(text, spec.controls)),
+                )
 
 
 if __name__ == "__main__":

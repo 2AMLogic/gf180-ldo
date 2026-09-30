@@ -1,15 +1,17 @@
 # layout/ — GDS, DRC and LVS
 
 Physical verification for this repo, on the gf180mcu open PDK. **There is no
-top-level LDO layout yet** — one block cell is drawn (the feedback divider);
-the rest is still plan. What lives here today is:
+top-level LDO layout yet** — two block cells are drawn (the pass-device array
+and the feedback divider); the rest is still plan. What lives here today is:
 
 - the flow — a documented, one-command DRC + LVS invocation, proven end to end
   against a deliberately trivial test cell, so that whoever lays the block out
   inherits a working loop instead of building one (the rest of this file);
-- the first real cell — [`divider/`](divider/), `floorplan.md` §4.1's
-  18-unit common-centroid feedback divider, drawn and verified through that
-  same flow ("The feedback divider" below);
+- the block cells drawn so far — [`pass_array/`](pass_array/), the LDO's
+  40-unit-cell pass device and its `Msense` replica (issue #285), and
+  [`divider/`](divider/), `floorplan.md` §4.1's 18-unit common-centroid
+  feedback divider ("The feedback divider" below), each drawn and verified
+  through that same flow;
 - the plan — [`floorplan.md`](floorplan.md), the pass-array segmentation and
   metal strategy, the common-centroid matching plan, the Kelvin-sense scheme
   and the core-area estimate, with [`area_estimate.py`](area_estimate.py)
@@ -18,30 +20,44 @@ the rest is still plan. What lives here today is:
 ```bash
 python3 layout/drclvs.py --check-env    # is everything installed?
 python3 layout/drclvs.py                # build, export, DRC ×2, LVS, controls
-python3 layout/drclvs.py --cell divider # ... for the feedback divider
+python3 layout/drclvs.py --cell passives   # ... on the passive-bearing vehicle
+python3 layout/drclvs.py --cell pass_array # ... on the LDO's pass-device array
+python3 layout/drclvs.py --cell divider    # ... on the feedback divider
 python3 layout/drclvs.py --check        # ... and the committed netlist must be current
 python3 layout/drclvs.py --record       # ... and write layout/records/<record-id>.md
 ```
 
-`drclvs.py` is a **generalized driver, not a testcell-only script**: the seven
-stages above take a `CellSpec` (GDS generator, LVS reference schematic,
-substrate net, its own pair of LVS negative controls, where the exported
-netlist is committed) rather than hardcoded constants. `--cell testcell` (the
-default) is the one-transistor bring-up vehicle; `--cell divider` is the
-feedback divider. A further block's layout registers its own `CellSpec` in
-`drclvs.py`'s `CELLS` dict and drives it with `--cell <key>` — see that file's
-module docstring for the exact contract.
+`drclvs.py` is a **generalized driver, not a testcell-only script**: the stages
+above take a `CellSpec` (GDS generator, LVS reference schematic, substrate net,
+its own pair of LVS negative controls, where the exported netlist is
+committed) rather than hardcoded constants. `--cell testcell` (the default)
+and `--cell passives` are *flow vehicles* rather than design blocks;
+`--cell pass_array` is the first real one — the LDO's 40-unit-cell pass device
+and its `Msense` replica (issue #285, under epic #173) — and `--cell divider`
+is the feedback divider, the first all-passive one. A block's layout registers
+its own `CellSpec` in `drclvs.py`'s `CELLS` dict and drives it with
+`--cell <key>` — see that file's module docstring for the exact contract.
+
+The stage **count** is a property of the cell. Stages 1–5 always run; stage 6
+onwards is one LVS negative control per corruption the netlist can express, so
+a FET-only cell has 7 stages, one that also contains a resistor and a
+capacitor has 9, and the all-resistor divider has 8. The topology/parameter
+pair at stages 6 and 7 is the cell's own (`CellSpec.controls`): the MOS pair
+keys off the netlist's first `M*` element line, so an all-passive cell
+registers the passive pair instead (see "6 onwards. Negative controls").
 
 A run takes about a minute and prints one line per stage:
 
 ```
-[1/7] layout      : drclvs_testcell.gds (2592 bytes)
-[2/7] netlist     : 1 device line(s), LVS form
-[3/7] klt drc     : clean (0 violation(s), curated subset)
-[4/7] pdk drc     : 0 violation(s) across 640 rule categories (41 rule tables)
-[5/7] lvs         : MATCH
-[6/7] control topo: gate shorted to drain -> MISMATCH (expected)
-[7/7] control para: device width doubled -> MISMATCH (expected)
+[1/9] layout      : drclvs_passives.gds (45508 bytes)
+[2/9] netlist     : 3 device line(s), LVS form
+[3/9] klt drc     : clean (0 violation(s), curated subset)
+[4/9] pdk drc     : 0 violation(s) across 642 rule categories (41 rule tables)
+[5/9] lvs         : MATCH
+[6/9] control topology  : gate shorted to drain -> MISMATCH (expected)
+[7/9] control parameter : device width doubled -> MISMATCH (expected)
+[8/9] control passive-r : resistor length doubled -> MISMATCH (expected)
+[9/9] control passive-c : capacitor length doubled -> MISMATCH (expected)
 ```
 
 Exit status is 0 only if every stage passed. On failure the run directory
@@ -53,7 +69,8 @@ it.
 
 ```
 layout/
-  drclvs.py                          the one command (see "The seven stages")
+  drclvs.py                          the one command (see "The stages")
+  lvs_form.py                        renders passives as primitive R/C elements
   floorplan.md                       the floorplan and matching plan (issue #15)
   area_estimate.py                   core-area estimate from design/netlist/
   xschemrc                           design/xschemrc + `lvs_netlist 1`
@@ -62,6 +79,15 @@ layout/
     drclvs_testcell.sym              (exists only to force a real `.subckt`)
     gen_gds.py                       the test cell, layout side (a generator)
     netlist/drclvs_testcell.spice    the exported LVS reference netlist
+  passives/                          same four files for the passive vehicle
+  pass_array/                        the pass-device array (issue #285)
+    pass_array.sch / .sym            its LVS reference, restating ldo_core's
+                                     Mpass and Msense (see the .sch's own note)
+    gen_gds.py                       N unit cells + M Msense cells of the SAME
+                                     cell, plus the 50 mA metal stack
+    em_budget.py                     the EM/IR arithmetic gen_gds.py fails the
+                                     build on, checked against floorplan.md §1
+    netlist/pass_array.spice         the exported LVS reference netlist
   divider/
     plan.py                          floorplan.md §4.1's arrangement, as numbers
     gen_gds.py                       the divider, layout side (a generator)
@@ -177,9 +203,66 @@ The two sides are kept honest against each other by construction:
   demands a byte-for-byte match — the same staleness-plus-reproducibility gate
   `design/netlist.py --check` applies.
 
+## The passive-bearing vehicle
+
+A cell whose only device is a FET cannot notice that the flow is broken for
+anything else — and it was. The gf180mcu PDK's xschem symbols carry an
+`lvs_format` attribute **only on the FETs**; every resistor and every capacitor
+symbol has a `format` and nothing else. So `lvs_netlist 1` renders the FETs as
+primitive `M` elements and leaves the passives in xschem's *simulation* form,
+which KLayout's SPICE reader turns into a call to an undefined subcircuit
+instead of a device (issue #313):
+
+```
+XRbias NBIAS RBT VSS ppolyf_u_1k r_width=1u r_length=1000u m=1     <- simulation form
+XCc    NZ OUT       cap_mim_2f0_m3m4_noshield c_width=48u c_length=48u m=1
+```
+
+`layout/lvs_form.py` renders those as the primitive elements the deck's own
+SPICE reader delegate understands, carrying `l` and `w` across faithfully:
+
+```
+Rbias NBIAS RBT VSS ppolyf_u_1k l=1000u w=1u m=1
+Cc    NZ OUT       cap_mim_2f0_m3m4_noshield l=48u w=48u m=1
+```
+
+The rewrite runs **before** `drclvs.py`'s simulation-form guard, not instead of
+it, and only on lines that carry a complete `r_width`/`r_length` or
+`c_width`/`c_length` pair — the parameter names every PDK passive symbol's
+`format` uses, which is what makes the translation cover the whole family
+without enumerating flavours. Anything it declines to touch is still a hard
+failure — first through the existing simulation-form guard, then through a
+family-agnostic backstop that rejects any *remaining* `X`-prefixed line
+carrying a `key=value` parameter tail. That tail is the tell: every device
+symbol's `format` ends in one, a hierarchical subcircuit symbol's
+(`@name @pinlist @symname`) does not, so a device family nobody has needed
+yet cannot sail through by not being named in a regex. `lvs_form.py`'s module
+docstring records why this lives here rather than in repo-local `.sym`
+overrides.
+
+`drclvs_passives` is what proves it end to end: **one `ppolyf_u_1k` H-poly
+resistor** (1 µm × 10 µm), **one `cap_mim_2f0` MIM cap** (20 µm × 20 µm) and
+**one 2-finger `nfet_03v3`** (W = 6 µm total, L = 0.28 µm), each built from the
+PDK's own PCell, sharing no nets with each other. Like the test cell it is not
+part of the LDO and is not meant to grow. It earns its keep three ways a
+single-FET cell cannot:
+
+- the resistor and the cap are the devices `lvs_form.py` exists for, and stages
+  8 and 9 prove the deck really compares their geometry;
+- the **multi-finger** FET checks that the deck's own multifinger merge lands
+  one device — its two interdigitated source straps carry the same label and
+  nothing straps them in metal, so the merge is doing the work;
+- the MIM cap is the only device here whose terminals are not on metal1/poly2.
+  For the 5LM / MIM-option-B stack this repo builds against they are metal4 and
+  metal5, which ties the layout, the deck's `mim_option`/`metal_level`/`mim_cap`
+  switches and the schematic's `model=cap_mim_2f0_m4m5_noshield` into one
+  self-checking loop. Get any of the three wrong and the device extracts as
+  nothing at all.
+
 ## The feedback divider
 
-`--cell divider` is the first cell here that is part of the LDO:
+`--cell divider` is the second cell here that is part of the LDO, after the
+pass array, and the first all-passive one:
 [`floorplan.md` §4.1](floorplan.md#41-feedback-divider--the-term-simulation-cannot-see)'s
 18-unit `ppolyf_u_3k` string — 6 up / 12 down, one dummy strip at each end,
 `B T B B T B B T B B T B B T B B T B` at a 2.4 µm pitch — which is what
@@ -201,14 +284,13 @@ Four things about this cell are worth knowing before drawing the next one,
 because none of them is obvious and all four are properties of the PDK rather
 than of this design:
 
-- **The PDK's `ppolyf_u_3k` xschem symbol has no `lvs_format`.** Under
-  `layout/xschemrc`'s `lvs_netlist 1` it therefore falls back to `format` —
-  an ngspice subcircuit call (`XR1 … r_width=… r_length=…`) that KLayout's
-  SPICE reader cannot read, and whose `r_width`/`r_length` would not reach the
-  reader's `W`/`L` parameters even if it could. `fb_divider.sch` supplies the
-  missing rendering **per instance** (`lvs_format="@name @pinlist @model
-  W=@W L=@L m=@m"`) rather than copying a PDK symbol into this repo. The MOS
-  symbols do ship an `lvs_format`; the resistor ones do not.
+- **The PDK's `ppolyf_u_3k` xschem symbol has no `lvs_format`** — the gap
+  "The passive-bearing vehicle" above describes for every passive symbol.
+  `fb_divider.sch` was drawn before `layout/lvs_form.py` landed and supplies
+  the missing rendering **per instance** (`lvs_format="@name @pinlist @model
+  W=@W L=@L m=@m"`), so its export already comes out as primitive `R` lines;
+  `lvs_form.py` only rewrites `X`-prefixed simulation-form lines and leaves
+  these untouched. Either route gives the deck the `W`/`L` it compares.
 - **`poly_res` is not a free switch.** `rule_decks/res_extraction.lvs` wraps
   the high-sheet flavours in a `case POLY_RES`, so exactly one of `1k`/`2k`/
   `3k` is extracted per run. A `ppolyf_u_3k` cell run under the default `1k`
@@ -245,7 +327,8 @@ diagnostic is gone.
 `divider/gen_gds.py` therefore routes every assertion through a `_fail()`
 helper that writes to stderr (which `drclvs.py` captures into the run
 directory's `build-gds.log`) before exiting. Any new generator should do the
-same. `testcell/gen_gds.py` still uses bare `SystemExit`; its assertions are
+same — `passives/gen_gds.py` and `pass_array/gen_gds.py` share one copy in
+`layout/gen_gds_common.py` (issue #333). `testcell/gen_gds.py` still uses bare `SystemExit`; its assertions are
 correspondingly silent.
 
 One as-drawn deviation from §4.1's prose, recorded here and in §4.1 itself:
@@ -258,7 +341,7 @@ the M1 keep-out §4.1 already reserves for them.
 `test_divider_layout.LinkRoutabilityTests` holds both halves of that
 argument, so it is a check rather than a claim.
 
-## The seven stages
+## The stages
 
 **1. Build the layout.** `klayout -b -r <the cell's gen_gds.py>` — e.g.
 `layout/testcell/gen_gds.py`, or `layout/divider/gen_gds.py` for `--cell
@@ -323,31 +406,42 @@ The deck reports its own verdict in its log and exits 0 either way, so the log i
 the contract; `drclvs.py` demands exactly one of the two verdict strings, so a
 deck that fell over before comparing is an error rather than a silent pass.
 
-**6 & 7. Negative controls.** The same compare, twice more, against deliberately
-corrupted copies of the netlist. Both **must** mismatch:
+**6 onwards. Negative controls.** The same compare, once more per control,
+against deliberately corrupted copies of the netlist. Every one **must**
+mismatch:
 
-| Cell kind | Control | Mutation | What it would mean if it matched |
+| Control | Mutation | Registered when | What it would mean if it matched |
 | --- | --- | --- | --- |
-| MOS (`testcell`) | topology | gate shorted to drain | a 4-net circuit compared equal to a 3-net one — the compare is not looking at connectivity |
-| MOS (`testcell`) | parameter | device width doubled | device parameters are not being compared at all |
-| all-passive (`divider`) | topology | two adjacent taps of the string shorted | a string with one unit shorted out compared equal to the intact one |
-| all-passive (`divider`) | parameter | unit resistor width doubled | device parameters are not being compared at all |
+| topology | gate shorted to drain | the cell registers the MOS pair (`testcell`, `passives`, `pass_array`) | a 4-net circuit compared equal to a 3-net one — the compare is not looking at connectivity |
+| parameter | device width doubled | the cell registers the MOS pair | device parameters are not being compared at all |
+| topology | two adjacent taps of the string shorted | the cell registers the all-passive pair (`divider`) | a string with one unit shorted out compared equal to the intact one |
+| parameter | unit resistor width doubled | the cell registers the all-passive pair | device parameters are not being compared at all |
+| passive-r | resistor length doubled | the netlist has an `R` element | resistor geometry is not being compared at all |
+| passive-c | capacitor length doubled | the netlist has a `C` element | capacitor geometry is not being compared at all |
 
 These are not decoration. A "match" from an LVS run is not evidence unless a
 *known-wrong* netlist fails: a mis-wired invocation that silently compares
 nothing also "passes", and a compare that checks connectivity while ignoring
 parameters would wave through a mis-sized transistor.
 
-**Which pair runs is a property of the cell** (`CellSpec.controls`), not of
-`drclvs.py`. That is load bearing rather than tidy: the MOS pair keys off the
+The passive pair is load bearing for a reason particular to this PDK's deck:
+its SPICE reader delegate registers resistors and capacitors with the `R` and
+`C` parameters **disabled** (`custom_classes.lvs`), so a netlist claiming a
+resistance 30× off the truth legitimately still matches. Geometry is the only
+thing being compared for those devices, which makes "is the geometry actually
+compared?" a question worth answering with a control rather than an assumption.
+
+**Which topology/parameter pair runs is a property of the cell**
+(`CellSpec.controls`), not of `drclvs.py`. That is load bearing rather than tidy: the MOS pair keys off the
 netlist's first `M*` element line, so pointed at a resistor-only cell it
 would have had nothing to mutate — **two stages that quietly did nothing,
 behind a stage-5 `MATCH` that then meant nothing**. `drclvs.py` therefore
 
 - requires every registered cell to carry one topology control **and** one
   parameter control (`REQUIRED_CONTROL_TAGS`), and
-- proves, **before stage 3 runs**, that each of them actually changes *this*
-  cell's netlist — a control that cannot be applied, or that runs and returns
+- proves, **before stage 3 runs**, that each of them — and each
+  passive-geometry control added on top — actually changes *this* cell's
+  netlist — a control that cannot be applied, or that runs and returns
   the netlist unchanged, is a hard error (`ControlNotApplicable`), never a
   skipped stage.
 
@@ -420,7 +514,7 @@ bringing in a GDS from elsewhere should check its dbu before believing a
 with the record-id convention `sim/` uses (`<YYYYMMDD>-<HHMMSS>-<short-sha>`).
 Re-runs mint a new record; records are never edited in place. Each one carries
 the tool versions, the PDK variant and open_pdks hash, both DRC results with
-their rule-category counts, the LVS verdict and both control verdicts.
+their rule-category counts, the LVS verdict and every control verdict.
 
 The run directory itself (`layout/.work/`) is scratch and gitignored — the
 `.lyrdb` / `.lvsdb` databases are large, machine-specific and regenerable. The

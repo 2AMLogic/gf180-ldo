@@ -39,7 +39,6 @@ report F1 "passing" on a build that ignores the card entirely.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import re
 import shutil
 import subprocess
@@ -57,6 +56,7 @@ from harness.runner import (  # noqa: E402
     MODEL_BINNING_KEY,
     ngspice_major_version,
     ngspice_version_at,
+    sha256_of,
 )
 
 TIMEOUT_S = 180
@@ -111,14 +111,6 @@ class Fact:
     @property
     def holds(self) -> bool:
         return bool(self.checks) and all(ok for _, ok in self.checks)
-
-
-def sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def run_deck(ngspice: Path, deck: str) -> tuple[str, int]:

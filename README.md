@@ -13,7 +13,7 @@ corner-running simulation harness, four xschem schematics covering the full
 LDO hierarchy (core, error amplifier, current limit, soft start) with
 corner-swept simulation evidence behind them, and a DRC/LVS-clean physical
 verification flow proven end to end on a one-transistor test cell and on the
-first real block cell, the feedback divider (see
+first block cells, the pass-device array and the feedback divider (see
 [`layout/README.md`](layout/README.md)) — but no layout of the LDO block as a
 whole yet, and no silicon. Read every number here as a simulation result
 against an open PDK's models, with the corner and testbench that produced it
@@ -111,7 +111,7 @@ regression (see notes 5a, 8).
 | Thermal | 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 346 mW into a Vout = 0 short at the untrimmed 95 mA limit ceiling (note 9); specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec | — |
 | Output noise | not specified — explicitly waived (note 7) | 10 Hz–100 kHz µVrms row if a consumer asks for one |
 | Area | < 0.1 mm² total core area, pass FET included, excluding pads and sealring | — |
-| Stability | stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 55.75 deg / 12.08 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1586/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and DR-0019, which measures that lever foreclosed by the amplifier's own iq_ua allocation (issue #147). 0 mA (no external load) remains outside the envelope per DR-0007. | capless variant (separate design fork) |
+| Stability | stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 48.65 deg / 11.21 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1523/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and DR-0019, which measures that lever foreclosed by the amplifier's own iq_ua allocation (issue #147). 0 mA (no external load) remains outside the envelope per DR-0007. | capless variant (separate design fork) |
 
 Notes — these are part of the ratified spec, not commentary:
 
@@ -330,8 +330,8 @@ corner definitions and how to write a testbench.
 
 ## Physical verification (DRC / LVS)
 
-The DRC/LVS flow is up, on a one-transistor test cell and on the feedback
-divider — **there is no top-level LDO layout yet**. It needs KLayout and `klt`
+The DRC/LVS flow is up, on a one-transistor test cell, the pass-device array
+and the feedback divider — **there is no top-level LDO layout yet**. It needs KLayout and `klt`
 on top of the simulation tools:
 
 ```bash

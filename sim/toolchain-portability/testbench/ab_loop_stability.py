@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import os
 import re
 import shutil
@@ -49,7 +48,11 @@ SIM_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 
-from harness.runner import ngspice_major_version, ngspice_version_at  # noqa: E402
+from harness.runner import (  # noqa: E402
+    ngspice_major_version,
+    ngspice_version_at,
+    sha256_of,
+)
 
 SWEEP = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
 
@@ -79,14 +82,6 @@ class Margin:
     gm_db: float | None
     f0_hz: float | None
     vout_v: float | None
-
-
-def sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _float_or_none(tok: str) -> float | None:

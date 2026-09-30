@@ -29,6 +29,45 @@ That single size clears the base target **and** both stretch targets: 300 mV @
 50 mA (2.5× margin), 200 mV @ 50 mA (1.7× margin), and 300 mV @ 100 mA (1.16×
 margin), all at the worst corner of the full matrix.
 
+> **Update (issue #139 / `DR-0032`, 2026-09-22): the design ships W = 2 mm, and
+> this recommendation is not implementable as written.** Nothing measured in
+> this section is retracted — the tables here are device-level and remain
+> correct as such — but two closed-loop constraints that a device-level table
+> cannot see decide the width:
+>
+> - **4 mm breaks a ratified row.** The current limit's small inverse-fold
+>   grows with pass-device width, putting short-circuit dissipation at
+>   346.049 mW against `DR-0005`'s ratified ≤ 346 mW Thermal ceiling (measured
+>   at ff / 125 °C / 3.63 V).
+> - **Gain margin caps the width at ≈ 2.5 mm.** A wider device's `Cgg` drops
+>   the pass-gate pole; at 50 mA / `C_eff` = 1 µF / ESR = 500 mΩ — inside
+>   `DR-0018`'s ratified envelope — the loop's gain margin falls 12.36 dB
+>   (2.0 mm) → 10.47 dB (2.4 mm) → 9.76 dB (2.6 mm) → 8.49 dB (3.0 mm) against
+>   a ratified ≥ 10 dB bound.
+> - **The 2.53 mm "200 mV @ 50 mA" row below does not clear that stretch in
+>   closed loop**: measured 212.592 mV at ss / 125 °C, because the ratified
+>   dropout measurement (`DR-0020`) reads the regulation knee of the closed
+>   loop, ~5 % worse than the open-device `Rds` figure this table derives from.
+>
+> The stretch needs ≥ ≈ 2.7 mm and the ratified gain margin affords ≈ 2.5 mm,
+> so it is out of reach by widening alone. See
+> `spec/decision-records/DR-0032-pass-device-width-is-capped-by-loop-gain-margin.md`.
+
+> **Update (issue #294 / `DR-0034`, 2026-09-23): the design ships W = 2.8 mm,
+> and the ≈ 2.5 mm gain-margin ceiling above no longer holds.** `DR-0033`'s
+> poly-resistor re-flavour returned **2.09 dB** of loop gain margin at the
+> binding 50 mA / 1 µF / 500 mΩ point (`DR-0018`'s 630-point envelope moved
+> from 12.080 dB to 14.170 dB worst-case GM between two committed head
+> records), which is more than the 1.9 dB `DR-0032` measured the stretch to be
+> short of. Re-derived on the full envelope, the ceiling is now between
+> **3.00 mm** (630/630 at 46.69° / 10.582 dB) and **3.20 mm** (628/630, phase
+> margin 44.56°). At the decided 2.8 mm the `< 200 mV` stretch clears **27/27**
+> corners at 193.200 mV worst case while the envelope stays 630/630 at
+> 48.65° / 11.210 dB. The first bullet above is unaffected: **4 mm still breaks
+> `DR-0005`'s ≤ 346 mW Thermal row**, and the Thermal margin at 2.8 mm is
+> 0.414 mW. See
+> `spec/decision-records/DR-0034-the-dropout-stretch-unlocks-on-margin-dr-0033-already-delivered.md`.
+
 If only the base 300 mV @ 50 mA target has to hold, **W ≈ 1.8 mm** is the
 measured minimum (`fets/results/summary_sizing.csv`, `rds_target_ohm = 6.0`,
 `supply_class = dropout_testpoint`), and W = 2 mm measures 259 mV at the worst

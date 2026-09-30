@@ -41,7 +41,13 @@ from .corners import (
     PvtPoint,
 )
 from .pdk import Pdk
-from .runner import MODEL_BINNING_OPTION, PointResult
+from .runner import (
+    MODEL_BINNING_OPTION,
+    RUNG_DIRECT,
+    RUNG_NAMES,
+    RUNG_UNKNOWN,
+    PointResult,
+)
 from .testbench import Testbench
 
 #: Subdirectories of ``sim/<experiment-slug>/`` defined by ``sim/README.md``.
@@ -346,6 +352,33 @@ def matrix_conformance(tb: Testbench, points: list[PvtPoint]) -> dict:
     return {"full": not missing, "missing": missing}
 
 
+def dc_path_census(results: list[PointResult]) -> dict:
+    """How many corners landed on each DC continuation rung (issue #301).
+
+    The grid-level companion to the per-corner ``dc_path`` field: a run that
+    used to read "80 direct, 1 source-stepping" and now reads "81 direct" has
+    moved numerically even if every printed measurement is unchanged. Keeping
+    the census in the record means a reader comparing two records sees that
+    in one line instead of diffing 81 raw ngspice logs.
+
+    Rungs are emitted in ladder order (``runner.RUNG_NAMES``) and rungs no
+    corner used are omitted, so the census reads as a short histogram rather
+    than a mostly-zero table.
+    """
+    counts: dict[str, int] = {}
+    for result in results:
+        counts[result.dc_path.rung] = counts.get(result.dc_path.rung, 0) + 1
+    ordered = {name: counts.pop(name) for name in RUNG_NAMES if name in counts}
+    # Anything RUNG_NAMES does not know about (a future ngspice phrase) is
+    # surfaced rather than dropped.
+    ordered.update(dict(sorted(counts.items())))
+    deepest = RUNG_UNKNOWN
+    for name in RUNG_NAMES:
+        if name in ordered and name != RUNG_UNKNOWN:
+            deepest = name
+    return {"by_rung": ordered, "deepest": deepest}
+
+
 def build_record(
     tb: Testbench,
     pdk: Pdk,
@@ -417,6 +450,7 @@ def build_record(
             "points": len(points),
             "points_ok": n_ok,
         },
+        "dc_paths": dc_path_census(results),
         "measure": dict(tb.measure),
         "checks": {
             "spec": tb.checks,
@@ -567,6 +601,62 @@ def _operating_conditions_lines(record: dict) -> list[str]:
     return lines
 
 
+def _dc_path_cell(dc_path: dict | None) -> str:
+    """One corner's ``dc path`` table cell (issue #301).
+
+    Shows the deepest rung the corner's DC solve(s) reached. A log holding
+    several solves (a ``dc`` sweep runs one per swept point) also gets a
+    ``xN`` suffix counting how many of them needed the ladder at all, so
+    "one marginal point out of 400" and "all 400 marginal" do not render
+    identically.
+    """
+    if not dc_path:
+        return RUNG_UNKNOWN
+    rung = dc_path.get("rung", RUNG_UNKNOWN)
+    entries = dc_path.get("ladder_entries") or 0
+    if entries > 1:
+        return f"{rung} (x{entries})"
+    return str(rung)
+
+
+def _dc_path_lines(record: dict) -> list[str]:
+    """The grid-level DC continuation-rung census (issue #301).
+
+    Not a check and not a claim -- an attribution line. `sim/quiescent-
+    current` was measured flipping PASS/FAIL between two DUT netlists that
+    are electrically identical on that bench to six significant figures,
+    purely because one marginal corner moved to a different rung of
+    ngspice's DC continuation ladder. Recording the census makes that kind
+    of move visible in a record-to-record diff instead of requiring someone
+    to re-derive it from the raw logs after the fact.
+    """
+    census = record.get("dc_paths") or {}
+    by_rung = census.get("by_rung") or {}
+    lines = ["", "  DC solve path (ngspice continuation ladder, issue #301):", ""]
+    if not by_rung:
+        lines.append("  - not recorded for this run")
+        return lines
+    for rung, count in by_rung.items():
+        lines.append(f"  - `{rung}`: {count} corner(s)")
+    lines.append(
+        f"  - Deepest rung used anywhere on this grid: `{census.get('deepest', RUNG_UNKNOWN)}`."
+    )
+    if set(by_rung) == {RUNG_DIRECT}:
+        lines.append(
+            "  - Every corner converged on the first-guess Newton pass; no "
+            "corner needed gmin stepping, source stepping or a "
+            "pseudo-transient op."
+        )
+    else:
+        lines.append(
+            "  - Rungs deeper than `direct` are not errors -- ngspice descends "
+            "the ladder on its own. They mark which corners are numerically "
+            "marginal, so a later run whose census differs has moved "
+            "numerically even if every measurement above is unchanged."
+        )
+    return lines
+
+
 def _result_lines(record: dict) -> list[str]:
     measure_names = list(record["measure"])
     failures_at: dict[str, list[str]] = {}
@@ -577,8 +667,10 @@ def _result_lines(record: dict) -> list[str]:
         )
 
     lines = ["- **Result**:", ""]
-    lines.append("  | corner-id | " + " | ".join(measure_names) + " | pass/fail |")
-    lines.append("  |---|" + "---|" * (len(measure_names) + 1))
+    lines.append(
+        "  | corner-id | " + " | ".join(measure_names) + " | dc path | pass/fail |"
+    )
+    lines.append("  |---|" + "---|" * (len(measure_names) + 2))
     for point in record["points"]:
         cells = [_fmt(point["measurements"].get(name)) for name in measure_names]
         problems = failures_at.get(point["corner_id"], [])
@@ -588,6 +680,7 @@ def _result_lines(record: dict) -> list[str]:
             verdict = "FAIL — " + "; ".join(problems)
         else:
             verdict = "PASS"
+        cells.append(_dc_path_cell(point.get("dc_path")))
         lines.append(f"  | `{point['corner_id']}` | " + " | ".join(cells) + f" | {verdict} |")
 
     grid_failures = failures_at.get("grid", [])
@@ -629,6 +722,8 @@ def _result_lines(record: dict) -> list[str]:
             f"| {_fmt(stats['max'])} (`{stats['max_at']}`) "
             f"| {_fmt(stats['mean'])} | {_fmt(stats['spread_pct'])} | {limits} |"
         )
+
+    lines += _dc_path_lines(record)
 
     verdict = {"pass": "PASS", "fail": "FAIL", "error": "ERROR"}[record["status"]]
     lines.append("")
@@ -753,7 +848,8 @@ def render_record(record: dict, experiment: str) -> str:
     lines += [
         f"- Model binning: deck pins `.options {MODEL_BINNING_OPTION}`"
         " -- gf180mcu bins on the per-finger width W/NF, and the pass device"
-        " (`W=2000u nf=40`) resolves to a declared bin only with it; without it"
+        " (`W=2800u nf=40`, i.e. 70 um per finger) resolves to a declared bin"
+        " only with it; without it"
         " ngspice hard-errors rather than clamping, so a record either carries"
         " this setting or does not exist (issue #214,"
         " spec/decision-records/DR-0025)",

@@ -73,10 +73,16 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      through the diode-connected NMOS MB1, whose gate NBIAS
                      mirrors to MTAIL (1:1) and M2N (5:3). No start-up
                      circuit is needed: unlike a beta-multiplier this
-                     topology has no zero-current degenerate state. Rbias is
-                     ppolyf_u_1k; Rz is ppolyf_u (-27.9 ppm/degC, the flavour
-                     sim/devchar/CONCLUSIONS.md S2 reserves for absolute
-                     values).
+                     topology has no zero-current degenerate state.
+                     FLAVOUR (issue #279 / DR-0033): Rbias is the ONLY poly
+                     resistor in this cell that carries DC current -- it IS
+                     Iref -- so it keeps the narrow-spread ppolyf_u_1k
+                     (+-20% process, -694 ppm/degC). Rz, Rza and Rbufb sit
+                     in DC-currentless branches and set only frequencies, so
+                     they are drawn in the 3x denser ppolyf_u_3k (+-25%,
+                     -1293 ppm/degC). Moving Rbias to ppolyf_u_3k costs
+                     +1.97 uA at ff/125C/3.63V and breaks the ratified
+                     Iq < 30 uA row -- MEASURED, do not re-propose it.
 
 WHY AN NMOS INPUT PAIR (the load-bearing headroom argument)
 The feedback node sits at VREF = 1.2 V and the loop must still regulate at
@@ -302,9 +308,19 @@ sits between them:
 
   Rz too large  -> A_plat too large -> the heavy-load crossover
                    beta*A_plat*gm_pass/(2*pi*C_out) climbs past the
-                   buffer/BG poles. MEASURED: Rz = 6 MOhm passes 0.1-50 mA
-                   at every PVT/cap/ESR point; Rz = 7 MOhm already loses
-                   corners at 1-50 mA; Rz = 9 MOhm loses them all.
+                   buffer/BG poles. MEASURED (2026-08, pre-Mrza, against
+                   DR-0001's full cap/ESR window): Rz = 6 MOhm passes
+                   0.1-50 mA at every PVT/cap/ESR point; Rz = 7 MOhm
+                   already loses corners at 1-50 mA; Rz = 9 MOhm loses
+                   them all.
+                   RE-MEASURED 2026-09-22 (issue #279) on THIS design,
+                   inside DR-0018's ratified envelope (0.1-50 mA, 1 uF,
+                   ESR >= 200 mOhm, 630 points): 6.17 MOhm -> 630/630 at
+                   PM 55.75 deg; 6.50 MOhm -> 630/630 at 55.39 deg;
+                   7.00 MOhm -> 630/630 at 54.86 deg. The ceiling above is
+                   NOT a live constraint on the narrowed envelope -- the
+                   slope is about -1.1 deg of PM per +10% of Rz. See
+                   design/error_amp.md S6.14.
   Cc too large   -> gm(MIN)/(2*pi*Cc) falls and with it the amp's 1 kHz
                    gain, which is what the ratified PSRR > 50 dB @ 1 kHz
                    row rides on. MEASURED: Cc = 4.80 pF gives 53.5 dB
@@ -488,7 +504,7 @@ C {devices/lab_pin.sym} -80 -570 0 0 {name=l_mld2_d sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} -80 -630 0 0 {name=l_mld2_s sig_type=std_logic lab=VDD}
 C {devices/lab_pin.sym} -80 -600 0 0 {name=l_mld2_b sig_type=std_logic lab=VDD}
 
-C {symbols/ppolyf_u_1k.sym} 200 -400 0 0 {name=Rz model=ppolyf_u_1k W=1u L=6000u m=1}
+C {symbols/ppolyf_u_3k.sym} 200 -400 0 0 {name=Rz model=ppolyf_u_3k W=1u L=1970.88u m=1}
 C {devices/lab_pin.sym} 200 -430 0 0 {name=l_rz_p sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 200 -370 0 0 {name=l_rz_m sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 180 -400 0 0 {name=l_rz_b sig_type=std_logic lab=VSS}
@@ -503,7 +519,7 @@ C {devices/lab_pin.sym} 570 -280 0 0 {name=l_rza_d sig_type=std_logic lab=NRZA}
 C {devices/lab_pin.sym} 570 -220 0 0 {name=l_rza_s sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 570 -250 0 0 {name=l_rza_b sig_type=std_logic lab=N1}
 
-C {symbols/ppolyf_u_1k.sym} 700 -250 0 0 {name=Rza model=ppolyf_u_1k W=1u L=600u m=1}
+C {symbols/ppolyf_u_3k.sym} 700 -250 0 0 {name=Rza model=ppolyf_u_3k W=1u L=197.09u m=1}
 C {devices/lab_pin.sym} 700 -280 0 0 {name=l_rza_rp sig_type=std_logic lab=NRZA}
 C {devices/lab_pin.sym} 700 -220 0 0 {name=l_rza_rm sig_type=std_logic lab=NZ}
 C {devices/lab_pin.sym} 680 -250 0 0 {name=l_rza_rb sig_type=std_logic lab=VSS}
@@ -528,7 +544,7 @@ C {devices/lab_pin.sym} 680 -150 0 0 {name=l_m2n_g sig_type=std_logic lab=NBIAS}
 C {devices/lab_pin.sym} 720 -120 0 0 {name=l_m2n_s sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 720 -150 0 0 {name=l_m2n_b sig_type=std_logic lab=VSS}
 
-C {symbols/ppolyf_u_1k.sym} 850 -600 0 0 {name=Rbufb model=ppolyf_u_1k W=1u L=5000u m=1}
+C {symbols/ppolyf_u_3k.sym} 850 -600 0 0 {name=Rbufb model=ppolyf_u_3k W=1u L=1642.4u m=1}
 C {devices/lab_pin.sym} 850 -630 0 0 {name=l_rbufb_p sig_type=std_logic lab=N1}
 C {devices/lab_pin.sym} 850 -570 0 0 {name=l_rbufb_m sig_type=std_logic lab=NBP}
 C {devices/lab_pin.sym} 830 -600 0 0 {name=l_rbufb_b sig_type=std_logic lab=VSS}
