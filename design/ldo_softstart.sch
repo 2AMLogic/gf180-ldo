@@ -925,8 +925,17 @@ C {devices/lab_pin.sym} 1180 -1000 0 0 {name=l_mtopss_g sig_type=std_logic lab=V
 C {devices/lab_pin.sym} 1220 -970 0 0 {name=l_mtopss_d sig_type=std_logic lab=VSS}
 C {devices/lab_pin.sym} 1220 -1030 0 0 {name=l_mtopss_s sig_type=std_logic lab=SSR}
 C {devices/lab_pin.sym} 1220 -1000 0 0 {name=l_mtopss_b sig_type=std_logic lab=VIN}
+C {symbols/pfet_03v3.sym} -400 -900 0 0 {name=Mgmg_ss model=pfet_03v3 L=0.5u W=10u nf=1 m=1}
+C {devices/lab_pin.sym} -420 -900 0 0 {name=l_mgmgss_g sig_type=std_logic lab=GMRM}
+C {devices/lab_pin.sym} -380 -870 0 0 {name=l_mgmgss_d sig_type=std_logic lab=VING}
+C {devices/lab_pin.sym} -380 -930 0 0 {name=l_mgmgss_s sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} -380 -900 0 0 {name=l_mgmgss_b sig_type=std_logic lab=VIN}
+C {symbols/ppolyf_u_3k.sym} -200 -900 0 0 {name=Rgmg_ss model=ppolyf_u_3k W=1u L=150u m=1}
+C {devices/lab_pin.sym} -200 -930 0 0 {name=l_rgmgss_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} -200 -870 0 0 {name=l_rgmgss_m sig_type=std_logic lab=VING}
+C {devices/lab_pin.sym} -220 -900 0 0 {name=l_rgmgss_b sig_type=std_logic lab=VSS}
 C {devices/res.sym} 0 -900 0 0 {name=Rgma_ss value=200k footprint=1206 device=resistor m=1}
-C {devices/lab_pin.sym} 0 -930 0 0 {name=l_rgmass_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 0 -930 0 0 {name=l_rgmass_p sig_type=std_logic lab=VING}
 C {devices/lab_pin.sym} 0 -870 0 0 {name=l_rgmass_m sig_type=std_logic lab=GMSA}
 C {symbols/pfet_03v3.sym} 200 -900 0 0 {name=Mgma_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} 180 -900 0 0 {name=l_mgmass_g sig_type=std_logic lab=SSR}
@@ -939,7 +948,7 @@ C {devices/lab_pin.sym} 380 -900 0 0 {name=l_mgmdss_g sig_type=std_logic lab=GMI
 C {devices/lab_pin.sym} 420 -870 0 0 {name=l_mgmdss_s sig_type=std_logic lab=GMVSS}
 C {devices/lab_pin.sym} 420 -900 0 0 {name=l_mgmdss_b sig_type=std_logic lab=VSS}
 C {devices/res.sym} 600 -900 0 0 {name=Rgmb_ss value=200k footprint=1206 device=resistor m=1}
-C {devices/lab_pin.sym} 600 -930 0 0 {name=l_rgmbss_p sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 600 -930 0 0 {name=l_rgmbss_p sig_type=std_logic lab=VING}
 C {devices/lab_pin.sym} 600 -870 0 0 {name=l_rgmbss_m sig_type=std_logic lab=GMSB}
 C {symbols/pfet_03v3.sym} 800 -900 0 0 {name=Mgmb_ss model=pfet_03v3 L=1u W=4u nf=1 m=1}
 C {devices/lab_pin.sym} 780 -900 0 0 {name=l_mgmbss_g sig_type=std_logic lab=VREF}

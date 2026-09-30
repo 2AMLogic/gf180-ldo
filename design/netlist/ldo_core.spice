@@ -131,12 +131,15 @@ XMdis_ss SSR SD VSS VSS nfet_03v3 L=1u W=1u nf=1 ad='int((nf+1)/2) * W/nf * 0.18
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XMtop_ss VSS VREF SSR VIN pfet_03v3 L=2u W=1u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
-Rgma_ss VIN GMSA 200k m=1
+XMgmg_ss VING GMRM VIN VIN pfet_03v3 L=0.5u W=10u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
++ ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
+XRgmg_ss VING VIN VSS ppolyf_u_3k r_width=1u r_length=150u m=1
+Rgma_ss VING GMSA 200k m=1
 XMgma_ss GMIA SSR GMSA GMSA pfet_03v3 L=1u W=4u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XMgmd_ss GMIA GMIA GMVSS VSS nfet_03v3 L=1u W=4u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
-Rgmb_ss VIN GMSB 200k m=1
+Rgmb_ss VING GMSB 200k m=1
 XMgmb_ss GMSUM VREF GMSB GMSB pfet_03v3 L=1u W=4u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
 + ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
 XMgmm_ss GMSUM GMIA GMVSS VSS nfet_03v3 L=1u W=4u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
