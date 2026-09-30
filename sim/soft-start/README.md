@@ -119,6 +119,31 @@ rather than silently merged into one `corners/` directory.
 `corners/20260918-190207-8a59d23-ab/` is a worked example, with its own
 `README.md`.
 
+`handover_t15.py` takes the same capability as `--dut-netlist PATH` (issue
+#339), so an FB-injection candidate gets a **T1–T5** column in the same A/B
+rather than only the transient one — the asymmetry `DR-0035` (measured
+entirely through `sim/run_corners.py --dut-netlist`, so no T1–T5 column) and
+`DR-0036` §4 (a T1–T5 column for the one candidate that happened to be
+committed) both ran into. It takes an `ldo_core.spice`-shaped netlist and
+applies the same `SSR` instrumentation `--variant device` applies to the
+committed export, so the candidate is an edit of the *design* netlist, not of
+a generated artefact. `--dut-netlist` is mutually exclusive with `--variant`
+and is **refused unless `--no-write`** is also given, on the same reasoning as
+`run.sh`'s `NO_RECORD=1`; under `--no-write` the per-corner logs, the DUT
+netlist and both CSVs go to `sim/.work/soft-start/<record-id>-handover/out/`
+instead of `corners/`, so an overridden run cannot leave anything behind that
+looks like evidence:
+
+```bash
+mkdir -p sim/.work/candidate
+cp design/netlist/ldo_core.spice sim/.work/candidate/ldo_core.spice
+$EDITOR sim/.work/candidate/ldo_core.spice   # the candidate injection element
+
+./sim/soft-start/testbench/handover_t15.py --no-write \
+  --dut-netlist sim/.work/candidate/ldo_core.spice \
+  --corners tt --temps 27 --supply-tol 0     # one point; omit for all 63
+```
+
 ## Relationship to sim/enable-shutdown
 
 `sim/enable-shutdown` owns the **Enable / shutdown** row — settled disabled
