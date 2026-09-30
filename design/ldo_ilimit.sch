@@ -230,12 +230,16 @@ CLAMP AUTHORITY AGAINST THE REAL AMPLIFIER (#9)
 HANDOFF TO LAYOUT / ANY RE-SIZING OF Mpass
 
   N = 40 is the RATIO of Mpass's width to Msense's width, at equal L and
-  equal per-finger width (50 um each). ldo_core's Mpass is W = 2000 um /
-  nf = 40 today (issue #8's deliberate DC-sanity simplification of the
-  ratified ~4 mm sizing). If Mpass is re-sized, Msense MUST be re-scaled
-  with it or the limit moves by the same factor. In layout, Msense should be
-  one unit cell of the same array as Mpass, in the array's interior, so the
-  ratio survives gradients.} -1200 -1470 0 0 0.28 0.28 {}
+  equal per-finger width (70 um each since issue #294 / DR-0034 widened the
+  pass device from 2 mm to 2.8 mm; it was 50 um each before that). ldo_core's
+  Mpass is W = 2800 um / nf = 40, i.e. 40 unit cells of W=70u nf=1, and
+  Msense is exactly one more of them. If Mpass is re-sized, Msense MUST be
+  re-scaled with it or the limit moves by the same factor. Per-finger width
+  is also what selects the gf180mcu model bin (DR-0025), so the two devices
+  must keep EQUAL per-finger width, not merely the 1/40 area ratio: at 70 um
+  both still sit inside pfet_03v3's widest declared bin, W/NF in
+  [10, 100.001] um. In layout, Msense should be one unit cell of the same
+  array as Mpass, in the array's interior, so the ratio survives gradients.} -1200 -1470 0 0 0.28 0.28 {}
 C {devices/iopin.sym} -1200 -100 0 0 {name=p_vin lab=VIN}
 C {devices/iopin.sym} -1000 -100 0 0 {name=p_vout lab=VOUT}
 C {devices/iopin.sym} -800 -100 0 0 {name=p_pass_gate lab=PASS_GATE}
@@ -243,7 +247,7 @@ C {devices/ipin.sym} -600 -100 0 0 {name=p_en lab=EN}
 C {devices/ipin.sym} -400 -100 0 0 {name=p_vref lab=VREF}
 C {devices/iopin.sym} -200 -100 0 0 {name=p_vss lab=VSS}
 C {devices/iopin.sym} 0 -100 0 0 {name=p_bg lab=BG}
-C {symbols/pfet_03v3.sym} 0 -1000 0 0 {name=Msense model=pfet_03v3 L=0.28u W=50u nf=1 m=1}
+C {symbols/pfet_03v3.sym} 0 -1000 0 0 {name=Msense model=pfet_03v3 L=0.28u W=70u nf=1 m=1}
 C {devices/lab_pin.sym} -20 -1000 0 0 {name=l_msense_g sig_type=std_logic lab=PASS_GATE}
 C {devices/lab_pin.sym} 20 -970 0 0 {name=l_msense_d sig_type=std_logic lab=ISNS}
 C {devices/lab_pin.sym} 20 -1030 0 0 {name=l_msense_s sig_type=std_logic lab=VIN}

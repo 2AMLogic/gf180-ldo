@@ -18,6 +18,14 @@ itself yet, and no silicon. Read every number here as a simulation result
 against an open PDK's models, with the corner and testbench that produced it
 recorded alongside it.
 
+**How far that is from T1 is graded, not asserted.**
+[`signoff/records/t1-tier-report.json`](signoff/records/t1-tier-report.json)
+is the verdict of record — `klt signoff --manifest`'s mechanical grading of
+this block against klayout-tools' design-evidence ladder, re-run by CI on
+every push. Today it reads **`tier: null`, T1 1 of 11 items met**. See
+[`signoff/README.md`](signoff/README.md) for the per-item reading and the
+disclosures the grader structurally cannot make on this repo's behalf.
+
 ## Built by agents
 
 This block is designed by AI agents, on purpose and out in the open. The
@@ -102,7 +110,7 @@ regression (see notes 5a, 8).
 | Thermal | 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 346 mW into a Vout = 0 short at the untrimmed 95 mA limit ceiling (note 9); specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec | — |
 | Output noise | not specified — explicitly waived (note 7) | 10 Hz–100 kHz µVrms row if a consumer asks for one |
 | Area | < 0.1 mm² total core area, pass FET included, excluding pads and sealring | — |
-| Stability | stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 55.44 deg / 11.96 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1584/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and issue #147. 0 mA (no external load) remains outside the envelope per DR-0007. | capless variant (separate design fork) |
+| Stability | stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 48.65 deg / 11.21 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1523/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and DR-0019, which measures that lever foreclosed by the amplifier's own iq_ua allocation (issue #147). 0 mA (no external load) remains outside the envelope per DR-0007. | capless variant (separate design fork) |
 
 Notes — these are part of the ratified spec, not commentary:
 
@@ -332,6 +340,16 @@ python3 layout/drclvs.py               # DRC (two decks) + LVS + negative contro
 See [`layout/README.md`](layout/README.md) for what each stage establishes, what
 "DRC clean" does and does not mean here, and the tool caveats worth knowing
 before believing a result.
+
+What *does* exist ahead of the layout is the plan for it:
+[`layout/floorplan.md`](layout/floorplan.md) fixes the pass-array segmentation
+and 50 mA metal strategy, the common-centroid matching plan (including the
+divider, whose mismatch this PDK's models cannot simulate at all — note 3), the
+Kelvin-sense scheme, and the core-area estimate against the Area row.
+
+```bash
+python3 layout/area_estimate.py        # core-area estimate from design/netlist/
+```
 
 ## Chipalooza
 

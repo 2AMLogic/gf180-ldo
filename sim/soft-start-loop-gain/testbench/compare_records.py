@@ -54,22 +54,6 @@ RESURGENCE_AC_DEC_TOLERANCE_DB = lsc.RESURGENCE_AC_DEC_TOLERANCE_DB
 KEY_FIELDS = ("variant", "phase", "ssr_cmd", "corner_id", "ceff_uf", "esr_ohm")
 
 
-def load(record_id: str) -> dict[tuple, dict]:
-    path = RECORDS / f"{record_id}-matrix.csv"
-    if not path.exists():
-        raise SystemExit(f"FATAL: no such matrix CSV: {path}")
-    out: dict[tuple, dict] = {}
-    with path.open(newline="") as fh:
-        for row in csv.DictReader(fh):
-            key = tuple(row[f] for f in KEY_FIELDS)
-            if key in out:
-                raise SystemExit(f"FATAL: duplicate key {key} in {path}")
-            out[key] = row
-    if not out:
-        raise SystemExit(f"FATAL: {path} has no rows")
-    return out
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -84,7 +68,8 @@ def main() -> int:
                     help="also write records/<OUT_ID>-delta.csv")
     args = ap.parse_args()
 
-    base, head = load(args.baseline), load(args.head)
+    base = lsc.load(args.baseline, KEY_FIELDS, RECORDS)
+    head = lsc.load(args.head, KEY_FIELDS, RECORDS)
     common = sorted(set(base) & set(head))
     only_base = sorted(set(base) - set(head))
     only_head = sorted(set(head) - set(base))

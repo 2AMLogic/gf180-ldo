@@ -379,7 +379,15 @@ def run(args: argparse.Namespace) -> int:
             )
         else:
             detail = result.message
-        print(f"[{completed:>3}/{len(points)}] {flag} {result.point.corner_id:<26} {detail}")
+        # #301: name the DC continuation rung on every line, not just the
+        # deep ones. A run where one corner silently moves from `direct` to
+        # `source-stepping` between two electrically-identical builds is the
+        # failure this exists to make visible, and it is only visible if the
+        # ordinary case is printed too.
+        print(
+            f"[{completed:>3}/{len(points)}] {flag} {result.point.corner_id:<26} "
+            f"[dc:{result.dc_path.rung}] {detail}"
+        )
 
     wall_start = time.monotonic()
     try:
@@ -435,6 +443,15 @@ def run(args: argparse.Namespace) -> int:
             f"  CHECK FAIL {failure['measurement']} {failure['kind']}={report._fmt(failure['limit'])} "
             f"got {report._fmt(failure['value'])} at {failure['at']}"
         )
+
+    # #301: the grid-level continuation-rung census, so an A/B of two builds
+    # can be compared at a glance without re-reading 81 logs.
+    census = record["dc_paths"]["by_rung"]
+    print()
+    print(
+        "dc solve path (ngspice continuation ladder): "
+        + (", ".join(f"{rung}={n}" for rung, n in census.items()) or "not recorded")
+    )
 
     # Issue #253: spread checks on a grid too small to define a spread are
     # neither passed nor failed -- they are not evaluated, and the run says so

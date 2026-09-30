@@ -79,6 +79,21 @@ Xdut VIN VOUT VIN 0 LOOP LOOP VREF ldo_core
 * load sinks current from a rail below its own ground, so bounding the sink
 * at 0 V deletes that solution instead of hiding it. See
 * sim/harness/README.md, "Compliance-limited load sinks".
+*
+* What the bound does NOT delete (#304). It deletes the SINK-SUSTAINED
+* root above -- the one the sink's own demand holds below ground. Below
+* the knee the sink is exactly 0 A and 0 S (f underflows to 0.0 in double
+* for VOUT <= -0.753 V), so the load network is absent from the DC
+* equations there and anything the solver reports at a sub-ground VOUT
+* with i(vlmeas) = 0 is beyond the bound's reach by construction -- no
+* knee or softness can delete it, because the sink has no term left to
+* remove. vout_min_global_v together with iload_plateau_ma /
+* iload_err_max_ua in tb.json are what catch that class, and read together
+* they tell the two apart: the commanded current at a sub-ground point is
+* the sink-sustained root, zero delivered current is a state the bound
+* never reached. Do not retune the knee against a failing corner and do
+* not add a load-side sub-ground clamp -- both were measured and ruled
+* out. See sim/harness/README.md, "What the bound cannot reach".
 Vilc ILC 0 PWL(0 1m 50u 1m 51u 50m 150u 50m 151u 1m 400u 1m)
 Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
 Vlmeas NLOAD 0 DC 0

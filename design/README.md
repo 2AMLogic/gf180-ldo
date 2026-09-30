@@ -17,9 +17,11 @@ exported from here.
 > (`spec/decision-records/DR-0021`). What is still
 > a stand-in: the **reference itself** -- no bandgap block exists, so every
 > testbench drives `VREF` with an ideal 1.2 V source, and `ldo_core`
-> consumes a reference rather than generating one -- and `Mpass`'s width
-> (2 mm, #8's DC-sanity simplification of the ratified ~4 mm sizing). See
-> "Scope split" below.
+> consumes a reference rather than generating one. `Mpass`'s width is no
+> longer a stand-in: issue #139 / `DR-0032` measured the sizing decision out
+> and **kept it at 2 mm** -- widening it far enough to buy the < 200 mV
+> dropout stretch would break `DR-0018`'s ratified gain-margin bound. See
+> "Pass device sizing" and "Scope split" below.
 
 ## Cells
 
@@ -431,15 +433,44 @@ Monte Carlo study).
   cannot currently be minted fails identically on the pre-resize netlist —
   the pre-existing #191 regression, not this resize.
 
-## Pass device sizing (a deliberate simplification for this issue)
+## Pass device sizing (decided by issue #139 / `DR-0032`: it stays at 2 mm)
 
-`Mpass` (`pfet_03v3`, `L`=0.28 um, `W`=2000 um / 2 mm, `nf`=40, `m`=1) is
-**smaller** than the ~4 mm / 40-unit-cell sizing the ratified spec calls for
-to clear 300 mV dropout @ 50 mA at the worst corner. 2 mm is issue #8's
-guidance's stated acceptable size for the DC-sanity loop-closure test only,
-at effectively no load beyond the ~1 mA the sanity testbench applies. The
-full sizing (and the unit-cell partitioning a layout needs for matching) is
-layout-phase work, out of scope here.
+`Mpass` (`pfet_03v3`, `L`=0.28 um, `W`=2000 um / 2 mm, `nf`=40, `m`=1), with
+`Xilimit`'s `Msense` as its 1/40 replica (`W`=50 um, `nf`=1). This started as
+issue #8's DC-sanity simplification of the ~4 mm sizing
+`sim/devchar/CONCLUSIONS.md` §1 recommends. **Issue #139 re-opened it as a
+real decision and measured it out: 2 mm stays.**
+
+The short version, measured (full evidence and per-width table in
+`spec/decision-records/DR-0032-pass-device-width-is-capped-by-loop-gain-margin.md`):
+
+- The ratified **< 300 mV** Dropout row passes at 2 mm at all 27 PVT corners
+  (worst 267.383 mV at `ss`/125 C, 32.6 mV of margin). The **< 200 mV
+  stretch** is missed at 9 of them, and dropout scales as 1/W, so the stretch
+  needs **W >= ~2.7 mm**.
+- Widening raises `Cgg`, drops the pass-gate pole and spends **gain margin**.
+  `DR-0018`'s ratified stability envelope (0.1-50 mA, `C_eff` = 1 uF nominal,
+  ESR >= 200 mOhm, PM >= 45 deg, GM >= 10 dB) caps the pass device at
+  **~2.5 mm**: measured GM at the binding point (50 mA / 1 uF / 500 mOhm)
+  falls 12.36 dB (2.0 mm) -> 10.47 dB (2.4 mm) -> 9.76 dB (2.6 mm) ->
+  8.49 dB (3.0 mm, where 53 of the envelope's 630 points fail).
+- **The two bounds do not overlap**, so no width clears the stretch without
+  breaking a ratified row. The stretch is therefore a loop-compensation item
+  (the `f_hi` lever of `DR-0016` Candidate 2 / `DR-0019`), not a device-sizing
+  one.
+- For completeness: `devchar`'s recommended 4 mm also breaks `DR-0005`'s
+  ratified Thermal row (346.049 mW measured into a short at `ff`/125 C/3.63 V
+  against a <= 346 mW ceiling), and `devchar`'s 2.53 mm "200 mV" sizing does
+  not actually clear the stretch in closed loop (212.592 mV at `ss`/125 C).
+  Area was never the binding coupling: the whole candidate range is
+  0.0735-0.0761 mm^2 against the ratified < 0.1 mm^2 budget, and the pass
+  device is 2.3 % of it at the shipped width (4.6 % even at 4 mm), sixth on
+  the area list behind the poly-resistor field's 49 % (`layout/floorplan.md`
+  §6).
+
+The unit-cell partitioning a layout needs for matching is settled in
+`layout/floorplan.md` §3.1/§3.2 (N = 40 cells of `W`=50 um `nf`=1, with
+`Msense` as M = 1 of them, inside the array).
 
 ## Loop compensation: `Cff` (issue #42)
 

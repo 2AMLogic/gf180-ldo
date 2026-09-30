@@ -1,0 +1,30 @@
+* probe   : f2-out-of-range-wnflag1
+* purpose : an out-of-range per-finger width, at wnflag=1
+* exit    : 1
+* ---- deck ----------------------------------------------
+* * DR-0025 E4: no clamp, no extrapolation -- bin or hard error
+* .include "/home/ubuntu/.volare/gf180mcuD/libs.tech/ngspice/design.ngspice"
+* .lib "/home/ubuntu/.volare/gf180mcuD/libs.tech/ngspice/sm141064.ngspice" typical
+* .temp 25
+* .options wnflag=1
+* vdd vdd 0 dc 3.3
+* vg g 0 dc 0
+* xmoor vdd g vdd vdd pfet_03v3 W=150u L=0.28u nf=1 m=1
+* .op
+* .control
+* run
+* .endc
+* .end
+* ---- ngspice stdout+stderr -----------------------------
+
+Note: No compatibility mode selected!
+
+
+Circuit: * dr-0025 e4: no clamp, no extrapolation -- bin or hard error
+
+Error on line:
+  m.xmoor.m0 vdd g vdd vdd pfet_03v3 w=    1.500000000000000e-04     l=    2.800000000000000e-07     as=    0.000000000000000e+00     ad=    0.000000000000000e+00     ps=    0.000000000000000e+00     pd=    0.000000000000000e+00     nrd=    0.000000000000000e+00     nrs=    0.000000000000000e+00     delvto=   -0.000000000000000e+00     mulu0=    1.000000000000000e+00     sa=    0.000000000000000e+00     sb=    0.000000000000000e+00     nf=    1.000000000000000e+00     sd=    0.000000000000000e+00     m=    1.000000000000000e+00   
+could not find a valid modelname
+    Simulation interrupted due to error!
+
+Note: No ".plot", ".print", or ".fourier" lines; no simulations run
