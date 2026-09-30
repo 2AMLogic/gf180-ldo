@@ -6,6 +6,13 @@
         --supplies 3.30                                   # one point
     ./sim/soft-start/testbench/handover_t15.py --help
 
+    # A/B a candidate FB-injection element with `git diff -- design/` empty --
+    # the same prototype-vs-committed comparison `sim/run_corners.py
+    # --dut-netlist` and `run.sh`'s LDO_NETLIST already allow (issue #339):
+    ./sim/soft-start/testbench/handover_t15.py --no-write \
+        --dut-netlist sim/.work/candidate/ldo_core.spice \
+        --corners tt --temps 27 --supply-tol 0
+
 WHY THIS LIVES HERE AND NOT IN sim/soft-start-loop-gain/
 
 `design/softstart_injection_compensation.md` section 3 (R3) specifies seven
@@ -79,6 +86,35 @@ T4_RELEASE_V = 1.200           # release point
 # so "in regulation" means here exactly what it means there.
 
 
+def instrument_dut(text: str, path: Path) -> str:
+    """The SSR-instrumented core netlist for an overridden ``--dut-netlist``.
+
+    ``--dut-netlist`` takes an ``ldo_core.spice``-shaped netlist and gets
+    exactly the SSR instrumentation ``--variant device`` applies to the
+    committed export (``nv.instrument_core``, the same call
+    ``nv.build_variant`` makes). So a candidate FB-injection element is
+    written as an edit of the *design* netlist -- which is what `run.sh`'s
+    ``LDO_NETLIST`` and ``sim/run_corners.py --dut-netlist`` both take -- and
+    not as an edit of a generated artefact.
+
+    A netlist that is ALREADY instrumented (its ``ldo_core`` port list ends in
+    ``SSR``, e.g. an ``ldo_core_device.spice`` this driver itself wrote on an
+    earlier run) is passed through untouched: instrumenting it twice would
+    append a second ``SSR`` port and desynchronise the deck's ``Xdut``
+    instance from the subcircuit it calls.
+    """
+    if nv.CORE_PORTS + " SSR" in text:
+        return text
+    try:
+        return nv.instrument_core(text)
+    except nv.TransformError as exc:
+        raise SystemExit(
+            f"--dut-netlist {path}: {exc}\n"
+            "(it must be an `ldo_core.spice`-shaped netlist: a `.subckt "
+            "ldo_core ...` with a `.subckt ldo_softstart ... .ends` block "
+            "inside it -- the shape design/netlist/ldo_core.spice has)")
+
+
 def verdicts(curve) -> dict[str, tuple[bool, str]]:
     """T1-T5 pass/fail for one corner's transfer, with the measured value."""
     above = [p for p in curve.points if p.ssr_v >= sweep.HANDOVER_INTENT_RELEASE_V]
@@ -115,14 +151,59 @@ def main() -> int:
     ap.add_argument("--corners", nargs="+", default=list(sweep.PROCESS_CORNERS))
     ap.add_argument("--temps", nargs="+", type=float, default=list(sweep.TEMPS_C))
     ap.add_argument("--supply-tol", type=float, default=sweep.SUPPLY_TOL)
-    ap.add_argument("--variant", default="device",
-                    choices=list(nv.DUT_VARIANTS),
-                    help="`device` is design/netlist/ldo_softstart.spice as "
-                         "committed; `binj` is the frozen pre-#195 ideal "
-                         "source, useful only as a known-answer control")
+    # --variant and --dut-netlist both decide the one thing: which netlist the
+    # hand-over transfer is measured on. Mutually exclusive so a run can never
+    # be ambiguous about what it graded.
+    dut = ap.add_mutually_exclusive_group()
+    dut.add_argument("--variant", default=None,
+                     choices=list(nv.DUT_VARIANTS),
+                     help="`device` (the default) is "
+                          "design/netlist/ldo_softstart.spice as committed; "
+                          "`binj` is the frozen pre-#195 ideal source, useful "
+                          "only as a known-answer control")
+    dut.add_argument("--dut-netlist", default="", metavar="PATH",
+                     help="grade an arbitrary `ldo_core.spice`-shaped netlist "
+                          "(repo-root-relative or absolute) instead of the "
+                          "committed export -- the prototype-vs-committed A/B "
+                          "`sim/run_corners.py --dut-netlist` and `run.sh`'s "
+                          "LDO_NETLIST already allow. REQUIRES --no-write: an "
+                          "overridden DUT is not a committed design state, so "
+                          "it may not mint an evidence record")
     ap.add_argument("-j", "--jobs", type=int, default=8)
     ap.add_argument("--record-id", default="")
+    ap.add_argument("--no-write", action="store_true",
+                    help="run but record no evidence: the per-corner logs and "
+                         "the two CSVs land under the git-ignored "
+                         "sim/.work/ instead of sim/soft-start/corners/")
     args = ap.parse_args()
+
+    # --- which netlist is under test, and the write-gate that guards it ----
+    #
+    # This mirrors run.sh:85-89's own refusal for its LDO_NETLIST override.
+    # `design/netlist.py --check` below is what guarantees the DEFAULT DUT is
+    # the schematics' own export; an override breaks that guarantee, so a run
+    # that carries one must not be able to write where committed evidence
+    # lives. Refused up front, before any PDK/ngspice discovery or simulation
+    # work, because it is a usage error and nothing is salvageable from it.
+    dut_override: Path | None = None
+    if args.dut_netlist:
+        if not args.no_write:
+            print("refusing to mint a record with an overridden --dut-netlist",
+                  file=sys.stderr)
+            print("(pass --no-write -- an evidence record must be the "
+                  "committed export)", file=sys.stderr)
+            return 1
+        dut_override = (
+            REPO_ROOT / Path(args.dut_netlist).expanduser()).resolve()
+        if not dut_override.is_file():
+            print(f"--dut-netlist {args.dut_netlist!r} does not exist "
+                  f"(resolved to {dut_override})", file=sys.stderr)
+            return 1
+    variant = args.variant or "device"
+    # The label that names the DUT in the deck, the log filenames and the
+    # banner. An overridden run is labelled as one so its logs can never be
+    # mistaken for a `device` run's.
+    dut_label = "dut-override" if dut_override is not None else variant
 
     pdk = find_pdk()
     check = subprocess.run(
@@ -141,14 +222,29 @@ def main() -> int:
         _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
         + f"-{short}")
 
-    logdir = EXPDIR / "corners" / f"{record_id}-handover"
-    logdir.mkdir(parents=True, exist_ok=True)
     workdir = REPO_ROOT / "sim" / ".work" / EXPDIR.name / f"{record_id}-handover"
     workdir.mkdir(parents=True, exist_ok=True)
     (workdir / ".spiceinit").write_text(sweep.SPICEINIT)
 
-    netlist = logdir / f"ldo_core_{args.variant}.spice"
-    netlist.write_text(nv.build_variant(REPO_ROOT, args.variant))
+    # Where the per-corner ngspice logs, the DUT netlist and the two CSVs
+    # land. `sim/<slug>/corners/` is committed evidence: .gitignore
+    # force-tracks `sim/*/corners/**/*.log` back through the blanket `*.log`
+    # ignore, and nothing ignores `*.csv` there at all. So --no-write has to
+    # redirect the WHOLE lot into the git-ignored scratch tree -- redirecting
+    # only the CSVs would still leave a `git status` full of raw logs from a
+    # netlist that is not a committed design state.
+    if args.no_write:
+        logdir = workdir / "out"
+    else:
+        logdir = EXPDIR / "corners" / f"{record_id}-handover"
+    logdir.mkdir(parents=True, exist_ok=True)
+
+    netlist = logdir / f"ldo_core_{dut_label}.spice"
+    if dut_override is not None:
+        netlist.write_text(instrument_dut(dut_override.read_text(),
+                                          dut_override))
+    else:
+        netlist.write_text(nv.build_variant(REPO_ROOT, variant))
 
     corners = sweep.resolve_corners(args.corners)
     supplies = sweep.supply_points(sweep.NOMINAL_SUPPLY_V, args.supply_tol)
@@ -158,7 +254,12 @@ def main() -> int:
     print(f"ngspice       : {ngspice_version()}")
     print(f"ngspice sha256: {ngspice_binary_sha256()}")
     print(f"record id     : {record_id}-handover")
-    print(f"variant       : {args.variant}")
+    print(f"variant       : {dut_label}")
+    if dut_override is not None:
+        print(f"dut netlist   : {dut_override}  (--dut-netlist override)")
+    if args.no_write:
+        print("evidence      : not recorded (--no-write); logs and CSVs go to "
+              f"{logdir}")
     print(f"grid          : {len(grid)} PVT x {len(sweep.HANDOVER_SSR_V)} "
           f"pinned V(SSR) from {sweep.HANDOVER_SSR_V[0]:g} to "
           f"{sweep.HANDOVER_SSR_V[-1]:g} V")
@@ -166,7 +267,7 @@ def main() -> int:
 
     curves, errs = [], []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futs = {pool.submit(sweep.run_handover, pvt, pdk, variant=args.variant,
+        futs = {pool.submit(sweep.run_handover, pvt, pdk, variant=dut_label,
                             netlist=netlist, workdir=workdir, logdir=logdir): pvt
                 for pvt in grid}
         for n, done in enumerate(concurrent.futures.as_completed(futs), 1):
@@ -247,7 +348,15 @@ def main() -> int:
     print(f"full transfer : {tpath}")
     print(f"raw logs      : {logdir}/")
     print(f"record-id     : {record_id}-handover")
-    print(f"(write {EXPDIR}/records/<id>.md by hand -- see sim/README.md)")
+    print(f"dut netlist   : {netlist}")
+    if args.no_write:
+        print("evidence      : NOT recorded (--no-write) -- every path above "
+              "is under the git-ignored sim/.work/ scratch tree")
+        if dut_override is not None:
+            print(f"                the DUT was {dut_override}, not the "
+                  "committed export, so no record may be minted from this run")
+    else:
+        print(f"(write {EXPDIR}/records/<id>.md by hand -- see sim/README.md)")
     return 0
 
 
