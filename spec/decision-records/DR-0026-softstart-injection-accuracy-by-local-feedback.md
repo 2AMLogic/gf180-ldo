@@ -1,23 +1,24 @@
 # DR-0026: make the soft-start injection transconductance accurate by local feedback, rather than by scaling the feedback transimpedance or reinstating an output-side clamp
 
-- **Status**: proposed 2026-09-18 (issue #249 / this pull request) — per the
-  2026-08-19 ratification-via-PR policy (2AMLogic/2am#357, the mechanism used
-  for DR-0005/PR #137, DR-0006/PR #127, DR-0018/PR #199, DR-0023/PR #217 and
-  DR-0024/PR #228), the operator's review and approval **of this pull
-  request** is the ratification act itself; no separate ratification comment
-  is expected. The word above stays **proposed** because that is what this
-  record is as written; the follow-on implementation pull request flips it to
-  `ratified <merge date>` as its first hunk, so a reader of `main` is never
-  left guessing which side of the gate the record is on.
+- **Status**: ratified 2026-10-01 (operator review, gf180-ldo#261). The
+  operator reviewed this record in an attended session and ratified the
+  **topology (local feedback), not the sizing**, as the record itself scopes
+  it. Proposed 2026-09-18 (issue #249 / PR #258). PR #258 merged
+  2026-09-18 through the ordinary bot review/auto-merge pipeline **without
+  the `loom:operator` gate**; that merge was **not** an operator review or
+  approval, and it is not the ratification act. The operator review recorded
+  in issue #261 is the ratification, restoring the human-gate precedent set
+  by DR-0005/PR #137, DR-0006/PR #127, DR-0018/PR #199, DR-0023/PR #217 and
+  DR-0024/PR #228. The implementation (issue #212) proceeds under this
+  record's stated constraints.
   **This record changes no `design/` file at all** — not the
   schematics, and not `design/softstart_injection_compensation.md`, whose §3
-  (R4) this record answers. Per #249's acceptance criteria, ratification
-  precedes any `design/` change, so the device-level implementation *and* the
-  §3 pointer back to this record are both a separate, later pull request that
-  this one does not open.
+  (R4) this record answers. The device-level implementation *and* the §3
+  pointer back to this record are a separate, later pull request that this
+  one does not open.
 - **Date**: 2026-09-18
 - **Decided by**: agent-builder (issue #249) — **proposing**; the ratified
-  spec is a human gate.
+  spec is a human gate (passed 2026-10-01, see Status).
 
 ## Context
 
