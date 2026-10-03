@@ -7,10 +7,11 @@ and ``_label`` (issue #333). Consolidated here, following the same
 callers and ``layout/drclvs.py`` (``sys.path.insert(0, str(LAYOUT_DIR))``)
 already use for exactly this kind of module.
 
-``layout/testcell/gen_gds.py`` predates ``_fail`` and uses
+``layout/testcell/gen_gds.py`` uses
 ``os.environ.setdefault("GF_PDK_OPTION", "D")`` rather than an
 unconditional assignment -- a deliberate difference, not drift -- so it is
-not routed through this module.
+not routed through this module; it carries its own inline ``_fail``
+(issue #296) instead.
 """
 
 import os
