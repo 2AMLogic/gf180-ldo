@@ -72,11 +72,27 @@ L_METAL1 = (34, 0)
 L_METAL1_LABEL = (34, 10)
 
 
+def _fail(message):
+    """Abort the build, loudly.
+
+    ``klayout -b -r`` **swallows SystemExit**: a bare `raise SystemExit("…")`
+    prints nothing and the klayout process still exits 0 (checked against
+    KLayout 0.28.16). Every assertion in this file therefore has to print its
+    own message before bailing out, or a PDK change would abort the build
+    with no diagnostic at all -- `layout/drclvs.py` would only report "layout
+    build produced no .gds", which names the symptom and not the cause.
+    Same helper as `layout/divider/gen_gds.py`'s (issue #296).
+    """
+    sys.stderr.write(f"gen_gds.py: {message}\n")
+    sys.stderr.flush()
+    raise SystemExit(1)
+
+
 def _rd(name, default=None):
     """Read a -rd switch (KLayout injects them as globals)."""
     value = globals().get(name, default)
     if value is None:
-        raise SystemExit(f"gen_gds.py: missing required switch -rd {name}=...")
+        _fail(f"missing required switch -rd {name}=...")
     return value
 
 
@@ -84,7 +100,7 @@ def _load_pdk_pcells(pdk_path):
     """Register the PDK's KLayout-API PCell library and return its name."""
     macros = os.path.join(pdk_path, "libs.tech", "klayout", "tech", "pymacros")
     if not os.path.isdir(macros):
-        raise SystemExit(f"gen_gds.py: no PCell library at {macros}")
+        _fail(f"no PCell library at {macros}")
     sys.path.insert(0, macros)
     # The gf180mcu PCells read this to pick the metal stack / MIM option; the
     # variant we build against is D (5LM, 11K top metal, MIM option B).
@@ -108,8 +124,8 @@ def build(out_path, pdk_path):
     top = layout.create_cell(TOP_CELL)
     device = layout.create_cell("nfet", library, dict(PCELL_PARAMS))
     if device is None:
-        raise SystemExit(
-            "gen_gds.py: the PDK's 'nfet' PCell rejected "
+        _fail(
+            "the PDK's 'nfet' PCell rejected "
             f"{PCELL_PARAMS!r}. KLayout silently ignores unknown parameter "
             "names, so a PDK version whose nfet takes different parameter "
             "names would produce a default-sized device instead of an error "
@@ -124,8 +140,8 @@ def build(out_path, pdk_path):
     metal1 = pya.Region(top.begin_shapes_rec(layout.layer(*L_METAL1))).merged()
     shapes = sorted(metal1.each(), key=lambda p: p.bbox().area())
     if len(shapes) != 3:
-        raise SystemExit(
-            f"gen_gds.py: expected 3 metal1 shapes (source, drain, guard ring), "
+        _fail(
+            f"expected 3 metal1 shapes (source, drain, guard ring), "
             f"got {len(shapes)} -- the PCell's geometry changed, so the label "
             "placement below can no longer be trusted."
         )
@@ -138,8 +154,8 @@ def build(out_path, pdk_path):
     poly = pya.Region(top.begin_shapes_rec(layout.layer(*L_POLY2))).merged()
     poly_shapes = list(poly.each())
     if len(poly_shapes) != 1:
-        raise SystemExit(
-            f"gen_gds.py: expected 1 poly2 shape (the gate), got {len(poly_shapes)}"
+        _fail(
+            f"expected 1 poly2 shape (the gate), got {len(poly_shapes)}"
         )
     gate = poly_shapes[0].bbox().to_dtype(layout.dbu)
 

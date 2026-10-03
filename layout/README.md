@@ -328,8 +328,9 @@ diagnostic is gone.
 helper that writes to stderr (which `drclvs.py` captures into the run
 directory's `build-gds.log`) before exiting. Any new generator should do the
 same — `passives/gen_gds.py` and `pass_array/gen_gds.py` share one copy in
-`layout/gen_gds_common.py` (issue #333). `testcell/gen_gds.py` still uses bare `SystemExit`; its assertions are
-correspondingly silent.
+`layout/gen_gds_common.py` (issue #333). `testcell/gen_gds.py` carries its
+own copy of the divider's helper (issue #296), so its PCell-shape assertions
+are audible too.
 
 One as-drawn deviation from §4.1's prose, recorded here and in §4.1 itself:
 the plan says the units are "joined on M1", and they are — but the two legs
