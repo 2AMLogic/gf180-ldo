@@ -1,13 +1,13 @@
 # DR-0037: A die carries exactly one high-Rs poly flavour — this design's is `ppolyf_u_3k`, and `Rbias` moves to plain `ppolyf_u` (amends DR-0033)
 
-- **Status**: proposed 2026-09-23 (issue #312 / this pull request).
+- **Status**: proposed 2026-10-06 (issue #312 / this pull request).
   **Ratification is an operator decision, not an agent one**, and this record
   does not claim it. It amends DR-0033, which is itself still `proposed`, so
   nothing ratified is superseded or relaxed. No ratified `README.md` row
   changes. Every ratified bar this record moves is re-measured on fresh
   evidence in this pull request and still holds. The only thing it gives
   up is area, and that stays inside the ratified area row (§ Consequences).
-- **Date**: 2026-09-23
+- **Date**: 2026-10-06
 - **Decided by**: Builder agent, issue #312 (proposal); operator (ratification,
   pending)
 - **Amends**: DR-0033, Decision item 2 ("`Rbias` stays `ppolyf_u_1k`").
@@ -106,7 +106,17 @@ full PVT grid, same host and ngspice binary for the two new columns:
 | `amp-openloop` `iq_ua` ≤ 15 µA (DR-0019 allocation) | 14.9784 | 14.0470 | **14.9812** PASS |
 | `amp-openloop` `peak_excess_db` ≤ 1 dB (DR-0008) | 0.14128 | 0.21955 | **0.14106** PASS |
 | `amp-selfosc` (45 pts) | PASS | — | **PASS** |
-| `loop-stability`, DR-0018 envelope (630 pts) | 630/630, 48.65° / 11.210 dB | — | **LOOPSTAB_RESULT** |
+| `loop-stability`, DR-0018 envelope (630 pts, C_eff = 1 µF, ESR ≥ 200 mΩ, 0.1–50 mA) | 630/630, 48.65° / 11.210 dB | — | **630/630**, 48.79° / 11.39 dB, resurgence 0/630 PASS |
+
+**`loop-stability` honesty note.** The *full* DR-0001 window
+(0.33–4.7 µF, any ESR, 4536 points) **fails on `main` today and still fails
+here**: 2790/4536 pass on `main` (`20260923-132038-a992b52`), 2772/4536 with
+this change (28 points PASS→FAIL, 10 FAIL→PASS, worst PM −16.12° at
+`res_ss_-40c_2.97v`/50 mA/0.33 µF/1 mΩ). DR-0018 already narrowed the verified
+claim to the 630-point envelope above, and that envelope holds. The change
+does not rescue the wide window and does not claim to; a full-window FAIL
+verdict is not new. Worst envelope PM moves 48.65° → 48.79°, worst GM
+11.210 → 11.39 dB, worst resurgence −0.1748 → −0.1838 dB.
 
 Every ratified bar lands within **0.003 dB / 0.003 µA** of the committed
 design, at the same binding corner. That is the 125 °C match working as
@@ -116,12 +126,36 @@ Amp `iq_ua` at `ff_-40c_3.63v` goes 6.04 → 6.84 µA against a 15 µA bar.
 Closed-loop `iq_full_ua` at its coldest corner goes 8.81 → 9.60 µA. At
 tt/27 °C the amplifier draws ≈ 6.6 % more (`iq_ua` 5.048 → 5.382 µA).
 
+Two further benches were run to check the change did not move them. Both
+fail on `main` already, for reasons that predate this record:
+
+- `psrr-vs-freq` (record `20261006-010603-7edf6f2`): FAIL at
+  `ff_125c_3.30v`, `ff_125c_3.63v`, `sf_125c_3.63v`. Those three corners read
+  47.0896 / 29.4286 / 38.5728 dB at 1 kHz, **identical to the last digit** to
+  the pre-change record `20260923-233113-1a8fcf7` on `main`.
+- `load-transient` (record `20261006-005730-7edf6f2`, FAIL) against a fresh
+  baseline run of unmodified `main` (`20261006-013625-047362c`, also FAIL).
+  Both fail the ≤ 150 mV excursion at `ss_-40c_*` (undershoot 227 / 201 mV
+  here, 233 / 214 mV on `main`, at 2.97 / 3.30 V). They differ at two corners,
+  `ss_-40c_3.63v` and `sf_-40c_3.30v`, which are `dynamic-gmin` solves. Here the
+  first reads a 1110 mV overshoot where `main` shows only an undershoot fail
+  (197 mV); on `main` the second reads 476 mV overshoot and here it passes.
+  Both are cold corners where this change raises the bias current by ≈ 12 %.
+  **The cause is not established.** No ratified row is gated on this bench's
+  result here, but a reviewer should not read the `ss_-40c_3.63v` overshoot as
+  noise without looking at it. It is left as a residual risk.
+
 Records (all minted in this pull request):
 `sim/quiescent-current/records/20260923-222715-d5cf9ac.md`,
 `sim/psrr-dc/records/20260923-222715-d5cf9ac.md`,
 `sim/amp-openloop/records/20260923-222715-d5cf9ac.md`,
 `sim/amp-selfosc/records/20260923-222716-d5cf9ac.md`,
-LOOPSTAB_RECORDS; the rejected 27 °C-match variant is
+`sim/loop-stability/records/20261006-014707-2c9cdf9.md` (+ `-matrix.csv`).
+The first four were re-run a second time at tag `7edf6f2` with identical
+bar-binding numbers (`iq_full_ua` 28.7182, `iq_en_ua` 27.3907,
+`psrr_ldo_1k_db` 50.2551, `gain_1k_db` 53.7769, `iq_ua` 14.9812,
+`peak_excess_db` 0.14106) -- records `sim/{quiescent-current,psrr-dc,amp-openloop,amp-selfosc}/records/20261006-*-7edf6f2.md`.
+The rejected 27 °C-match variant is
 `sim/{quiescent-current,psrr-dc}/records/20260923-222409-d5cf9ac.md` and
 `sim/amp-openloop/records/20260923-222408-d5cf9ac.md`, kept as the measured
 negative result.
