@@ -46,7 +46,7 @@ ldo_core                          top level -- issue #8
 | `VSS`        | inout | Ground |
 | `ERRAMP_OUT` | out   | Loop-break point, output side (error-amp output) |
 | `PASS_GATE`  | in    | Loop-break point, input side (pass-device gate) |
-| `VREF`       | in    | Reference voltage, 1.2 V nominal. **Appended by issue #174** (`spec/decision-records/DR-0021`); it was an internal net driven by an in-cell ideal source before that. Shared by `error_amp`'s `INN`, `ldo_ilimit`'s bias generator and `ldo_softstart`'s ramp ceiling -- one net, one port. See "Reference voltage" below for the contract a driver of this pin must meet. |
+| `VREF`       | in    | Reference voltage, 1.2 V nominal. **Appended by issue #174** (`spec/decision-records/DR-0021`); it was an internal net driven by an in-cell ideal source before that. Shared by `error_amp`'s `INN`, `ldo_ilimit`'s bias generator and `ldo_softstart`'s bias generator (which sets both the ramp current and, as of issue #302 / `DR-0035`, the `VIN`-referenced ramp ceiling's offset `VREF`·`Rceil_ss`/`Rss_bias`) -- one net, one port. See "Reference voltage" below for the contract a driver of this pin must meet. |
 
 `python3 design/netlist.py --check` asserts this exact port list (and that
 the `.sym` pin order matches the `.sch` port order for every cell) so a
@@ -308,14 +308,19 @@ Monte Carlo study).
   is stale and affects only the `*.PININFO` comment line in the netlist.)
 - Topology **since #189**: a linear voltage ramp (`Css` charged by a scaled
   copy of the same `VREF`/`Rbias` current `ldo_ilimit` uses, with a
-  `VREF`-referenced ceiling device above it) converted into a **current
+  ceiling device above it -- `VIN`-referenced since issue #302 / `DR-0035`,
+  `VREF`-referenced before that) converted into a **current
   injected into `FB`**, `I_inj = (V_REF − SSR)/(Rtop‖Rbot)`, which makes the
   *main* loop hold `VOUT = 1.5 × SSR`. Solving the `FB` node with the loop
   holding `FB` at `V_REF` gives `VOUT = 1.5·V_REF − I_inj·Rtop`, so that
   choice of `I_inj` collapses to `1.5 × SSR` and reaches exactly 1.8 V as
   `SSR` reaches `V_REF`. The injection is **source-only**, so it rectifies
   hard off once `SSR` passes `V_REF` (which it always does — `Mtop_ss`'s
-  ceiling lands at 1.53–2.43 V over PVT) and leaves no DC error behind.
+  ceiling lands at 2.23–3.23 V over PVT, a fixed ~0.40–0.74 V below `VIN`,
+  since issue #302 / `DR-0035`; it was 1.53–2.43 V, `VREF`-referenced, before)
+  and leaves no DC error behind. Why the ceiling had to follow `VIN` rather
+  than `VREF` -- the settled residual's *supply slope*, which the ratified
+  PSRR row grades (target T8) -- is `DR-0031`/`DR-0035`'s.
 - **This replaced a second feedback loop, and that is the point.** #38/#43
   built the same behaviour as a PMOS comparator on (`FB`, `SSR`) driving a
   clamp that sourced into `PASS_GATE`. That loop closes through the output

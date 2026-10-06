@@ -261,9 +261,113 @@ Each target, its derivation, and where the present chain sits.
 | **T5** | the loop is in regulation (`\|V(FB) − VREF\| ≤ 5 mV`) at **every** `V(SSR)` from 0 upward | a ramp state where the loop is open has no loop gain, no phase margin, and no small-signal description at all; it is also the state whose *exit* is the leading unexplained candidate for #191's transient (§4) | violated up to `V(SSR) = 0.70 V` at **37/63 corners** |
 | **T6** | the element's own contribution to the main loop: ΔPM ≤ 2 deg and ΔGM ≤ 1 dB, measured by DC-preserving AC-open of its output drain from `FB` | the #182/#185 cross-invocation movement class — below it, a delta is not distinguishable from re-running the same command | **+0.053 deg / +0.01 dB — met, with ~40× margin** |
 | **T7** | total capacitance the element hangs on `FB` ≤ 1 pF | the tighter of the record's two capacitance ladders (§1) | **~30 fF (schematic estimate) — met, with ~33× margin** |
+| **T8** | `\|dI_inj/dVIN\| ≤ 10.5 nA/V` at the **settled** operating point, every corner of `sim/psrr-vs-freq`'s grid (added by issue #302; `DR-0031` §5) | the ratified PSRR row is ≥ 50 dB at 1 kHz, i.e. `\|dVOUT/dVIN\|` ≤ 3.162e-3; the residual reaches `VOUT` through `Rtop` = 300 kΩ (`Rbot` cancels with `FB` held at `VREF`), so 3.162e-3 / 300 kΩ = 10.5 nA/V. T1 bounds the residual's *magnitude* and says nothing about its *supply slope* — `DR-0031` measured T1 met (17.6 nA) with the row failing by 20.6 dB at the same point | *not a target in #196's era; see "T8, measured" below* |
 
 **T6 and T7 are already met and are listed so a fix does not break them.**
 T1–T5 are the work.
+
+**T8 was added by issue #302** (`DR-0031` §5 assigned the edit to the
+implementing pull request). Its derivation is in the table row; its grading
+bench is `sim/psrr-vs-freq` and its 50 mA sibling, **not** `sim/soft-start` or
+`sim/soft-start-loop-gain` — neither measures a supply derivative at the
+settled point, which is how the defect survived three rebuilds of the element
+with all of their evidence green.
+
+### T8, measured (issue #302 / `DR-0035`)
+
+`DR-0035` (ratified 2026-09-23) moved `Mtop_ss`'s gate from `VREF` to a new
+node `VCEIL` = `VIN` − `Iref_ss`·`Rceil_ss`, so the settled ramp ceiling — and
+with it the forward bias left across the mirror's reference stack — is
+referenced to `VIN` instead of to ground. The instrument is
+`sim/psrr-vs-freq/testbench/t8_settled_injection.py`: `DR-0031` §2.2's 0 V
+ammeter in `Mgmc_ss`'s drain lead, run through the harness's own deck
+composer and DC continuation ladder against the **unmodified**
+`sim/psrr-vs-freq` / `sim/psrr-vs-freq-50ma` stimulus, supply slope read from
+the `.ac` at 1 kHz. Its `--dut-from-rev` known-answer control, run on the
+pre-#302 netlist (`main` @ `d5cf9ac5`), reproduces `DR-0031`/`DR-0035`'s
+**109.9004 nA/V** and **17.5706 nA** at `ff_125c_3.63v` to every printed
+digit.
+
+| | before (`d5cf9ac5`) | after (this change) | bound |
+|---|---|---|---|
+| **T8** worst, 45 corners | **109.9004 nA/V** @ `ff_125c_3.63v` — **FAIL at 3/45** (`ff_125c_3.63v`, `sf_125c_3.63v` 35.79, `ff_125c_3.30v` 13.73) | **0.0328 nA/V** @ `ff_125c_3.63v` — **PASS 45/45**, 320× inside | ≤ 10.5 nA/V |
+| **T1** at the settled point, worst | 17.5706 nA @ `ff_125c_3.63v` | **0.0366 nA** @ `ff_125c_3.63v` — PASS 45/45 | ≤ 50 nA |
+| `sim/psrr-vs-freq` `psrr_1k_db`, worst | 29.4286 dB (FAIL) | **59.5967 dB** @ `sf_125c_3.63v` (PASS 45/45, +9.60 dB) | ≥ 50 dB |
+| `sim/psrr-vs-freq-50ma` `psrr_1k_db`, worst | 29.4310 dB (FAIL) | **59.5512 dB** @ `sf_125c_3.63v` (PASS 45/45, +9.55 dB) | ≥ 50 dB |
+| `VIN − V(VCEIL)` over PVT | — | 1.44944 … 1.44952 V (80 µV) | — |
+
+The two load conditions agree on T8 and on the settled residual to
+≤ 4e-5 nA/V and ≤ 4e-5 nA at every corner — the element's settled state does
+not see the load, as it should not with `FB` held at `VREF`. Evidence:
+`sim/psrr-vs-freq/records/20260923-215051-397894a.md`,
+`sim/psrr-vs-freq-50ma/records/20260923-215100-397894a.md`, and the per-corner
+CSVs `sim/psrr-vs-freq/corners/20260923-215111-397894a0-t8/t8.csv`,
+`sim/psrr-vs-freq-50ma/corners/20260923-215123-397894a0-t8/t8.csv` and
+`sim/psrr-vs-freq/corners/20260923-215135-397894a0-t8-control-d5cf9ac5/t8.csv`
+(the control). The instrument's own `psrr_1k_db` agrees with the harness
+records to ≤ 1.9 mdB at every corner and to the printed digit at the binding
+ones.
+
+One thing moved the other way and is stated so it is not rediscovered: at the
+cold and nominal corners, where the old element was already far inside T8,
+the new floor (≈ 0.017 – 0.019 nA/V) sits slightly **above** the old one
+(0.006 – 0.018 nA/V). The floor is flat in the settled residual (which is
+~1 pA there) and flat in supply, which is what a *displacement* current
+looks like rather than a transconductance one: with `GMSUM`/`GMOD` now
+tracking `VIN` one-for-one, ≈ 3 fF from those nodes to `FB` passes
+2π · 1 kHz · 3 fF · 1 V ≈ 0.019 nA/V. That reading is an inference from the
+numbers, not a separately measured decomposition; either way it is 550×
+inside the bound.
+
+Per corner, 45 PVT points (the `sim/psrr-vs-freq` grid):
+
+| corner | T8 before (`d5cf9ac5`), nA/V | T8 now, 1 mA, nA/V | T8 now, 50 mA, nA/V | settled `I_inj` now, nA | `VIN − V(VCEIL)`, V | settled `V(SSR)`, V |
+|---|---|---|---|---|---|---|
+| `ff_-40c_2.97v` | 0.0095 | 0.0174 | 0.0174 | 0.0009 | 1.4495 | 2.3953 |
+| `ff_-40c_3.30v` | 0.0069 | 0.0174 | 0.0174 | 0.0011 | 1.4495 | 2.7252 |
+| `ff_-40c_3.63v` | 0.0062 | 0.0172 | 0.0172 | 0.0012 | 1.4495 | 3.0550 |
+| `ff_125c_2.97v` | 1.5130 | 0.0297 | 0.0297 | 0.0339 | 1.4494 | 2.2275 |
+| `ff_125c_3.30v` | **13.7311** (FAIL) | 0.0307 | 0.0307 | 0.0349 | 1.4494 | 2.5574 |
+| `ff_125c_3.63v` | **109.9000** (FAIL) | 0.0328 | 0.0328 | 0.0366 | 1.4494 | 2.8872 |
+| `ff_27c_2.97v` | 0.0089 | 0.0178 | 0.0178 | 0.0009 | 1.4495 | 2.3277 |
+| `ff_27c_3.30v` | 0.0074 | 0.0178 | 0.0178 | 0.0011 | 1.4495 | 2.6576 |
+| `ff_27c_3.63v` | 0.4652 | 0.0177 | 0.0177 | 0.0012 | 1.4495 | 2.9874 |
+| `fs_-40c_2.97v` | 0.0181 | 0.0181 | 0.0181 | 0.0009 | 1.4495 | 2.5535 |
+| `fs_-40c_3.30v` | 0.0151 | 0.0179 | 0.0179 | 0.0011 | 1.4495 | 2.8833 |
+| `fs_-40c_3.63v` | 0.0074 | 0.0177 | 0.0177 | 0.0012 | 1.4495 | 3.2132 |
+| `fs_125c_2.97v` | 0.0130 | 0.0190 | 0.0190 | 0.0013 | 1.4495 | 2.3873 |
+| `fs_125c_3.30v` | 0.0096 | 0.0189 | 0.0189 | 0.0014 | 1.4495 | 2.7171 |
+| `fs_125c_3.63v` | 0.0536 | 0.0188 | 0.0188 | 0.0016 | 1.4495 | 3.0470 |
+| `fs_27c_2.97v` | 0.0181 | 0.0186 | 0.0186 | 0.0009 | 1.4495 | 2.4865 |
+| `fs_27c_3.30v` | 0.0107 | 0.0185 | 0.0185 | 0.0011 | 1.4495 | 2.8163 |
+| `fs_27c_3.63v` | 0.0077 | 0.0182 | 0.0182 | 0.0012 | 1.4495 | 3.1462 |
+| `sf_-40c_2.97v` | 0.0115 | 0.0176 | 0.0176 | 0.0009 | 1.4495 | 2.4175 |
+| `sf_-40c_3.30v` | 0.0074 | 0.0175 | 0.0175 | 0.0011 | 1.4495 | 2.7473 |
+| `sf_-40c_3.63v` | 0.0064 | 0.0174 | 0.0174 | 0.0012 | 1.4495 | 3.0772 |
+| `sf_125c_2.97v` | 0.4623 | 0.0179 | 0.0179 | 0.0118 | 1.4495 | 2.2471 |
+| `sf_125c_3.30v` | 4.1249 | 0.0179 | 0.0179 | 0.0120 | 1.4495 | 2.5769 |
+| `sf_125c_3.63v` | **35.7940** (FAIL) | 0.0183 | 0.0183 | 0.0124 | 1.4495 | 2.9068 |
+| `sf_27c_2.97v` | 0.0096 | 0.0180 | 0.0180 | 0.0009 | 1.4495 | 2.3487 |
+| `sf_27c_3.30v` | 0.0079 | 0.0180 | 0.0180 | 0.0011 | 1.4495 | 2.6785 |
+| `sf_27c_3.63v` | 0.0711 | 0.0179 | 0.0179 | 0.0012 | 1.4495 | 3.0084 |
+| `ss_-40c_2.97v` | 0.0182 | 0.0182 | 0.0182 | 0.0009 | 1.4495 | 2.5751 |
+| `ss_-40c_3.30v` | 0.0172 | 0.0180 | 0.0180 | 0.0011 | 1.4495 | 2.9049 |
+| `ss_-40c_3.63v` | 0.0085 | 0.0178 | 0.0178 | 0.0012 | 1.4495 | 3.2348 |
+| `ss_125c_2.97v` | 0.0148 | 0.0192 | 0.0192 | 0.0012 | 1.4495 | 2.4073 |
+| `ss_125c_3.30v` | 0.0102 | 0.0192 | 0.0192 | 0.0014 | 1.4495 | 2.7371 |
+| `ss_125c_3.63v` | 0.0086 | 0.0190 | 0.0190 | 0.0016 | 1.4495 | 3.0670 |
+| `ss_27c_2.97v` | 0.0186 | 0.0188 | 0.0188 | 0.0009 | 1.4495 | 2.5073 |
+| `ss_27c_3.30v` | 0.0125 | 0.0186 | 0.0186 | 0.0011 | 1.4495 | 2.8372 |
+| `ss_27c_3.63v` | 0.0083 | 0.0184 | 0.0184 | 0.0012 | 1.4495 | 3.1670 |
+| `tt_-40c_2.97v` | 0.0175 | 0.0178 | 0.0178 | 0.0009 | 1.4495 | 2.4862 |
+| `tt_-40c_3.30v` | 0.0089 | 0.0177 | 0.0177 | 0.0011 | 1.4495 | 2.8161 |
+| `tt_-40c_3.63v` | 0.0066 | 0.0175 | 0.0175 | 0.0012 | 1.4495 | 3.1459 |
+| `tt_125c_2.97v` | 0.0094 | 0.0176 | 0.0176 | 0.0017 | 1.4495 | 2.3180 |
+| `tt_125c_3.30v` | 0.1655 | 0.0174 | 0.0174 | 0.0019 | 1.4495 | 2.6479 |
+| `tt_125c_3.63v` | 1.6200 | 0.0174 | 0.0174 | 0.0020 | 1.4495 | 2.9777 |
+| `tt_27c_2.97v` | 0.0133 | 0.0184 | 0.0184 | 0.0009 | 1.4495 | 2.4183 |
+| `tt_27c_3.30v` | 0.0086 | 0.0183 | 0.0183 | 0.0011 | 1.4495 | 2.7481 |
+| `tt_27c_3.63v` | 0.0073 | 0.0181 | 0.0181 | 0.0012 | 1.4495 | 3.0780 |
 
 ### R4 — the structural point, if T2/T3 turn out not to be reachable
 
@@ -412,7 +516,16 @@ Then read the new record against **R3**'s table and against
     20260910-015601-2387ece <NEW_ID>
 ```
 
-A fix is done when T1–T5 pass at all 63 corners, T6 and T7 are still met, and
+T8 has its own instrument, on the PSRR row's deck rather than this one
+(issue #302):
+
+```bash
+./sim/psrr-vs-freq/testbench/t8_settled_injection.py
+./sim/psrr-vs-freq/testbench/t8_settled_injection.py --bench psrr-vs-freq-50ma
+```
+
+A fix is done when T1–T5 pass at all 63 corners, T6 and T7 are still met, T8
+passes at all 45 corners of `sim/psrr-vs-freq`'s grid, and
 the record's `anchor` phase still reproduces `sim/loop-stability/` — that last
 one because a change to the injection element must not move the settled loop,
 and the anchor is what would show it if it did.
