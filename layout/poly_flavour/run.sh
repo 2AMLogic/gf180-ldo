@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Poly-resistor flavour coexistence vehicle (issue #312, DR-0036).
+# Poly-resistor flavour coexistence vehicle (issue #312, DR-0037).
 #
 # Draws two ppolyf_u_high_Rs strips and one plain ppolyf_u strip in one layout
 # (gen_gds.py), then runs the PDK's own gf180mcu.lvs against each reference

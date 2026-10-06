@@ -1,4 +1,4 @@
-# DR-0036: A die carries exactly one high-Rs poly flavour — this design's is `ppolyf_u_3k`, and `Rbias` moves to plain `ppolyf_u` (amends DR-0033)
+# DR-0037: A die carries exactly one high-Rs poly flavour — this design's is `ppolyf_u_3k`, and `Rbias` moves to plain `ppolyf_u` (amends DR-0033)
 
 - **Status**: proposed 2026-09-23 (issue #312 / this pull request).
   **Ratification is an operator decision, not an agent one**, and this record

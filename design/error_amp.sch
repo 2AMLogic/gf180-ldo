@@ -75,7 +75,7 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      circuit is needed: unlike a beta-multiplier this
                      topology has no zero-current degenerate state.
                      FLAVOUR (issue #279 / DR-0033, amended by issue #312 /
-                     DR-0036): Rbias is the ONLY poly resistor in this cell
+                     DR-0037): Rbias is the ONLY poly resistor in this cell
                      that carries DC current -- it IS Iref -- so it takes a
                      narrow-spread flavour. Rz, Rza and Rbufb sit in
                      DC-currentless branches and set only frequencies, so
@@ -84,14 +84,14 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      +-20%, -28 ppm/degC), NOT ppolyf_u_1k: the 1k/2k/3k
                      high-Rs flavours are ONE drawn device whose sheet is a
                      wafer-level H-Res implant option, so a die carries
-                     exactly one of them (DR-0036) and this design's is 3k.
+                     exactly one of them (DR-0037) and this design's is 3k.
                      ppolyf_u is a distinct drawn layer (no RESISTOR mark)
                      and coexists with it. L = 2606.6u reproduces the old
                      ppolyf_u_1k 1u x 1000u at 125C at ALL THREE res
                      corners (ff/typical/ss, to 0.01%) -- where both the
                      Iq (ff/125C) and PSRR (ss/125C) rows bind -- rather
                      than at 27C: a 27C match (2788.93u) fails PSRR by
-                     0.24 dB at ss/125C/2.97V, MEASURED (DR-0036). The
+                     0.24 dB at ss/125C/2.97V, MEASURED (DR-0037). The
                      price is ~12% more Iref at -40C, where nothing binds.
                      Moving Rbias to
                      ppolyf_u_3k costs +1.97 uA at ff/125C/3.63V and breaks

@@ -6,13 +6,13 @@
   minted in this same pull request, both before and after the design change it
   records. It exists to fix the *rule* in place, and to record a measured
   negative result so the rejected half of the lever is not re-proposed.
-  **Amended by DR-0036 (proposed, issue #312):** Decision item 2 below
+  **Amended by DR-0037 (proposed, issue #312):** Decision item 2 below
   ("`Rbias` stays `ppolyf_u_1k`") is not buildable. `ppolyf_u_1k`/`_2k`/`_3k`
   are one drawn device whose sheet is a wafer-level H-Res implant option, so
   a die carries exactly one of them, and this design's is `ppolyf_u_3k`.
-  DR-0036 keeps this record's rule and item 1. It moves `Rbias` to plain
+  DR-0037 keeps this record's rule and item 1. It moves `Rbias` to plain
   `ppolyf_u`, a distinct drawn layer. Read item 2 and the "`Rbias` stays"
-  wording below through DR-0036.
+  wording below through DR-0037.
 - **Date**: 2026-09-22
 - **Decided by**: Builder agent, issue #279
 - **Builds on**: DR-0015 (the shipped `Mrza`/`Rza` adaptive shelf, whose

@@ -1,4 +1,4 @@
-"""Poly-resistor flavour coexistence vehicle (issue #312, DR-0036).
+"""Poly-resistor flavour coexistence vehicle (issue #312, DR-0037).
 
 Run as ``klayout -b -r layout/poly_flavour/gen_gds.py -rd out=<gds> -rd pdk=<variant dir>``
 (``layout/poly_flavour/run.sh`` does this for you).
@@ -17,7 +17,7 @@ C / D  ``ppolyf_u_resistor``           ``ppolyf_u`` (no RESISTOR mark;
                                        extracted unconditionally)
 =====  ==============================  ==================================
 
-It answers both halves of DR-0036's premise: (1) two identical H-Res strips
+It answers both halves of DR-0037's premise: (1) two identical H-Res strips
 cannot be named as two different flavours under ANY ``poly_res`` setting
 (issue #312's finding, re-derived), and (2) a plain ``ppolyf_u`` device shares
 a die with the H-Res strips under EITHER setting.
