@@ -335,6 +335,40 @@ class TestDeckTemplate(unittest.TestCase):
                                places=6)
 
 
+class TestDcSeed(unittest.TestCase):
+    """Issue #307: the retry seed must name only nodes the netlist has."""
+
+    class P:
+        vdd = 2.97
+
+    CORE = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
+
+    def _block(self, name):
+        m = re.search(rf"(?ims)^\.subckt\s+{name}\b.*?^\.ends", self.CORE)
+        self.assertIsNotNone(m, name)
+        return m.group(0)
+
+    def test_the_seed_does_not_reference_the_node_issue_189_deleted(self):
+        seed = sweep.dc_seed_lines(self.P())
+        self.assertNotIn("Xsoftstart.CLG", seed)
+        self.assertNotIn("CLG", self._block("ldo_softstart"))
+
+    def test_the_seed_does_not_seed_softstart_at_all(self):
+        # HG is tied to the fixed EN source through a resistor at DC, so it
+        # has only one DC value; see dc_seed_lines()'s docstring.
+        self.assertNotIn("Xsoftstart", sweep.dc_seed_lines(self.P()))
+
+    def test_the_ilimit_clamp_gate_is_still_seeded_and_still_exists(self):
+        seed = sweep.dc_seed_lines(self.P())
+        self.assertIn("v(XDUT.Xilimit.CLG)=2.97", seed)
+        self.assertIn("CLG", self._block("ldo_ilimit"))
+
+    def test_the_output_targets_are_seeded(self):
+        seed = sweep.dc_seed_lines(self.P())
+        self.assertIn("v(VOUT)=1.8", seed)
+        self.assertIn("v(XDUT.FB)=1.2", seed)
+
+
 class TestRegulatingBranchGuard(unittest.TestCase):
     """A margin is only meaningful about the regulating operating point."""
 
