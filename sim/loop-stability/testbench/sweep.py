@@ -337,27 +337,39 @@ def nonregulating(rows: list[Row]) -> list[Row]:
 def dc_seed_lines(pvt) -> str:
     """`.nodeset` cards that start Newton on the REGULATING DC branch.
 
-    ``ldo_softstart`` and ``ldo_ilimit`` both clamp ``PASS_GATE`` to ``VIN``
-    through their ``CLG`` gates while the feedback node sits below the
-    reference, and "FB low, so clamp on, so FB stays low" is a self-consistent
-    DC solution at a finite, positive VOUT -- one the deck's ``Dclamp`` (which
-    only denies VOUT the escape below -0.7 V) cannot see. Every AC analysis in
-    the deck cold-starts its own operating-point solve, so each one is an
-    independent chance to land on it; issue #51 hit that at exactly one of the
-    63 PVT corners.
+    ``ldo_ilimit`` clamps ``PASS_GATE`` to ``VIN`` through its ``CLG`` gate
+    while the feedback node sits below the reference, and "FB low, so clamp
+    on, so FB stays low" is a self-consistent DC solution at a finite,
+    positive VOUT -- one the deck's ``Dclamp`` (which only denies VOUT the
+    escape below -0.7 V) cannot see. Every AC analysis in the deck
+    cold-starts its own operating-point solve, so each one is an independent
+    chance to land on it; issue #51 hit that at exactly one of the 63 PVT
+    corners.
 
     Every value here is a constant of the design or of the corner -- the
-    ratified 1.8 V output target, the 1.2 V feedback node its divider defines,
-    and the two clamp gates parked at VIN, i.e. off -- so this carries no
-    per-corner tuning. A ``.nodeset`` is a first-guess constraint that ngspice
-    releases after the first solve pass: it selects which solution Newton
-    converges to, it does not create one, and the caller re-checks every row's
-    VOUT afterwards exactly as it does without the seed.
+    ratified 1.8 V output target, the 1.2 V feedback node its divider
+    defines, and ``ldo_ilimit``'s clamp gate parked at VIN, i.e. off -- so
+    this carries no per-corner tuning. A ``.nodeset`` is a first-guess
+    constraint that ngspice releases after the first solve pass: it selects
+    which solution Newton converges to, it does not create one, and the
+    caller re-checks every row's VOUT afterwards exactly as it does without
+    the seed.
+
+    ``ldo_softstart`` is deliberately NOT seeded (issue #307). Its old
+    ``CLG`` node no longer exists (#189 replaced the clamp comparator with FB
+    injection; ngspice warned "Nodeset on non-existent node" and ignored
+    it), and its replacement clamp gate ``HG`` needs no seed: ``HG`` is
+    driven from ``EN`` through ``XRh_ss`` with only MOS gates and a cap
+    hanging off it, so at DC it is ``EN`` = ``VIN`` (clamp off) on every
+    branch of this deck, where ``EN`` is a fixed source. Seeding it would
+    restate the only DC value it can take. Checked on ngspice at
+    ``ss_-40c_2.97v``: with the ``Xilimit`` seed alone the warning is gone
+    and the retry still lands on the regulating branch (VOUT 1.79948 V).
+    This matches ``sim/soft-start-loop-gain``'s ``dc_seed_lines()``.
     """
     return "\n".join([
         f".nodeset v(VOUT)={VOUT_NOM_V:g} v(XDUT.FB)={VOUT_NOM_V * 2 / 3:g}",
-        f".nodeset v(XDUT.Xilimit.CLG)={pvt.vdd:g} "
-        f"v(XDUT.Xsoftstart.CLG)={pvt.vdd:g}",
+        f".nodeset v(XDUT.Xilimit.CLG)={pvt.vdd:g}",
     ])
 
 
