@@ -74,15 +74,30 @@ TOPOLOGY -- full rationale, budgets and corner results in design/error_amp.md
                      mirrors to MTAIL (1:1) and M2N (5:3). No start-up
                      circuit is needed: unlike a beta-multiplier this
                      topology has no zero-current degenerate state.
-                     FLAVOUR (issue #279 / DR-0033): Rbias is the ONLY poly
-                     resistor in this cell that carries DC current -- it IS
-                     Iref -- so it keeps the narrow-spread ppolyf_u_1k
-                     (+-20% process, -694 ppm/degC). Rz, Rza and Rbufb sit
-                     in DC-currentless branches and set only frequencies, so
+                     FLAVOUR (issue #279 / DR-0033, amended by issue #312 /
+                     DR-0037): Rbias is the ONLY poly resistor in this cell
+                     that carries DC current -- it IS Iref -- so it takes a
+                     narrow-spread flavour. Rz, Rza and Rbufb sit in
+                     DC-currentless branches and set only frequencies, so
                      they are drawn in the 3x denser ppolyf_u_3k (+-25%,
-                     -1293 ppm/degC). Moving Rbias to ppolyf_u_3k costs
-                     +1.97 uA at ff/125C/3.63V and breaks the ratified
-                     Iq < 30 uA row -- MEASURED, do not re-propose it.
+                     -1293 ppm/degC). Rbias is plain ppolyf_u (369 ohm/sq,
+                     +-20%, -28 ppm/degC), NOT ppolyf_u_1k: the 1k/2k/3k
+                     high-Rs flavours are ONE drawn device whose sheet is a
+                     wafer-level H-Res implant option, so a die carries
+                     exactly one of them (DR-0037) and this design's is 3k.
+                     ppolyf_u is a distinct drawn layer (no RESISTOR mark)
+                     and coexists with it. L = 2606.6u reproduces the old
+                     ppolyf_u_1k 1u x 1000u at 125C at ALL THREE res
+                     corners (ff/typical/ss, to 0.01%) -- where both the
+                     Iq (ff/125C) and PSRR (ss/125C) rows bind -- rather
+                     than at 27C: a 27C match (2788.93u) fails PSRR by
+                     0.24 dB at ss/125C/2.97V, MEASURED (DR-0037). The
+                     price is ~12% more Iref at -40C, where nothing binds.
+                     Moving Rbias to
+                     ppolyf_u_3k costs +1.97 uA at ff/125C/3.63V and breaks
+                     the ratified Iq < 30 uA row -- MEASURED, do not
+                     re-propose it; ppolyf_u_1k is not buildable beside
+                     ppolyf_u_3k -- do not re-propose that either.
 
 WHY AN NMOS INPUT PAIR (the load-bearing headroom argument)
 The feedback node sits at VREF = 1.2 V and the loop must still regulate at
@@ -463,7 +478,7 @@ C {devices/iopin.sym} -900 -280 0 0 {name=p_vss lab=VSS}
 C {devices/ipin.sym} -900 -220 0 0 {name=p_en lab=EN}
 C {devices/iopin.sym} 900 -340 0 0 {name=p_bg lab=BG}
 
-C {symbols/ppolyf_u_1k.sym} -600 -600 0 0 {name=Rbias model=ppolyf_u_1k W=1u L=1000u m=1}
+C {symbols/ppolyf_u.sym} -600 -600 0 0 {name=Rbias model=ppolyf_u W=1u L=2606.6u m=1}
 C {devices/lab_pin.sym} -600 -630 0 0 {name=l_rb_p sig_type=std_logic lab=RBT}
 C {devices/lab_pin.sym} -600 -570 0 0 {name=l_rb_m sig_type=std_logic lab=NBIAS}
 C {devices/lab_pin.sym} -620 -600 0 0 {name=l_rb_b sig_type=std_logic lab=VSS}

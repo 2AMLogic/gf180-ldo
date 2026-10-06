@@ -95,7 +95,7 @@ output, i.e. candidate 3 *and* candidate 2's low-impedance gate driver.
 
 | Block | Devices | Nominal current (tt/27 °C/3.3 V) |
 |---|---|---|
-| Bias | `Rbias` (`ppolyf_u_1k`, 1 µm × 1000 µm ≈ 1.03 MΩ), `MB1` | 2.44 µA |
+| Bias | `Rbias` (plain `ppolyf_u`, 1 µm × 2606.6 µm ≈ 0.96 MΩ at 27 °C — DR-0037; was `ppolyf_u_1k` 1 µm × 1000 µm ≈ 1.03 MΩ), `MB1` | 2.44 µA as `ppolyf_u_1k`; ≈ +6.6 % with DR-0037's `ppolyf_u` (amp `iq_ua` 5.048 → 5.382 µA at tt/27 °C/3.3 V), unchanged at 125 °C by construction |
 | Stage 1 | `MIN1`/`MIN2` (`nfet_03v3` 60 µm/6 µm), `MLD1`/`MLD2` (`pfet_03v3` 8 µm/8 µm), `MTAIL` | 2.43 µA |
 | Stage 2 | `M2P` (`pfet_03v3` 150 µm/2 µm), `M2N` (`nfet_03v3` 10 µm/4 µm) | 4.18 µA |
 | Comp | `Cc` (`cap_mim_2f0`, 39 µm × 39 µm ≈ 3.06 pF), `Rz` (`ppolyf_u`, 1 µm × 109 µm ≈ 40 kΩ) | — |
@@ -1405,17 +1405,22 @@ the hand figure it refines.
 
 | Item | Drawn area (was) | Drawn area (now) |
 |---|---|---|
-| `Rbias` (1 µm × 1000 µm, `ppolyf_u_1k`) | 1000 µm² | 1000 µm² (unchanged — DR-0033) |
+| `Rbias` (0.960 MΩ at `res_typical`/125 °C, both ways) | 1000 µm² (`1k`, 1 µm × 1000 µm) | **≈ 2607 µm²** (plain `ppolyf_u`, 1 µm × 2606.6 µm — DR-0037: unchanged by DR-0033, then moved off the H-Res layer by DR-0037 because `ppolyf_u_1k` cannot share a die with the other three's `ppolyf_u_3k`) |
 | `Cc` (49 µm × 49 µm MIM, 4.80 pF) | 2401 µm² | 2401 µm² |
 | `Rz` (6.17 MΩ) | ≈ 6000 µm² (`1k`, 1 µm × 6000 µm) | **≈ 1971 µm²** (`3k`, 1 µm × 1970.88 µm) |
 | `Rbufb` (5.14 MΩ) | ≈ 5000 µm² (`1k`, 1 µm × 5000 µm) | **≈ 1642 µm²** (`3k`, 1 µm × 1642.40 µm) |
 | `Rza` (0.62 MΩ, §6.13) | ≈ 600 µm² (`1k`, 1 µm × 600 µm) | **≈ 197 µm²** (`3k`, 1 µm × 197.09 µm) |
 | `Mrza` gate (12 µm × 9 µm, §6.13) | 108 µm² | 108 µm² |
 | Transistor gate area (all 13 devices) | ≈ 1990 µm² | ≈ 1990 µm² |
-| **Total** | **≈ 17 100 µm²** — 17 % of the core budget | **≈ 9310 µm²** — 9.3 % of the core budget |
+| **Total** | **≈ 17 100 µm²** — 17 % of the core budget | **≈ 10 920 µm²** — 10.9 % of the core budget (≈ 9310 µm² under DR-0033 alone) |
 
-Every swapped instance holds its `res_typical`/27 °C resistance to within
-0.01 %; only the corner spread changes, and §6.14 measures what that costs.
+Every DR-0033-swapped instance holds its `res_typical`/27 °C resistance to
+within 0.01 %; only the corner spread changes, and §6.14 measures what that
+costs. `Rbias` is the exception, by design: DR-0037 matches it to the old
+`ppolyf_u_1k` strip **at 125 °C** (at all three `res_*` corners, to 0.01 %),
+not at 27 °C, because both bars it moves — Iq at `ff_125c_3.63v` and PSRR /
+`gain_1k_db` at `ss_125c_2.97v` — bind hot. A 27 °C match (1 µm × 2788.93 µm)
+was measured and fails the ratified PSRR row by 0.24 dB; see DR-0037.
 
 **#51 §6.13 added two items**, both small: `Rza` and `Mrza` (12 µm × 9 µm,
 108 µm² of gate), together the last two rows above. `Mrza`'s

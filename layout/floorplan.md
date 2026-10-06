@@ -113,13 +113,15 @@ evidence that the dropout row passes.
 5. **Output is sensed at the VOUT pad landing**, on a dedicated `VOUT_S` net
    that carries only the divider's ~2 µA. `Xilimit`'s `Rsns` and `Rref` tie to
    the *force* net, not the sense net — they carry up to 1.25 mA (§5).
-6. **Core estimate 0.0564 mm² at the decided 2 mm width — 43.6 % margin**
-   (0.0564 – 0.0591 mm² across #139's full candidate range, i.e. 40.9 % margin
-   at the widest of them) (§6). Was 0.0735 – 0.0761 mm² / 23.9 % before
-   `DR-0033` redrew `error_amp`'s `Rz`/`Rbufb`/`Rza` in `ppolyf_u_3k`.
+6. **Core estimate 0.0611 mm² at the decided 2.8 mm width (`DR-0034`) —
+   38.9 % margin** (0.0600 – 0.0626 mm² across #139's full candidate range,
+   i.e. 37.4 % margin at the widest of them) (§6). Was 0.0735 – 0.0761 mm² /
+   23.9 % before `DR-0033` redrew `error_amp`'s `Rz`/`Rbufb`/`Rza` in
+   `ppolyf_u_3k`, and 0.0575 mm² / 42.5 % before `DR-0037` moved `Rbias` from
+   `ppolyf_u_1k` to plain `ppolyf_u` (one H-Res flavour per die, issue #312).
 7. **Dominant area term is the poly-resistor field, not the pass device.** The
-   pass array is 2.5–4.8 kµm²; the resistors are 34 kµm² (§6, was 49 kµm²
-   before `DR-0033`). This contradicted #139's stated premise that "the pass
+   pass array is 2.5–4.8 kµm²; the resistors are 37 kµm² (§6, was 49 kµm²
+   before `DR-0033` and 34 kµm² before `DR-0037`). This contradicted #139's stated premise that "the pass
    device is the single largest contributor" to the area budget, and it is why
    #139 was able to decide its width on dropout, gain-margin and thermal
    grounds with no area veto — the binding constraint turned out to be gain
@@ -743,28 +745,28 @@ channels and the core ring.
 block                  FET       res       MIM   footprint
 ----------------------------------------------------------
 divider                  0      1622      7992        9615
-error_amp             1530      6872      2717       11119
+error_amp             1530      9169      2717       13416
 ldo_ilimit             401      1510       614        2524
 ldo_softstart          197     15522      3273       18993
 pass_array            2395         0         0        2395
 ----------------------------------------------------------
-device footprint                                     44646
+device footprint                                     46943
 
 kind               footprint   packing    occupied
 --------------------------------------------------
 fet_small               2129      0.35        6082
 fet_pass                2395      0.70        3422
-res                    25526      0.75       34034
+res                    27823      0.75       37097
 mim                    14596      0.90       16218
 --------------------------------------------------
-occupied                                     59756
+occupied                                     62818
 MIM stacked                                  -9731  (60% of MIM)
-subtotal                                     50025
-routing x1.15                                 7504
+subtotal                                     53088
+routing x1.15                                 7963
 ==================================================
-CORE ESTIMATE                                57529  um^2 = 0.0575 mm^2
-                                              57.5  % of the 0.1 mm^2 budget
-                                              42.5  % margin
+CORE ESTIMATE                                61051  um^2 = 0.0611 mm^2
+                                              61.1  % of the 0.1 mm^2 budget
+                                              38.9  % margin
 ```
 
 **Across the candidate widths** (`--pass-width 2000 | 2530 | 2800 | 4000`; the
@@ -773,14 +775,14 @@ what-if widths override `Mpass` only, so each row carries the shipped 70 µm
 
 | pass-device width | pass array occupied | core estimate | margin |
 | --- | --- | --- | --- |
-| 2.00 mm (was shipped, `DR-0032`) | 2 507 µm² | **0.0565 mm²** | **43.5 %** |
-| 2.53 mm (devchar's "200 mV" row) | 3 114 µm² | **0.0572 mm²** | **42.8 %** |
-| **2.80 mm (shipped — decided, `DR-0034`)** | **3 422 µm²** | **0.0575 mm²** | **42.5 %** |
-| 4.00 mm (devchar) | 4 794 µm² | **0.0591 mm²** | **40.9 %** |
+| 2.00 mm (was shipped, `DR-0032`) | 2 507 µm² | **0.0600 mm²** | **40.0 %** |
+| 2.53 mm (devchar's "200 mV" row) | 3 114 µm² | **0.0607 mm²** | **39.3 %** |
+| **2.80 mm (shipped — decided, `DR-0034`)** | **3 422 µm²** | **0.0611 mm²** | **38.9 %** |
+| 4.00 mm (devchar) | 4 794 µm² | **0.0626 mm²** | **37.4 %** |
 
 **The budget closes at every candidate.** Doubling the pass device from 2 mm to
-4 mm costs **2 287 µm², 2.3 % of the area budget** — it moves the margin from
-43.5 % to 40.9 %, and the decided 2.8 mm spends 1.0 % of the budget against the
+4 mm costs **2 629 µm², 2.6 % of the area budget** — it moves the margin from
+40.0 % to 37.4 %, and the decided 2.8 mm spends 1.1 % of the budget against the
 2 mm column. `test_estimate_fits_the_budget_at_every_issue_139_candidate` keeps
 this true as the design changes. **Area was never the binding coupling on this
 width, and it still is not** — `DR-0034` decided 2.8 mm on gain margin and
@@ -798,6 +800,20 @@ dropout.
 > evidence — including a fresh re-measurement of the `Rz` ceiling this
 > document previously cited from `error_amp.md` §6.4 — is in
 > [`DR-0033`](../spec/decision-records/DR-0033-poly-resistor-flavour-is-set-by-dc-current-not-by-area.md).
+>
+> **Issue #312 / DR-0037 (2026-09-23, proposed) — `Rbias` could not stay
+> `ppolyf_u_1k`.** The `ppolyf_u_1k`/`_2k`/`_3k` flavours are one drawn device
+> whose sheet is the wafer's H-Res implant option, so a die carries exactly
+> one of them. DR-0033's `Rbias` beside three `ppolyf_u_3k` resistors could
+> not pass LVS under any `poly_res` setting. DR-0037 declares the design a
+> **3k H-Res die** and moves `Rbias` to plain `ppolyf_u`, a distinct drawn
+> layer, at 1 µm × 2606.6 µm. That length is matched to the old strip at
+> 125 °C, where Iq and PSRR bind. **Cost: 3 522 µm², 3.5 % of the
+> budget** (57 529 → 61 051 µm², margin 42.5 % → 38.9 %). DR-0033's net
+> recovery falls from 17.1 % to ≈ 13.6 % of the budget. The alternative of
+> an all-`ppolyf_u_1k` die estimates at **0.131 mm²** and cannot close the row
+> at all. See
+> [`DR-0037`](../spec/decision-records/DR-0037-one-h-res-flavour-per-die.md).
 
 ### What actually consumes the area
 
@@ -805,19 +821,20 @@ dropout.
 | --- | --- | --- | --- |
 | 1 | `Rh_ss`, `Rr_ss` — 4870-square `ppolyf_u_3k` soft-start timing resistors (×2, ~15 MΩ each) | 9 274 µm² each | 18.5 % together |
 | 2 | `Cff` — 15.1 pF, 87 × 87 µm MIM | 8 880 µm² | 8.9 % |
-| 3 | `Rz` — the 6.17 MΩ `ppolyf_u_3k` compensation ladder | 3 754 µm² | 3.8 % |
-| 4 | `Rbufb` — 5.14 MΩ buffer gate-isolation ladder, `ppolyf_u_3k` | 3 129 µm² | 3.1 % |
-| 5 | `Cc` (amp) — 4.6 pF MIM | 2 822 µm² | 2.8 % |
-| 6 | **`Mpass` at the decided 2 mm** (4 598 µm² / 4.6 % had #139 taken 4 mm) | **2 311 µm²** | **2.3 %** |
-| 7 | `Rdiv` — the planned 18-unit divider string | 2 163 µm² | 2.2 % |
-| 8 | `Rbias` — 1.03 MΩ, the design's only remaining `ppolyf_u_1k` device | 1 904 µm² | 1.9 % |
+| 3 | `Rbias` — 0.96 MΩ plain `ppolyf_u`, 1 µm × 2606.6 µm (was 1 904 µm² as `ppolyf_u_1k`, which a 3k H-Res die cannot carry — `DR-0037`) | 4 966 µm² | 5.0 % |
+| 4 | `Rz` — the 6.17 MΩ `ppolyf_u_3k` compensation ladder | 3 754 µm² | 3.8 % |
+| 5 | `Rbufb` — 5.14 MΩ buffer gate-isolation ladder, `ppolyf_u_3k` | 3 129 µm² | 3.1 % |
+| 6 | `Cc` (amp) — 4.6 pF MIM | 2 822 µm² | 2.8 % |
+| 7 | **`Mpass` at the decided 2 mm** (4 598 µm² / 4.6 % had #139 taken 4 mm) | **2 311 µm²** | **2.3 %** |
+| 8 | `Rdiv` — the planned 18-unit divider string | 2 163 µm² | 2.2 % |
 
 **This contradicts #139's premise, by more than before `DR-0033`.** #139's
 coupling #3 states that "the pass device is the single largest contributor" to
 the `< 0.1 mm²` budget. It is not: at the *widest* candidate it is 4.6 % of the
 budget and third on the list (2.3 % and sixth at the 2 mm width #139 settled
-on — 1618 µm² drawn, 2 311 µm² occupied). The poly-resistor field is **34 % of
-the budget** (down from 49 % before `DR-0033`'s flavour swap) and the MIM
+on — 1618 µm² drawn, 2 311 µm² occupied). The poly-resistor field is **37 % of
+the budget** (down from 49 % before `DR-0033`'s flavour swap; 34 % before
+`DR-0037` moved `Rbias` off the H-Res layer) and the MIM
 capacitors are another **16 %**. #139 duly decided its width on dropout,
 current-limit-replica, gain-margin and thermal grounds; the area coupling it
 listed is real but an order of magnitude smaller than it assumed, and it never
@@ -836,9 +853,12 @@ Two consequences for whoever draws this:
   [`DR-0033`](../spec/decision-records/DR-0033-poly-resistor-flavour-is-set-by-dc-current-not-by-area.md)),
   and three quarters of it was free. `Rz`, `Rbufb` and `Rza` are redrawn in
   `ppolyf_u_3k` at unchanged nominal resistance, recovering **17 052 µm²,
-  17.1 % of the budget**; `Rbias` stays `ppolyf_u_1k` because it is the only
-  one of the four that sets a DC current, and its wider corner spread costs
-  +1.97 µA against a ratified 30 µA row with 1.3 µA of headroom. The
+  17.1 % of the budget**. `Rbias` could not follow them because it is the
+  only one of the four that sets a DC current: in `ppolyf_u_3k` its wider
+  corner spread costs +1.97 µA against a ratified 30 µA row with 1.3 µA of
+  headroom. It could not stay `ppolyf_u_1k` either, because a die carries one
+  H-Res flavour (issue #312). `DR-0037` moves it to plain `ppolyf_u`, which
+  gives back 3 522 µm² (3.5 %) of the recovery and leaves a net ≈ 13.6 %. The
   loop-stability cost this document warned about did not materialise: the worst
   in-envelope phase margin moves −0.17° (630/630 both ways, DR-0018 envelope),
   every gain margin *improves* by ≈ 2 dB, and DR-0008's `peak_excess_db`
@@ -906,7 +926,7 @@ Why the zones sit where they do:
 | **P** — pass array | Hard against the pad edge, nothing between it and the VIN/VOUT landings; long axis parallel to the pad edge so the 70 µm exit edge faces the bus | §3.4 — 1.80 mV of dropout per square of M4‖M5 bus |
 | **A** — amp core | Opposite edge from P. Centroid ~195 µm from P's centroid, comfortably past the 150 µm rule | §4's gradient table |
 | **D** — divider | Beside A, also ≥ 150 µm from P; short `FB` route to A's `INP`; `VOUT_S` arrives as its own trunk from the south-east corner | §4.1, §5 |
-| **R** — resistor field | The middle band, because it is 34 % of the area (49 % before DR-0033), is thermally insensitive (both legs of any ratio are inside it), and is the only block big enough to host the MIM plates above it | §6 |
+| **R** — resistor field | The middle band, because it is 37 % of the area (49 % before DR-0033, 34 % before DR-0037), is thermally insensitive (both legs of any ratio are inside it), and is the only block big enough to host the MIM plates above it | §6 |
 | **I**, **S** | Tucked into the resistor field's lower corners, near the nets they serve (`I` near the pass array for `Msense`/`ISNS`; `S` near `FB`) | routing length |
 | MIM plates | On M2/M3 over **R**, never over **A**, **D**, or the `VOUT_S`/`FB` routes | MIM.10 + the shielding rule below |
 
