@@ -1,0 +1,40 @@
+* current-limit -- klt sim circuit body (issue #320).
+*
+* The same two claims tb_current_limit.spice.in takes at one PVT point, in the
+* shape `klt sim` accepts: a circuit body with no .control block and ONE
+* analysis per corner (see sim/harness/klt_batch.py for why this exists). The
+* .control-driven deck chains `alter Rforce/Rload` + `op` five times; here the
+* two load styles are two INDEPENDENT ldo_core instances sharing only ideal
+* sources (Vin, Vref, and the EN follower), and one `dc` sweep of Vforce
+* walks the V-I instance down the characteristic while the regulation
+* instance -- which nothing in the sweep touches -- is read at any point:
+*
+*   Xreg  regulation mode: 36 ohm resistive load (~50 mA at 1.8 V), no forcing.
+*   Xvi   V-I mode: VOUT forced through 1 mohm, swept 0 -> 1.764 V in 12 mV
+*         steps, so 0, 0.3, 0.9, 1.5 and 1.764 V -- the five points the
+*         .control deck reads -- are EXACT sweep points (indices 0, 25, 75,
+*         125, 147); the measurements below index them directly rather than
+*         interpolate.
+*
+* Everything else (the 1 mohm / 1 Gohm rationale, resistive rather than
+* ideal-sink loads, ERRAMP_OUT tied to PASS_GATE) is unchanged from
+* tb_current_limit.spice.in -- read its header.
+*
+* EN follows VIN through an ideal VCVS (the .control deck sets Ven to the same
+* VIN_V literal) so the request's supply axis can `alter vin` alone.
+
+.include "dut.spice"
+
+Vin VIN 0 DC 3.3
+Een EN 0 VIN 0 1
+Vref VREF 0 DC 1.2
+
+* regulation instance
+Xreg VIN VOUT_R EN 0 LOOP_R LOOP_R VREF ldo_core
+Rload_r VOUT_R LN_R 36
+Vlmeas_r LN_R 0 DC 0
+
+* V-I instance
+Xvi VIN VOUT_V EN 0 LOOP_V LOOP_V VREF ldo_core
+Vforce VF 0 DC 0
+Rforce VOUT_V VF 1m

@@ -1,0 +1,289 @@
+{
+ "corner_count": 1,
+ "corners": [
+  {
+   "artifacts": {
+    "deck": "/tmp/klt-ab-t_izkc7q/new-out/tt_3p300V_27C/corner.cir",
+    "log": "/tmp/klt-ab-t_izkc7q/new-out/tt_3p300V_27C/ngspice.log",
+    "raw": null,
+    "waveform": null
+   },
+   "corner_id": "tt/3.300V/27C",
+   "diagnostics": [
+    {
+     "code": "nonconvergence",
+     "message": "Warning: Dynamic gmin stepping failed",
+     "severity": "warning"
+    }
+   ],
+   "measurements": [
+    {
+     "margin": null,
+     "name": "iq_en_ua",
+     "status": "pass",
+     "unit": null,
+     "value": 15.96344
+    },
+    {
+     "margin": null,
+     "name": "iq_dis_ua",
+     "status": "pass",
+     "unit": null,
+     "value": 0.0004605286
+    },
+    {
+     "margin": null,
+     "name": "iq_full_ua",
+     "status": "pass",
+     "unit": null,
+     "value": 15.86273
+    },
+    {
+     "margin": null,
+     "name": "iload_full_ma",
+     "status": "pass",
+     "unit": null,
+     "value": 50.0
+    },
+    {
+     "margin": null,
+     "name": "vout_full_v",
+     "status": "pass",
+     "unit": null,
+     "value": 1.799343
+    },
+    {
+     "margin": null,
+     "name": "iref_en_na",
+     "status": "pass",
+     "unit": null,
+     "value": 0.0002948752
+    },
+    {
+     "margin": null,
+     "name": "iref_dis_na",
+     "status": "pass",
+     "unit": null,
+     "value": -0.00391687
+    },
+    {
+     "margin": null,
+     "name": "iref_full_na",
+     "status": "pass",
+     "unit": null,
+     "value": 0.0002948752
+    }
+   ],
+   "monte_carlo": null,
+   "process": "tt",
+   "runtime_s": 0.77,
+   "status": "pass",
+   "supply_v": {
+    "vsup": 3.3
+   },
+   "temperature_c": 27.0
+  }
+ ],
+ "coverage": {
+  "checked": [
+   "measurement:[0,\"tt/3.300V/27C\",\"iload_full_ma\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"iq_dis_ua\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"iq_en_ua\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"iq_full_ua\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"iref_dis_na\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"iref_en_na\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"iref_full_na\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"vout_full_v\"]/observation"
+  ],
+  "corners_simulated": 1,
+  "inapplicable": [
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"iload_full_ma\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"iq_dis_ua\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"iq_en_ua\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"iq_full_ua\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"iref_dis_na\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"iref_en_na\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"iref_full_na\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"vout_full_v\"]/limits",
+    "reason": "characterization_without_limits"
+   }
+  ],
+  "known": true,
+  "measurements_declared": 8,
+  "measurements_with_limits": 0,
+  "nothing_checked": false,
+  "nothing_checked_reasons": [],
+  "schema_version": 1,
+  "skipped": [],
+  "unknown": [],
+  "unrecognized_limit_keys": []
+ },
+ "diagnostic_counts": {
+  "by_code": {
+   "nonconvergence": 1
+  },
+  "by_severity": {
+   "warning": 1
+  },
+  "corners_with_diagnostics": 1
+ },
+ "environment": {
+  "engine": "ngspice",
+  "engine_version": "42",
+  "models_lib": {
+   "path": null,
+   "scope": "external"
+  },
+  "models_lib_sha256": "6edba54d23b38a2c60f8ffdbaa3eb75a7568c615e4820808969bd1121b77b1aa",
+  "netlist_sha256": "1788522ac9cb89911a510ab5180c0bbae434f6dfc493a6c919b13fa3960249ed",
+  "netlist_source": "schematic",
+  "ngspice_binary": "/usr/bin/ngspice"
+ },
+ "errored": 0,
+ "failed": 0,
+ "inconclusive": 0,
+ "measurements": [
+  {
+   "limits": null,
+   "name": "iq_en_ua",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 15.96344
+   }
+  },
+  {
+   "limits": null,
+   "name": "iq_dis_ua",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 0.0004605286
+   }
+  },
+  {
+   "limits": null,
+   "name": "iq_full_ua",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 15.86273
+   }
+  },
+  {
+   "limits": null,
+   "name": "iload_full_ma",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 50.0
+   }
+  },
+  {
+   "limits": null,
+   "name": "vout_full_v",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 1.799343
+   }
+  },
+  {
+   "limits": null,
+   "name": "iref_en_na",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 0.0002948752
+   }
+  },
+  {
+   "limits": null,
+   "name": "iref_dis_na",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": -0.00391687
+   }
+  },
+  {
+   "limits": null,
+   "name": "iref_full_na",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 0.0002948752
+   }
+  }
+ ],
+ "metrics": {
+  "sim__corner__count": 1,
+  "sim__corner__errored_count": 0,
+  "sim__corner__failed_count": 0,
+  "sim__corner__inconclusive_count": 0,
+  "sim__corner__passed_count": 1
+ },
+ "netlist": {
+  "path": null,
+  "scope": "external"
+ },
+ "passed": 1,
+ "provenance": {
+  "deck": {
+   "content_hash": "sha256:6edba54d23b38a2c60f8ffdbaa3eb75a7568c615e4820808969bd1121b77b1aa",
+   "name": "sm141064.ngspice",
+   "released": false
+  },
+  "input": {
+   "content_hash": "sha256:1788522ac9cb89911a510ab5180c0bbae434f6dfc493a6c919b13fa3960249ed",
+   "role": "netlist"
+  },
+  "klayout_version": "0.30.12",
+  "klt_version": "0.6.0+g6b425d4c2264",
+  "pdk": {
+   "name": "gf180mcuD",
+   "source": "search root: ~/.volare",
+   "version": "open_pdks c6d73a35f524070e85faff4a6a9eef49553ebc2b"
+  }
+ },
+ "schema_version": 3,
+ "status": "pass"
+}

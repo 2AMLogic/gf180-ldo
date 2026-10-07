@@ -1,0 +1,34 @@
+* quiescent-current -- klt sim circuit body (issue #320).
+*
+* tb_quiescent.spice's three-instance op point, unchanged except for one
+* thing: each instance gets its OWN ideal 1.2 V reference source instead of
+* sharing one, so the current each state draws from the VREF port is
+* metered separately (iref_*). An ideal source is an ideal source wherever
+* it is declared, so this is an electrical no-op for every other quantity.
+* Read tb_quiescent.spice's header for the compliance-limited sink and the
+* rest of the rationale; sim/harness/klt_batch.py for why this body exists.
+*
+* The VREF-port reading is what issue #320 needs it for: the idealized
+* Fbias/Fss_ramp branches drew VREF/R from the reference port (a current the
+* VIN ammeters never saw), and their real-device replacement draws it from
+* VIN instead -- so the honest Iq delta is the VIN delta, and the VREF-port
+* delta is reported beside it.
+
+.include "dut.spice"
+
+Vsup VIN 0 DC 3.3
+
+Vamm_en VIN VIN_EN 0
+Vref_en VREF_EN 0 DC 1.2
+Xdut_en VIN_EN VOUT_EN VIN_EN 0 LOOP_EN LOOP_EN VREF_EN ldo_core
+
+Vamm_dis VIN VIN_DIS 0
+Vref_dis VREF_DIS 0 DC 1.2
+Xdut_dis VIN_DIS VOUT_DIS 0 0 LOOP_DIS LOOP_DIS VREF_DIS ldo_core
+
+Vamm_full VIN VIN_FULL 0
+Vref_full VREF_FULL 0 DC 1.2
+Xdut_full VIN_FULL VOUT_FULL VIN_FULL 0 LOOP_FULL LOOP_FULL VREF_FULL ldo_core
+Vilc ILC 0 DC 50m
+Bload_full VOUT_FULL NLOAD_FULL I = 'v(ilc) * 0.5 * (1 + tanh((v(vout_full) - 0.2) / 0.05))'
+Vlmeas_full NLOAD_FULL 0 DC 0

@@ -1,0 +1,102 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vin": [
+        3.3
+      ]
+    },
+    "temperature_c": [
+      27.0
+    ]
+  },
+  "analysis": {
+    "kind": "dc",
+    "args": "Vforce 0 1.764 0.012"
+  },
+  "measurements": [
+    {
+      "name": "vf_1764",
+      "expr": "v(vf)[147]",
+      "unit": "V"
+    },
+    {
+      "name": "ilim_1764_ma",
+      "expr": "i(vforce)[147]*1e3",
+      "unit": "mA"
+    },
+    {
+      "name": "ilim_1500_ma",
+      "expr": "i(vforce)[125]*1e3",
+      "unit": "mA"
+    },
+    {
+      "name": "ilim_0900_ma",
+      "expr": "i(vforce)[75]*1e3",
+      "unit": "mA"
+    },
+    {
+      "name": "ilim_0300_ma",
+      "expr": "i(vforce)[25]*1e3",
+      "unit": "mA"
+    },
+    {
+      "name": "ilim_0000_ma",
+      "expr": "i(vforce)[0]*1e3",
+      "unit": "mA"
+    },
+    {
+      "name": "vout_50ma",
+      "expr": "v(vout_r)[0]",
+      "unit": "V"
+    },
+    {
+      "name": "iload_50ma",
+      "expr": "i(vlmeas_r)[0]*1e3",
+      "unit": "mA"
+    },
+    {
+      "name": "clg_50ma",
+      "expr": "v(xreg.xilimit.clg)[0]",
+      "unit": "V"
+    },
+    {
+      "name": "isns_mv_50ma",
+      "expr": "(v(xreg.xilimit.isns)[0]-v(vout_r)[0])*1e3",
+      "unit": "mV"
+    },
+    {
+      "name": "vth_mv_50ma",
+      "expr": "(v(xreg.xilimit.vth)[0]-v(vout_r)[0])*1e3",
+      "unit": "mV"
+    },
+    {
+      "name": "vref_port_ua",
+      "expr": "-i(vref)[0]*1e6",
+      "unit": "uA"
+    }
+  ],
+  "options": {
+    "timeout_s": 900,
+    "keep_artifacts": true
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vsup": [
+        3.3
+      ]
+    },
+    "temperature_c": [
+      27.0
+    ]
+  },
+  "analysis": {
+    "kind": "op",
+    "args": ""
+  },
+  "measurements": [
+    {
+      "name": "iq_en_ua",
+      "expr": "i(vamm_en)*1e6"
+    },
+    {
+      "name": "iq_dis_ua",
+      "expr": "i(vamm_dis)*1e6"
+    },
+    {
+      "name": "iq_full_ua",
+      "expr": "(i(vamm_full)-i(vlmeas_full))*1e6"
+    },
+    {
+      "name": "iload_full_ma",
+      "expr": "i(vlmeas_full)*1e3"
+    },
+    {
+      "name": "vout_full_v",
+      "expr": "v(vout_full)"
+    },
+    {
+      "name": "iref_en_na",
+      "expr": "-i(vref_en)*1e9"
+    },
+    {
+      "name": "iref_dis_na",
+      "expr": "-i(vref_dis)*1e9"
+    },
+    {
+      "name": "iref_full_na",
+      "expr": "-i(vref_full)*1e9"
+    }
+  ],
+  "options": {
+    "timeout_s": 900,
+    "keep_artifacts": true
+  }
+}
