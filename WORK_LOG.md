@@ -2,6 +2,10 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-07
+
+- **PR #350**: design: VREF-forcing V-to-I servo replaces Fbias/Fss_ramp (#320) [partial: single-point verification]
+
 ### 2026-10-06
 
 - **PR #343**: fix(sim/loop-stability): drop dead Xsoftstart.CLG nodeset from dc_seed_lines
