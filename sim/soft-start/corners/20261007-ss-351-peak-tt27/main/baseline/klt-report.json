@@ -1,0 +1,210 @@
+{
+ "corner_count": 1,
+ "corners": [
+  {
+   "artifacts": {
+    "deck": "/tmp/klt-ab-i4uyosj7/baseline-out/tt_3p300V_27C/corner.cir",
+    "log": "/tmp/klt-ab-i4uyosj7/baseline-out/tt_3p300V_27C/ngspice.log",
+    "raw": null,
+    "waveform": null
+   },
+   "corner_id": "tt/3.300V/27C",
+   "diagnostics": [],
+   "measurements": [
+    {
+     "margin": null,
+     "name": "icap_peak_a_1",
+     "status": "pass",
+     "unit": null,
+     "value": 0.2958937
+    },
+    {
+     "margin": null,
+     "name": "t_icap_peak_1",
+     "status": "pass",
+     "unit": null,
+     "value": 0.000151819
+    },
+    {
+     "margin": null,
+     "name": "isup_peak_a_1",
+     "status": "pass",
+     "unit": null,
+     "value": 0.2985258
+    },
+    {
+     "margin": null,
+     "name": "vout_at_end_1",
+     "status": "pass",
+     "unit": null,
+     "value": 0.6567269
+    },
+    {
+     "margin": null,
+     "name": "dvout_max_vpms_1",
+     "status": "pass",
+     "unit": null,
+     "value": 394.928
+    }
+   ],
+   "monte_carlo": null,
+   "process": "tt",
+   "runtime_s": 108.329,
+   "status": "pass",
+   "supply_v": {
+    "vin": 3.3
+   },
+   "temperature_c": 27.0
+  }
+ ],
+ "coverage": {
+  "checked": [
+   "measurement:[0,\"tt/3.300V/27C\",\"dvout_max_vpms_1\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"icap_peak_a_1\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"isup_peak_a_1\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"t_icap_peak_1\"]/observation",
+   "measurement:[0,\"tt/3.300V/27C\",\"vout_at_end_1\"]/observation"
+  ],
+  "corners_simulated": 1,
+  "inapplicable": [
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"dvout_max_vpms_1\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"icap_peak_a_1\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"isup_peak_a_1\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"t_icap_peak_1\"]/limits",
+    "reason": "characterization_without_limits"
+   },
+   {
+    "id": "measurement:[0,\"tt/3.300V/27C\",\"vout_at_end_1\"]/limits",
+    "reason": "characterization_without_limits"
+   }
+  ],
+  "known": true,
+  "measurements_declared": 5,
+  "measurements_with_limits": 0,
+  "nothing_checked": false,
+  "nothing_checked_reasons": [],
+  "schema_version": 1,
+  "skipped": [],
+  "unknown": [],
+  "unrecognized_limit_keys": []
+ },
+ "diagnostic_counts": {
+  "by_code": {},
+  "by_severity": {},
+  "corners_with_diagnostics": 0
+ },
+ "environment": {
+  "engine": "ngspice",
+  "engine_version": "42",
+  "models_lib": {
+   "path": null,
+   "scope": "external"
+  },
+  "models_lib_sha256": "6edba54d23b38a2c60f8ffdbaa3eb75a7568c615e4820808969bd1121b77b1aa",
+  "netlist_sha256": "243c2afb4bb5494ce4b1dea6155b5c480f3a714d6534e5c5199d02b6359c6bec",
+  "netlist_source": "schematic",
+  "ngspice_binary": "/usr/bin/ngspice"
+ },
+ "errored": 0,
+ "failed": 0,
+ "inconclusive": 0,
+ "measurements": [
+  {
+   "limits": null,
+   "name": "icap_peak_a_1",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 0.2958937
+   }
+  },
+  {
+   "limits": null,
+   "name": "t_icap_peak_1",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 0.000151819
+   }
+  },
+  {
+   "limits": null,
+   "name": "isup_peak_a_1",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 0.2985258
+   }
+  },
+  {
+   "limits": null,
+   "name": "vout_at_end_1",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 0.6567269
+   }
+  },
+  {
+   "limits": null,
+   "name": "dvout_max_vpms_1",
+   "status": "pass",
+   "unit": null,
+   "worst_case": {
+    "corner_id": "tt/3.300V/27C",
+    "margin": null,
+    "value": 394.928
+   }
+  }
+ ],
+ "metrics": {
+  "sim__corner__count": 1,
+  "sim__corner__errored_count": 0,
+  "sim__corner__failed_count": 0,
+  "sim__corner__inconclusive_count": 0,
+  "sim__corner__passed_count": 1
+ },
+ "netlist": {
+  "path": null,
+  "scope": "external"
+ },
+ "passed": 1,
+ "provenance": {
+  "deck": {
+   "content_hash": "sha256:6edba54d23b38a2c60f8ffdbaa3eb75a7568c615e4820808969bd1121b77b1aa",
+   "name": "sm141064.ngspice",
+   "released": false
+  },
+  "input": {
+   "content_hash": "sha256:243c2afb4bb5494ce4b1dea6155b5c480f3a714d6534e5c5199d02b6359c6bec",
+   "role": "netlist"
+  },
+  "klayout_version": "0.30.12",
+  "klt_version": "0.6.0+g70dee3b679a6",
+  "pdk": {
+   "name": "gf180mcuD",
+   "source": "search root: ~/.volare",
+   "version": "open_pdks c6d73a35f524070e85faff4a6a9eef49553ebc2b"
+  }
+ },
+ "schema_version": 3,
+ "status": "pass"
+}

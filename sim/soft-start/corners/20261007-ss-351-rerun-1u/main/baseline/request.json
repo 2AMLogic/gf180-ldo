@@ -1,0 +1,94 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vin": [
+        3.3
+      ]
+    },
+    "temperature_c": [
+      27.0
+    ]
+  },
+  "analysis": {
+    "kind": "tran",
+    "args": "1u 9m"
+  },
+  "measurements": [
+    {
+      "name": "t_v04_1",
+      "spice": ".meas tran t_v04_1 WHEN v(vout1)=0.4 RISE=1"
+    },
+    {
+      "name": "t_v14_1",
+      "spice": ".meas tran t_v14_1 WHEN v(vout1)=1.4 RISE=1"
+    },
+    {
+      "name": "t_startup_1",
+      "spice": ".meas tran t_startup_1 TRIG v(en) VAL=1.4 RISE=1 TARG v(vout1) VAL=1.764 RISE=1"
+    },
+    {
+      "name": "vout_max_en_1",
+      "spice": ".meas tran vout_max_en_1 MAX v(vout1) FROM=101u TO=8m"
+    },
+    {
+      "name": "vout_settled_1",
+      "spice": ".meas tran vout_settled_1 FIND v(vout1) AT=7.9m"
+    },
+    {
+      "name": "icap_peak_a_1",
+      "spice": ".meas tran icap_peak_a_1 MAX i(vcmeas1) FROM=100u TO=8m"
+    },
+    {
+      "name": "isup_peak_a_1",
+      "spice": ".meas tran isup_peak_a_1 MAX i(vamm1) FROM=100u TO=8m"
+    },
+    {
+      "name": "ssr_end_1",
+      "spice": ".meas tran ssr_end_1 FIND v(xdut1.xsoftstart.ssr) AT=7.9m"
+    },
+    {
+      "name": "hg_end_1",
+      "spice": ".meas tran hg_end_1 FIND v(xdut1.xsoftstart.hg) AT=7.9m"
+    },
+    {
+      "name": "vout_pp_late_1",
+      "spice": ".meas tran vout_pp_late_1 PP v(vout1) FROM=7.5m TO=7.9m"
+    },
+    {
+      "name": "vout_off_tran_1",
+      "spice": ".meas tran vout_off_tran_1 FIND v(vout1) AT=8.9m"
+    },
+    {
+      "name": "ssr_off_tran_1",
+      "spice": ".meas tran ssr_off_tran_1 FIND v(xdut1.xsoftstart.ssr) AT=8.9m"
+    },
+    {
+      "name": "dvout_max_vpms_1",
+      "expr": "vecmax(deriv(v(vout1)))*1e-3"
+    }
+  ],
+  "options": {
+    "timeout_s": 7200,
+    "keep_artifacts": true
+  }
+}
