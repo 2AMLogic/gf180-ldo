@@ -1,0 +1,34 @@
+* soft-start -- klt sim circuit body template (issue #320).
+*
+* tb_soft_start.spice.in's circuit, in the shape `klt sim` accepts (no
+* .control block, one `tran` per corner -- see sim/harness/klt_batch.py).
+* klt_run.py instantiates the output network N times from the block between
+* the BEGIN/END markers: once for the 63-point main matrix, and once per
+* DR-0001 capacitor-window point for the 20-point bracketing subset, so the
+* five extra (C_eff, ESR, R_load) configurations of run.sh's EXTRA_* sweep
+* run as five INDEPENDENT ldo_core instances in one transient (they share only
+* ideal sources; each has its own 0 V supply ammeter Vamm<k>, so its supply
+* current is metered alone). Per-instance measurements carry a _<k> suffix.
+*
+* EN follows VIN through an ideal behavioural source gated by a 0/1 PWL with
+* run.sh's exact edges (low to 100 us, high 101 us .. 8 ms, low after), so the
+* request's supply axis can `alter vin` alone. Solver options are the deck's.
+
+.include "dut.spice"
+.options reltol=1e-3 vntol=1e-5 abstol=1e-11 chgtol=1e-14
+
+Vin VIN 0 DC 3.3
+Venctl ENCTL 0 DC 0 PWL(0 0 100u 0 101u 1 8m 1 8.001m 0)
+Ben EN 0 V = 'v(vin) * v(enctl)'
+Vref VREF 0 DC 1.2
+
+*BEGIN-INSTANCE
+Vamm@K@ VIN VIN@K@ 0
+Xdut@K@ VIN@K@ VOUT@K@ EN 0 EOUT@K@ PG@K@ VREF ldo_core
+Vloop@K@ PG@K@ EOUT@K@ DC 0
+Resr@K@ VOUT@K@ n_esr@K@ @ESR@
+Cout@K@ n_esr@K@ n_cap@K@ @COUT@
+Vcmeas@K@ n_cap@K@ 0 DC 0
+Rload@K@ VOUT@K@ LN@K@ @RLOAD@
+Vlmeas@K@ LN@K@ 0 DC 0
+*END-INSTANCE

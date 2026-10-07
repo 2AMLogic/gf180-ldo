@@ -270,14 +270,66 @@ C {symbols/ppolyf_u_3k.sym} 800 -1000 0 0 {name=Rref model=ppolyf_u_3k W=1u L=30
 C {devices/lab_pin.sym} 800 -1030 0 0 {name=l_rref_p sig_type=std_logic lab=VTH}
 C {devices/lab_pin.sym} 800 -970 0 0 {name=l_rref_m sig_type=std_logic lab=VOUT}
 C {devices/lab_pin.sym} 780 -1000 0 0 {name=l_rref_b sig_type=std_logic lab=VSS}
-C {devices/cccs.sym} 1000 -1000 0 0 {name=Fbias vnam=Vbsense value=1}
-C {devices/lab_pin.sym} 1000 -1030 0 0 {name=l_fbias_p sig_type=std_logic lab=PB}
-C {devices/lab_pin.sym} 1000 -970 0 0 {name=l_fbias_m sig_type=std_logic lab=VSS}
-C {devices/vsource.sym} 1200 -1000 0 0 {name=Vbsense value=0}
-C {devices/lab_pin.sym} 1200 -1030 0 0 {name=l_vbsense_p sig_type=std_logic lab=VREF}
-C {devices/lab_pin.sym} 1200 -970 0 0 {name=l_vbsense_m sig_type=std_logic lab=BT}
+C {symbols/nfet_03v3.sym} -1200 300 0 0 {name=Mconv model=nfet_03v3 L=1u W=10u nf=1 m=1}
+C {devices/lab_pin.sym} -1180 270 0 0 {name=l_mconv_d sig_type=std_logic lab=PB}
+C {devices/lab_pin.sym} -1220 300 0 0 {name=l_mconv_g sig_type=std_logic lab=VG}
+C {devices/lab_pin.sym} -1180 330 0 0 {name=l_mconv_s sig_type=std_logic lab=VX}
+C {devices/lab_pin.sym} -1180 300 0 0 {name=l_mconv_b sig_type=std_logic lab=VSS}
+C {symbols/pfet_03v3.sym} -1000 300 0 0 {name=Mtl model=pfet_03v3 L=4u W=1u nf=1 m=1}
+C {devices/lab_pin.sym} -1020 300 0 0 {name=l_mtl_g sig_type=std_logic lab=PB}
+C {devices/lab_pin.sym} -980 330 0 0 {name=l_mtl_d sig_type=std_logic lab=VTL}
+C {devices/lab_pin.sym} -980 270 0 0 {name=l_mtl_s sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} -980 300 0 0 {name=l_mtl_b sig_type=std_logic lab=VIN}
+C {symbols/pfet_03v3.sym} -800 300 0 0 {name=Mp1 model=pfet_03v3 L=4u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} -820 300 0 0 {name=l_mp1_g sig_type=std_logic lab=VREF}
+C {devices/lab_pin.sym} -780 330 0 0 {name=l_mp1_d sig_type=std_logic lab=VO1}
+C {devices/lab_pin.sym} -780 270 0 0 {name=l_mp1_s sig_type=std_logic lab=VTL}
+C {devices/lab_pin.sym} -780 300 0 0 {name=l_mp1_b sig_type=std_logic lab=VIN}
+C {symbols/pfet_03v3.sym} -600 300 0 0 {name=Mp2 model=pfet_03v3 L=4u W=4u nf=1 m=1}
+C {devices/lab_pin.sym} -620 300 0 0 {name=l_mp2_g sig_type=std_logic lab=VX}
+C {devices/lab_pin.sym} -580 330 0 0 {name=l_mp2_d sig_type=std_logic lab=VD1}
+C {devices/lab_pin.sym} -580 270 0 0 {name=l_mp2_s sig_type=std_logic lab=VTL}
+C {devices/lab_pin.sym} -580 300 0 0 {name=l_mp2_b sig_type=std_logic lab=VIN}
+C {symbols/nfet_03v3.sym} -400 300 0 0 {name=Ml1 model=nfet_03v3 L=4u W=2u nf=1 m=1}
+C {devices/lab_pin.sym} -380 270 0 0 {name=l_ml1_d sig_type=std_logic lab=VD1}
+C {devices/lab_pin.sym} -420 300 0 0 {name=l_ml1_g sig_type=std_logic lab=VD1}
+C {devices/lab_pin.sym} -380 330 0 0 {name=l_ml1_s sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} -380 300 0 0 {name=l_ml1_b sig_type=std_logic lab=VSS}
+C {symbols/nfet_03v3.sym} -200 300 0 0 {name=Ml2 model=nfet_03v3 L=4u W=2u nf=1 m=1}
+C {devices/lab_pin.sym} -180 270 0 0 {name=l_ml2_d sig_type=std_logic lab=VO1}
+C {devices/lab_pin.sym} -220 300 0 0 {name=l_ml2_g sig_type=std_logic lab=VD1}
+C {devices/lab_pin.sym} -180 330 0 0 {name=l_ml2_s sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} -180 300 0 0 {name=l_ml2_b sig_type=std_logic lab=VSS}
+C {symbols/nfet_03v3.sym} 0 300 0 0 {name=Ms2 model=nfet_03v3 L=4u W=8u nf=1 m=1}
+C {devices/lab_pin.sym} 20 270 0 0 {name=l_ms2_d sig_type=std_logic lab=VG}
+C {devices/lab_pin.sym} -20 300 0 0 {name=l_ms2_g sig_type=std_logic lab=VO1}
+C {devices/lab_pin.sym} 20 330 0 0 {name=l_ms2_s sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} 20 300 0 0 {name=l_ms2_b sig_type=std_logic lab=VSS}
+C {symbols/pfet_03v3.sym} 200 300 0 0 {name=Ml3 model=pfet_03v3 L=2u W=1u nf=1 m=1}
+C {devices/lab_pin.sym} 180 300 0 0 {name=l_ml3_g sig_type=std_logic lab=PB}
+C {devices/lab_pin.sym} 220 330 0 0 {name=l_ml3_d sig_type=std_logic lab=VG}
+C {devices/lab_pin.sym} 220 270 0 0 {name=l_ml3_s sig_type=std_logic lab=VIN}
+C {devices/lab_pin.sym} 220 300 0 0 {name=l_ml3_b sig_type=std_logic lab=VIN}
+C {symbols/cap_mim_2f0fF.sym} 400 300 0 0 {name=Cvi model=cap_mim_2f0_m2m3_noshield W=16u L=16u m=1}
+C {devices/lab_pin.sym} 400 270 0 0 {name=l_cvi_g sig_type=std_logic lab=VG}
+C {devices/lab_pin.sym} 400 330 0 0 {name=l_cvi_b sig_type=std_logic lab=VO1}
+C {symbols/pfet_03v3.sym} 600 300 0 0 {name=Msx model=pfet_03v3 L=1u W=1u nf=1 m=1}
+C {devices/lab_pin.sym} 580 300 0 0 {name=l_msx_g sig_type=std_logic lab=VX}
+C {devices/lab_pin.sym} 620 330 0 0 {name=l_msx_d sig_type=std_logic lab=VSU}
+C {devices/lab_pin.sym} 620 270 0 0 {name=l_msx_s sig_type=std_logic lab=VREF}
+C {devices/lab_pin.sym} 620 300 0 0 {name=l_msx_b sig_type=std_logic lab=VREF}
+C {symbols/nfet_03v3.sym} 800 300 0 0 {name=Msd model=nfet_03v3 L=4u W=1u nf=1 m=1}
+C {devices/lab_pin.sym} 820 270 0 0 {name=l_msd_d sig_type=std_logic lab=VSU}
+C {devices/lab_pin.sym} 780 300 0 0 {name=l_msd_g sig_type=std_logic lab=VX}
+C {devices/lab_pin.sym} 820 330 0 0 {name=l_msd_s sig_type=std_logic lab=VSS}
+C {devices/lab_pin.sym} 820 300 0 0 {name=l_msd_b sig_type=std_logic lab=VSS}
+C {symbols/nfet_03v3.sym} 1000 300 0 0 {name=Mst model=nfet_03v3 L=8u W=1u nf=1 m=1}
+C {devices/lab_pin.sym} 1020 270 0 0 {name=l_mst_d sig_type=std_logic lab=PB}
+C {devices/lab_pin.sym} 980 300 0 0 {name=l_mst_g sig_type=std_logic lab=VSU}
+C {devices/lab_pin.sym} 1020 330 0 0 {name=l_mst_s sig_type=std_logic lab=BB}
+C {devices/lab_pin.sym} 1020 300 0 0 {name=l_mst_b sig_type=std_logic lab=VSS}
 C {symbols/ppolyf_u_3k.sym} 1400 -1000 0 0 {name=Rbias model=ppolyf_u_3k W=1u L=360u m=1}
-C {devices/lab_pin.sym} 1400 -1030 0 0 {name=l_rbias_p sig_type=std_logic lab=BT}
+C {devices/lab_pin.sym} 1400 -1030 0 0 {name=l_rbias_p sig_type=std_logic lab=VX}
 C {devices/lab_pin.sym} 1400 -970 0 0 {name=l_rbias_m sig_type=std_logic lab=BB}
 C {devices/lab_pin.sym} 1380 -1000 0 0 {name=l_rbias_b sig_type=std_logic lab=VSS}
 C {symbols/nfet_03v3.sym} 1600 -1000 0 0 {name=Mben model=nfet_03v3 L=0.5u W=20u nf=1 m=1}

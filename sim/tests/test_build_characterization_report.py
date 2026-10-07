@@ -458,7 +458,20 @@ class TestStabilityRowUsesEnvelopeVerdict(unittest.TestCase):
 
     def test_rendered_report_shows_the_ratified_envelope_verdict_and_the_full_matrix_count(self):
         report = bcr.render()
-        self.assertIn("| Stability | PASS | fresh |", report)
+        # The verdict column is what issue #276 is about: graded against
+        # DR-0018's envelope it must read PASS. The freshness column is a
+        # separate fact -- whether the head loop-stability record's frozen
+        # snapshot still contains the committed ldo_core netlist -- and is
+        # checked here against that fact directly rather than pinned to
+        # "fresh" (issue #320): pinning it made this rendering test fail on
+        # every DUT change, and the only way to make it pass again without
+        # a re-run would be to report a STALE record as fresh. When the DUT
+        # has moved past the record the row must say STALE, never fresh.
+        _record, snapshot = bcr.latest_substantive_record("loop-stability")
+        self.assertIsNotNone(snapshot)
+        dut = (bcr.REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_bytes()
+        expected_fresh = "fresh" if dut in snapshot.read_bytes() else "STALE"
+        self.assertIn(f"| Stability | PASS | {expected_fresh} |", report)
         stability_section = report.split("### Stability")[1].split("###")[0]
         self.assertIn("DR-0018", stability_section)
         self.assertIn("630/630", stability_section)

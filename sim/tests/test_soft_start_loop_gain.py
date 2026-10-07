@@ -298,9 +298,23 @@ def _classify_attribution_effect(base: str, out: str) -> tuple[str, str]:
     cannot recognise is one nothing here has validated.
     """
     base_lines, out_lines = base.splitlines(), out.splitlines()
-    diff = list(difflib.unified_diff(base_lines, out_lines, lineterm="", n=0))
-    added = [ln[1:] for ln in diff if ln.startswith("+") and not ln.startswith("+++")]
-    removed = [ln[1:] for ln in diff if ln.startswith("-") and not ln.startswith("---")]
+    # autojunk=False (issue #320): difflib's default "popular line"
+    # heuristic kicks in once a sequence reaches 200 lines and treats any
+    # line occurring in >1% of it as junk. The PDK's per-device
+    # `+ ps=... nrd=... m=1` continuation lines are byte-identical across
+    # instances, so once the instrumented netlist grew past 200 lines (the
+    # #320 bias servo) they were junked, the matcher could not anchor on
+    # them, and an untouched continuation line was reported as removed and
+    # re-added -- a mis-alignment, not a real edit. Disabling the heuristic
+    # makes the diff exact; it does not loosen anything checked below.
+    matcher = difflib.SequenceMatcher(None, base_lines, out_lines,
+                                      autojunk=False)
+    added: list[str] = []
+    removed: list[str] = []
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op != "equal":
+            removed.extend(base_lines[i1:i2])
+            added.extend(out_lines[j1:j2])
     if len(removed) == 1:
         instance = removed[0].split()[0]
         l_added = [a for a in added if a.split()[0][:1].upper() == "L"]
