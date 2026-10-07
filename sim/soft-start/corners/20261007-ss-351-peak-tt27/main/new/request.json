@@ -1,0 +1,62 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vin": [
+        3.3
+      ]
+    },
+    "temperature_c": [
+      27.0
+    ]
+  },
+  "analysis": {
+    "kind": "tran",
+    "args": "2n 400u"
+  },
+  "measurements": [
+    {
+      "name": "icap_peak_a_1",
+      "spice": ".meas tran icap_peak_a_1 MAX i(vcmeas1) FROM=100u TO=400u"
+    },
+    {
+      "name": "t_icap_peak_1",
+      "spice": ".meas tran t_icap_peak_1 MAX_AT i(vcmeas1) FROM=100u TO=400u"
+    },
+    {
+      "name": "isup_peak_a_1",
+      "spice": ".meas tran isup_peak_a_1 MAX i(vamm1) FROM=100u TO=400u"
+    },
+    {
+      "name": "vout_at_end_1",
+      "spice": ".meas tran vout_at_end_1 FIND v(vout1) AT=400u"
+    },
+    {
+      "name": "dvout_max_vpms_1",
+      "expr": "vecmax(deriv(v(vout1)))*1e-3"
+    }
+  ],
+  "options": {
+    "timeout_s": 7200,
+    "keep_artifacts": true
+  }
+}
