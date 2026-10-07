@@ -59,6 +59,20 @@ Both blocks use the same real-device circuit (port lists unchanged):
   `VREF` port current in the current-limit bench drops from 2.89 uA to
   ~0.6 pA, because the resistor branch is now fed from the supply instead of
   from `VREF`.
+- Why the current limit matches the baseline to 6 printed digits: the old
+  `Vbsense` source held the top of `Rbias` at exactly `VREF`, and the servo
+  now holds it within loop error of `VREF`. A local single-point `op` at
+  the same tt / 27 C / 3.30 V point shows `V(VX) - V(VREF)` = -6.8 uV, with
+  the bottom node `BB` at 123.26 uV in both DUTs. So the `Rbias` current,
+  1.0638 uA, matches the ideal CCCS to about 6 ppm, and `PB` and `VTH` are
+  the same to 7 digits. The plateau is set by that `Rbias` current through
+  `Mpd`/`Mrefp`/`Rref`, and the remaining difference shows up only in the
+  7th significant digit of `summary.csv` (75.78275 vs 75.78274 mA). That
+  match is what the servo's loop gain is meant to produce, and it is not a
+  sign that the old DUT was simulated twice. The new DUT has the servo
+  (`XMconv`) in its own `dut.spice` and the baseline has `Fbias`. This
+  holds at one point only: the amplifier's systematic offset and finite
+  gain across PVT still need the matrix.
 - The `Iq` delta is the servo amplifier's own bias, which the idealized CCCS
   did not carry.
 - Open: the full `ldo_ilimit` / `ldo_softstart` / `quiescent-current` PVT
@@ -67,5 +81,21 @@ Both blocks use the same real-device circuit (port lists unchanged):
   2AMLogic/klayout-tools#2733). This record stays `proposed` until those
   matrices are recorded and show the DR-0005 window, the DR-0006 ramp and
   the `Iq` budget hold at every corner, including loop stability and
-  exact-zero EN = 0 current at the extremes. The `nonconvergence` diagnostic
-  `klt sim` raised on the new DUT at the one probed point also needs a look.
+  exact-zero EN = 0 current at the extremes.
+- Open, tracked as follow-ups that must close before this record leaves
+  `proposed`:
+  - #352: the `nonconvergence` diagnostic `klt sim` raised on the new DUT at
+    the probed point. The DC solve needs true gmin stepping after dynamic
+    gmin stepping fails (the baseline needs only dynamic stepping). It
+    converges to the intended point, but a self-biased loop with a startup
+    branch could have a zero-current state that one point does not rule
+    out.
+  - #351: the soft-start peak `Icap` drops from 282 to 142 mA (and peak
+    dV/dt from 369 to 99 V/ms) while the ramp slope stays within 1.1 %. The
+    cause has not been found.
+- This change moves the `ldo_core` netlist sha, so every
+  `sim/CHARACTERIZATION.md` row now reads STALE, Stability included. The
+  Stability row still shows the `DR-0018` envelope PASS from the 2.8 mm
+  record, but that record no longer describes the committed DUT. A
+  `loop-stability` re-mint against this DUT is part of the open matrix work
+  above.
