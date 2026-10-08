@@ -2,6 +2,12 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-08
+
+- **PR #360**: sim(soft-start): bias-acquisition characterization of both DR-0037 servos (#352)
+- **Issue #357** (closed): Auditor Capability Request: Python runtime missing on audit host
+- **Issue #352** (closed): Investigate the gmin-stepping 'nonconvergence' diagnostic on the DR-0037 self-biased servo (possible zero-current operating point)
+
 ### 2026-10-07
 
 - **PR #354**: sim(soft-start): explain 2x lower startup peak Icap with DR-0037 servo (#351)
