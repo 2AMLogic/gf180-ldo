@@ -665,7 +665,7 @@ def render_analysis(rows: list[Row], failing: list[Row]) -> str:
         *axis_table(rows, "esr_ohm", "ESR", lambda v: f"{v:g} ohm"),
         "",
         f"Read together: the worst phase margin degrades {trend},",
-        f"while the 0 dB crossover frequency moves over",
+        "while the 0 dB crossover frequency moves over",
         f"{min(f0s):.4g} Hz - {max(f0s):.4g} Hz across",
         "the matrix. Crossover rising with load current is the pass device's gm",
         "rising with its drain current; phase margin falling as it rises means",

@@ -64,9 +64,10 @@ name: CI
 #     are a data-regeneration workflow (re-run manually when device models
 #     change) rather than a pass/fail check — nothing here asserts a result
 #     against a threshold, so there is nothing for CI to gate on.
-#   - No linter/formatter is configured for this repo yet (package.json's
-#     `lint` script is an honest "not configured" placeholder); add a CI job
-#     for it if/when one is adopted.
+#   - No formatter is configured. The only lint is the correctness-only ruff
+#     gate (rules F + E9, see ruff.toml; issue #377), run in `harness-selftest`
+#     via a pinned `uvx ruff==0.16.10 check .` and mirrored by `npm run lint`.
+#     Append-only evidence dirs are excluded in ruff.toml.
 
 on:
   push:
@@ -92,6 +93,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install uv (provides uvx for the pinned ruff lint gate)
+        run: python3 -m pip install --upgrade uv
+
+      - name: Lint Python (ruff F + E9, correctness only)
+        run: uvx ruff==0.16.10 check .
 
       - name: Run sim/selftest.sh
         run: bash sim/selftest.sh
