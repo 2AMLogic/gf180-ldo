@@ -163,7 +163,9 @@ jobs:
             exit 1
           fi
         # Also fails (non-zero exit from the generator) when a record's Status
-        # line cannot be classified, so new records must follow TEMPLATE.md.
+        # line cannot be classified, so new records must follow TEMPLATE.md, or
+        # when design/*.sch cites a DR-NNNN with no record file or a superseded
+        # record with no pointer (issue #387; proposed citations are report-only).
         # Parser unit tests: sim/tests/test_decision_record_index.py, run by
         # sim/selftest.sh above. No PDK needed.
 

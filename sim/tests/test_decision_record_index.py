@@ -81,6 +81,48 @@ class RenderTests(unittest.TestCase):
                 bi.build(Path(d))
 
 
+class CitationTests(unittest.TestCase):
+    def _fixture(self, d, dr_status, sch):
+        recs, design = Path(d) / "r", Path(d) / "design"
+        recs.mkdir()
+        design.mkdir()
+        for n, st in dr_status.items():
+            (recs / ("DR-%04d-x.md" % n)).write_text(
+                "# DR-%04d: T\n\n- **Status**: %s\n" % (n, st), encoding="utf-8")
+        for name, text in sch.items():
+            (design / name).write_text(text, encoding="utf-8")
+        return recs, design
+
+    def test_join_ranks_and_skips_ratified(self):
+        with tempfile.TemporaryDirectory() as d:
+            recs, design = self._fixture(
+                d, {1: "ratified", 2: "proposed", 3: "proposed -- HELD"},
+                {"a.sch": "DR-0001 DR-0002 DR-0002", "b.sch": "DR-0002 DR-0003"})
+            out = bi.build(recs, design)
+        self.assertNotIn("| DR-0001 |", out)
+        self.assertIn("| DR-0002 | proposed | design/a.sch | 2 |", out)
+        self.assertIn("| DR-0002 | proposed | design/b.sch | 1 |", out)
+        self.assertLess(out.index("| DR-0002 |"), out.index("| DR-0003 |"))
+
+    def test_dangling_citation_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            recs, design = self._fixture(d, {1: "ratified"}, {"a.sch": "DR-0099"})
+            with self.assertRaises(bi.ClassifyError):
+                bi.build(recs, design)
+
+    def test_superseded_without_pointer_fails(self):
+        rec = [{"number": 5, "status": "superseded", "superseded_by": ""}]
+        with self.assertRaises(bi.ClassifyError):
+            bi.citation_rows(rec, {5: {"a.sch": 1}})
+
+    def test_superseded_with_pointer_reported(self):
+        rec = [{"number": 5, "status": "superseded", "superseded_by": "DR-0006"}]
+        self.assertEqual(bi.citation_rows(rec, {5: {"a.sch": 1}})[0][:4], (5, "superseded", "a.sch", 1))
+
+    def test_committed_design_cites_only_existing_records(self):
+        self.assertIn("Design citations of unratified records", bi.build())
+
+
 class CommittedRecordsTests(unittest.TestCase):
     def test_all_committed_records_classify(self):
         out = bi.build()
