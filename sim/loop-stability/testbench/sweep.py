@@ -46,7 +46,7 @@ Usage::
 
     ./sim/loop-stability/testbench/sweep.py                # full matrix, writes a record
     ./sim/loop-stability/testbench/sweep.py --explore      # tt/27C/3.3V only, writes nothing
-    ./sim/loop-stability/testbench/sweep.py --no-write -j8 # run, record nothing
+    ./sim/loop-stability/testbench/sweep.py --no-write --backend local -j2  # run locally (explicit), record nothing
 
 Exit codes mirror ``sim/run_corners.py``: 0 pass, 1 a stability check failed,
 2 a simulation failed, 3 an environment/usage problem.
@@ -89,6 +89,29 @@ from harness.runner import (  # noqa: E402
     ngspice_version,
     run_ngspice_deck,
 )
+
+#: Default local worker count. Capped at 2 rather than ``os.cpu_count()``
+#: (issue #366): this driver is run on shared dispatch workers where a grid
+#: that defaults to every core starves other sweeps. Pass ``-j`` to raise it
+#: on a box you own.
+DEFAULT_JOBS = min(2, os.cpu_count() or 2)
+
+BATCH_UNSUPPORTED = """\
+--backend batch is not available for the loop-stability bench (issue #366).
+
+`klt sim` owns the deck's single .control block and runs one analysis per
+corner. This bench needs, per (load, C_eff, ESR) configuration: a DC `op`,
+TWO `ac` sweeps with `alter` of the injection sources between them (Tian
+dual injection), a derived loop-gain vector T built from both, and
+crossover / -180 degree / resurgence searches on its unwrapped phase and
+magnitude. None of that reduces to one analysis plus scalar measurements, so
+the grid cannot be submitted to the batch fleet unchanged and it is not
+approximated here. Tool gap: 2AMLogic/klayout-tools#2847.
+
+Options: run the grid on a host you own with `--backend local -jN`, or run a
+single PVT point (`--explore`, or --corners/--temps/--supply-tol narrowing to
+one point) which needs no flag.
+"""
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
 DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
@@ -734,7 +757,22 @@ def main() -> int:
                          "how the default is derived. Running BELOW the default "
                          "needs --subset-reason, exactly as a narrowed PVT grid "
                          "does.")
-    ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("--backend", choices=("local", "batch"), default=None,
+                    help="where a multi-corner grid runs (issue #366). The "
+                         "dispatch-worker rule is that a PVT grid goes to the "
+                         "Spot batch fleet via `klt sim` "
+                         "(sim/harness/klt_batch.py), but this bench cannot be "
+                         "expressed as one `klt sim` analysis per corner yet "
+                         "(see BATCH_UNSUPPORTED in this file), so "
+                         "`batch` is refused with an explanation. `local` "
+                         "fans ngspice out on THIS host and must be passed "
+                         "explicitly for any grid of more than one PVT "
+                         "point; a single-PVT run (e.g. --explore) is local "
+                         "without the flag.")
+    ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS,
+                    help=f"local worker threads (default: {DEFAULT_JOBS}, "
+                         "deliberately not os.cpu_count(): dispatch workers "
+                         "are shared). Only meaningful with --backend local.")
     ap.add_argument("--no-write", action="store_true",
                     help="run and report, write no record (debugging)")
     ap.add_argument("--explore", action="store_true",
@@ -754,6 +792,24 @@ def main() -> int:
         args.supply_tol = 0.0
         args.no_write = True
 
+    if args.backend == "batch":
+        print(BATCH_UNSUPPORTED, file=sys.stderr)
+        return 3
+
+    n_pvt = len(resolve_corners(args.corners)) * len(args.temps) * len(
+        supply_points(NOMINAL_SUPPLY_V, args.supply_tol))
+    if n_pvt > 1 and args.backend != "local":
+        print(
+            f"FATAL: this grid is {n_pvt} PVT points, which would fan out "
+            "ngspice on this host.\n"
+            "       Multi-corner grids belong on the batch fleet, but this bench "
+            "cannot be expressed as a `klt sim` request yet (--backend batch "
+            "explains why).\n"
+            "       On a host you own, pass --backend local explicitly "
+            f"(default -j{DEFAULT_JOBS}).",
+            file=sys.stderr,
+        )
+        return 3
     if shutil.which("ngspice") is None:
         print("FATAL: ngspice not on PATH", file=sys.stderr)
         return 3
