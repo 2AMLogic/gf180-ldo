@@ -519,6 +519,7 @@ class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):
         for name, value in (
             ("SIM_DIR", root),
             ("DUT_CANDIDATES", {"ldo_core": dut}),
+            ("DUT_BY_SLUG", {self.SLUG: "ldo_core"}),
         ):
             original = getattr(bcr, name)
             setattr(bcr, name, value)
@@ -552,7 +553,7 @@ class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):
         self.assertEqual(record.stem, "20260923-005938-b62ac83")
         # ...and the row therefore reports fresh, which is the whole point:
         # the false downgrade was the observable defect.
-        self.assertEqual(bcr.freshness(snapshot), ("fresh", "ldo_core"))
+        self.assertEqual(bcr.freshness(snapshot, "ldo_core"), ("fresh", "ldo_core", None))
 
     def test_the_newest_record_still_wins_when_it_matches_the_current_dut(self):
         """Recency is still the tiebreak among records that do match."""
@@ -575,7 +576,7 @@ class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):
 
         record, snapshot = bcr.latest_substantive_record(self.SLUG)
         self.assertEqual(record.stem, "20260923-093349-7674ddf")
-        self.assertEqual(bcr.freshness(snapshot), ("stale", None))
+        self.assertEqual(bcr.freshness(snapshot, "ldo_core"), ("stale", None, None))
 
     def test_no_snapshots_at_all_falls_back_to_the_newest_record(self):
         self._add_record("20260801-003015-b64d60e", snapshot_of=None)
@@ -608,7 +609,10 @@ class TestCommittedTreeSelection(unittest.TestCase):
         return [
             record.stem
             for record in sorted(records_dir.glob("*.md"))
-            if bcr.freshness(snapshots_dir / f"{record.stem}.spice")[0] == "fresh"
+            if bcr.freshness(
+                snapshots_dir / f"{record.stem}.spice", bcr.expected_dut(slug)
+            )[0]
+            == "fresh"
         ]
 
     def test_no_cited_slug_is_reported_stale_while_a_matching_record_exists(self):
@@ -622,9 +626,160 @@ class TestCommittedTreeSelection(unittest.TestCase):
             checked += 1
             with self.subTest(slug=slug):
                 record, snapshot = bcr.latest_substantive_record(slug)
-                self.assertEqual(bcr.freshness(snapshot)[0], "fresh")
+                self.assertEqual(bcr.freshness(snapshot, bcr.expected_dut(slug))[0], "fresh")
                 self.assertEqual(record.stem, fresh_ids[-1])
         self.assertGreater(checked, 0, "no committed slug has a fresh record")
+
+
+class TestFreshnessBindsToDesignatedDut(unittest.TestCase):
+    """Freshness identifies the circuit actually measured (issue #393).
+
+    A snapshot that merely *contains* the current standalone amplifier as an
+    included supporting cell must not be fresh for a core source. Synthetic
+    trees only; the committed evidence is not consulted.
+    """
+
+    CORE = ".subckt ldo_core vin vout\nRz n1 n2 1k ppolyf_u_3k\n.ends\n"
+    STALE_CORE = ".subckt ldo_core vin vout\nRz n1 n2 1k ppolyf_u_1k\n.ends\n"
+    AMP = ".subckt error_amp inp inn out\nRa a b 1k\n.ends\n"
+    STALE_AMP = ".subckt error_amp inp inn out\nRa a b 2k\n.ends\n"
+    CORE_REL = "design/netlist/ldo_core.spice"
+    AMP_REL = "design/netlist/error_amp.spice"
+    SLUG = "zz-bind-fixture"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        netlists = self.root / "design" / "netlist"
+        netlists.mkdir(parents=True)
+        core = netlists / "ldo_core.spice"
+        amp = netlists / "error_amp.spice"
+        core.write_text(self.CORE)
+        amp.write_text(self.AMP)
+        for name, value in (
+            ("REPO_ROOT", self.root),
+            ("SIM_DIR", self.root / "sim"),
+            ("DUT_CANDIDATES", {"ldo_core": core, "error_amp": amp}),
+            ("DUT_BY_SLUG", {self.SLUG: "ldo_core"}),
+        ):
+            original = getattr(bcr, name)
+            setattr(bcr, name, value)
+            self.addCleanup(setattr, bcr, name, original)
+
+    @staticmethod
+    def _section(label: str, path: str, body: str) -> str:
+        bar = "* " + "=" * 70
+        return f"{bar}\n* {label:<21}: {path}\n* sha256               : 00\n{bar}\n{body}"
+
+    def _snap(self, name: str, text: str) -> Path:
+        path = self.root / f"{name}.spice"
+        path.write_text(text)
+        return path
+
+    def _harness(self, dut_rel: str, dut_body: str, cells=()) -> str:
+        parts = ["* Frozen netlist snapshot\n\n"]
+        parts.append(self._section("DUT netlist", dut_rel, dut_body))
+        for rel, body in cells:
+            parts.append(self._section("included design cell", rel, body))
+        parts.append(self._section("testbench fragment", "sim/x/tb.spice", ".end\n"))
+        return "\n".join(parts)
+
+    def test_stale_core_with_current_included_amp_is_stale_for_a_core_source(self):
+        snap = self._snap(
+            "a",
+            self._harness(self.CORE_REL, self.STALE_CORE, [(self.AMP_REL, self.AMP)]),
+        )
+        self.assertEqual(bcr.freshness(snap, "ldo_core"), ("stale", None, None))
+
+    def test_current_core_dut_is_fresh_for_core(self):
+        snap = self._snap(
+            "b",
+            self._harness(self.CORE_REL, self.CORE, [(self.AMP_REL, self.STALE_AMP)]),
+        )
+        self.assertEqual(bcr.freshness(snap, "ldo_core"), ("fresh", "ldo_core", None))
+
+    def test_current_core_with_stale_supporting_amp_is_not_an_amp_measurement(self):
+        snap = self._snap(
+            "c",
+            self._harness(self.CORE_REL, self.CORE, [(self.AMP_REL, self.STALE_AMP)]),
+        )
+        status, label, reason = bcr.freshness(snap, "error_amp")
+        self.assertEqual(status, "unknown")
+        self.assertIsNone(label)
+        self.assertIn(self.CORE_REL, reason)
+
+    def test_current_core_with_current_included_amp_is_not_fresh_for_an_amp_source(self):
+        snap = self._snap(
+            "d",
+            self._harness(self.CORE_REL, self.CORE, [(self.AMP_REL, self.AMP)]),
+        )
+        self.assertEqual(bcr.freshness(snap, "error_amp")[0], "unknown")
+
+    def test_standalone_amp_with_current_content_is_fresh_for_amp(self):
+        bar = self._section("included design cell", self.AMP_REL, self.AMP)
+        snap = self._snap("e", "* hdr\n" + bar + self._section("testbench fragment", "t", "x\n"))
+        self.assertEqual(bcr.freshness(snap, "error_amp"), ("fresh", "error_amp", None))
+
+    def test_standalone_stale_amp_is_stale_for_amp(self):
+        snap = self._snap("f", "* hdr\n" + self._section("DUT netlist", self.AMP_REL, self.STALE_AMP))
+        self.assertEqual(bcr.freshness(snap, "error_amp"), ("stale", None, None))
+
+    def test_legacy_headerless_snapshots_are_compared_to_the_expected_netlist_only(self):
+        core_only = self._snap("g", "* legacy\n" + self.CORE)
+        amp_only = self._snap("h", "* legacy\n" + self.AMP)
+        self.assertEqual(bcr.freshness(core_only, "ldo_core")[0], "fresh")
+        self.assertEqual(bcr.freshness(core_only, "error_amp")[0], "stale")
+        self.assertEqual(bcr.freshness(amp_only, "error_amp")[0], "fresh")
+        # The demonstrated defect: stale core + current amp, headerless.
+        mixed = self._snap("i", "* legacy\n" + self.STALE_CORE + self.AMP)
+        self.assertEqual(bcr.freshness(mixed, "ldo_core"), ("stale", None, None))
+
+    def test_legacy_source_header_naming_another_netlist_is_unknown(self):
+        snap = self._snap("j", f"* source     : {self.AMP_REL}\n" + self.AMP)
+        status, _label, reason = bcr.freshness(snap, "ldo_core")
+        self.assertEqual(status, "unknown")
+        self.assertIn(self.AMP_REL, reason)
+
+    def test_missing_snapshot_unmapped_dut_and_ambiguous_dut_are_unknown_with_reason(self):
+        self.assertEqual(bcr.freshness(None, "ldo_core")[0], "unknown")
+        snap = self._snap("k", "* legacy\n" + self.CORE)
+        status, _l, reason = bcr.freshness(snap, None)
+        self.assertEqual((status, bool(reason)), ("unknown", True))
+        two = self._snap(
+            "l",
+            "* h\n"
+            + self._section("DUT netlist", self.CORE_REL, self.CORE)
+            + self._section("DUT netlist", self.CORE_REL, self.CORE),
+        )
+        status, _l, reason = bcr.freshness(two, "ldo_core")
+        self.assertEqual(status, "unknown")
+        self.assertIn("more than one", reason)
+
+    def test_selection_rejects_incidental_amp_match_but_keeps_genuine_earlier_fresh(self):
+        records = self.root / "sim" / self.SLUG / "records"
+        snaps = self.root / "sim" / self.SLUG / "netlist-snapshots"
+        records.mkdir(parents=True)
+        snaps.mkdir(parents=True)
+        for rid in ("20260901-000000-aaaaaaa", "20260902-000000-bbbbbbb"):
+            (records / f"{rid}.md").write_text("**Overall: PASS**\n")
+        # Older: genuinely current core. Newer: stale core + current amp.
+        (snaps / "20260901-000000-aaaaaaa.spice").write_text(
+            self._harness(self.CORE_REL, self.CORE)
+        )
+        (snaps / "20260902-000000-bbbbbbb.spice").write_text(
+            self._harness(self.CORE_REL, self.STALE_CORE, [(self.AMP_REL, self.AMP)])
+        )
+        record, _snap = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, "20260901-000000-aaaaaaa")
+        # With only the incidental match available the row stays stale and
+        # cites the newest evidence.
+        (snaps / "20260901-000000-aaaaaaa.spice").write_text(
+            self._harness(self.CORE_REL, self.STALE_CORE)
+        )
+        record, snap = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, "20260902-000000-bbbbbbb")
+        self.assertEqual(bcr.freshness(snap, "ldo_core")[0], "stale")
 
 
 if __name__ == "__main__":
