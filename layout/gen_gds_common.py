@@ -31,8 +31,8 @@ def _fail(message):
     is what makes the reason survive; ``layout/drclvs.py``'s "layout build
     produced no <path>" check is the backstop for the exit status.
     """
-    print(f"gen_gds.py: {message}", file=sys.stderr)
-    raise SystemExit(f"gen_gds.py: {message}")
+    print(f"gen_gds.py: {message}", file=sys.stderr, flush=True)
+    raise SystemExit(1)
 
 
 def _rd(name, default=None):

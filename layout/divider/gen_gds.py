@@ -536,7 +536,7 @@ def build(out_path, pdk_path):
             )
 
     # ---- labels ----------------------------------------------------------
-        vout_head = heads[(vout_pos, vout_side)]
+    vout_head = heads[(vout_pos, vout_side)]
     _label(top, layout, L_METAL1_LABEL, "VOUT_S", vout_head.center().x, vout_head.center().y)
     fb_x = sum(tracks[("channel", fb_bot[1])]) / 2.0
     _label(

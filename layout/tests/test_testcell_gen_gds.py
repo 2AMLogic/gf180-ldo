@@ -66,13 +66,13 @@ def _run_generator(**rd_switches):
 class TestTestcellGeneratorFailuresAreAudible(unittest.TestCase):
     def test_missing_rd_switch_is_reported_on_stderr(self):
         code, stderr = _run_generator()
-        self.assertTrue(code, "must exit non-zero")
+        self.assertEqual(code, 1)
         self.assertIn("gen_gds.py: missing required switch -rd out=...", stderr)
 
     def test_missing_pcell_library_is_reported_on_stderr(self):
         with tempfile.TemporaryDirectory() as pdk:
             code, stderr = _run_generator(out=str(Path(pdk) / "x.gds"), pdk=pdk)
-        self.assertTrue(code, "must exit non-zero")
+        self.assertEqual(code, 1)
         self.assertIn("gen_gds.py: no PCell library at", stderr)
         self.assertIn(pdk, stderr)
 
