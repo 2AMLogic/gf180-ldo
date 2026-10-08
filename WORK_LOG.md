@@ -4,7 +4,27 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-10-08
 
+- **PR #389**: spec: DR-0038 resolves error_amp reuse 'evaluate' (keep own)
+- **PR #386**: test: golden-record unit tests for the sim rollup scripts
+- **PR #385**: docs: README repository layout lists every tracked top-level path (#383)
+- **PR #382**: ci: adopt correctness-only ruff (F+E9) lint gate
+- **PR #379**: Dedupe gen_gds helpers: route divider and testcell through gen_gds_common (#370)
+- **PR #375**: sim(loop-stability): cap local jobs at 2, require explicit --backend local (Part of #366)
+- **PR #373**: fix(sim): stop embedding absolute host paths in records (#365)
+- **PR #372**: ci: enforce append-only evidence rule at PR level
+- **PR #369**: Generate status index for spec/decision-records (#362)
+- **PR #368**: docs(signoff): README reflects the two drawn layout cells (Part of #79)
+- **PR #364**: Enforce pinned xschem 3.4.7 in netlist export (#361)
 - **PR #360**: sim(soft-start): bias-acquisition characterization of both DR-0037 servos (#352)
+- **Issue #384** (closed): Resolve reuse.lock.json 'evaluate' for error_amp vs gf180-opamp with a decision record
+- **Issue #381** (closed): Unit-test the sim rollup scripts (summarize.py / peak_analyze.py) against committed raw logs
+- **Issue #383** (closed): README: Repository layout block omits signoff/, ratification/, docs/, reuse.lock.json
+- **Issue #377** (closed): ci: adopt a correctness-only Python lint gate (ruff F+E9) in place of the no-op lint script
+- **Issue #370** (closed): Dedupe gen_gds helpers: route divider and testcell through gen_gds_common.py
+- **Issue #365** (closed): sim harness: records embed absolute host paths (home dirs, worktree paths) into public append-only evidence
+- **Issue #371** (closed): ci: enforce sim/ append-only evidence rule at PR level (no modify/delete/rename of committed records)
+- **Issue #362** (closed): Generate a status index for spec/decision-records (23 of 36 records are still 'proposed')
+- **Issue #361** (closed): design/netlist.py --check is unwired and cannot distinguish a stale netlist from a different xschem build (pin: 3.4.7)
 - **Issue #357** (closed): Auditor Capability Request: Python runtime missing on audit host
 - **Issue #352** (closed): Investigate the gmin-stepping 'nonconvergence' diagnostic on the DR-0037 self-biased servo (possible zero-current operating point)
 
