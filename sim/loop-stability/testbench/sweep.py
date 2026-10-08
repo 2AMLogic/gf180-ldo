@@ -76,6 +76,7 @@ LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
     allocate_record_id,
@@ -446,7 +447,7 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
         try:
             f = parse_row_fields(line)
         except ValueError as exc:
-            return pvt, [], f"{exc} (see {log})"
+            return pvt, [], f"{exc} (see {display_path(log)})"
         rows.append(
             Row(
                 corner_id=pvt.corner_id,
@@ -468,7 +469,7 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
         )
     expected = len(iloads) * len(ceffs) * len(esrs)
     if len(rows) != expected:
-        return pvt, rows, f"expected {expected} rows, parsed {len(rows)} (see {log})"
+        return pvt, rows, f"expected {expected} rows, parsed {len(rows)} (see {display_path(log)})"
 
     # A margin is only meaningful about the REGULATING bias point. The core has
     # a second, non-regulating DC solution (the current-limit latch state -- see
@@ -485,7 +486,7 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
             f"solution (|VOUT - {VOUT_NOM_V:g} V| > {VOUT_TOL_FRAC:.0%}); first is "
             f"{w.config_id} at VOUT = {w.vout_v:g} V. A loop-gain margin about a "
             f"non-regulating bias point is meaningless, so this run is void "
-            f"(see {log})"
+            f"(see {display_path(log)})"
         )
     return pvt, rows, None
 

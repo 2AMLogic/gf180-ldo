@@ -40,6 +40,7 @@ from .corners import (
     DEFAULT_TEMPERATURES_C,
     PvtPoint,
 )
+from .paths import display_pdk_path, scrub_source
 from .pdk import Pdk
 from .runner import (
     MODEL_BINNING_OPTION,
@@ -825,7 +826,8 @@ def render_record(record: dict, experiment: str) -> str:
         "Everything needed to re-run this record:",
         "",
         f"- PDK: {pdk.get('variant')} @ open_pdks `{pdk.get('open_pdks_version')}`"
-        f" ({pdk.get('path')}, found via {pdk.get('discovered_via')})",
+        f" ({display_pdk_path(pdk.get('path') or '')}, found via"
+        f" {scrub_source(str(pdk.get('discovered_via')))})",
         f"- ngspice: {env['ngspice']}",
         f"- ngspice binary sha256: {_ngspice_sha256_line(env.get('ngspice_sha256'))}",
         f"- Host: `{env.get('host', 'unknown')}` -- issue #182: this repo's evidence is"

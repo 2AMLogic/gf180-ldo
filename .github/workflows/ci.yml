@@ -85,8 +85,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history so the append-only check can diff origin/<base>...HEAD
-          # (merge-base needed); the repo is small.
+          # Full history so the append-only check and the records-host-path
+          # check can diff <base>...HEAD (merge-base needed); the repo is small.
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -129,6 +129,24 @@ jobs:
         # DR-0027, 2026-09-19 -- issue #268). This runs on push to main too, so
         # the second merge of a colliding pair fails immediately rather than
         # waiting for a human to notice.
+
+      - name: Verify new/modified records carry no absolute host paths
+        if: github.event_name == 'pull_request'
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          files="$(git diff --name-only --diff-filter=AM "$base"...HEAD -- \
+            'sim/*/records/*' 'signoff/records/*' 'layout/*/records/*')"
+          bad=""
+          for f in $files; do
+            if grep -nE '/home/[a-z]|/Users/[a-z]' "$f"; then bad="$bad $f"; fi
+          done
+          if [ -n "$bad" ]; then
+            echo "::error::records added or modified in this PR embed absolute host paths (/home/<user> or /Users/<user>):$bad -- render paths repo-relative or via sim/harness/paths.py (issue #365)."
+            exit 1
+          fi
+        # Scoped to files added/modified in the PR so the existing append-only
+        # records (which predate this check) do not break CI; they are not
+        # rewritten here (issue #365). Needs full history for the base diff.
 
       - name: Verify spec/decision-records/README.md is up to date
         run: |

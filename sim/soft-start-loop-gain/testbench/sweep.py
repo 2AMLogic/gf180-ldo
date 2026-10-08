@@ -75,6 +75,7 @@ HANDOVER_TEMPLATE = HERE / "tb_ss_handover.spice.in"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
     allocate_record_id,
@@ -521,7 +522,7 @@ def run_point(pvt, pdk, *, phase: str, variant: str, netlist: Path, ceffs, esrs,
         try:
             f = parse_row_fields(line)
         except ValueError as exc:
-            return pvt, [], f"{exc} (see {log})"
+            return pvt, [], f"{exc} (see {display_path(log)})"
         rows.append(Row(
             corner_id=pvt.corner_id, corner=pvt.corner.name,
             temp_c=pvt.temp_c, vin_v=pvt.vdd,
@@ -551,7 +552,7 @@ def run_point(pvt, pdk, *, phase: str, variant: str, netlist: Path, ceffs, esrs,
         n_ssr = len(PHASES[phase]["ssr"])
     expected = n_ssr * len(ceffs) * len(esrs)
     if len(rows) != expected:
-        return pvt, rows, f"expected {expected} rows, parsed {len(rows)} (see {log})"
+        return pvt, rows, f"expected {expected} rows, parsed {len(rows)} (see {display_path(log)})"
 
     bad = [r for r in rows if r.landed]
     if bad:
@@ -560,7 +561,7 @@ def run_point(pvt, pdk, *, phase: str, variant: str, netlist: Path, ceffs, esrs,
             f"{len(bad)}/{len(rows)} points did not land on the intended DC "
             f"branch; first is {w.state_id} / {w.cfg_id}: {w.landed}. A "
             f"loop-gain margin about a bias point that is not the one named is "
-            f"meaningless, so this run is void (see {log})"
+            f"meaningless, so this run is void (see {display_path(log)})"
         )
     return pvt, rows, None
 
@@ -883,7 +884,7 @@ def run_handover(pvt, pdk, *, variant: str, netlist: Path, workdir: Path,
         try:
             f = parse_hov_fields(line)
         except ValueError as exc:
-            return None, f"{exc} (see {log})"
+            return None, f"{exc} (see {display_path(log)})"
         pts.append(HovPoint(
             ssr_cmd=float(f["ssr_cmd"]),
             ssr_v=ls._f(f["ssr_v"]),
@@ -895,9 +896,9 @@ def run_handover(pvt, pdk, *, variant: str, netlist: Path, workdir: Path,
         ))
     if len(pts) != len(HANDOVER_SSR_V):
         return None, (f"expected {len(HANDOVER_SSR_V)} HOV points, parsed "
-                      f"{len(pts)} (see {log})")
+                      f"{len(pts)} (see {display_path(log)})")
     if any(p.ssr_v is None or p.fb_v is None or p.vout_v is None for p in pts):
-        return None, f"a HOV point has an unparsable operating point (see {log})"
+        return None, f"a HOV point has an unparsable operating point (see {display_path(log)})"
     return HovCurve(corner_id=pvt.corner_id, corner=pvt.corner.name,
                     temp_c=pvt.temp_c, vin_v=pvt.vdd, variant=variant,
                     points=pts), None
