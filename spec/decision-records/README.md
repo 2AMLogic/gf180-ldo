@@ -46,3 +46,26 @@ Only **ratified** records are in force. Everything else is a proposal or a held/
 | [DR-0036](DR-0036-softstart-branch-standing-current-is-recovered-at-the-ramp-ceiling-not-at-the-branches.md) | the soft-start injection branches' standing current is recovered at the ramp ceiling, not at the branches — branch-supply gating converges, and still loses | proposed | - |
 | [DR-0037](DR-0037-vref-forcing-servo-replaces-the-idealized-bias-cccs.md) | a VREF-forcing V-to-I servo replaces the idealized `Fbias` / `Fss_ramp` CCCS in `ldo_ilimit` and `ldo_softstart` | proposed | - |
 | [DR-0038](DR-0038-error-amp-stays-in-tree-against-gf180-opamp.md) | `error_amp` stays in tree -- `gf180-opamp`'s published amplifier is not comparable evidence, and what it does show is not a viable base | proposed | - |
+
+## Design citations of unratified records
+
+`design/*.sch` cites these records that are not ratified (report-only; ranked by total citations). CI fails on a cited record with no file, or a cited superseded record with no `superseded by` pointer.
+
+| DR | Status | Citing file | Count |
+|---|---|---|---|
+| DR-0009 | proposed | design/error_amp.sch | 4 |
+| DR-0007 | held | design/error_amp.sch | 2 |
+| DR-0007 | held | design/ldo_core.sch | 1 |
+| DR-0015 | proposed | design/error_amp.sch | 3 |
+| DR-0021 | proposed | design/ldo_core.sch | 3 |
+| DR-0029 | proposed | design/ldo_softstart.sch | 3 |
+| DR-0036 | proposed | design/ldo_softstart.sch | 3 |
+| DR-0012 | proposed | design/error_amp.sch | 2 |
+| DR-0027 | proposed | design/ldo_softstart.sch | 2 |
+| DR-0032 | proposed | design/ldo_core.sch | 2 |
+| DR-0033 | proposed | design/error_amp.sch | 1 |
+| DR-0033 | proposed | design/ldo_core.sch | 1 |
+| DR-0034 | proposed | design/ldo_core.sch | 1 |
+| DR-0034 | proposed | design/ldo_ilimit.sch | 1 |
+| DR-0035 | proposed | design/ldo_softstart.sch | 2 |
+| DR-0031 | proposed | design/ldo_softstart.sch | 1 |
