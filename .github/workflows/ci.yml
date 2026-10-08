@@ -16,6 +16,10 @@ name: CI
 #                                       enforcing README.md's "regenerate
 #                                       after any sim/ record lands" rule; no
 #                                       PDK/ngspice needed, see issue #216)
+#   - spec/decision-records/build_index.py (regenerated and diffed against
+#                                       spec/decision-records/README.md; parser
+#                                       tests in sim/tests/test_decision_record_index.py,
+#                                       issue #362)
 #   - signoff/check.sh                (re-grades this block's T1 state from
 #                                       signoff/block-manifest.json via `klt
 #                                       signoff --manifest` and fails if a
@@ -117,6 +121,18 @@ jobs:
         # DR-0027, 2026-09-19 -- issue #268). This runs on push to main too, so
         # the second merge of a colliding pair fails immediately rather than
         # waiting for a human to notice.
+
+      - name: Verify spec/decision-records/README.md is up to date
+        run: |
+          python3 spec/decision-records/build_index.py > /tmp/DR-README.md
+          if ! diff -u spec/decision-records/README.md /tmp/DR-README.md; then
+            echo "::error::spec/decision-records/README.md is stale -- regenerate with 'python3 spec/decision-records/build_index.py > spec/decision-records/README.md' and commit the result (issue #362)."
+            exit 1
+          fi
+        # Also fails (non-zero exit from the generator) when a record's Status
+        # line cannot be classified, so new records must follow TEMPLATE.md.
+        # Parser unit tests: sim/tests/test_decision_record_index.py, run by
+        # sim/selftest.sh above. No PDK needed.
 
   signoff-tier-report:
     name: T1 tier report (klt signoff --manifest, no PDK required)
