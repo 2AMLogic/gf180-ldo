@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .corners import PvtPoint
+from .paths import display_path
 from .pdk import Pdk
 from .testbench import Testbench
 
@@ -397,17 +398,17 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     text = proc.stdout + proc.stderr
     log.write_text(text)
     if proc.returncode != 0:
-        raise RuntimeError(f"ngspice exited {proc.returncode} (see {log})")
+        raise RuntimeError(f"ngspice exited {proc.returncode} (see {display_path(log)})")
     if FATAL_LOG_RE.search(text):
         bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
-        raise RuntimeError(f"ngspice reported a fatal condition: {bad} (see {log})")
+        raise RuntimeError(f"ngspice reported a fatal condition: {bad} (see {display_path(log)})")
     if _UNDEFINED_VECTOR_LET_RE.search(text):
         bad = [
             ln for ln in text.splitlines() if _UNDEFINED_VECTOR_LET_RE.search(ln)
         ][:3]
         raise RuntimeError(
             f"ngspice's .let/v(...) referenced a vector that does not exist "
-            f"in the netlist: {bad} (see {log})"
+            f"in the netlist: {bad} (see {display_path(log)})"
         )
     if not _runs_transient_analysis(deck.read_text()):
         exhausted = _ladder_exhaustion_lines(text)
@@ -416,10 +417,10 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
                 f"ngspice exhausted its DC continuation ladder and fell "
                 f"back to the pseudo-transient op ({exhausted}); the "
                 f"reported operating point is an unsettled transient "
-                f"snapshot, not a converged DC solution (see {log})"
+                f"snapshot, not a converged DC solution (see {display_path(log)})"
             )
     if "SWEEP COMPLETE" not in text:
-        raise RuntimeError(f"sweep did not complete (see {log})")
+        raise RuntimeError(f"sweep did not complete (see {display_path(log)})")
     return text
 
 

@@ -22,7 +22,7 @@ from pathlib import Path
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
-from harness import cli, corners, report, runner, testbench  # noqa: E402
+from harness import cli, corners, paths, report, runner, testbench  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
     read_measurements,
@@ -2390,3 +2390,49 @@ class CheckEnvProvenanceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HostPathRedactionTests(unittest.TestCase):
+    """Issue #365: published records must not embed absolute host paths."""
+
+    FAKE_HOME = "/home/fakeuser"
+
+    def test_rendered_record_has_no_absolute_home_path(self):
+        pdk_dir = Path(self.FAKE_HOME) / ".local" / "share" / "pdk" / "gf180mcuD"
+        pdk = Pdk(
+            path=pdk_dir,
+            variant="gf180mcuD",
+            source="search_root:" + self.FAKE_HOME + "/.pdk",
+        )
+        record = RecordRenderingTests("test_every_ratified_field_is_present_and_in_order")
+        record.setUp()
+        self.addCleanup(record.doCleanups)
+        rec = dict(record.record)
+        rec["environment"] = dict(rec["environment"], pdk=pdk.provenance())
+        rec["environment"]["pdk"]["path"] = str(pdk_dir)  # raw, as old records had it
+        rec["environment"]["pdk"]["discovered_via"] = pdk.source
+        text = report.render_record(rec, "smoke-bias")
+        self.assertNotIn("/home/", text)
+        self.assertNotIn("fakeuser", text)
+        self.assertIn("gf180mcuD", text)
+        self.assertIn("found via search_root:", text)
+
+    def test_pdk_path_forms(self):
+        with unittest.mock.patch.dict(os.environ, {"PDK_ROOT": "/opt/pdks"}):
+            self.assertEqual(
+                paths.display_pdk_path("/opt/pdks/gf180mcuD"), "$PDK_ROOT/gf180mcuD"
+            )
+        with unittest.mock.patch.dict(os.environ, {"HOME": self.FAKE_HOME}):
+            os.environ.pop("PDK_ROOT", None)
+            self.assertEqual(
+                paths.display_pdk_path(self.FAKE_HOME + "/pdk/gf180mcuD"), "~/pdk/gf180mcuD"
+            )
+            self.assertEqual(paths.scrub_source("search_root:" + self.FAKE_HOME + "/.pdk"),
+                             "search_root:~/.pdk")
+
+    def test_diagnostic_paths_are_repo_relative_or_basename(self):
+        inside = paths.REPO_ROOT / "sim" / "x" / "corners" / "r" / "tt.log"
+        self.assertEqual(paths.display_path(inside), "sim/x/corners/r/tt.log")
+        wt = Path(self.FAKE_HOME) / "repo" / ".loom" / "worktrees" / "issue-1" / "sim" / "a.log"
+        self.assertEqual(paths.display_path(wt), "sim/a.log")
+        self.assertEqual(paths.display_path(self.FAKE_HOME + "/elsewhere/b.log"), "<abs>/b.log")

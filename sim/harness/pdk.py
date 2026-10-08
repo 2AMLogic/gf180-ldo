@@ -30,6 +30,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .paths import display_pdk_path, scrub_source
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SIM_DIR = REPO_ROOT / "sim"
 
@@ -118,10 +120,10 @@ class Pdk:
 
     def provenance(self) -> dict:
         return {
-            "path": str(self.path),
+            "path": display_pdk_path(self.path),
             "variant": self.variant,
             "open_pdks_version": self.version,
-            "discovered_via": self.source,
+            "discovered_via": scrub_source(self.source),
         }
 
 
