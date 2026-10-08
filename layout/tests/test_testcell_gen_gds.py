@@ -6,7 +6,8 @@
 ``klayout -b -r`` swallows ``SystemExit``: a bare ``raise SystemExit("...")``
 prints nothing and the process still exits 0 (layout/README.md, "``klayout
 -b -r`` swallows ``SystemExit``"). ``layout/testcell/gen_gds.py`` therefore
-routes every assertion through a ``_fail()`` helper that writes the message
+routes every assertion through the shared ``_fail()`` helper in
+``layout/gen_gds_common.py`` (issue #370) that writes the message
 to stderr first, which is what ``layout/drclvs.py`` captures into the run
 directory's ``build-gds.log``.
 
@@ -30,6 +31,7 @@ from pathlib import Path
 
 LAYOUT_DIR = Path(__file__).resolve().parents[1]
 GEN_GDS = LAYOUT_DIR / "testcell" / "gen_gds.py"
+COMMON = LAYOUT_DIR / "gen_gds_common.py"
 
 
 def _run_generator(**rd_switches):
@@ -80,14 +82,20 @@ class TestTestcellGeneratorFailuresAreAudible(unittest.TestCase):
         A bare ``raise SystemExit("message")`` anywhere else would be silent
         under ``klayout -b -r`` -- exactly the regression issue #296 fixed.
         """
-        tree = ast.parse(GEN_GDS.read_text())
+        common = ast.parse(COMMON.read_text())
         fail_defs = [
-            node for node in ast.walk(tree)
+            node for node in ast.walk(common)
             if isinstance(node, ast.FunctionDef) and node.name == "_fail"
         ]
-        self.assertEqual(len(fail_defs), 1, "gen_gds.py must define _fail()")
+        self.assertEqual(len(fail_defs), 1, "gen_gds_common.py must define _fail()")
         inside_fail = {id(n) for n in ast.walk(fail_defs[0])}
 
+        tree = ast.parse(GEN_GDS.read_text())
+        self.assertFalse(
+            any(isinstance(n, ast.FunctionDef) and n.name == "_fail"
+                for n in ast.walk(tree)),
+            "gen_gds.py must use the shared _fail(), not a private copy",
+        )
         offenders = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.Raise) or node.exc is None:

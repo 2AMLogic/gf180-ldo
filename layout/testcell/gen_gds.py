@@ -47,6 +47,9 @@ import sys
 
 import pya  # noqa: F401  (provided by the KLayout interpreter)
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from gen_gds_common import _fail, _label, _load_pdk_pcells, _rd  # noqa: E402
+
 # Device under test. Keep in sync with layout/testcell/drclvs_testcell.sch --
 # the LVS compare in layout/drclvs.py is what catches a drift between them.
 PCELL_PARAMS = {
@@ -58,6 +61,9 @@ PCELL_PARAMS = {
 }
 
 TOP_CELL = "DRCLVS_TESTCELL"
+
+# gf180mcu variant: D = 5LM, 11K top metal, MIM option B.
+PDK_OPTION = "D"
 
 # gf180mcu database unit, as declared by the PDK's own KLayout tech file
 # (libs.tech/klayout/tech/gf180mcu.lyt: <dbu>0.001</dbu>). Written explicitly
@@ -72,52 +78,8 @@ L_METAL1 = (34, 0)
 L_METAL1_LABEL = (34, 10)
 
 
-def _fail(message):
-    """Abort the build, loudly.
-
-    ``klayout -b -r`` **swallows SystemExit**: a bare `raise SystemExit("…")`
-    prints nothing and the klayout process still exits 0 (checked against
-    KLayout 0.28.16). Every assertion in this file therefore has to print its
-    own message before bailing out, or a PDK change would abort the build
-    with no diagnostic at all -- `layout/drclvs.py` would only report "layout
-    build produced no .gds", which names the symptom and not the cause.
-    Same helper as `layout/divider/gen_gds.py`'s (issue #296).
-    """
-    sys.stderr.write(f"gen_gds.py: {message}\n")
-    sys.stderr.flush()
-    raise SystemExit(1)
-
-
-def _rd(name, default=None):
-    """Read a -rd switch (KLayout injects them as globals)."""
-    value = globals().get(name, default)
-    if value is None:
-        _fail(f"missing required switch -rd {name}=...")
-    return value
-
-
-def _load_pdk_pcells(pdk_path):
-    """Register the PDK's KLayout-API PCell library and return its name."""
-    macros = os.path.join(pdk_path, "libs.tech", "klayout", "tech", "pymacros")
-    if not os.path.isdir(macros):
-        _fail(f"no PCell library at {macros}")
-    sys.path.insert(0, macros)
-    # The gf180mcu PCells read this to pick the metal stack / MIM option; the
-    # variant we build against is D (5LM, 11K top metal, MIM option B).
-    os.environ.setdefault("GF_PDK_OPTION", "D")
-    from klayout_api_cells import gf180mcu_klayoutapi  # noqa: E402
-
-    gf180mcu_klayoutapi()
-    return "gf180mcu_klayoutapi"
-
-
-def _text(cell, layout, layer_index, name, x_um, y_um):
-    point = pya.Point(int(round(x_um / layout.dbu)), int(round(y_um / layout.dbu)))
-    cell.shapes(layer_index).insert(pya.Text(name, pya.Trans(point)))
-
-
 def build(out_path, pdk_path):
-    library = _load_pdk_pcells(pdk_path)
+    library = _load_pdk_pcells(pdk_path, PDK_OPTION)
 
     layout = pya.Layout()
     layout.dbu = DBU_UM
@@ -159,17 +121,15 @@ def build(out_path, pdk_path):
         )
     gate = poly_shapes[0].bbox().to_dtype(layout.dbu)
 
-    metal1_label = layout.layer(*L_METAL1_LABEL)
-    poly2_label = layout.layer(*L_POLY2_LABEL)
-    _text(top, layout, metal1_label, "S", source.center().x, source.center().y)
-    _text(top, layout, metal1_label, "D", drain.center().x, drain.center().y)
+    _label(top, layout, L_METAL1_LABEL, "S", source.center().x, source.center().y)
+    _label(top, layout, L_METAL1_LABEL, "D", drain.center().x, drain.center().y)
     # A point inside the ring's left arm, not inside the (empty) ring interior.
-    _text(
-        top, layout, metal1_label, "VSS",
+    _label(
+        top, layout, L_METAL1_LABEL, "VSS",
         guard_ring.left + 0.18, guard_ring.center().y,
     )
     # Above the active region, on the gate poly's own overhang.
-    _text(top, layout, poly2_label, "G", gate.center().x, gate.top - 0.1)
+    _label(top, layout, L_POLY2_LABEL, "G", gate.center().x, gate.top - 0.1)
 
     layout.write(out_path)
     box = top.dbbox()
