@@ -205,6 +205,16 @@ xschem -n -x -q -r /opt/homebrew/share/doc/xschem/examples/lm317.sch -o /tmp
 `-n` (netlist), `-x`/`--no_x` (headless, no X11 window), `-q` (quit after),
 `-r`/`--no_readline` (safe for non-interactive/redirected stdin+stdout).
 
+### Version is enforced
+
+`sim/harness/xschem_export.py` (`XSCHEM_PINNED_VERSION`) probes
+`xschem --version` on every netlist export, for both `design/netlist.py` and
+the LVS export in `layout/drclvs.py`. Any other version (e.g. the packaged
+3.4.4) fails with `toolchain mismatch (found X, need 3.4.7)`; rebuild per
+this section. CI does not provision xschem, so run
+`python3 design/netlist.py --check` locally before opening a PR that touches
+the design (see `design/README.md`).
+
 ### A note on `~/.xschem/xschemrc` (machine-specific gotcha)
 
 xschem loads, in order: the system-wide `xschemrc`, then
