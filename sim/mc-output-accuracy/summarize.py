@@ -212,7 +212,7 @@ def main() -> int:
     yield_frac = 2 * normal_cdf(k_sigma) - 1
     print("\n## Yield\n")
     print(f"- Combined statistical 1 sigma (amp RSS divider): {sigma_combined:.3f} mV")
-    print(f"- Headroom after the deterministic terms and the load-regulation")
+    print("- Headroom after the deterministic terms and the load-regulation")
     print(f"  allowance: {WINDOW_MV:.0f} - {LOAD_REG_MV:.0f} - {det_ratified:.2f} = "
           f"{headroom:.2f} mV")
     print(f"- That headroom is **{k_sigma:.1f} sigma** of the combined statistical")

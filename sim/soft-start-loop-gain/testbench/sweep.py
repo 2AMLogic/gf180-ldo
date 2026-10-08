@@ -1293,7 +1293,7 @@ def run_loop_stability_here(args, workdir: Path, logdir: Path, corners, temps):
     )
     m = re.search(r"record id\s*:\s*(\S+)", out)
     if not m:
-        return None, f"could not find the re-run's record id in its output"
+        return None, "could not find the re-run's record id in its output"
     rerun_dir = REPO_ROOT / "sim" / ".work" / "loop-stability" / m.group(1)
     if not rerun_dir.is_dir():
         return None, f"the re-run left no logs at {rerun_dir}"
@@ -1904,7 +1904,7 @@ def run_fb_cap_ladder(label: str, point: Row, base_row: Row, device_text: str,
               f"{_hz(r.f0_hz):>11}  {r.vout_v:.5f} V")
     out["budget"] = fb_cap_budget(out)
     b = out["budget"]
-    print(f"  -> budget: "
+    print("  -> budget: "
           + (f"{b['ok_f'] * 1e12:g} pF still within "
              f"{FB_CAP_PM_TOL_DEG:g} deg / {FB_CAP_GM_TOL_DB:g} dB of the "
              f"baseline" if b["ok_f"] is not None else "no rung is within "
@@ -2199,20 +2199,20 @@ def handover_section(curves: list[HovCurve], consistency, args) -> str:
         worst = max(supply_lines, key=lambda t: abs(t[2]))
         slopes = [t[2] / t[1] for t in supply_lines if t[1]]
         lines += [
-            f"  **`device`'s release point against the supply**, checked",
-            f"  rather than assumed: `Binj_ss`'s defining expression has no",
-            f"  `VIN` term, so this is expected to come out at 0 by",
-            f"  construction post-#231 (pre-#231, when `device` was the",
-            f"  post-#195 device-level chain, this was where that chain's",
-            f"  own bias-current dependence on `VIN` showed up as real ramp",
-            f"  movement -- see the historical record for that number).",
+            "  **`device`'s release point against the supply**, checked",
+            "  rather than assumed: `Binj_ss`'s defining expression has no",
+            "  `VIN` term, so this is expected to come out at 0 by",
+            "  construction post-#231 (pre-#231, when `device` was the",
+            "  post-#195 device-level chain, this was where that chain's",
+            "  own bias-current dependence on `VIN` showed up as real ramp",
+            "  movement -- see the historical record for that number).",
             f"  Over the {len(supply_lines)} (process, temperature) pairs",
-            f"  where `device` releases at all three supplies, moving `VIN`",
-            f"  from 2.97 V to 3.63 V moves the `V(SSR)` at which it releases",
+            "  where `device` releases at all three supplies, moving `VIN`",
+            "  from 2.97 V to 3.63 V moves the `V(SSR)` at which it releases",
             f"  by **{min(t[2] for t in supply_lines):+.3f} V to "
             f"{max(t[2] for t in supply_lines):+.3f} V**",
             f"  (mean {sum(slopes) / len(slopes):.3f} V of ramp node per volt of",
-            f"  supply). Worst:",
+            "  supply). Worst:",
             f"  `{worst[0][0]}` at {worst[0][1]:g} degC -- "
             + ", ".join(f"{v:.2f} V -> {r:.3f} V" for v, r in worst[3]) + ".",
             "",
@@ -2245,55 +2245,55 @@ def handover_section(curves: list[HovCurve], consistency, args) -> str:
         if pair_lines:
             worst = max(pair_lines, key=lambda t: abs(t[0]))
             lines += [
-                f"  **The acquisition step.** Until `Mhold_ss` lets go, the pass",
-                f"  device is off and the output is at zero; the instant the main",
-                f"  loop owns the pass gate, the output it is asked to hold is",
-                f"  whatever the injection element's current at the ramp state",
-                f"  reached by then implies. That voltage is a step into `C_out`.",
+                "  **The acquisition step.** Until `Mhold_ss` lets go, the pass",
+                "  device is off and the output is at zero; the instant the main",
+                "  loop owns the pass gate, the output it is asked to hold is",
+                "  whatever the injection element's current at the ramp state",
+                "  reached by then implies. That voltage is a step into `C_out`.",
                 f"  At `V(SSR)` = {HANDOVER_ACQUISITION_SSR_V:g} V (see the",
-                f"  constant's comment for why that state), over the",
+                "  constant's comment for why that state), over the",
                 f"  {len(pair_lines)} corners where both variants are measured,",
-                f"  `device` asks for",
+                "  `device` asks for",
                 f"  **{min(t[0] for t in pair_lines) * 1e3:+.1f} mV to "
                 f"{max(t[0] for t in pair_lines) * 1e3:+.1f} mV** more output",
-                f"  than `binj` does at the identical ramp state (both use the",
-                f"  same `Binj_ss` source post-#231, so this is expected to",
-                f"  land at ~0 mV; a nonzero reading here would itself be a",
-                f"  finding, since neither variant's DC transfer has a",
-                f"  dependence on the DR-0024 cap resize that distinguishes",
-                f"  them).",
+                "  than `binj` does at the identical ramp state (both use the",
+                "  same `Binj_ss` source post-#231, so this is expected to",
+                "  land at ~0 mV; a nonzero reading here would itself be a",
+                "  finding, since neither variant's DC transfer has a",
+                "  dependence on the DR-0024 cap resize that distinguishes",
+                "  them).",
                 f"  Worst: `{worst[3]}` -- {worst[1] * 1e3:.2f} mV against",
                 f"  {worst[2] * 1e3:.2f} mV, a factor of "
                 f"{(worst[1] / worst[2]) if worst[2] else float('inf'):.1f}.",
                 "",
-                f"  **This is a DC statement, and it does not on its own account",
-                f"  for #191's transient.** How much capacitor current a given",
-                f"  step produces depends on the loop's large-signal acquisition",
-                f"  time, which is `sim/soft-start/`'s to measure and which",
-                f"  nothing here re-runs. And the arithmetic does not close on",
-                f"  its own: at `tt_-40c_2.97v`, the corner #191's own A/B used,",
-                f"  that A/B reads 0.468 mA with the ideal element against",
-                f"  166.7 mA with the device chain -- a factor of 356 -- while",
-                f"  the acquisition step measured here at the same corner differs",
-                f"  by a factor of "
+                "  **This is a DC statement, and it does not on its own account",
+                "  for #191's transient.** How much capacitor current a given",
+                "  step produces depends on the loop's large-signal acquisition",
+                "  time, which is `sim/soft-start/`'s to measure and which",
+                "  nothing here re-runs. And the arithmetic does not close on",
+                "  its own: at `tt_-40c_2.97v`, the corner #191's own A/B used,",
+                "  that A/B reads 0.468 mA with the ideal element against",
+                "  166.7 mA with the device chain -- a factor of 356 -- while",
+                "  the acquisition step measured here at the same corner differs",
+                "  by a factor of "
                 + (lambda t: f"{(t[1] / t[2]):.1f}" if t and t[2] else "n/a")(
                     next((t for t in pair_lines if t[3] == "tt_-40c_2.97v"), None))
-                + f". A ~2x difference in the",
-                f"  voltage the loop is asked to acquire cannot by itself produce",
-                f"  a ~350x difference in the current it acquires it with, so the",
-                f"  step is at most a contributing term and there is a mechanism",
-                f"  this record does not measure. What this record *does* settle",
-                f"  is that the missing mechanism is **not** a small-signal margin",
-                f"  deficit at any pinned ramp state, and not the injection",
-                f"  element's loading of `FB`: sections 3 and 6 measure both, and",
-                f"  both are small. The remaining candidates are large-signal and",
-                f"  live in `sim/soft-start/`'s domain -- the recovery out of the",
+                + ". A ~2x difference in the",
+                "  voltage the loop is asked to acquire cannot by itself produce",
+                "  a ~350x difference in the current it acquires it with, so the",
+                "  step is at most a contributing term and there is a mechanism",
+                "  this record does not measure. What this record *does* settle",
+                "  is that the missing mechanism is **not** a small-signal margin",
+                "  deficit at any pinned ramp state, and not the injection",
+                "  element's loading of `FB`: sections 3 and 6 measure both, and",
+                "  both are small. The remaining candidates are large-signal and",
+                "  live in `sim/soft-start/`'s domain -- the recovery out of the",
                 f"  out-of-regulation region this section finds at "
                 f"{sum(1 for c in curves if c.variant == 'device' and c.saturated_to_ssr_v is not None)}"
                 f" of "
                 f"{sum(1 for c in curves if c.variant == 'device')} corners is",
-                f"  the first one to look at, because the loop is *open* there",
-                f"  and no small-signal margin describes it at all.",
+                "  the first one to look at, because the loop is *open* there",
+                "  and no small-signal margin describes it at all.",
                 "",
             ]
 
@@ -2485,11 +2485,11 @@ def attribution_section(attribution: dict | None) -> str:
             "  an open at DC and the landed `VOUT` column is there to show the",
             "  bias point did not move.",
             "",
-            f"  The budget is stated against **the same point with no added",
+            "  The budget is stated against **the same point with no added",
             f"  capacitance**, not against DR-0001's {PM_MIN_DEG:g} deg /",
             f"  {GM_MIN_DB:g} dB reference lines. A mid-ramp state is not a",
-            f"  DR-0001 operating point, so those bars are reference lines here",
-            f"  and not a criterion"
+            "  DR-0001 operating point, so those bars are reference lines here",
+            "  and not a criterion"
             + ("; and the worst-point ladder below starts from a baseline of "
                f"{pm_str(ladders[0]['base'])} deg with no added capacitance at "
                f"all -- already under the {PM_MIN_DEG:g} deg line, with "
@@ -2499,11 +2499,11 @@ def attribution_section(attribution: dict | None) -> str:
                f"would say nothing about capacitance"
                if (ladders[0]["base"].pm_deg is not None
                    and ladders[0]["base"].pm_deg < PM_MIN_DEG) else "")
-            + f". Against its own baseline it answers the",
+            + ". Against its own baseline it answers the",
             f"  question that was asked. Tolerance: PM within "
             f"{FB_CAP_PM_TOL_DEG:g} deg and GM within {FB_CAP_GM_TOL_DB:g} dB",
-            f"  of the baseline -- the #182/#185 movement class. Both, because",
-            f"  they fail in different places.",
+            "  of the baseline -- the #182/#185 movement class. Both, because",
+            "  they fail in different places.",
         ]
         for lad in ladders:
             p, b = lad["point"], lad["base"]
