@@ -5,7 +5,7 @@
 
 Only **ratified** records are in force. Everything else is a proposal or a held/negative-result write-up awaiting the operator. Status is read from each record's `Status` line (see `TEMPLATE.md`); CI fails if this file is stale or a record's status cannot be classified.
 
-36 records: 12 ratified, 23 proposed, 1 held, 0 superseded.
+37 records: 12 ratified, 24 proposed, 1 held, 0 superseded.
 
 | DR | Title | Status | Superseded by |
 |---|---|---|---|
@@ -45,3 +45,4 @@ Only **ratified** records are in force. Everything else is a proposal or a held/
 | [DR-0035](DR-0035-vin-referenced-softstart-ramp-ceiling.md) | reference the soft-start ramp ceiling to `VIN`, not to `VREF` — the ratified PSRR row closes with 9.6 dB of margin, and the Iq the branches burn after hand-over comes back with it | proposed | - |
 | [DR-0036](DR-0036-softstart-branch-standing-current-is-recovered-at-the-ramp-ceiling-not-at-the-branches.md) | the soft-start injection branches' standing current is recovered at the ramp ceiling, not at the branches — branch-supply gating converges, and still loses | proposed | - |
 | [DR-0037](DR-0037-vref-forcing-servo-replaces-the-idealized-bias-cccs.md) | a VREF-forcing V-to-I servo replaces the idealized `Fbias` / `Fss_ramp` CCCS in `ldo_ilimit` and `ldo_softstart` | proposed | - |
+| [DR-0038](DR-0038-error-amp-stays-in-tree-against-gf180-opamp.md) | `error_amp` stays in tree -- `gf180-opamp`'s published amplifier is not comparable evidence, and what it does show is not a viable base | proposed | - |
