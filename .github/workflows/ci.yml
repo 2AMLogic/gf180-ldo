@@ -94,6 +94,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install uv (provides uvx for the pinned ruff lint gate)
+        run: python3 -m pip install --upgrade uv
+
       - name: Lint Python (ruff F + E9, correctness only)
         run: uvx ruff==0.16.10 check .
 
