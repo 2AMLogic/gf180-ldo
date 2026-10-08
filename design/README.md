@@ -511,10 +511,20 @@ python3 design/netlist.py --check    # verify committed netlists are current
 python3 design/netlist.py --cell error_amp -v
 ```
 
-Requirements: `xschem` on `PATH` and the gf180mcu PDK installed. PDK discovery
+Requirements: `xschem` **3.4.7** on `PATH` (enforced: any other version fails
+with `toolchain mismatch (found X, need 3.4.7)` before anything is netlisted;
+see `docs/environment-setup.md` section 2) and the gf180mcu PDK installed. PDK discovery
 is delegated to `sim/harness/pdk.py` -- the same resolver the corner runner
 uses -- so `python3 sim/run_corners.py --check-env` diagnoses a missing PDK
 for both.
+
+**Local pre-PR requirement.** CI does not install the pinned xschem (it is a
+source build; see `.github/workflows/ci.yml`), so it does not run the full
+export. Any PR touching `design/*.sch`, `design/xschemrc`, or
+`design/netlist.py` must run `python3 design/netlist.py --check` locally with
+xschem 3.4.7 and the PDK, and pass. CI's tool-free unit tests only guard the
+version gate and that `design/netlist.py`'s docs name no cell that is not in
+`design/*.sch`.
 
 Under the hood, per cell, with xschem's electrical rule check enabled:
 

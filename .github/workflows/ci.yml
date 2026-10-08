@@ -42,6 +42,13 @@ name: CI
 # `.options wnflag=1` model-bin pin is still honoured on that build (DR-0027 /
 # issue #254 confirms this ngspice-42 build's wnflag facts reproduce).
 #
+# design/netlist.py --check (issue #361) is NOT run in CI: it needs xschem
+# exactly 3.4.7, which has no apt/Homebrew package (ubuntu-latest ships 3.4.4,
+# which the export gate rejects) and so would need a Tcl/Tk source build on
+# every run that has not been verified here. It is a documented local pre-PR
+# step instead (design/README.md); sim/tests/test_xschem_export.py guards the
+# gate and docstring/cell consistency tool-free.
+#
 # Explicitly excluded from CI (not "checks", so nothing to wire up):
 #   - sim/devchar/**/run.sh, sim/devchar/run_all.sh, sim/devchar/lib/summarize.py
 #     regenerate the device-characterization CSVs under sim/devchar/*/results/.

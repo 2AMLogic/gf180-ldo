@@ -3,18 +3,23 @@
 
     python3 design/netlist.py            # regenerate design/netlist/*.spice
     python3 design/netlist.py --check    # verify committed netlists are current
-    python3 design/netlist.py --cell ldo_erramp_placeholder
+    python3 design/netlist.py --cell error_amp
 
 Every ``design/*.sch`` cell is netlisted **as a ``.subckt``** (never as a flat
 deck), with xschem's electrical rule check enabled (``xschem netlist -erc``),
 into ``design/netlist/<cell>.spice``:
 
 * ``ldo_core.spice`` carries the whole hierarchy -- ``ldo_core`` plus every
-  sub-circuit definition it instantiates (currently just
-  ``ldo_erramp_placeholder``).
-* ``ldo_erramp_placeholder.spice`` is that sub-circuit on its own, so a
-  testbench can target it in isolation (e.g. a future amp-only bench once
-  issue #9 replaces the placeholder).
+  sub-circuit definition it instantiates.
+* every other ``<cell>.spice`` is that sub-circuit on its own, so a testbench
+  can target it in isolation (e.g. an amp-only bench on ``error_amp``).
+
+The set of cells is discovered from ``design/*.sch`` at run time (see
+``cells()``); this docstring deliberately keeps no second inventory.
+
+The xschem used must be the pinned release (``XSCHEM_PINNED_VERSION`` in
+``sim/harness/xschem_export.py``); any other version fails before anything is
+netlisted or compared, with "toolchain mismatch (found X, need Y)".
 
 The export is deterministic: absolute paths that xschem records in ``sch_path``
 / ``sym_path`` comments are rewritten repo-relative, so the same sources produce
@@ -26,7 +31,7 @@ ERC reports a problem, or if a pinout/port-order invariant is broken.
 PDK discovery is delegated to ``sim/harness/pdk.py`` so the repo has exactly one
 implementation of "where is gf180mcu". Pattern adapted from
 2AMLogic/gf180-temp-por's design/netlist.py (see CLAUDE.md's harness-bootstrap
-note), trimmed to this repo's (currently two-cell) hierarchy. The xschem
+note), trimmed to this repo's hierarchy. The xschem
 invocation itself (batch flags, ERC-failure detection, output normalization)
 is likewise delegated to ``sim/harness/xschem_export.py``, shared with
 ``layout/drclvs.py``'s LVS netlist export.
