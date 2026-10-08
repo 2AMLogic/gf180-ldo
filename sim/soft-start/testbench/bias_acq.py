@@ -583,7 +583,7 @@ WAVE_VECTORS = (["time", "v(vin)", "v(vinr)", "v(en)", "v(vref)", "v(vout)"]
                 + [f"i(v.{INST[k]}.vacq_{e})" for k in SERVOS for e in ("cv", "st", "rb")])
 
 
-def extract_waveforms(raw: Path, out_csv: Path, max_rows: int = 6000) -> None:
+def extract_waveforms(raw: Path, out_csv: Path, max_rows: int = 2000) -> None:
     """Keep the internal-node vectors of an ngspice ASCII rawfile as CSV.
 
     Decimated to at most ``max_rows`` rows by uniform stride, always keeping

@@ -178,3 +178,94 @@ therefore **not** the current DUT and must not be read as a stale
 characterization of the shipped design — the record that owns it says so, and
 `sim/build_characterization_report.py` never looks at a snapshot whose
 record-id has no record file.
+
+## Bias acquisition of the DR-0037 servos (issue #352)
+
+`testbench/bias_acq.py` characterizes how both DR-0037 self-biased V-to-I
+servos acquire their bias: `ldo_ilimit` (`PB`/`VG`/`VX`, startup branch
+`Msx`/`Msd`/`Mst`) and `ldo_softstart` (`PB_SS`/`VG_SS`/`VX_SS`,
+`Msx_ss`/`Msd_ss`/`Mst_ss`). Both sit inside every `ldo_core` instance, so
+each run measures both. It exists because the DC solve of the DR-0037
+netlist needs gmin stepping, and a self-biased loop can have a zero-current
+state that a converged operating point does not rule out.
+
+```bash
+# full matrix (7 scenarios x 63 corners) through klt sim -> batch fleet
+KLT_CMD='uvx --from git+https://github.com/2AMLogic/klayout-tools.git@<sha> klt' \
+  python3 sim/soft-start/testbench/bias_acq.py --record-id <id>
+# one scenario, one corner, locally (debug; writes to --dest)
+python3 sim/soft-start/testbench/bias_acq.py --record-id x --scenario forced \
+  --only tt,27,3.30 --backend local --dest /tmp/bias-acq
+# waveform reference corners (rawfiles -> decimated internal-node CSVs)
+python3 sim/soft-start/testbench/bias_acq.py --record-id <id>-wave --waveforms \
+  --axes tt+ss,27+-40,3.30+2.97 --scenario encycle,powerup,forced,vreflate,negctl
+```
+
+`KLT_CMD` is optional. It points the harness at a pinned klt client in a
+throwaway environment and leaves the host install alone. Use it when the
+host client is older than a fix you need. Issue #352 needed it because only
+a client with klayout-tools#2827 reports *why* a fleet job failed.
+
+### Scenarios
+
+Each scenario is a separate `klt sim` job with a single `ldo_core`
+instance. A solver diagnostic on a corner therefore belongs to that scenario
+alone.
+
+| scenario | stimulus | how the start state is imposed |
+|---|---|---|
+| `op` | DC, EN = VIN | `.meas dc` at the first point of a sweep of a dummy source that is not connected to the circuit (the fleet runner rejects `measurements[].expr`). The first DC point is the same initial solve as `op`. |
+| `op_nodeset` | as `op`, with `.nodeset` PB = 3.0 V, VG = VX = 0 in both servos | a solver **hint** only. It shows which root Newton lands on from that guess. It is not evidence of physical startup. |
+| `encycle` | VIN steady. EN low from t = 0, high at 20 us, then off for 100 us, 1 us and 10 us | the t = 0 operating point is the *disabled* circuit, not the intended enabled root |
+| `powerup` | VIN 0 -> VIN over 100 us, EN tied to VIN | the t = 0 point is the unpowered, all-zero circuit |
+| `forced` | EN = VIN throughout. Ideal switches clamp PB -> VIN, VG -> VSS and VX -> VSS in both servos until 20 us, then open in 10 ns | the t = 0 point is **pinned** to the physically motivated inactive state: PMOS mirror off, no conveyor drive, no `Rbias` current. After release only the circuit itself can leave that state. Switch Ron = 10 ohm, Roff = 1e13 ohm (<= 0.4 pA at 3.63 V). |
+| `vreflate` | VIN and EN up. VREF = 0 until 20 us, then a 100 us ramp to 1.2 V | `Msx` (the startup inverter's PMOS) is supplied from VREF |
+| `negctl` | `forced`, with `Mst`/`Mst_ss` gates tied to VSS | **negative control**: with the startup devices disabled, the test must report `INACTIVE`. If it did not, the `forced` result would mean nothing. |
+
+Instrumentation is applied to a *copy* of the committed netlist. It inserts
+0 V ammeters in series with each servo's `Mconv` drain, its `Mst` drain and
+the top of `Rbias`/`Rss_bias`, plus the hold switches for `forced`/`negctl`.
+Each edit must match exactly once, or the driver refuses to run. The copy
+and its sha256 are kept beside the results.
+
+### What is measured, and the declared tolerances
+
+These values were fixed in `bias_acq.py` (`TOL`) before any matrix result
+was read. **None of them is a spec limit.**
+
+- **Acquisition time** `t_acq_us`: from the window edge to the first rising
+  crossing of `VX = 0.99 * VREF`. A measurement-only guard source steps
+  +10 V at the window end, so the `.meas` card always resolves. A crossing
+  at the step means the servo was *not acquired*. It does not mean the
+  measurement failed. If `VX` never leaves the 1 % band, `t_acq_us` is 0.
+- **Settled error**: `VX` must stay within +/-1 % of `VREF` over the last
+  40 us of the window.
+- **Bias relative to `VREF/R`**: `(VX - BB) / VREF` at the window end. This
+  equals `I(Mconv) / (VREF/R)` with R the same corner's own resistance,
+  because the `Rbias` ammeter carries the `Mconv` current. It must be within
+  1 %.
+- **Startup turn-off**: `I(Mst)` at the window end must be <= 1 % of the
+  servo's own bias current. The peak `I(Mst)` in the window is reported to
+  show whether the branch engaged.
+- **Intended EN = 0 shutdown versus enabled-inactive**: before each EN edge
+  that follows a >= 100 us off-time, `I(Mconv)` must be <= 1 % of the bias
+  acquired later in the same window. After a 1 us or 10 us off-time the
+  pre-edge current is reported but not graded, because the servo is still
+  discharging.
+- **Time resolution**: `tran` maximum step 50 ns. Every stimulus edge is a
+  PWL breakpoint, and the shortest event (the 1 us EN-off pulse) spans >= 20
+  steps.
+
+Verdicts per (corner, scenario, window, servo): `ACQUIRED`, `STARTUP_ON`
+(bias acquired, startup branch still conducting), `UNSETTLED` (active but
+outside tolerance), `INACTIVE` (bias < 10 % of `VREF/R` at the window end)
+and `INVALID`. `INVALID` covers an errored corner or a missing or non-finite
+value, and **never counts as acquired**. The solver path of the initial DC
+solve (`direct` / `dyn_gmin` / `true_gmin` / `src_step` / `failed`) is read
+from each corner's ngspice log and reported separately from the electrical
+verdict. A gmin fallback is a property of the solve. It does not by itself
+say anything about which state the circuit is in.
+
+A finite sweep of corners and stimuli supports *observed* robustness under
+the tested conditions. It does not prove that the operating point is
+mathematically unique.
