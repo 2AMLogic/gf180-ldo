@@ -7,6 +7,6 @@
     "check:ci": "bash sim/selftest.sh",
     "check:all": "bash sim/selftest.sh --require-pdk",
     "test": "python3 -m unittest discover -s sim/tests -t sim/tests",
-    "lint": "echo 'No linter configured for this Python/ngspice project.' && exit 0"
+    "lint": "uvx ruff==0.16.10 check ."
   }
 }
