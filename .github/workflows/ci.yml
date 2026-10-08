@@ -20,6 +20,10 @@ name: CI
 #                                       spec/decision-records/README.md; parser
 #                                       tests in sim/tests/test_decision_record_index.py,
 #                                       issue #362)
+#   - sim/check_append_only.py        (PR-only: fails if a PR modifies/deletes/
+#                                       renames committed evidence under
+#                                       sim/*/records, sim/*/corners, or
+#                                       layout/records; issue #371)
 #   - signoff/check.sh                (re-grades this block's T1 state from
 #                                       signoff/block-manifest.json via `klt
 #                                       signoff --manifest` and fails if a
@@ -80,6 +84,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the append-only check can diff origin/<base>...HEAD
+          # (merge-base needed); the repo is small.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -133,6 +141,14 @@ jobs:
         # line cannot be classified, so new records must follow TEMPLATE.md.
         # Parser unit tests: sim/tests/test_decision_record_index.py, run by
         # sim/selftest.sh above. No PDK needed.
+
+      - name: Verify evidence is append-only (PR only)
+        if: github.event_name == 'pull_request'
+        run: python3 sim/check_append_only.py --base "origin/${{ github.base_ref }}"
+        # Fails if a PR modifies, deletes, or renames anything under
+        # sim/*/records/, sim/*/corners/, or layout/records/ (only additions
+        # pass). Exceptions need a DR + sim/append-only-allowlist.txt entry.
+        # Classifier tests: sim/tests/test_check_append_only.py (issue #371).
 
   signoff-tier-report:
     name: T1 tier report (klt signoff --manifest, no PDK required)
