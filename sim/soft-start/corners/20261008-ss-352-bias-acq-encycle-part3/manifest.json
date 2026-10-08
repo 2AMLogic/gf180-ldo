@@ -1,0 +1,85 @@
+{
+ "backend_arg": null,
+ "command": [
+  "python3",
+  "sim/soft-start/testbench/bias_acq.py",
+  "--record-id",
+  "20261008-ss-352-bias-acq-encycle-part3",
+  "--scenario",
+  "encycle",
+  "--axes",
+  "sf+res_ff,-40+27+125,2.97+3.30+3.63"
+ ],
+ "dut": "design/netlist/ldo_core.spice",
+ "dut_sha256": "4f99a1a9dcf681be3b470b7f11c8cff1a7a3bc63b276f0aa909fe88dfef5e4e1",
+ "klt_cmd": [
+  "klt"
+ ],
+ "repo_head": "f6254b4ba753ae70234c83f2646e9244de35d552",
+ "scenarios": {
+  "encycle": {
+   "analysis": {
+    "args": "10n 730u 0 50n",
+    "kind": "tran"
+   },
+   "corners_returned": 18,
+   "environment": {
+    "engine": "ngspice",
+    "engine_version": "46",
+    "models_lib": {
+     "path": null,
+     "scope": "external"
+    },
+    "models_lib_sha256": "6edba54d23b38a2c60f8ffdbaa3eb75a7568c615e4820808969bd1121b77b1aa",
+    "netlist_sha256": "e6c58f2be852305f8b6d2aee30fab486f091f41d04a6c04ab1bc7b09c834b065",
+    "netlist_source": "schematic",
+    "ngspice_binary": "/usr/bin/ngspice",
+    "remote": {
+     "ami_id": "ami-0e40e3245f1923ac8",
+     "availability_zone": "us-east-1f",
+     "bucket": "<redacted>",
+     "concurrency": "1",
+     "elapsed_seconds": 1090,
+     "exit_code": "0",
+     "instance_id": "i-0e7091caf786d5acc",
+     "instance_type": "c7i.4xlarge",
+     "job_id": "klt-sim-f119310529e4",
+     "lifecycle": "spot",
+     "physical_cores": "8",
+     "provider": "aws-batch-fleet",
+     "region": "us-east-1",
+     "spot": true,
+     "state": "done"
+    }
+   },
+   "instrumented_sha256": "52fa97b329849b28cd8c470a44c76c120363bb6f4875d759355c41767bfd832c",
+   "provenance": {
+    "deck": {
+     "content_hash": "sha256:6edba54d23b38a2c60f8ffdbaa3eb75a7568c615e4820808969bd1121b77b1aa",
+     "name": "sm141064.ngspice",
+     "released": false
+    },
+    "input": {
+     "content_hash": "sha256:e6c58f2be852305f8b6d2aee30fab486f091f41d04a6c04ab1bc7b09c834b065",
+     "role": "netlist"
+    },
+    "klayout_version": "0.30.12",
+    "klt_version": "0.6.0+gb0d4369d5e5c",
+    "pdk": {
+     "name": "gf180mcuD",
+     "source": "search root: ~/.volare",
+     "version": "open_pdks c6d73a35f524070e85faff4a6a9eef49553ebc2b"
+    }
+   }
+  }
+ },
+ "tol": {
+  "ibias_err_frac": 0.01,
+  "inactive_frac": 0.1,
+  "settle_s": 4e-05,
+  "shutdown_frac": 0.01,
+  "startup_off_frac": 0.01,
+  "vx_err_frac": 0.01
+ },
+ "tran_tmax": "50n"
+}

@@ -99,3 +99,10 @@ Both blocks use the same real-device circuit (port lists unchanged):
   record, but that record no longer describes the committed DUT. A
   `loop-stability` re-mint against this DUT is part of the open matrix work
   above.
+
+- **Update (issue #352, no status change).** Bias-acquisition evidence for
+  both servos is in `sim/soft-start/records/20261008-ss-352-bias-acq.md`.
+  Within the tested stimuli and 63 PVT corners no persistent inactive state
+  was found with the startup branch present, and one persists without it.
+  Uniqueness, mismatch and other stimuli remain unverified there. This
+  record does not ratify DR-0037.

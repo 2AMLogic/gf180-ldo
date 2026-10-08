@@ -33,7 +33,9 @@ their own bench's bounds.
 from __future__ import annotations
 
 import json
+import os
 import random
+import shlex
 import shutil
 import subprocess
 import time
@@ -64,6 +66,16 @@ _CAP_REFUSAL = "exceeds BATCH_MAX_CONCURRENT_INSTANCES"
 
 class KltError(RuntimeError):
     pass
+
+
+def klt_cmd() -> list[str]:
+    """The ``klt`` invocation: ``$KLT_CMD`` (shell-split) or plain ``klt``.
+
+    Lets a run use a pinned client in a throwaway environment, e.g.
+    ``KLT_CMD='uvx --from git+https://github.com/2AMLogic/klayout-tools.git@<sha> klt'``,
+    without touching the host-wide install (issue #352).
+    """
+    return shlex.split(os.environ.get("KLT_CMD", "klt"))
 
 
 def process_axis(names=LDO_PROCESS) -> list[dict]:
@@ -132,7 +144,7 @@ def run(req: Path, outdir: Path, backend: str | None = None,
     ``$KLT_SIM_BACKEND``). Re-submits only on the fleet concurrency-cap
     refusal, within ``max_cap_wait_s``; any other failure raises.
     """
-    cmd = ["klt", "sim", str(req), "-o", str(outdir), "--format", "json"]
+    cmd = klt_cmd() + ["sim", str(req), "-o", str(outdir), "--format", "json"]
     if backend:
         cmd += ["--backend", backend]
     deadline = time.monotonic() + max_cap_wait_s
@@ -155,10 +167,26 @@ def run(req: Path, outdir: Path, backend: str | None = None,
         raise KltError(f"klt sim failed for {req} (exit {proc.returncode}):\n{message.strip()}")
 
 
+def redact(report: dict) -> dict:
+    """Copy of ``report`` safe to commit to this public repo.
+
+    The batch backend echoes the fleet's job bucket in
+    ``environment.remote.bucket``; its name carries deployment account detail
+    that klt's own docs deliberately never reproduce, so it is replaced here.
+    The job id, instance type and state -- what a reader needs to correlate a
+    run -- are kept.
+    """
+    out = json.loads(json.dumps(report))
+    remote = (out.get("environment") or {}).get("remote")
+    if isinstance(remote, dict) and "bucket" in remote:
+        remote["bucket"] = "<redacted>"
+    return out
+
+
 def collect(report: dict, job: Job, dest: Path, tag: str = "") -> dict[str, dict]:
     """Copy per-corner logs into ``dest`` and return {corner_id: {meas: value}}."""
     dest.mkdir(parents=True, exist_ok=True)
-    (dest / f"klt-report{tag}.json").write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
+    (dest / f"klt-report{tag}.json").write_text(json.dumps(redact(report), indent=1, sort_keys=True) + "\n")
     values: dict[str, dict] = {}
     for c in report.get("corners", []):
         cid = corner_id(c, job.supply_key)
