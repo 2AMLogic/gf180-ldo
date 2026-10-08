@@ -299,8 +299,18 @@ spec/          ratified spec + decision records
 design/        schematics / netlists (xschem)
 sim/           testbenches + PVT corner results (ngspice)
 layout/        GDS + DRC/LVS reports (klayout-tools driven)
+signoff/       T1 verdict of record, graded against the design-evidence ladder
+ratification/  EE and market ratification keys (rubrics, manifests)
+docs/          environment setup and challenge proposals
 measurements/  silicon characterization (empty until tape-out)
+reuse.lock.json  sibling blocks reused in-tree (status per block)
+WORK_PLAN.md   generated -- do not hand-edit
+WORK_LOG.md    generated -- do not hand-edit
 ```
+
+Tooling directories (`.agents/`, `.claude/`, `.github/`, `.loom/`) hold agent
+and CI configuration, not design content. Where a directory has its own
+`README.md`, that carries the detail.
 
 ## Environment Setup
 
