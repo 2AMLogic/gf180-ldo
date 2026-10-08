@@ -53,13 +53,45 @@ BETA_INV = 1.5                # 1/beta = Vout/Vref
 SAMPLE_RE = re.compile(r'"?MCSAMPLE\s+(\d+)\s+(.*?)"?\s*$')
 
 
+class RollupError(ValueError):
+    """A corner log set that cannot be rolled up without silently dropping data."""
+
+
 def read_corner(path: pathlib.Path) -> list[float]:
+    """Every per-sample dVout in ``path``, in iteration order.
+
+    Fails loud (``RollupError``) rather than returning a partial sample set:
+    every ``MCSAMPLE`` line must carry the same number of values as the first
+    (a truncated line would otherwise drop DUT copies silently), and the
+    iteration indices must run 0, 1, 2, ... with no gap or repeat (a missing
+    line would otherwise drop a whole solve silently). A log with no
+    ``MCSAMPLE`` line at all returns ``[]``; ``rollup`` decides whether that
+    is an error.
+    """
     samples: list[float] = []
-    for line in path.read_text().splitlines():
+    width = None
+    expected_iter = 0
+    for lineno, line in enumerate(path.read_text().splitlines(), 1):
         match = SAMPLE_RE.match(line.strip())
         if not match:
             continue
-        samples.extend(float(v) for v in match.group(2).split())
+        iteration = int(match.group(1))
+        if iteration != expected_iter:
+            raise RollupError(
+                f"{path.name}:{lineno}: MCSAMPLE iteration {iteration}, expected "
+                f"{expected_iter} (missing or out-of-order sample line)")
+        expected_iter += 1
+        try:
+            values = [float(v) for v in match.group(2).split()]
+        except ValueError as exc:
+            raise RollupError(f"{path.name}:{lineno}: unparsable MCSAMPLE value: {exc}") from None
+        if width is None:
+            width = len(values)
+        if not values or len(values) != width:
+            raise RollupError(
+                f"{path.name}:{lineno}: MCSAMPLE line has {len(values)} values, "
+                f"expected {width} (truncated sample line)")
+        samples.extend(values)
     return samples
 
 
@@ -98,6 +130,79 @@ def histogram(values: list[float], bins: int = 25, width: int = 54) -> list[str]
     return out
 
 
+def rollup(corner_dir: pathlib.Path) -> dict:
+    """Read every ``*.log`` under ``corner_dir`` and compute every number the
+    report prints. Pure: no printing, no writing.
+
+    Raises ``RollupError`` if there are no sample lines at all, if some logs
+    carry samples and others carry none (a corner that silently drops out of
+    the worst-corner search is exactly the partial rollup this guards
+    against), or if the corners do not all carry the same number of samples.
+    """
+    per_corner = {}
+    empty = []
+    for path in sorted(corner_dir.glob("*.log")):
+        values = read_corner(path)
+        if values:
+            per_corner[path.stem] = values
+        else:
+            empty.append(path.name)
+    if not per_corner:
+        raise RollupError(f"no MCSAMPLE lines under {corner_dir}")
+    if empty:
+        raise RollupError(f"no MCSAMPLE lines in {', '.join(empty)} under {corner_dir} "
+                          f"(the other {len(per_corner)} corner logs have them)")
+    counts = {corner: len(values) for corner, values in per_corner.items()}
+    if len(set(counts.values())) != 1:
+        raise RollupError(f"corners carry different sample counts under {corner_dir}: {counts}")
+
+    pooled = [v for values in per_corner.values() for v in values]
+    rows = [(corner, stats(values)) for corner, values in per_corner.items()]
+    worst_sigma = max(rows, key=lambda r: r[1]["sd"])
+    worst_mean = max(rows, key=lambda r: abs(r[1]["mean"]))
+    worst_sample = max(rows, key=lambda r: r[1]["worst_abs"])
+
+    centred = []
+    for corner, st in rows:
+        centred.extend((v - st["mean"]) / st["sd"] for v in per_corner[corner])
+
+    amp_3sigma = 3 * worst_sigma[1]["sd"]
+    stat_rss = math.hypot(amp_3sigma, DIVIDER_3SIGMA_MV)
+    det_ratified = SYSTEMATIC_MV + LINE_REG_MV
+    det_measured = abs(worst_mean[1]["mean"])
+    total_ratified = stat_rss + det_ratified
+    total_measured = stat_rss + det_measured
+
+    sigma_combined = math.hypot(worst_sigma[1]["sd"], DIVIDER_3SIGMA_MV / 3)
+    headroom = WINDOW_MV - LOAD_REG_MV - det_ratified
+    k_sigma = headroom / sigma_combined
+    yield_frac = 2 * normal_cdf(k_sigma) - 1
+
+    ratio = amp_3sigma / TARGET_OUT_3SIGMA_MV
+    return {
+        "per_corner": per_corner,
+        "pooled": pooled,
+        "pooled_stats": stats(pooled),
+        "rows": rows,
+        "worst_sigma": worst_sigma,
+        "worst_mean": worst_mean,
+        "worst_sample": worst_sample,
+        "centred": centred,
+        "amp_3sigma": amp_3sigma,
+        "stat_rss": stat_rss,
+        "det_ratified": det_ratified,
+        "det_measured": det_measured,
+        "total_ratified": total_ratified,
+        "total_measured": total_measured,
+        "sigma_combined": sigma_combined,
+        "headroom": headroom,
+        "k_sigma": k_sigma,
+        "yield_frac": yield_frac,
+        "ratio": ratio,
+        "verdict": "PASS" if ratio <= 1.0 else "FAIL",
+    }
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -108,17 +213,23 @@ def main() -> int:
         print(f"no such record: {corner_dir}", file=sys.stderr)
         return 2
 
-    per_corner = {}
-    for path in sorted(corner_dir.glob("*.log")):
-        values = read_corner(path)
-        if values:
-            per_corner[path.stem] = values
-    if not per_corner:
-        print(f"no MCSAMPLE lines under {corner_dir}", file=sys.stderr)
+    try:
+        r = rollup(corner_dir)
+    except RollupError as exc:
+        print(exc, file=sys.stderr)
         return 2
-
-    pooled = [v for values in per_corner.values() for v in values]
-    pooled_stats = stats(pooled)
+    per_corner = r["per_corner"]
+    pooled = r["pooled"]
+    pooled_stats = r["pooled_stats"]
+    rows = r["rows"]
+    worst_sigma, worst_mean, worst_sample = r["worst_sigma"], r["worst_mean"], r["worst_sample"]
+    centred = r["centred"]
+    amp_3sigma, stat_rss = r["amp_3sigma"], r["stat_rss"]
+    det_ratified, det_measured = r["det_ratified"], r["det_measured"]
+    total_ratified, total_measured = r["total_ratified"], r["total_measured"]
+    sigma_combined, headroom = r["sigma_combined"], r["headroom"]
+    k_sigma, yield_frac = r["k_sigma"], r["yield_frac"]
+    ratio, verdict = r["ratio"], r["verdict"]
 
     print(f"# mc-output-accuracy rollup -- record {record_id}\n")
     print(f"Corners: {len(per_corner)}   samples/corner: "
@@ -128,17 +239,11 @@ def main() -> int:
     print("## Per-corner distribution (output-referred, mV from 1.8 V)\n")
     print("| corner-id | N | mean | sigma | 3 sigma | min | max | in-referred 3 sigma |")
     print("|---|---|---|---|---|---|---|---|")
-    rows = []
-    for corner, values in per_corner.items():
-        st = stats(values)
-        rows.append((corner, st))
+    for corner, st in rows:
         print(f"| `{corner}` | {st['n']} | {st['mean']:+.3f} | {st['sd']:.3f} | "
               f"{3*st['sd']:.3f} | {st['min']:+.3f} | {st['max']:+.3f} | "
               f"{3*st['sd']/BETA_INV:.3f} |")
 
-    worst_sigma = max(rows, key=lambda r: r[1]["sd"])
-    worst_mean = max(rows, key=lambda r: abs(r[1]["mean"]))
-    worst_sample = max(rows, key=lambda r: r[1]["worst_abs"])
     print()
     print(f"- Worst sigma:            `{worst_sigma[0]}`  sigma = {worst_sigma[1]['sd']:.3f} mV, "
           f"3 sigma = {3*worst_sigma[1]['sd']:.3f} mV out / "
@@ -162,10 +267,6 @@ def main() -> int:
 
     # ---- normality cross-check (centred per corner) ------------------------
     print("\n## Normality cross-check (each corner centred on its own mean)\n")
-    centred = []
-    for values in per_corner.values():
-        st = stats(values)
-        centred.extend((v - st["mean"]) / st["sd"] for v in values)
     print("| within | observed | Gaussian |")
     print("|---|---|---|")
     for k in (1, 2, 3):
@@ -176,13 +277,6 @@ def main() -> int:
           f"{max(abs(z) for z in centred):.2f} sigma")
 
     # ---- the combine -------------------------------------------------------
-    amp_3sigma = 3 * worst_sigma[1]["sd"]
-    stat_rss = math.hypot(amp_3sigma, DIVIDER_3SIGMA_MV)
-    det_ratified = SYSTEMATIC_MV + LINE_REG_MV
-    det_measured = abs(worst_mean[1]["mean"])
-    total_ratified = stat_rss + det_ratified
-    total_measured = stat_rss + det_measured
-
     print("\n## Combine against the ratified window (design/error_amp.md S3 method)\n")
     print("Statistical terms RSS at a common 3 sigma; deterministic terms add linearly;")
     print("everything output-referred through 1/beta = 1.5.\n")
@@ -206,10 +300,6 @@ def main() -> int:
           f"**{100*(1 - (total_ratified + LOAD_REG_MV)/WINDOW_MV):.0f} % margin** |")
 
     # ---- yield -------------------------------------------------------------
-    sigma_combined = math.hypot(worst_sigma[1]["sd"], DIVIDER_3SIGMA_MV / 3)
-    headroom = WINDOW_MV - LOAD_REG_MV - det_ratified
-    k_sigma = headroom / sigma_combined
-    yield_frac = 2 * normal_cdf(k_sigma) - 1
     print("\n## Yield\n")
     print(f"- Combined statistical 1 sigma (amp RSS divider): {sigma_combined:.3f} mV")
     print("- Headroom after the deterministic terms and the load-regulation")
@@ -225,8 +315,6 @@ def main() -> int:
           f"{amp_3sigma/BETA_INV:.2f} mV input-referred** (3 sigma)")
     print(f"- S3.1 calculated target:             {TARGET_OUT_3SIGMA_MV:.2f} mV out / "
           f"{TARGET_IN_3SIGMA_MV:.2f} mV in (3 sigma)")
-    ratio = amp_3sigma / TARGET_OUT_3SIGMA_MV
-    verdict = "PASS" if ratio <= 1.0 else "FAIL"
     print(f"- Measured / calculated = {ratio:.3f} -> **{verdict}**")
     return 0
 
