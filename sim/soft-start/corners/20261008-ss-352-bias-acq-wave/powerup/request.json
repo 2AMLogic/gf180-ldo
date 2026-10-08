@@ -1,0 +1,164 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vin": [
+        3.3,
+        2.97
+      ]
+    },
+    "temperature_c": [
+      27.0,
+      -40.0
+    ]
+  },
+  "analysis": {
+    "kind": "tran",
+    "args": "10n 260u 0 50n"
+  },
+  "measurements": [
+    {
+      "name": "w1_il_vx_end",
+      "spice": ".meas tran w1_il_vx_end FIND v(xdut.xilimit.vx) AT=0.000259"
+    },
+    {
+      "name": "w1_il_bb_end",
+      "spice": ".meas tran w1_il_bb_end FIND v(xdut.xilimit.bb) AT=0.000259"
+    },
+    {
+      "name": "w1_il_pb_end",
+      "spice": ".meas tran w1_il_pb_end FIND v(xdut.xilimit.pb) AT=0.000259"
+    },
+    {
+      "name": "w1_il_vg_end",
+      "spice": ".meas tran w1_il_vg_end FIND v(xdut.xilimit.vg) AT=0.000259"
+    },
+    {
+      "name": "w1_il_vsu_end",
+      "spice": ".meas tran w1_il_vsu_end FIND v(xdut.xilimit.vsu) AT=0.000259"
+    },
+    {
+      "name": "w1_il_icv_end",
+      "spice": ".meas tran w1_il_icv_end FIND i(v.xdut.xilimit.vacq_cv) AT=0.000259"
+    },
+    {
+      "name": "w1_il_irb_end",
+      "spice": ".meas tran w1_il_irb_end FIND i(v.xdut.xilimit.vacq_rb) AT=0.000259"
+    },
+    {
+      "name": "w1_il_ist_end",
+      "spice": ".meas tran w1_il_ist_end FIND i(v.xdut.xilimit.vacq_st) AT=0.000259"
+    },
+    {
+      "name": "w1_il_vx_setmax",
+      "spice": ".meas tran w1_il_vx_setmax MAX v(xdut.xilimit.vx) FROM=0.00022 TO=0.000259"
+    },
+    {
+      "name": "w1_il_vx_setmin",
+      "spice": ".meas tran w1_il_vx_setmin MIN v(xdut.xilimit.vx) FROM=0.00022 TO=0.000259"
+    },
+    {
+      "name": "w1_il_vx_winmin",
+      "spice": ".meas tran w1_il_vx_winmin MIN v(xdut.xilimit.vx) FROM=1e-05 TO=0.000259"
+    },
+    {
+      "name": "w1_il_ist_peak",
+      "spice": ".meas tran w1_il_ist_peak MAX i(v.xdut.xilimit.vacq_st) FROM=1e-05 TO=0.000259"
+    },
+    {
+      "name": "w1_il_t99",
+      "spice": ".meas tran w1_il_t99 WHEN v(acq_il_w1)=0 RISE=1 TD=1e-05"
+    },
+    {
+      "name": "w1_ss_vx_end",
+      "spice": ".meas tran w1_ss_vx_end FIND v(xdut.xsoftstart.vx_ss) AT=0.000259"
+    },
+    {
+      "name": "w1_ss_bb_end",
+      "spice": ".meas tran w1_ss_bb_end FIND v(xdut.xsoftstart.bb) AT=0.000259"
+    },
+    {
+      "name": "w1_ss_pb_end",
+      "spice": ".meas tran w1_ss_pb_end FIND v(xdut.xsoftstart.pb_ss) AT=0.000259"
+    },
+    {
+      "name": "w1_ss_vg_end",
+      "spice": ".meas tran w1_ss_vg_end FIND v(xdut.xsoftstart.vg_ss) AT=0.000259"
+    },
+    {
+      "name": "w1_ss_vsu_end",
+      "spice": ".meas tran w1_ss_vsu_end FIND v(xdut.xsoftstart.vsu_ss) AT=0.000259"
+    },
+    {
+      "name": "w1_ss_icv_end",
+      "spice": ".meas tran w1_ss_icv_end FIND i(v.xdut.xsoftstart.vacq_cv) AT=0.000259"
+    },
+    {
+      "name": "w1_ss_irb_end",
+      "spice": ".meas tran w1_ss_irb_end FIND i(v.xdut.xsoftstart.vacq_rb) AT=0.000259"
+    },
+    {
+      "name": "w1_ss_ist_end",
+      "spice": ".meas tran w1_ss_ist_end FIND i(v.xdut.xsoftstart.vacq_st) AT=0.000259"
+    },
+    {
+      "name": "w1_ss_vx_setmax",
+      "spice": ".meas tran w1_ss_vx_setmax MAX v(xdut.xsoftstart.vx_ss) FROM=0.00022 TO=0.000259"
+    },
+    {
+      "name": "w1_ss_vx_setmin",
+      "spice": ".meas tran w1_ss_vx_setmin MIN v(xdut.xsoftstart.vx_ss) FROM=0.00022 TO=0.000259"
+    },
+    {
+      "name": "w1_ss_vx_winmin",
+      "spice": ".meas tran w1_ss_vx_winmin MIN v(xdut.xsoftstart.vx_ss) FROM=1e-05 TO=0.000259"
+    },
+    {
+      "name": "w1_ss_ist_peak",
+      "spice": ".meas tran w1_ss_ist_peak MAX i(v.xdut.xsoftstart.vacq_st) FROM=1e-05 TO=0.000259"
+    },
+    {
+      "name": "w1_ss_t99",
+      "spice": ".meas tran w1_ss_t99 WHEN v(acq_ss_w1)=0 RISE=1 TD=1e-05"
+    },
+    {
+      "name": "w1_vref_end",
+      "spice": ".meas tran w1_vref_end FIND v(vref) AT=0.000259"
+    }
+  ],
+  "options": {
+    "timeout_s": 5400,
+    "keep_artifacts": true,
+    "waveforms": true
+  }
+}

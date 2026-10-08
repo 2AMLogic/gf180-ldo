@@ -181,6 +181,8 @@ record-id has no record file.
 
 ## Bias acquisition of the DR-0037 servos (issue #352)
 
+Results: `records/20261008-ss-352-bias-acq.md`. The fleet limits one batch job to 3600 s; the full `encycle` grid (about 60 s per corner) exceeds that, so run it with `--axes` in subsets of at most 18 corners.
+
 `testbench/bias_acq.py` characterizes how both DR-0037 self-biased V-to-I
 servos acquire their bias: `ldo_ilimit` (`PB`/`VG`/`VX`, startup branch
 `Msx`/`Msd`/`Mst`) and `ldo_softstart` (`PB_SS`/`VG_SS`/`VX_SS`,

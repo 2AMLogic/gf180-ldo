@@ -1,0 +1,640 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "fs",
+        "sections": [
+          "fs",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "sf",
+        "sections": [
+          "sf",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ff",
+        "sections": [
+          "typical",
+          "res_ff",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ss",
+        "sections": [
+          "typical",
+          "res_ss",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vin": [
+        2.97,
+        3.3,
+        3.63
+      ]
+    },
+    "temperature_c": [
+      -40,
+      27,
+      125
+    ]
+  },
+  "analysis": {
+    "kind": "tran",
+    "args": "10n 730u 0 50n"
+  },
+  "measurements": [
+    {
+      "name": "w1_il_vx_end",
+      "spice": ".meas tran w1_il_vx_end FIND v(xdut.xilimit.vx) AT=0.000169"
+    },
+    {
+      "name": "w1_il_bb_end",
+      "spice": ".meas tran w1_il_bb_end FIND v(xdut.xilimit.bb) AT=0.000169"
+    },
+    {
+      "name": "w1_il_pb_end",
+      "spice": ".meas tran w1_il_pb_end FIND v(xdut.xilimit.pb) AT=0.000169"
+    },
+    {
+      "name": "w1_il_vg_end",
+      "spice": ".meas tran w1_il_vg_end FIND v(xdut.xilimit.vg) AT=0.000169"
+    },
+    {
+      "name": "w1_il_vsu_end",
+      "spice": ".meas tran w1_il_vsu_end FIND v(xdut.xilimit.vsu) AT=0.000169"
+    },
+    {
+      "name": "w1_il_icv_end",
+      "spice": ".meas tran w1_il_icv_end FIND i(v.xdut.xilimit.vacq_cv) AT=0.000169"
+    },
+    {
+      "name": "w1_il_irb_end",
+      "spice": ".meas tran w1_il_irb_end FIND i(v.xdut.xilimit.vacq_rb) AT=0.000169"
+    },
+    {
+      "name": "w1_il_ist_end",
+      "spice": ".meas tran w1_il_ist_end FIND i(v.xdut.xilimit.vacq_st) AT=0.000169"
+    },
+    {
+      "name": "w1_il_vx_setmax",
+      "spice": ".meas tran w1_il_vx_setmax MAX v(xdut.xilimit.vx) FROM=0.00013 TO=0.000169"
+    },
+    {
+      "name": "w1_il_vx_setmin",
+      "spice": ".meas tran w1_il_vx_setmin MIN v(xdut.xilimit.vx) FROM=0.00013 TO=0.000169"
+    },
+    {
+      "name": "w1_il_vx_winmin",
+      "spice": ".meas tran w1_il_vx_winmin MIN v(xdut.xilimit.vx) FROM=2e-05 TO=0.000169"
+    },
+    {
+      "name": "w1_il_ist_peak",
+      "spice": ".meas tran w1_il_ist_peak MAX i(v.xdut.xilimit.vacq_st) FROM=2e-05 TO=0.000169"
+    },
+    {
+      "name": "w1_il_t99",
+      "spice": ".meas tran w1_il_t99 WHEN v(acq_il_w1)=0 RISE=1 TD=2e-05"
+    },
+    {
+      "name": "w1_il_vx_pre",
+      "spice": ".meas tran w1_il_vx_pre FIND v(xdut.xilimit.vx) AT=1.95e-05"
+    },
+    {
+      "name": "w1_il_pb_pre",
+      "spice": ".meas tran w1_il_pb_pre FIND v(xdut.xilimit.pb) AT=1.95e-05"
+    },
+    {
+      "name": "w1_il_icv_pre",
+      "spice": ".meas tran w1_il_icv_pre FIND i(v.xdut.xilimit.vacq_cv) AT=1.95e-05"
+    },
+    {
+      "name": "w1_ss_vx_end",
+      "spice": ".meas tran w1_ss_vx_end FIND v(xdut.xsoftstart.vx_ss) AT=0.000169"
+    },
+    {
+      "name": "w1_ss_bb_end",
+      "spice": ".meas tran w1_ss_bb_end FIND v(xdut.xsoftstart.bb) AT=0.000169"
+    },
+    {
+      "name": "w1_ss_pb_end",
+      "spice": ".meas tran w1_ss_pb_end FIND v(xdut.xsoftstart.pb_ss) AT=0.000169"
+    },
+    {
+      "name": "w1_ss_vg_end",
+      "spice": ".meas tran w1_ss_vg_end FIND v(xdut.xsoftstart.vg_ss) AT=0.000169"
+    },
+    {
+      "name": "w1_ss_vsu_end",
+      "spice": ".meas tran w1_ss_vsu_end FIND v(xdut.xsoftstart.vsu_ss) AT=0.000169"
+    },
+    {
+      "name": "w1_ss_icv_end",
+      "spice": ".meas tran w1_ss_icv_end FIND i(v.xdut.xsoftstart.vacq_cv) AT=0.000169"
+    },
+    {
+      "name": "w1_ss_irb_end",
+      "spice": ".meas tran w1_ss_irb_end FIND i(v.xdut.xsoftstart.vacq_rb) AT=0.000169"
+    },
+    {
+      "name": "w1_ss_ist_end",
+      "spice": ".meas tran w1_ss_ist_end FIND i(v.xdut.xsoftstart.vacq_st) AT=0.000169"
+    },
+    {
+      "name": "w1_ss_vx_setmax",
+      "spice": ".meas tran w1_ss_vx_setmax MAX v(xdut.xsoftstart.vx_ss) FROM=0.00013 TO=0.000169"
+    },
+    {
+      "name": "w1_ss_vx_setmin",
+      "spice": ".meas tran w1_ss_vx_setmin MIN v(xdut.xsoftstart.vx_ss) FROM=0.00013 TO=0.000169"
+    },
+    {
+      "name": "w1_ss_vx_winmin",
+      "spice": ".meas tran w1_ss_vx_winmin MIN v(xdut.xsoftstart.vx_ss) FROM=2e-05 TO=0.000169"
+    },
+    {
+      "name": "w1_ss_ist_peak",
+      "spice": ".meas tran w1_ss_ist_peak MAX i(v.xdut.xsoftstart.vacq_st) FROM=2e-05 TO=0.000169"
+    },
+    {
+      "name": "w1_ss_t99",
+      "spice": ".meas tran w1_ss_t99 WHEN v(acq_ss_w1)=0 RISE=1 TD=2e-05"
+    },
+    {
+      "name": "w1_ss_vx_pre",
+      "spice": ".meas tran w1_ss_vx_pre FIND v(xdut.xsoftstart.vx_ss) AT=1.95e-05"
+    },
+    {
+      "name": "w1_ss_pb_pre",
+      "spice": ".meas tran w1_ss_pb_pre FIND v(xdut.xsoftstart.pb_ss) AT=1.95e-05"
+    },
+    {
+      "name": "w1_ss_icv_pre",
+      "spice": ".meas tran w1_ss_icv_pre FIND i(v.xdut.xsoftstart.vacq_cv) AT=1.95e-05"
+    },
+    {
+      "name": "w1_vref_end",
+      "spice": ".meas tran w1_vref_end FIND v(vref) AT=0.000169"
+    },
+    {
+      "name": "w2_il_vx_end",
+      "spice": ".meas tran w2_il_vx_end FIND v(xdut.xilimit.vx) AT=0.000419"
+    },
+    {
+      "name": "w2_il_bb_end",
+      "spice": ".meas tran w2_il_bb_end FIND v(xdut.xilimit.bb) AT=0.000419"
+    },
+    {
+      "name": "w2_il_pb_end",
+      "spice": ".meas tran w2_il_pb_end FIND v(xdut.xilimit.pb) AT=0.000419"
+    },
+    {
+      "name": "w2_il_vg_end",
+      "spice": ".meas tran w2_il_vg_end FIND v(xdut.xilimit.vg) AT=0.000419"
+    },
+    {
+      "name": "w2_il_vsu_end",
+      "spice": ".meas tran w2_il_vsu_end FIND v(xdut.xilimit.vsu) AT=0.000419"
+    },
+    {
+      "name": "w2_il_icv_end",
+      "spice": ".meas tran w2_il_icv_end FIND i(v.xdut.xilimit.vacq_cv) AT=0.000419"
+    },
+    {
+      "name": "w2_il_irb_end",
+      "spice": ".meas tran w2_il_irb_end FIND i(v.xdut.xilimit.vacq_rb) AT=0.000419"
+    },
+    {
+      "name": "w2_il_ist_end",
+      "spice": ".meas tran w2_il_ist_end FIND i(v.xdut.xilimit.vacq_st) AT=0.000419"
+    },
+    {
+      "name": "w2_il_vx_setmax",
+      "spice": ".meas tran w2_il_vx_setmax MAX v(xdut.xilimit.vx) FROM=0.00038 TO=0.000419"
+    },
+    {
+      "name": "w2_il_vx_setmin",
+      "spice": ".meas tran w2_il_vx_setmin MIN v(xdut.xilimit.vx) FROM=0.00038 TO=0.000419"
+    },
+    {
+      "name": "w2_il_vx_winmin",
+      "spice": ".meas tran w2_il_vx_winmin MIN v(xdut.xilimit.vx) FROM=0.00027 TO=0.000419"
+    },
+    {
+      "name": "w2_il_ist_peak",
+      "spice": ".meas tran w2_il_ist_peak MAX i(v.xdut.xilimit.vacq_st) FROM=0.00027 TO=0.000419"
+    },
+    {
+      "name": "w2_il_t99",
+      "spice": ".meas tran w2_il_t99 WHEN v(acq_il_w2)=0 RISE=1 TD=0.00027"
+    },
+    {
+      "name": "w2_il_vx_pre",
+      "spice": ".meas tran w2_il_vx_pre FIND v(xdut.xilimit.vx) AT=0.0002695"
+    },
+    {
+      "name": "w2_il_pb_pre",
+      "spice": ".meas tran w2_il_pb_pre FIND v(xdut.xilimit.pb) AT=0.0002695"
+    },
+    {
+      "name": "w2_il_icv_pre",
+      "spice": ".meas tran w2_il_icv_pre FIND i(v.xdut.xilimit.vacq_cv) AT=0.0002695"
+    },
+    {
+      "name": "w2_ss_vx_end",
+      "spice": ".meas tran w2_ss_vx_end FIND v(xdut.xsoftstart.vx_ss) AT=0.000419"
+    },
+    {
+      "name": "w2_ss_bb_end",
+      "spice": ".meas tran w2_ss_bb_end FIND v(xdut.xsoftstart.bb) AT=0.000419"
+    },
+    {
+      "name": "w2_ss_pb_end",
+      "spice": ".meas tran w2_ss_pb_end FIND v(xdut.xsoftstart.pb_ss) AT=0.000419"
+    },
+    {
+      "name": "w2_ss_vg_end",
+      "spice": ".meas tran w2_ss_vg_end FIND v(xdut.xsoftstart.vg_ss) AT=0.000419"
+    },
+    {
+      "name": "w2_ss_vsu_end",
+      "spice": ".meas tran w2_ss_vsu_end FIND v(xdut.xsoftstart.vsu_ss) AT=0.000419"
+    },
+    {
+      "name": "w2_ss_icv_end",
+      "spice": ".meas tran w2_ss_icv_end FIND i(v.xdut.xsoftstart.vacq_cv) AT=0.000419"
+    },
+    {
+      "name": "w2_ss_irb_end",
+      "spice": ".meas tran w2_ss_irb_end FIND i(v.xdut.xsoftstart.vacq_rb) AT=0.000419"
+    },
+    {
+      "name": "w2_ss_ist_end",
+      "spice": ".meas tran w2_ss_ist_end FIND i(v.xdut.xsoftstart.vacq_st) AT=0.000419"
+    },
+    {
+      "name": "w2_ss_vx_setmax",
+      "spice": ".meas tran w2_ss_vx_setmax MAX v(xdut.xsoftstart.vx_ss) FROM=0.00038 TO=0.000419"
+    },
+    {
+      "name": "w2_ss_vx_setmin",
+      "spice": ".meas tran w2_ss_vx_setmin MIN v(xdut.xsoftstart.vx_ss) FROM=0.00038 TO=0.000419"
+    },
+    {
+      "name": "w2_ss_vx_winmin",
+      "spice": ".meas tran w2_ss_vx_winmin MIN v(xdut.xsoftstart.vx_ss) FROM=0.00027 TO=0.000419"
+    },
+    {
+      "name": "w2_ss_ist_peak",
+      "spice": ".meas tran w2_ss_ist_peak MAX i(v.xdut.xsoftstart.vacq_st) FROM=0.00027 TO=0.000419"
+    },
+    {
+      "name": "w2_ss_t99",
+      "spice": ".meas tran w2_ss_t99 WHEN v(acq_ss_w2)=0 RISE=1 TD=0.00027"
+    },
+    {
+      "name": "w2_ss_vx_pre",
+      "spice": ".meas tran w2_ss_vx_pre FIND v(xdut.xsoftstart.vx_ss) AT=0.0002695"
+    },
+    {
+      "name": "w2_ss_pb_pre",
+      "spice": ".meas tran w2_ss_pb_pre FIND v(xdut.xsoftstart.pb_ss) AT=0.0002695"
+    },
+    {
+      "name": "w2_ss_icv_pre",
+      "spice": ".meas tran w2_ss_icv_pre FIND i(v.xdut.xsoftstart.vacq_cv) AT=0.0002695"
+    },
+    {
+      "name": "w2_vref_end",
+      "spice": ".meas tran w2_vref_end FIND v(vref) AT=0.000419"
+    },
+    {
+      "name": "w3_il_vx_end",
+      "spice": ".meas tran w3_il_vx_end FIND v(xdut.xilimit.vx) AT=0.000569"
+    },
+    {
+      "name": "w3_il_bb_end",
+      "spice": ".meas tran w3_il_bb_end FIND v(xdut.xilimit.bb) AT=0.000569"
+    },
+    {
+      "name": "w3_il_pb_end",
+      "spice": ".meas tran w3_il_pb_end FIND v(xdut.xilimit.pb) AT=0.000569"
+    },
+    {
+      "name": "w3_il_vg_end",
+      "spice": ".meas tran w3_il_vg_end FIND v(xdut.xilimit.vg) AT=0.000569"
+    },
+    {
+      "name": "w3_il_vsu_end",
+      "spice": ".meas tran w3_il_vsu_end FIND v(xdut.xilimit.vsu) AT=0.000569"
+    },
+    {
+      "name": "w3_il_icv_end",
+      "spice": ".meas tran w3_il_icv_end FIND i(v.xdut.xilimit.vacq_cv) AT=0.000569"
+    },
+    {
+      "name": "w3_il_irb_end",
+      "spice": ".meas tran w3_il_irb_end FIND i(v.xdut.xilimit.vacq_rb) AT=0.000569"
+    },
+    {
+      "name": "w3_il_ist_end",
+      "spice": ".meas tran w3_il_ist_end FIND i(v.xdut.xilimit.vacq_st) AT=0.000569"
+    },
+    {
+      "name": "w3_il_vx_setmax",
+      "spice": ".meas tran w3_il_vx_setmax MAX v(xdut.xilimit.vx) FROM=0.00053 TO=0.000569"
+    },
+    {
+      "name": "w3_il_vx_setmin",
+      "spice": ".meas tran w3_il_vx_setmin MIN v(xdut.xilimit.vx) FROM=0.00053 TO=0.000569"
+    },
+    {
+      "name": "w3_il_vx_winmin",
+      "spice": ".meas tran w3_il_vx_winmin MIN v(xdut.xilimit.vx) FROM=0.000421 TO=0.000569"
+    },
+    {
+      "name": "w3_il_ist_peak",
+      "spice": ".meas tran w3_il_ist_peak MAX i(v.xdut.xilimit.vacq_st) FROM=0.000421 TO=0.000569"
+    },
+    {
+      "name": "w3_il_t99",
+      "spice": ".meas tran w3_il_t99 WHEN v(acq_il_w3)=0 RISE=1 TD=0.000421"
+    },
+    {
+      "name": "w3_il_vx_pre",
+      "spice": ".meas tran w3_il_vx_pre FIND v(xdut.xilimit.vx) AT=0.0004205"
+    },
+    {
+      "name": "w3_il_pb_pre",
+      "spice": ".meas tran w3_il_pb_pre FIND v(xdut.xilimit.pb) AT=0.0004205"
+    },
+    {
+      "name": "w3_il_icv_pre",
+      "spice": ".meas tran w3_il_icv_pre FIND i(v.xdut.xilimit.vacq_cv) AT=0.0004205"
+    },
+    {
+      "name": "w3_ss_vx_end",
+      "spice": ".meas tran w3_ss_vx_end FIND v(xdut.xsoftstart.vx_ss) AT=0.000569"
+    },
+    {
+      "name": "w3_ss_bb_end",
+      "spice": ".meas tran w3_ss_bb_end FIND v(xdut.xsoftstart.bb) AT=0.000569"
+    },
+    {
+      "name": "w3_ss_pb_end",
+      "spice": ".meas tran w3_ss_pb_end FIND v(xdut.xsoftstart.pb_ss) AT=0.000569"
+    },
+    {
+      "name": "w3_ss_vg_end",
+      "spice": ".meas tran w3_ss_vg_end FIND v(xdut.xsoftstart.vg_ss) AT=0.000569"
+    },
+    {
+      "name": "w3_ss_vsu_end",
+      "spice": ".meas tran w3_ss_vsu_end FIND v(xdut.xsoftstart.vsu_ss) AT=0.000569"
+    },
+    {
+      "name": "w3_ss_icv_end",
+      "spice": ".meas tran w3_ss_icv_end FIND i(v.xdut.xsoftstart.vacq_cv) AT=0.000569"
+    },
+    {
+      "name": "w3_ss_irb_end",
+      "spice": ".meas tran w3_ss_irb_end FIND i(v.xdut.xsoftstart.vacq_rb) AT=0.000569"
+    },
+    {
+      "name": "w3_ss_ist_end",
+      "spice": ".meas tran w3_ss_ist_end FIND i(v.xdut.xsoftstart.vacq_st) AT=0.000569"
+    },
+    {
+      "name": "w3_ss_vx_setmax",
+      "spice": ".meas tran w3_ss_vx_setmax MAX v(xdut.xsoftstart.vx_ss) FROM=0.00053 TO=0.000569"
+    },
+    {
+      "name": "w3_ss_vx_setmin",
+      "spice": ".meas tran w3_ss_vx_setmin MIN v(xdut.xsoftstart.vx_ss) FROM=0.00053 TO=0.000569"
+    },
+    {
+      "name": "w3_ss_vx_winmin",
+      "spice": ".meas tran w3_ss_vx_winmin MIN v(xdut.xsoftstart.vx_ss) FROM=0.000421 TO=0.000569"
+    },
+    {
+      "name": "w3_ss_ist_peak",
+      "spice": ".meas tran w3_ss_ist_peak MAX i(v.xdut.xsoftstart.vacq_st) FROM=0.000421 TO=0.000569"
+    },
+    {
+      "name": "w3_ss_t99",
+      "spice": ".meas tran w3_ss_t99 WHEN v(acq_ss_w3)=0 RISE=1 TD=0.000421"
+    },
+    {
+      "name": "w3_ss_vx_pre",
+      "spice": ".meas tran w3_ss_vx_pre FIND v(xdut.xsoftstart.vx_ss) AT=0.0004205"
+    },
+    {
+      "name": "w3_ss_pb_pre",
+      "spice": ".meas tran w3_ss_pb_pre FIND v(xdut.xsoftstart.pb_ss) AT=0.0004205"
+    },
+    {
+      "name": "w3_ss_icv_pre",
+      "spice": ".meas tran w3_ss_icv_pre FIND i(v.xdut.xsoftstart.vacq_cv) AT=0.0004205"
+    },
+    {
+      "name": "w3_vref_end",
+      "spice": ".meas tran w3_vref_end FIND v(vref) AT=0.000569"
+    },
+    {
+      "name": "w4_il_vx_end",
+      "spice": ".meas tran w4_il_vx_end FIND v(xdut.xilimit.vx) AT=0.000729"
+    },
+    {
+      "name": "w4_il_bb_end",
+      "spice": ".meas tran w4_il_bb_end FIND v(xdut.xilimit.bb) AT=0.000729"
+    },
+    {
+      "name": "w4_il_pb_end",
+      "spice": ".meas tran w4_il_pb_end FIND v(xdut.xilimit.pb) AT=0.000729"
+    },
+    {
+      "name": "w4_il_vg_end",
+      "spice": ".meas tran w4_il_vg_end FIND v(xdut.xilimit.vg) AT=0.000729"
+    },
+    {
+      "name": "w4_il_vsu_end",
+      "spice": ".meas tran w4_il_vsu_end FIND v(xdut.xilimit.vsu) AT=0.000729"
+    },
+    {
+      "name": "w4_il_icv_end",
+      "spice": ".meas tran w4_il_icv_end FIND i(v.xdut.xilimit.vacq_cv) AT=0.000729"
+    },
+    {
+      "name": "w4_il_irb_end",
+      "spice": ".meas tran w4_il_irb_end FIND i(v.xdut.xilimit.vacq_rb) AT=0.000729"
+    },
+    {
+      "name": "w4_il_ist_end",
+      "spice": ".meas tran w4_il_ist_end FIND i(v.xdut.xilimit.vacq_st) AT=0.000729"
+    },
+    {
+      "name": "w4_il_vx_setmax",
+      "spice": ".meas tran w4_il_vx_setmax MAX v(xdut.xilimit.vx) FROM=0.00069 TO=0.000729"
+    },
+    {
+      "name": "w4_il_vx_setmin",
+      "spice": ".meas tran w4_il_vx_setmin MIN v(xdut.xilimit.vx) FROM=0.00069 TO=0.000729"
+    },
+    {
+      "name": "w4_il_vx_winmin",
+      "spice": ".meas tran w4_il_vx_winmin MIN v(xdut.xilimit.vx) FROM=0.00058 TO=0.000729"
+    },
+    {
+      "name": "w4_il_ist_peak",
+      "spice": ".meas tran w4_il_ist_peak MAX i(v.xdut.xilimit.vacq_st) FROM=0.00058 TO=0.000729"
+    },
+    {
+      "name": "w4_il_t99",
+      "spice": ".meas tran w4_il_t99 WHEN v(acq_il_w4)=0 RISE=1 TD=0.00058"
+    },
+    {
+      "name": "w4_il_vx_pre",
+      "spice": ".meas tran w4_il_vx_pre FIND v(xdut.xilimit.vx) AT=0.0005795"
+    },
+    {
+      "name": "w4_il_pb_pre",
+      "spice": ".meas tran w4_il_pb_pre FIND v(xdut.xilimit.pb) AT=0.0005795"
+    },
+    {
+      "name": "w4_il_icv_pre",
+      "spice": ".meas tran w4_il_icv_pre FIND i(v.xdut.xilimit.vacq_cv) AT=0.0005795"
+    },
+    {
+      "name": "w4_ss_vx_end",
+      "spice": ".meas tran w4_ss_vx_end FIND v(xdut.xsoftstart.vx_ss) AT=0.000729"
+    },
+    {
+      "name": "w4_ss_bb_end",
+      "spice": ".meas tran w4_ss_bb_end FIND v(xdut.xsoftstart.bb) AT=0.000729"
+    },
+    {
+      "name": "w4_ss_pb_end",
+      "spice": ".meas tran w4_ss_pb_end FIND v(xdut.xsoftstart.pb_ss) AT=0.000729"
+    },
+    {
+      "name": "w4_ss_vg_end",
+      "spice": ".meas tran w4_ss_vg_end FIND v(xdut.xsoftstart.vg_ss) AT=0.000729"
+    },
+    {
+      "name": "w4_ss_vsu_end",
+      "spice": ".meas tran w4_ss_vsu_end FIND v(xdut.xsoftstart.vsu_ss) AT=0.000729"
+    },
+    {
+      "name": "w4_ss_icv_end",
+      "spice": ".meas tran w4_ss_icv_end FIND i(v.xdut.xsoftstart.vacq_cv) AT=0.000729"
+    },
+    {
+      "name": "w4_ss_irb_end",
+      "spice": ".meas tran w4_ss_irb_end FIND i(v.xdut.xsoftstart.vacq_rb) AT=0.000729"
+    },
+    {
+      "name": "w4_ss_ist_end",
+      "spice": ".meas tran w4_ss_ist_end FIND i(v.xdut.xsoftstart.vacq_st) AT=0.000729"
+    },
+    {
+      "name": "w4_ss_vx_setmax",
+      "spice": ".meas tran w4_ss_vx_setmax MAX v(xdut.xsoftstart.vx_ss) FROM=0.00069 TO=0.000729"
+    },
+    {
+      "name": "w4_ss_vx_setmin",
+      "spice": ".meas tran w4_ss_vx_setmin MIN v(xdut.xsoftstart.vx_ss) FROM=0.00069 TO=0.000729"
+    },
+    {
+      "name": "w4_ss_vx_winmin",
+      "spice": ".meas tran w4_ss_vx_winmin MIN v(xdut.xsoftstart.vx_ss) FROM=0.00058 TO=0.000729"
+    },
+    {
+      "name": "w4_ss_ist_peak",
+      "spice": ".meas tran w4_ss_ist_peak MAX i(v.xdut.xsoftstart.vacq_st) FROM=0.00058 TO=0.000729"
+    },
+    {
+      "name": "w4_ss_t99",
+      "spice": ".meas tran w4_ss_t99 WHEN v(acq_ss_w4)=0 RISE=1 TD=0.00058"
+    },
+    {
+      "name": "w4_ss_vx_pre",
+      "spice": ".meas tran w4_ss_vx_pre FIND v(xdut.xsoftstart.vx_ss) AT=0.0005795"
+    },
+    {
+      "name": "w4_ss_pb_pre",
+      "spice": ".meas tran w4_ss_pb_pre FIND v(xdut.xsoftstart.pb_ss) AT=0.0005795"
+    },
+    {
+      "name": "w4_ss_icv_pre",
+      "spice": ".meas tran w4_ss_icv_pre FIND i(v.xdut.xsoftstart.vacq_cv) AT=0.0005795"
+    },
+    {
+      "name": "w4_vref_end",
+      "spice": ".meas tran w4_vref_end FIND v(vref) AT=0.000729"
+    }
+  ],
+  "options": {
+    "timeout_s": 5400,
+    "keep_artifacts": true
+  }
+}
