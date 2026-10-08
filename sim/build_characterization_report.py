@@ -73,18 +73,34 @@ complete.
 
 ## How "fresh" vs "stale" is determined
 
-Per record, "fresh" means the frozen netlist snapshot committed alongside it
-(``sim/<slug>/netlist-snapshots/<record-id>.spice``) still contains the
-*current* ``design/netlist/ldo_core.spice`` or ``design/netlist/
-error_amp.spice`` content verbatim, byte for byte, as a substring -- the
-same test #95's manual freshness audit applied by hand. This works uniformly
-across every experiment regardless of whether its testbench used the newer
-JSON-manifest harness (whose snapshots carry a provenance header stating the
-DUT path and its own sha256) or an older hand-written deck (whose snapshot
-is nothing but a verbatim copy of the included design netlist) -- the
-substring test does not care which. A record whose snapshot contains
-neither current file's content verbatim is STALE; a record with no snapshot
-file at all is UNKNOWN.
+Freshness is bound to the *designated DUT of the source being graded*
+(issue #393), not to "any design netlist the snapshot happens to contain".
+``DUT_BY_SLUG`` names, for every experiment, which ``DUT_CANDIDATES`` entry
+that experiment measures; a record is "fresh" only if the frozen snapshot
+(``sim/<slug>/netlist-snapshots/<record-id>.spice``) holds the *current*
+content of that one netlist, verbatim, byte for byte. Matching the *other*
+candidate never counts: a stale ``ldo_core`` snapshot that also carries the
+current standalone ``error_amp`` as an included supporting cell is STALE for a
+core source.
+
+Two snapshot shapes are understood:
+
+* Harness snapshots carry provenance headers (``* DUT netlist : <path>`` /
+  ``* included design cell : <path>``, each with its sha256). The section
+  for the expected netlist's path is the only text compared. If a
+  ``DUT netlist`` section exists it must be the expected netlist (a
+  different designated DUT, or two of them, is UNKNOWN); a supporting cell
+  never satisfies the match for a source whose DUT is another file.
+* Legacy snapshots (no section headers: a verbatim netlist copy, optionally
+  with a one-line ``* source :`` header) are compared as a whole against the
+  source's expected netlist only, using the explicit ``DUT_BY_SLUG`` mapping.
+
+A snapshot whose identity cannot be established (slug not in the mapping,
+provenance naming some other DUT, headers but no section for the expected
+netlist, ambiguous DUT sections) is UNKNOWN with the reason rendered in the
+report -- never guessed from a different netlist. A record with no snapshot
+file at all is UNKNOWN. Selection (``latest_substantive_record()``) and
+rendering share the same expected DUT, so they cannot disagree.
 """
 
 from __future__ import annotations
@@ -106,6 +122,41 @@ DUT_CANDIDATES = {
     "ldo_core": REPO_ROOT / "design" / "netlist" / "ldo_core.spice",
     "error_amp": REPO_ROOT / "design" / "netlist" / "error_amp.spice",
 }
+
+# Which DUT_CANDIDATES entry each experiment designates as its device under
+# test (issue #393). Explicit rather than inferred: freshness compares a
+# snapshot against this one netlist only. A slug absent here has unknown
+# identity and is reported "unknown", never matched against a guess.
+DUT_BY_SLUG = {
+    "amp-openloop": "error_amp",
+    "psrr-dc": "error_amp",
+    "amp-selfosc": "ldo_core",
+    "current-limit": "ldo_core",
+    "dropout-vs-load": "ldo_core",
+    "enable-shutdown": "ldo_core",
+    "line-regulation": "ldo_core",
+    "load-regulation": "ldo_core",
+    "load-transient": "ldo_core",
+    "loop-stability": "ldo_core",
+    "mc-output-accuracy": "ldo_core",
+    "op-point-sanity": "ldo_core",
+    "psrr-vs-freq": "ldo_core",
+    "psrr-vs-freq-50ma": "ldo_core",
+    "quiescent-current": "ldo_core",
+    "soft-start": "ldo_core",
+    "soft-start-loop-gain": "ldo_core",
+    "startup": "ldo_core",
+    "vref-transfer": "ldo_core",
+    "vref-transfer-50ma": "ldo_core",
+}
+
+# Harness provenance header: one per concatenated section.
+SECTION_HEADER_RE = re.compile(
+    rb"^\* =+\n\* (DUT netlist|included design cell|testbench fragment)[ ]*: ([^\n]+)\n"
+    rb"\* sha256[ ]*: [^\n]*\n\* =+\n",
+    re.MULTILINE,
+)
+LEGACY_SOURCE_RE = re.compile(rb"^\* source[ ]*: ([^\n]+)$", re.MULTILINE)
 
 # A verdict is stated as one or more **bold runs** inside a single Markdown
 # block (a paragraph, a list item, a table row). BOLD_RUN_RE finds the runs;
@@ -149,7 +200,14 @@ def parse_spec_table() -> dict[str, tuple[str, str]]:
 # Evidence-record discovery
 # ---------------------------------------------------------------------------
 
-def latest_substantive_record(slug: str) -> tuple[pathlib.Path | None, pathlib.Path | None]:
+def expected_dut(slug: str) -> str | None:
+    """The DUT_CANDIDATES label ``slug`` designates as its DUT, if mapped."""
+    return DUT_BY_SLUG.get(slug)
+
+
+def latest_substantive_record(
+    slug: str, dut: str | None = None
+) -> tuple[pathlib.Path | None, pathlib.Path | None]:
     """The most recent record-id under sim/<slug>/records/ that has its own
     frozen netlist snapshot -- i.e. the most recent record that is itself a
     measurement, not a metadata-only correction record pointing back at an
@@ -183,6 +241,8 @@ def latest_substantive_record(slug: str) -> tuple[pathlib.Path | None, pathlib.P
     snapshots_dir = SIM_DIR / slug / "netlist-snapshots"
     if not records_dir.is_dir():
         return None, None
+    if dut is None:
+        dut = expected_dut(slug)
     records = sorted(records_dir.glob("*.md"), reverse=True)
     newest_with_snapshot: tuple[pathlib.Path, pathlib.Path] | None = None
     for record in records:
@@ -191,22 +251,80 @@ def latest_substantive_record(slug: str) -> tuple[pathlib.Path | None, pathlib.P
             continue
         if newest_with_snapshot is None:
             newest_with_snapshot = (record, snapshot)
-        if freshness(snapshot)[0] == "fresh":
+        if freshness(snapshot, dut)[0] == "fresh":
             return record, snapshot
     if newest_with_snapshot is not None:
         return newest_with_snapshot
     return (records[0], None) if records else (None, None)
 
 
-def freshness(snapshot: pathlib.Path | None) -> tuple[str, str | None]:
-    """Returns (status, matched-dut-label). status in {fresh, stale, unknown}."""
+def _repo_rel(path: pathlib.Path) -> str:
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def freshness(
+    snapshot: pathlib.Path | None, dut: str | None
+) -> tuple[str, str | None, str | None]:
+    """Is ``snapshot`` a measurement of the *current* netlist ``dut``?
+
+    ``dut`` is a ``DUT_CANDIDATES`` label: the netlist the source being
+    graded designates as its device under test (issue #393). Returns
+    ``(status, matched-dut-label, reason)`` with status in {fresh, stale,
+    unknown}; ``reason`` explains an unknown (and is None otherwise).
+    """
     if snapshot is None or not snapshot.is_file():
-        return "unknown", None
+        return "unknown", None, "no netlist snapshot committed for this record"
+    if dut is None or dut not in DUT_CANDIDATES:
+        return "unknown", None, "no expected DUT is mapped for this experiment"
+    current = DUT_CANDIDATES[dut].read_bytes()
+    expected_path = _repo_rel(DUT_CANDIDATES[dut]).encode()
     data = snapshot.read_bytes()
-    for label, path in DUT_CANDIDATES.items():
-        if path.read_bytes() in data:
-            return "fresh", label
-    return "stale", None
+
+    headers = list(SECTION_HEADER_RE.finditer(data))
+    if not headers:
+        # Legacy: whole file is a verbatim netlist copy. An optional
+        # `* source :` line must not name some other design netlist.
+        src = LEGACY_SOURCE_RE.search(data)
+        if src is not None and src.group(1).strip() != expected_path:
+            return (
+                "unknown",
+                None,
+                f"snapshot source `{src.group(1).strip().decode()}` is not the "
+                f"expected DUT `{expected_path.decode()}`",
+            )
+        return ("fresh", dut, None) if current in data else ("stale", None, None)
+
+    sections = []  # (kind, path, body)
+    for i, m in enumerate(headers):
+        end = headers[i + 1].start() if i + 1 < len(headers) else len(data)
+        sections.append((m.group(1), m.group(2).strip(), data[m.end():end]))
+
+    designated = [sec for sec in sections if sec[0] == b"DUT netlist"]
+    if len(designated) > 1:
+        return "unknown", None, "snapshot designates more than one DUT section"
+    if designated and designated[0][1] != expected_path:
+        return (
+            "unknown",
+            None,
+            f"snapshot designates `{designated[0][1].decode()}` as its DUT, "
+            f"not the expected `{expected_path.decode()}`",
+        )
+    matching = [
+        sec for sec in sections
+        if sec[1] == expected_path and sec[0] in (b"DUT netlist", b"included design cell")
+    ]
+    if not matching:
+        return (
+            "unknown",
+            None,
+            f"snapshot has no section for the expected DUT `{expected_path.decode()}`",
+        )
+    if any(current in body for _kind, _path, body in matching):
+        return "fresh", dut, None
+    return "stale", None, None
 
 
 # ---------------------------------------------------------------------------
@@ -655,7 +773,8 @@ def render() -> str:
 
         source_results = []
         for source in row.sources:
-            record, snapshot = latest_substantive_record(source.slug)
+            dut = expected_dut(source.slug)
+            record, snapshot = latest_substantive_record(source.slug, dut)
             if record is None:
                 source_results.append(
                     {
@@ -664,6 +783,7 @@ def render() -> str:
                         "verdict": "NO RECORDS FOUND",
                         "fresh_status": "unknown",
                         "fresh_dut": None,
+                        "fresh_reason": None,
                         "snippets": [],
                     }
                 )
@@ -676,7 +796,7 @@ def render() -> str:
                 text = record.read_text()
                 snippets = extract_verdict_snippets(text, source.keyword)
                 verdict = classify(snippets)
-            fresh_status, fresh_dut = freshness(snapshot)
+            fresh_status, fresh_dut, fresh_reason = freshness(snapshot, dut)
             source_results.append(
                 {
                     "source": source,
@@ -684,6 +804,7 @@ def render() -> str:
                     "verdict": verdict,
                     "fresh_status": fresh_status,
                     "fresh_dut": fresh_dut,
+                    "fresh_reason": fresh_reason,
                     "snippets": snippets,
                 }
             )
@@ -743,7 +864,7 @@ def render() -> str:
             if fresh_str == "fresh":
                 fresh_str = f"fresh (matches current `{r['fresh_dut']}`)"
             elif fresh_str == "unknown":
-                fresh_str = "unknown (no netlist snapshot committed for this record)"
+                fresh_str = f"unknown ({r['fresh_reason']})"
             snippet_str = " / ".join(r["snippets"]) if r["snippets"] else "(no explicit Overall/Result verdict found in record text)"
             note = f" — {r['source'].note}" if r["source"].note else ""
             out.append(f"- `{slug}`{note}: {cite} — **{r['verdict']}**, {fresh_str}")
