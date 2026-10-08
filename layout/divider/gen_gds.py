@@ -104,6 +104,8 @@ import pya  # noqa: F401  (provided by the KLayout interpreter)
 # layout/tests/test_divider_layout.py checks the same constants this
 # generator draws rather than a second transcription of floorplan.md §4.1.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from gen_gds_common import _fail, _label, _load_pdk_pcells, _rd  # noqa: E402
 from plan import (  # noqa: E402
     ACTIVE_POSITIONS,
     BOT_ORDER,
@@ -118,6 +120,9 @@ from plan import (  # noqa: E402
 )
 
 TOP_CELL = "FB_DIVIDER"
+
+# gf180mcu variant: D = 5LM, 11K top metal, MIM option B.
+PDK_OPTION = "D"
 
 # gf180mcu database unit, as declared by the PDK's own KLayout tech file.
 # Load bearing beyond precision -- see layout/README.md, "The database-unit
@@ -152,44 +157,6 @@ GR_MARGIN_Y = 2.00  # ring inner edge to the outermost head metal
 CONT_SIZE = 0.22  # CO.1 -- contacts are exactly this, min and max
 CONT_PITCH = 0.47  # CO.1 + CO.2b's 0.25 um contact space
 CONT_ENC = 0.10  # COMP/Metal1 overlap of contact (CO.4/CO.6 need 0.07/0.06)
-
-
-def _fail(message):
-    """Abort the build, loudly.
-
-    ``klayout -b -r`` **swallows SystemExit**: a bare `raise SystemExit("…")`
-    prints nothing and the klayout process still exits 0 (checked against
-    KLayout 0.28.16). Every assertion in this file therefore has to print its
-    own message before bailing out, or a PDK change would abort the build
-    with no diagnostic at all -- `layout/drclvs.py` would only report "layout
-    build produced no .gds", which names the symptom and not the cause.
-    """
-    sys.stderr.write(f"gen_gds.py: {message}\n")
-    sys.stderr.flush()
-    raise SystemExit(1)
-
-
-def _rd(name, default=None):
-    """Read a -rd switch (KLayout injects them as globals)."""
-    value = globals().get(name, default)
-    if value is None:
-        _fail(f"missing required switch -rd {name}=...")
-    return value
-
-
-def _load_pdk_pcells(pdk_path):
-    """Register the PDK's KLayout-API PCell library and return its name."""
-    macros = os.path.join(pdk_path, "libs.tech", "klayout", "tech", "pymacros")
-    if not os.path.isdir(macros):
-        _fail(f"no PCell library at {macros}")
-    sys.path.insert(0, macros)
-    # The gf180mcu PCells read this to pick the metal stack / MIM option; the
-    # variant we build against is D (5LM, 11K top metal, MIM option B).
-    os.environ.setdefault("GF_PDK_OPTION", "D")
-    from klayout_api_cells import gf180mcu_klayoutapi  # noqa: E402
-
-    gf180mcu_klayoutapi()
-    return "gf180mcu_klayoutapi"
 
 
 def strip_y0(position):
@@ -463,13 +430,8 @@ def _guard_ring(layout, cell, draw, heads, tracks):
     return inner, outer
 
 
-def _text(cell, layout, layer_index, name, x_um, y_um):
-    point = pya.Point(int(round(x_um / layout.dbu)), int(round(y_um / layout.dbu)))
-    cell.shapes(layer_index).insert(pya.Text(name, pya.Trans(point)))
-
-
 def build(out_path, pdk_path):
-    library = _load_pdk_pcells(pdk_path)
+    library = _load_pdk_pcells(pdk_path, PDK_OPTION)
 
     layout = pya.Layout()
     layout.dbu = DBU_UM
@@ -574,16 +536,15 @@ def build(out_path, pdk_path):
             )
 
     # ---- labels ----------------------------------------------------------
-    metal1_label = layout.layer(*L_METAL1_LABEL)
-    vout_head = heads[(vout_pos, vout_side)]
-    _text(top, layout, metal1_label, "VOUT_S", vout_head.center().x, vout_head.center().y)
+        vout_head = heads[(vout_pos, vout_side)]
+    _label(top, layout, L_METAL1_LABEL, "VOUT_S", vout_head.center().x, vout_head.center().y)
     fb_x = sum(tracks[("channel", fb_bot[1])]) / 2.0
-    _text(
-        top, layout, metal1_label, "FB", fb_x,
+    _label(
+        top, layout, L_METAL1_LABEL, "FB", fb_x,
         (strip_yc(fb_bot[0]) + strip_yc(fb_top[0])) / 2.0,
     )
-    _text(
-        top, layout, metal1_label, "VSS",
+    _label(
+        top, layout, L_METAL1_LABEL, "VSS",
         inner.left - GR_W / 2.0, (inner.bottom + inner.top) / 2.0,
     )
 
