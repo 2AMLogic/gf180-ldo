@@ -17,15 +17,15 @@ _None._
 
 Human-approved issues ready for implementation (`loom:issue`).
 
-- **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
+- **#398**: ci: fail when README T1 tier/count prose disagrees with signoff/records/t1-tier-report.json
 
 ## In Progress
 
 Issues currently being built (`loom:building`).
 
-_None._
+- **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 
 ## PRs Awaiting Review
 
@@ -60,6 +60,7 @@ Issues carrying `loom:curated`.
 
 - **#170**: [Epic #542] 3A — gf180-ldo maturation + Challenge #5 brief *(architect)*
 - **#388**: ci: report sim/ evidence growth per PR and cap runaway additions (append-only evidence can only grow) *(architect)*
+- **#397**: ci: pin the ratified README spec table so a row cannot change without a decision record *(architect)*
 
 ## Epics
 
@@ -72,10 +73,10 @@ _None._
 | Operator merge-risk holds | 1 |
 | Operator priority | 0 |
 | Ready (`loom:issue`) | 3 |
-| In Progress (`loom:building`) | 0 |
+| In Progress (`loom:building`) | 1 |
 | PRs awaiting review | 0 |
 | Approved PRs awaiting merge | 1 |
 | Curated | 12 |
-| Architect / Hermit proposals | 2 |
+| Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
