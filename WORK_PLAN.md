@@ -18,6 +18,7 @@ _None._
 
 Human-approved issues ready for implementation (`loom:issue`).
 
+- **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 
@@ -46,6 +47,7 @@ Issues carrying `loom:curated`.
 
 - **#16**: Post-layout extracted re-run of the full verification suite *(curated)*
 - **#43**: Soft-start: two per-startup transients (loop acquisition and hand-over) still break the inrush and overshoot clauses *(curated)*
+- **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers) *(curated)*
 - **#173**: [Epic #542 follow-on] Layout the gf180-ldo LDO block (DRC/LVS-clean GDS) + post-layout PVT re-verification *(curated)*
 - **#212**: Startup is 60× slower than TLV7xx because of the ramp bound, not the process — restate the Startup row as a startup-current budget at 1 µF and re-centre the soft-start ~5× faster *(curated)*
 - **#259**: soft-start: recover the ~7.18 uA the FB-injection transconductor's degeneration branches burn after hand-over (Iq row binds at 1.29 uA, not 1.96 uA) *(curated)*
@@ -62,7 +64,6 @@ Issues carrying `loom:curated`.
 
 - **#170**: [Epic #542] 3A — gf180-ldo maturation + Challenge #5 brief *(architect)*
 - **#388**: ci: report sim/ evidence growth per PR and cap runaway additions (append-only evidence can only grow) *(architect)*
-- **#397**: ci: pin the ratified README spec table so a row cannot change without a decision record *(architect)*
 
 ## Epics
 
@@ -74,11 +75,11 @@ _None._
 |------|-------|
 | Operator merge-risk holds | 2 |
 | Operator priority | 0 |
-| Ready (`loom:issue`) | 2 |
+| Ready (`loom:issue`) | 3 |
 | In Progress (`loom:building`) | 0 |
 | PRs awaiting review | 0 |
 | Approved PRs awaiting merge | 2 |
-| Curated | 13 |
-| Architect / Hermit proposals | 3 |
+| Curated | 14 |
+| Architect / Hermit proposals | 2 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
