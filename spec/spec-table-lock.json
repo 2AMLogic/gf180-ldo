@@ -1,0 +1,86 @@
+{
+  "amendments": [],
+  "rows": {
+    "Area": {
+      "hash": "66d809c73266f9f569bf68a4b53412111f8573c45f9b5efc3ba4f735a833ea78",
+      "stretch": "—",
+      "target": "< 0.1 mm² total core area, pass FET included, excluding pads and sealring"
+    },
+    "Current limit": {
+      "hash": "dd012a31b7cfbf157e5418e078e6f2773c198bf8709782bbe14016bbc526f92e",
+      "stretch": "—",
+      "target": "62–95 mA over PVT untrimmed, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5, note 9)"
+    },
+    "Dropout @ 50 mA": {
+      "hash": "d8a0c36d9bdbc8de85f670934a17fa1b67195ec91a6264820941efe6beebee8c",
+      "stretch": "< 200 mV",
+      "target": "< 300 mV — binds ss / 125 °C / Vin = 2.10 V (measured, note 4)"
+    },
+    "Enable / shutdown": {
+      "hash": "3ba44ac179f1ff13b8aff3554b1c2a2ff84a32065710debc472a335f953fd6f9",
+      "stretch": "—",
+      "target": "shutdown Iq < 3 µA at ff / 125 °C / 3.63 V; disabled output state is pass device fully off with no internal active discharge; Vin→Vout leakage ≤ 1 µA at the same corner"
+    },
+    "Input": {
+      "hash": "e44f08885a1566f1993aeee488385141366a59acf51907cd0268fc83773ad1a6",
+      "stretch": "5 V flavor — separate follow-on variant, not this design (see DR-0002)",
+      "target": "3.3 V ±10% (2.97–3.63 V)"
+    },
+    "Iq (excluding load current)": {
+      "hash": "1458d07e1d27f9b536a3d0e02ca6a88e5ae40dda2f190d9f647607668f7e5994",
+      "stretch": "< 10 µA — subordinate to DR-0001's ESR window; not to be bought back by reintroducing a minimum ESR",
+      "target": "< 30 µA at no load **and** at full load — binds ff / 125 °C / 3.63 V"
+    },
+    "Line reg": {
+      "hash": "a7da34220a882d7006b056cf5aa2a7d72a02778d8809ef71c87cc57bfd6c4ebb",
+      "stretch": "—",
+      "target": "< 5 mV/V over Vin 2.97–3.63 V, at 1 mA and at 50 mA"
+    },
+    "Load": {
+      "hash": "1f2bdf89baf0e9cc51b01917b7f416830f343f0a314fd18789aee16011767ea0",
+      "stretch": "100 mA",
+      "target": "0–50 mA, where 0 mA means no external load — the feedback divider's ~2 µA is the only inherent preload and no external preload resistor may be assumed (DR-0001)"
+    },
+    "Load reg (0–50 mA)": {
+      "hash": "54b4fbc75f840041189ee00b927b6b603ccc3172a837931b5a286456a58f1513",
+      "stretch": "—",
+      "target": "< 1% (18 mV), counted inside the ±2% accuracy window rather than in addition to it"
+    },
+    "Load transient": {
+      "hash": "0b5d617ef0eaf98ff3df80a11b8b2c977d416d9a8290b5d0c41931f0fe0deaef",
+      "stretch": "peak excursion ≤ 100 mV",
+      "target": "1 ↔ 50 mA step, 1 µs edges, at C_eff = 0.33 µF and ESR 0–500 mΩ: peak excursion ≤ 150 mV, recovery to within ±1% (18 mV) of the settled value in ≤ 20 µs"
+    },
+    "Output": {
+      "hash": "e8c8ab85f01c841843b4dd7e45c2ff66c1cca440e0b4e793829a9e5d49199809",
+      "stretch": "programmable 1.2–3.0 V — deferred; needs a sub-1.2 V reference, and > ~2.5 V needs the 5 V variant (see DR-0003)",
+      "target": "1.8 V ±2% (fixed; divider laid out as a unit-resistor string for metal-mask-option derivatives)"
+    },
+    "Output noise": {
+      "hash": "13ee79ff38453fd8c775a6b179b56ed79ac469fb1e2c58e9245e06065cd8f3ba",
+      "stretch": "10 Hz–100 kHz µVrms row if a consumer asks for one",
+      "target": "not specified — explicitly waived (note 7)"
+    },
+    "PSRR": {
+      "hash": "641aed3a10f935435961424fe42a092b51ee3f5524058f3906241148bbbbc29c",
+      "stretch": "> 60 dB @ 1 kHz, > 30 dB @ 100 kHz, 1 MHz point characterized",
+      "target": "> 50 dB @ 1 kHz and > 20 dB @ 100 kHz, at I_load = 1 mA (binding — light load) and at 50 mA, C_eff = 1 µF nominal, verified across the stability window"
+    },
+    "Stability": {
+      "hash": "7ebee763b189bfed4dba779cea39b08c86f81eaf9351ffcd6dc6eb972a40a38c",
+      "stretch": "capless variant (separate design fork)",
+      "target": "stable 0.1-50 mA at C_eff = 1 uF nominal (X5R/X7R), ESR >= 200 mOhm; PM >= 45 deg, GM >= 10 dB worst corner (630/630 matrix points, worst 48.65 deg / 11.21 dB, DR-0008 resurgence clean 0/630). The full 0.33-4.7 uF / no-minimum-ESR window is NOT verified: 1523/1890 of its 0.1-50 mA points pass and the shortfall is structural (DR-0015, DR-0017), needing f_hi (buffer bandwidth) to close -- see DR-0016 Candidate 2 and DR-0019, which measures that lever foreclosed by the amplifier's own iq_ua allocation (issue #147). 0 mA (no external load) remains outside the envelope per DR-0007."
+    },
+    "Startup": {
+      "hash": "71dcc14bb6322d8b4e9c9f04b06dbb09cc865d2315aafae730234ab2eb3431f4",
+      "stretch": "—",
+      "target": "monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 5 V/ms, so inrush ≤ 5 mA and startup at full rated load stays ≥ 10 mA below the current limit, both at C_eff = 1 µF (nominal) — above 1 µF both clauses are characterized, not bound, up to DR-0001's 4.7 µF ceiling (note 5a); inside ±2% within 1.8 ms of enable (note 8); overshoot ≤ +2% of the final value"
+    },
+    "Thermal": {
+      "hash": "8515c0466c1750e7f2c3acdfd162d370bbd522e87fa17e10ee2d47e8b4245cd4",
+      "stretch": "—",
+      "target": "92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 346 mW into a Vout = 0 short at the untrimmed 95 mA limit ceiling (note 9); specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec"
+    }
+  },
+  "schema_version": 1
+}

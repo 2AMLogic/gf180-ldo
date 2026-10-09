@@ -181,6 +181,20 @@ jobs:
         # Parser unit tests: sim/tests/test_decision_record_index.py, run by
         # sim/selftest.sh above. No PDK needed.
 
+      - name: Verify the ratified spec table matches its lock (current tree)
+        if: github.event_name != 'pull_request'
+        run: python3 spec/check_spec_table.py --check
+        # Push/schedule/manual: table <-> spec/spec-table-lock.json consistency.
+        # The authorization diff is supplied by the PR run below (issue #397).
+
+      - name: Verify spec-table changes carry fresh decision-record amendments (PR only)
+        if: github.event_name == 'pull_request'
+        run: python3 spec/check_spec_table.py --check --base "${{ github.event.pull_request.base.sha }}"
+        # The PR checkout is GitHub's merge commit: that is the candidate being
+        # validated, compared against the merge-base with the PR's base SHA
+        # (full history from fetch-depth: 0). Structural audit trail only; it
+        # is not operator ratification. Tests: sim/tests/test_check_spec_table.py.
+
       - name: Verify evidence is append-only (PR only)
         if: github.event_name == 'pull_request'
         run: python3 sim/check_append_only.py --base "origin/${{ github.base_ref }}"
