@@ -35,7 +35,13 @@ name: CI
 #                                       of silently, see issue #270. Needs klt
 #                                       (fetched by uvx) but no PDK/KLayout:
 #                                       --manifest mode only reads committed
-#                                       JSON envelopes.)
+#                                       JSON envelopes. It also fails if the
+#                                       "Today ... tier ... T1 N of M items
+#                                       met" sentences in README.md and
+#                                       signoff/README.md disagree with that
+#                                       record; matcher tests live in
+#                                       sim/tests/test_readme_claims.py,
+#                                       issue #398.)
 #
 # CLAUDE.md's "headless only" flow keeps the default PR path free of any PDK
 # or GUI dependency: `harness-selftest` below runs on every push/PR and never
