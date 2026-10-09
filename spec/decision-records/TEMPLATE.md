@@ -26,6 +26,15 @@ USAGE NOTES
   once it lands): both conventions treat the ratified/recorded artifact as
   immutable history, correctable only by adding a new entry that
   supersedes it.
+- Changing a README spec-table row (issue #397): `spec/check_spec_table.py`
+  guards the Parameter/Target/Stretch table against `spec/spec-table-lock.json`.
+  Edit the row, add the DR (new number, status `proposed` or `ratified`) or flip
+  an existing `proposed` DR to `ratified`, then run
+  `python3 spec/check_spec_table.py --write --base origin/main --dr DR-NNNN`
+  and commit the lock. One DR may cover several rows; each gets its own ledger
+  entry. Citing an already-ratified, held or superseded record, or one whose
+  Status did not change, fails CI. Passing is structural eligibility only, not
+  operator ratification, and does not prove the DR authorizes those rows.
 - Ratifying an existing document: the Decision section does not have to
   restate a longer document in full — if the decision is "adopt the
   approach in <doc>", point to that committed doc by path and summarize

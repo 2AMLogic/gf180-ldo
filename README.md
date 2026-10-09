@@ -289,6 +289,28 @@ after any `sim/` record lands or `design/netlist/*.spice` changes; this
 table (the ratified spec + notes above) stays the authority on what is
 required, `sim/CHARACTERIZATION.md` on what the evidence currently shows.
 
+### Spec-table guard
+
+The Parameter/Target/Stretch table above is pinned by
+`spec/spec-table-lock.json` and checked by `spec/check_spec_table.py` (stdlib
+only, no PDK) in CI's `harness-selftest` job:
+
+```
+python3 spec/check_spec_table.py --check                      # table vs lock
+python3 spec/check_spec_table.py --check --base origin/main   # + authorization diff
+python3 spec/check_spec_table.py --write --base origin/main --dr DR-NNNN
+```
+
+Editing a row without a matching, freshly appended lock amendment fails CI.
+An amendment must cite a decision record that is either new in the PR (status
+proposed or ratified) or flipped from proposed to ratified in the PR. This is
+a structural audit trail only: eligibility is **not** operator ratification
+(a proposed record may be approved on the same PR) and the reviewer still
+confirms the record actually authorizes the named rows. The ratified notes
+below the table are not covered by this guard yet. Workflow:
+`spec/decision-records/TEMPLATE.md`. On PRs, CI validates GitHub's merge
+checkout against the PR's base SHA.
+
 Maturity ladder: simulation-complete → layout DRC/LVS-clean → shuttle
 seat → measured silicon over temperature.
 
