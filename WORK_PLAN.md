@@ -17,9 +17,9 @@ _None._
 
 Human-approved issues ready for implementation (`loom:issue`).
 
+- **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
-- **#378**: Protect frozen DUT netlist snapshots with the append-only evidence guard
 
 ## In Progress
 
