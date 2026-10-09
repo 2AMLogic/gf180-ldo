@@ -4,6 +4,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-10-08
 
+- **PR #394**: Bind characterization freshness to the designated DUT
+- **PR #392**: spec: index design citations of unratified decision records (#387)
 - **PR #389**: spec: DR-0038 resolves error_amp reuse 'evaluate' (keep own)
 - **PR #386**: test: golden-record unit tests for the sim rollup scripts
 - **PR #385**: docs: README repository layout lists every tracked top-level path (#383)
@@ -16,6 +18,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 - **PR #368**: docs(signoff): README reflects the two drawn layout cells (Part of #79)
 - **PR #364**: Enforce pinned xschem 3.4.7 in netlist export (#361)
 - **PR #360**: sim(soft-start): bias-acquisition characterization of both DR-0037 servos (#352)
+- **Issue #393** (closed): Bind characterization freshness to the designated DUT
+- **Issue #387** (closed): Cross-check design/ schematic DR citations against decision-record status (surface load-bearing unratified records)
 - **Issue #384** (closed): Resolve reuse.lock.json 'evaluate' for error_amp vs gf180-opamp with a decision record
 - **Issue #381** (closed): Unit-test the sim rollup scripts (summarize.py / peak_analyze.py) against committed raw logs
 - **Issue #383** (closed): README: Repository layout block omits signoff/, ratification/, docs/, reuse.lock.json

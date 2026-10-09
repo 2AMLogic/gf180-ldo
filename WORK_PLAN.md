@@ -19,13 +19,13 @@ Human-approved issues ready for implementation (`loom:issue`).
 
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
-- **#320**: ldo_ilimit's Fbias / ldo_softstart's Fss_ramp: replace the idealized VREF-derived bias-current mirror with a real device (blocks #290, #291)
+- **#378**: Protect frozen DUT netlist snapshots with the append-only evidence guard
 
 ## In Progress
 
 Issues currently being built (`loom:building`).
 
-- **#387**: Cross-check design/ schematic DR citations against decision-record status (surface load-bearing unratified records)
+_None._
 
 ## PRs Awaiting Review
 
@@ -54,6 +54,7 @@ Issues carrying `loom:curated`.
 - **#320**: ldo_ilimit's Fbias / ldo_softstart's Fss_ramp: replace the idealized VREF-derived bias-current mirror with a real device (blocks #290, #291) *(curated)*
 - **#351**: Explain the 2x lower peak Icap / dV/dt at soft-start with the DR-0037 bias servo (142 vs 282 mA at tt/27C) *(curated)*
 - **#374**: sim: phase 2 of #366 - route current-limit, enable-shutdown, soft-start, soft-start-loop-gain grid drivers through klt_batch *(curated)*
+- **#378**: Protect frozen DUT netlist snapshots with the append-only evidence guard *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -71,10 +72,10 @@ _None._
 | Operator merge-risk holds | 1 |
 | Operator priority | 0 |
 | Ready (`loom:issue`) | 3 |
-| In Progress (`loom:building`) | 1 |
+| In Progress (`loom:building`) | 0 |
 | PRs awaiting review | 0 |
 | Approved PRs awaiting merge | 1 |
-| Curated | 11 |
+| Curated | 12 |
 | Architect / Hermit proposals | 2 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
