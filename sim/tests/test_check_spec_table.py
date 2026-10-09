@@ -17,6 +17,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -50,7 +51,7 @@ class Repo:
         self.write("README.md", TABLE)
         self.write_dr("DR-0001-old.md", dr_text(1, "ratified"))
         self.write_dr("DR-0002-prop.md", dr_text(2, "proposed"))
-        self.write_dr("DR-0003-held.md", dr_text(3, "superseded by DR-0001"))
+        self.write_dr("DR-0003-superseded.md", dr_text(3, "superseded by DR-0001"))
 
     def git(self, *a):
         return subprocess.run(["git", "-C", str(self.root), *a], check=True,
@@ -95,7 +96,7 @@ class Base(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         return out
 
-    def bad(self, *args, msg="error"):
+    def bad(self, *args, msg):
         rc, out = self.r.run(*args)
         self.assertEqual(rc, 1, out)
         self.assertIn(msg, out)
@@ -162,6 +163,11 @@ class CurrentTreeTests(Base):
         lock["schema_version"] = 2
         self.r.set_lock(lock)
         self.bad("--check", msg="schema_version")
+        for bogus in (1.0, True, "1"):
+            with self.subTest(schema_version=bogus):
+                lock["schema_version"] = bogus
+                self.r.set_lock(lock)
+                self.bad("--check", msg="unsupported schema_version")
 
     def test_lock_hash_tamper_fails(self):
         self.r.bootstrap()
@@ -194,7 +200,7 @@ class BaseTests(Base):
         self.r.bootstrap()
         self.branch()
         self.edit_target()
-        self.bad("--write", "--base", "main", "--dr", "DR-0001", msg="error")
+        self.bad("--write", "--base", "main", "--dr", "DR-0001", msg="existed at base as 'ratified'")
         # hand-edited lock citing an old ratified record
         self.edit_target()
         t = cst.parse_table((self.r.root / "README.md").read_text())
@@ -220,7 +226,13 @@ class BaseTests(Base):
         self.branch()
         self.edit_target()
         self.r.write_dr("DR-0010-new.md", dr_text(10, "superseded by DR-0001"))
-        self.bad("--write", "--base", "main", "--dr", "DR-0010", msg="error")
+        self.bad("--write", "--base", "main", "--dr", "DR-0010",
+                 msg="DR-0010 is new but its status is 'superseded'")
+        # 'held' only comes from build_index.STATUS_OVERRIDES
+        self.r.write_dr("DR-0010-new.md", dr_text(10, "proposed -- HELD"))
+        with mock.patch.dict(cst.build_index.STATUS_OVERRIDES, {10: "held"}):
+            self.bad("--write", "--base", "main", "--dr", "DR-0010",
+                     msg="DR-0010 is new but its status is 'held'")
 
     def test_proposed_to_ratified_qualifies(self):
         self.r.bootstrap()
@@ -234,14 +246,16 @@ class BaseTests(Base):
         self.r.bootstrap()
         self.branch()
         self.edit_target()
-        self.bad("--write", "--base", "main", "--dr", "DR-0002", msg="error")
+        self.bad("--write", "--base", "main", "--dr", "DR-0002",
+                 msg="existed at base as 'proposed' and is 'proposed' now")
 
     def test_content_edit_without_status_change_fails(self):
         self.r.bootstrap()
         self.branch()
         self.edit_target()
         self.r.write_dr("DR-0002-prop.md", dr_text(2, "proposed", "more\n"))
-        self.bad("--write", "--base", "main", "--dr", "DR-0002", msg="error")
+        self.bad("--write", "--base", "main", "--dr", "DR-0002",
+                 msg="existed at base as 'proposed' and is 'proposed' now")
 
     def test_renamed_dr_fails(self):
         self.r.bootstrap()
@@ -255,14 +269,33 @@ class BaseTests(Base):
         self.r.bootstrap()
         self.branch()
         self.edit_target()
-        for dr in ("DR-0001", "DR-0003"):
-            self.bad("--write", "--base", "main", "--dr", dr, msg="error")
+        for dr, st in (("DR-0001", "ratified"), ("DR-0003", "superseded")):
+            self.bad("--write", "--base", "main", "--dr", dr, msg="existed at base as %r" % st)
+
+    def test_held_dr_fails(self):
+        # DR-0004 is 'held' at base (via STATUS_OVERRIDES, as in build_index)
+        # and stays held, or is marked ratified while the override still
+        # classifies it held: neither is fresh authorization.
+        self.r.write_dr("DR-0004-held.md", dr_text(4, "proposed -- HELD"))
+        with mock.patch.dict(cst.build_index.STATUS_OVERRIDES, {4: "held"}):
+            self.r.commit("held dr")
+            self.r.bootstrap()
+            self.branch()
+            self.edit_target()
+            self.bad("--write", "--base", "main", "--dr", "DR-0004",
+                     msg="existed at base as 'held' and is 'held' now")
+            self.r.write_dr("DR-0004-held.md", dr_text(4, "ratified 2026-10-01"))
+            self.bad("--write", "--base", "main", "--dr", "DR-0004",
+                     msg="existed at base as 'held' and is 'held' now")
+        # without the override the same base record is plain 'proposed', and
+        # proposed -> ratified qualifies: the override is what blocks it
+        self.ok("--write", "--base", "main", "--dr", "DR-0004")
 
     def test_missing_and_ambiguous_dr_fail(self):
         self.r.bootstrap()
         self.branch()
         self.edit_target()
-        self.bad("--write", "--base", "main", "--dr", "DR-0099", msg="error")
+        self.bad("--write", "--base", "main", "--dr", "DR-0099", msg="no DR-0099-*.md exists")
         self.r.write_dr("DR-0010-a.md", dr_text(10, "proposed"))
         self.r.write_dr("DR-0010-b.md", dr_text(10, "proposed"))
         self.bad("--write", "--base", "main", "--dr", "DR-0010", msg="ambiguous")
@@ -316,16 +349,17 @@ class BaseTests(Base):
     def test_multi_row_one_missing_authorization_fails(self):
         lock = self._amended()
         self.assertEqual(len(lock["amendments"]), 2)
-        lock["amendments"].pop()
+        dropped = lock["amendments"].pop()
         self.r.set_lock(lock)
-        self.bad("--check", "--base", "main", msg="error")
+        self.bad("--check", "--base", "main",
+                 msg="no fresh amendment for changed/added/removed row(s): %r" % dropped["row"])
 
     def test_duplicate_or_unrelated_transition_fails(self):
         lock = self._amended()
         dup = dict(lock["amendments"][0])
         lock["amendments"].append(dup)
         self.r.set_lock(lock)
-        self.bad("--check", "--base", "main", msg="error")
+        self.bad("--check", "--base", "main", msg="not contiguous")
 
     def test_unrelated_transition_fails(self):
         self.r.bootstrap()
@@ -334,7 +368,37 @@ class BaseTests(Base):
         lock = self.r.lock()
         lock["amendments"].append({"row": "Output", "before": "0" * 64, "after": "1" * 64, "dr": "DR-0010"})
         self.r.set_lock(lock)
-        self.bad("--check", "--base", "main", msg="error")
+        self.bad("--check", "--base", "main", msg="ends at a state that is not the locked row")
+
+    def test_fabricated_amendment_without_table_change_fails(self):
+        # Passes parse_lock/_check_chains (a single, contiguous entry ending at
+        # the locked row) and cites an eligible new DR, but the table did not
+        # change: base_check's transition match is the only rule that stops it.
+        self.r.bootstrap()
+        self.branch()
+        self.r.write_dr("DR-0010-new.md", dr_text(10, "proposed"))
+        lock = self.r.lock()
+        cur = lock["rows"]["Output"]["hash"]
+        lock["amendments"].append({"row": "Output", "before": "0" * 64, "after": cur, "dr": "DR-0010"})
+        self.r.set_lock(lock)
+        cst.parse_lock(json.dumps(lock))  # structurally valid on its own
+        self.bad("--check", "--base", "main",
+                 msg="amendment for 'Output' (00000000 -> %s) is duplicate, unrelated or "
+                     "contradicts the table change" % cur[:8])
+
+    def test_amendment_contradicting_table_change_fails(self):
+        # Table changes Output A -> B, but the ledger claims a different
+        # starting state; chains are fine, the transition is not the real one.
+        self.r.bootstrap()
+        self.branch()
+        self.edit_target()
+        self.r.write_dr("DR-0010-new.md", dr_text(10, "proposed"))
+        t = cst.parse_table((self.r.root / "README.md").read_text())
+        new = cst.row_hash(*t["Output"])
+        self.r.write(cst.LOCK, cst.render_lock(
+            t, [{"row": "Output", "before": "0" * 64, "after": new, "dr": "DR-0010"}]))
+        self.bad("--check", "--base", "main",
+                 msg="is duplicate, unrelated or contradicts the table change")
 
     def test_history_rewrite_or_delete_fails(self):
         self._amended()
@@ -346,7 +410,7 @@ class BaseTests(Base):
         self.bad("--check", "--base", "pr", msg="history")
         lock["amendments"] = []
         self.r.set_lock(lock)
-        self.bad("--check", "--base", "pr", msg="error")
+        self.bad("--check", "--base", "pr", msg="history was rewritten, reordered or removed")
 
     def test_lock_deletion_after_base_lock_fails(self):
         self.r.bootstrap()
@@ -357,20 +421,28 @@ class BaseTests(Base):
     def test_bootstrap_rules(self):
         # base has no lock: bootstrap with unchanged table passes
         self.branch()
+        self.r.write_dr("DR-0010-new.md", dr_text(10, "proposed"))
+        self.bad("--write", "--base", "main", "--dr", "DR-0010",
+                 msg="--dr given but base has no lock")
+        self.assertFalse((self.r.root / cst.LOCK).exists())
         self.ok("--write")
         self.ok("--check", "--base", "main")
         # ... with a changed table fails
         self.r.write("README.md", TABLE.replace("1.8 V", "1.9 V"))
         self.bad("--write", msg="--base")  # refuses to re-lock a changed table
+        self.bad("--write", "--base", "main", msg="bootstrap cannot carry amendments")
         (self.r.root / cst.LOCK).unlink()
         self.ok("--write")  # fresh bootstrap of the changed table
-        self.bad("--check", "--base", "main", msg="bootstrap")
-        # ... or a non-empty ledger fails
+        self.bad("--check", "--base", "main", msg="bootstrap requires an unchanged spec table")
+        # ... or a non-empty ledger fails (lock regenerated for the unchanged
+        # table so the current-tree check passes and the bootstrap rule is hit)
         self.r.write("README.md", TABLE)
+        (self.r.root / cst.LOCK).unlink()
+        self.ok("--write")
         lock = self.r.lock()
         lock["amendments"] = [{"row": "Output", "before": None, "after": lock["rows"]["Output"]["hash"], "dr": "DR-0002"}]
         self.r.set_lock(lock)
-        self.bad("--check", "--base", "main", msg="error")
+        self.bad("--check", "--base", "main", msg="bootstrap lock must have an empty amendments ledger")
 
     def test_diverged_branches_use_merge_base(self):
         self.r.bootstrap()

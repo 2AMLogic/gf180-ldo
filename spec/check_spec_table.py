@@ -143,7 +143,7 @@ def parse_lock(text: str, label: str = "lock") -> dict:
         raise CheckError("%s is not valid JSON: %s" % (label, exc))
     if not isinstance(obj, dict) or set(obj) != {"schema_version", "rows", "amendments"}:
         raise CheckError("%s: top level must have exactly schema_version, rows, amendments" % label)
-    if obj["schema_version"] != SCHEMA_VERSION or isinstance(obj["schema_version"], bool):
+    if type(obj["schema_version"]) is not int or obj["schema_version"] != SCHEMA_VERSION:
         raise CheckError("%s: unsupported schema_version %r" % (label, obj["schema_version"]))
     if not isinstance(obj["rows"], dict) or not obj["rows"]:
         raise CheckError("%s: rows must be a non-empty object" % label)
@@ -389,6 +389,8 @@ def run_write(root: Path, base_ref: str | None, dr: str | None) -> str:
         if base["lock"] is None:
             if trans:
                 raise CheckError("base has no lock and the table changed; bootstrap cannot carry amendments")
+            if dr is not None:
+                raise CheckError("--dr given but base has no lock; bootstrap cannot carry amendments")
             text = render_lock(table, [])
         else:
             if trans and dr is None:
