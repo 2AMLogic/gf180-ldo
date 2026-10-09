@@ -6,6 +6,7 @@
 Judge-approved PRs stuck under a `loom:operator` merge-risk hold — implementation work is done, only a human merge decision is missing.
 
 - **#380**: fix(sim): protect frozen netlist snapshots with the append-only guard
+- **#400**: ci: fail when README T1 tier/count prose disagrees with the verdict of record
 
 ## Operator Priority
 
@@ -19,13 +20,12 @@ Human-approved issues ready for implementation (`loom:issue`).
 
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
-- **#398**: ci: fail when README T1 tier/count prose disagrees with signoff/records/t1-tier-report.json
 
 ## In Progress
 
 Issues currently being built (`loom:building`).
 
-- **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
+_None._
 
 ## PRs Awaiting Review
 
@@ -38,6 +38,7 @@ _None._
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
 - **#380**: fix(sim): protect frozen netlist snapshots with the append-only guard
+- **#400**: ci: fail when README T1 tier/count prose disagrees with the verdict of record
 
 ## Proposed
 
@@ -55,6 +56,7 @@ Issues carrying `loom:curated`.
 - **#351**: Explain the 2x lower peak Icap / dV/dt at soft-start with the DR-0037 bias servo (142 vs 282 mA at tt/27C) *(curated)*
 - **#374**: sim: phase 2 of #366 - route current-limit, enable-shutdown, soft-start, soft-start-loop-gain grid drivers through klt_batch *(curated)*
 - **#378**: Protect frozen DUT netlist snapshots with the append-only evidence guard *(curated)*
+- **#398**: ci: fail when README T1 tier/count prose disagrees with signoff/records/t1-tier-report.json *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -70,13 +72,13 @@ _None._
 
 | Tier | Count |
 |------|-------|
-| Operator merge-risk holds | 1 |
+| Operator merge-risk holds | 2 |
 | Operator priority | 0 |
-| Ready (`loom:issue`) | 3 |
-| In Progress (`loom:building`) | 1 |
+| Ready (`loom:issue`) | 2 |
+| In Progress (`loom:building`) | 0 |
 | PRs awaiting review | 0 |
-| Approved PRs awaiting merge | 1 |
-| Curated | 12 |
+| Approved PRs awaiting merge | 2 |
+| Curated | 13 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
