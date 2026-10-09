@@ -21,7 +21,7 @@ package manager for the Homebrew dependency installs.
 |---|---|---|
 | xschem | **3.4.7** (tag `3.4.7`) | built from source, see §2 |
 | ngspice | **46_1** (banner `ngspice-46`) | Homebrew — see "Keeping the ngspice pin from drifting" below; `brew install ngspice` is **not** by itself a pin |
-| volare | **0.20.6** | Homebrew / pip (`volare`) |
+| volare | **0.20.6** | Homebrew / pip (`volare`); CI pins `volare==0.20.6` |
 | gf180mcu PDK | commit hash **`c6d73a35f524070e85faff4a6a9eef49553ebc2b`** | `volare fetch` |
 | Build deps | `cairo` 1.18.4, `tcl-tk@8` 8.6.18, `xorgproto` 2025.1, XQuartz (cask), `bison`/`flex` (system, not Homebrew) | Homebrew / macOS system tools |
 

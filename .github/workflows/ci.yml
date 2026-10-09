@@ -79,10 +79,22 @@ on:
     - cron: "0 7 * * *"
   workflow_dispatch: {}
 
+# Least privilege: every job only reads the repo.
+permissions:
+  contents: read
+
+# Supersede stale PR runs; never cancel main-branch, scheduled, or manual runs.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# timeout-minutes are sized at roughly 10x the observed durations (the two
+# no-PDK jobs finish in ~20-30 s; pvt-smoke in ~6 min).
 jobs:
   harness-selftest:
     name: harness self-test (unit tests, no PDK required)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -95,7 +107,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv (provides uvx for the pinned ruff lint gate)
-        run: python3 -m pip install --upgrade uv
+        run: python3 -m pip install uv==0.12.24
 
       - name: Lint Python (ruff F + E9, correctness only)
         run: uvx ruff==0.16.10 check .
@@ -180,6 +192,7 @@ jobs:
   signoff-tier-report:
     name: T1 tier report (klt signoff --manifest, no PDK required)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -188,7 +201,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv (fetches the pinned klt revision for signoff/check.sh)
-        run: python3 -m pip install --upgrade uv
+        run: python3 -m pip install uv==0.12.24
 
       - name: Re-grade this block's T1 state
         run: bash signoff/check.sh
@@ -210,6 +223,7 @@ jobs:
   pvt-smoke:
     name: PVT smoke run against gf180mcu (ngspice + PDK)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     if: >-
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
@@ -229,9 +243,10 @@ jobs:
 
       - name: Fetch the pinned gf180mcu PDK via volare
         run: |
-          python3 -m pip install --upgrade volare
-          # Pinned hash from docs/environment-setup.md section 1 — keep this
-          # in sync with that doc rather than tracking volare's "latest".
+          python3 -m pip install volare==0.20.6
+          # Pinned volare version and PDK hash from docs/environment-setup.md
+          # section 1 — keep these in sync with that doc rather than tracking
+          # "latest".
           volare fetch  --pdk gf180mcu c6d73a35f524070e85faff4a6a9eef49553ebc2b
           volare enable --pdk gf180mcu c6d73a35f524070e85faff4a6a9eef49553ebc2b
 
