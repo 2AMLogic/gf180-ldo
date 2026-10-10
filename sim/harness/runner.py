@@ -341,6 +341,30 @@ class NgspiceMissing(RuntimeError):
     pass
 
 
+def validate_process_output(returncode: int, text: str, log_name: str) -> str | None:
+    """Shared exit-status + diagnostic validation (issue #406).
+
+    Returns a human-readable problem description, or ``None`` when the run
+    is clean. Checks, in order: nonzero exit, :data:`FATAL_LOG_RE`, and
+    :data:`_UNDEFINED_VECTOR_LET_RE`. Used by both :func:`run_ngspice_deck`
+    (which raises) and :func:`run_point` (which returns a failed result).
+    The sweep-only completion marker and the analysis-gated DC-ladder check
+    are deliberately not part of this helper.
+    """
+    if returncode != 0:
+        return f"ngspice exited {returncode} (see {log_name})"
+    if FATAL_LOG_RE.search(text):
+        bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
+        return f"ngspice reported a fatal condition: {bad} (see {log_name})"
+    if _UNDEFINED_VECTOR_LET_RE.search(text):
+        bad = [ln for ln in text.splitlines() if _UNDEFINED_VECTOR_LET_RE.search(ln)][:3]
+        return (
+            f"ngspice's .let/v(...) referenced a vector that does not exist "
+            f"in the netlist: {bad} (see {log_name})"
+        )
+    return None
+
+
 def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     """Run one ngspice deck to completion and validate its output.
 
@@ -397,19 +421,9 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     )
     text = proc.stdout + proc.stderr
     log.write_text(text)
-    if proc.returncode != 0:
-        raise RuntimeError(f"ngspice exited {proc.returncode} (see {display_path(log)})")
-    if FATAL_LOG_RE.search(text):
-        bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
-        raise RuntimeError(f"ngspice reported a fatal condition: {bad} (see {display_path(log)})")
-    if _UNDEFINED_VECTOR_LET_RE.search(text):
-        bad = [
-            ln for ln in text.splitlines() if _UNDEFINED_VECTOR_LET_RE.search(ln)
-        ][:3]
-        raise RuntimeError(
-            f"ngspice's .let/v(...) referenced a vector that does not exist "
-            f"in the netlist: {bad} (see {display_path(log)})"
-        )
+    problem = validate_process_output(proc.returncode, text, display_path(log))
+    if problem:
+        raise RuntimeError(problem)
     if not _runs_transient_analysis(deck.read_text()):
         exhausted = _ladder_exhaustion_lines(text)
         if exhausted:
@@ -1058,6 +1072,22 @@ def run_point(
                 ),
                 dc_path=dc_path,
             )
+
+    # #406: a nonzero exit or fatal/undefined-vector diagnostic invalidates
+    # the run even when every requested measurement parsed.
+    problem = validate_process_output(returncode, output, log_path.name)
+    if problem:
+        return PointResult(
+            point=point,
+            status="failed",
+            measurements=measurements,
+            missing=missing,
+            seconds=elapsed,
+            deck=deck_path.name,
+            log=log_path.name,
+            message=problem,
+            dc_path=dc_path,
+        )
 
     if missing:
         errors = "; ".join(_ERROR_RE.findall(output)[:3])
