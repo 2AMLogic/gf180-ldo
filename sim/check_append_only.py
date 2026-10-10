@@ -5,7 +5,8 @@ sim/README.md ("Append-only rule") says committed evidence records are never
 edited, deleted, or renamed. The writer enforces that in-process; this script
 enforces it on a pull request's diff. Only *Added* paths are allowed under:
 
-    sim/*/records/    sim/*/corners/    layout/records/
+    sim/*/records/    sim/*/corners/    sim/*/netlist-snapshots/
+    layout/records/
 
 (signoff/records/ is deliberately not covered: signoff/check.sh regenerates
 and re-commits the tier report by design.)
@@ -31,7 +32,8 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-PROTECTED = ("sim/*/records/*", "sim/*/corners/*", "layout/records/*")
+PROTECTED = ("sim/*/records/*", "sim/*/corners/*", "sim/*/netlist-snapshots/*",
+             "layout/records/*")
 DEFAULT_ALLOWLIST = REPO / "sim" / "append-only-allowlist.txt"
 DR_RE = re.compile(r"^DR-\d{4}$")
 

@@ -22,8 +22,9 @@ name: CI
 #                                       issue #362)
 #   - sim/check_append_only.py        (PR-only: fails if a PR modifies/deletes/
 #                                       renames committed evidence under
-#                                       sim/*/records, sim/*/corners, or
-#                                       layout/records; issue #371)
+#                                       sim/*/records, sim/*/corners,
+#                                       sim/*/netlist-snapshots, or
+#                                       layout/records; issues #371, #378)
 #   - signoff/check.sh                (re-grades this block's T1 state from
 #                                       signoff/block-manifest.json via `klt
 #                                       signoff --manifest` and fails if a
@@ -199,8 +200,8 @@ jobs:
         if: github.event_name == 'pull_request'
         run: python3 sim/check_append_only.py --base "origin/${{ github.base_ref }}"
         # Fails if a PR modifies, deletes, or renames anything under
-        # sim/*/records/, sim/*/corners/, or layout/records/ (only additions
-        # pass). Exceptions need a DR + sim/append-only-allowlist.txt entry.
+        # sim/*/records/, sim/*/corners/, sim/*/netlist-snapshots/, or
+        # layout/records/ (only additions pass). Exceptions need a DR + sim/append-only-allowlist.txt entry.
         # Classifier tests: sim/tests/test_check_append_only.py (issue #371).
 
   signoff-tier-report:
