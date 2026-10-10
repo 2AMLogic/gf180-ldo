@@ -190,3 +190,10 @@ total = fresh.get("t1_item_count")
 print(f"signoff/check.sh: verdict of record is current -- T1 {met}/{total} items met, "
       f"tier={fresh.get('tier')!r}")
 PY
+
+# ---------------------------------------------------------------------------
+# 4. README prose that cites the verdict must agree with it (issue #398).
+# ---------------------------------------------------------------------------
+if [[ "$WRITE" -eq 0 ]]; then
+  python3 signoff/readme_claims.py "$FRESH" README.md signoff/README.md
+fi
