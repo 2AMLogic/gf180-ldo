@@ -1056,6 +1056,60 @@ class RunPointLadderGateTests(unittest.TestCase):
         self.assertEqual("failed", result.status)
         self.assertIn("pseudo-transient", result.message)
 
+    def _run_proc(self, tb, stdout, stderr="", returncode=0):
+        proc = unittest.mock.Mock(returncode=returncode, stdout=stdout, stderr=stderr)
+        with unittest.mock.patch("subprocess.run", return_value=proc):
+            return runner.run_point(tb, self.pdk, self._point(), self.workdir)
+
+    def test_406_clean_control_stays_ok(self):
+        result = self._run_proc(self._tb(["op"]), "m_vout = 1.8\n")
+        self.assertEqual("ok", result.status)
+
+    def test_406_nonzero_exit_with_complete_measurements_fails(self):
+        result = self._run_proc(self._tb(["op"]), "m_vout = 1.8\n", returncode=1)
+        self.assertEqual("failed", result.status)
+        self.assertIn("exited 1", result.message)
+        self.assertEqual(1.8, result.measurements["vout"])
+        self.assertEqual([], result.missing)
+        self.assertIsNotNone(result.dc_path)
+        self.assertTrue((self.workdir / result.log).is_file())
+
+    def test_406_fatal_log_with_complete_measurements_fails(self):
+        result = self._run_proc(
+            self._tb(["op"]),
+            "m_vout = 1.8\nFatal error: Simulation interrupted\n",
+        )
+        self.assertEqual("failed", result.status)
+        self.assertIn("fatal", result.message)
+        self.assertEqual(1.8, result.measurements["vout"])
+
+    def test_406_undefined_vector_on_stdout_fails(self):
+        result = self._run_proc(
+            self._tb(["op"]), 'm_vout = 1.8\nError: RHS "v(missing)" invalid\n'
+        )
+        self.assertEqual("failed", result.status)
+        self.assertIn("does not exist", result.message)
+
+    def test_406_diagnostics_on_stderr_fail(self):
+        tb = self._tb(["op"])
+        for err in (
+            'Error: RHS "v(missing)" invalid\n',
+            "Fatal error: Simulation interrupted\n",
+        ):
+            with self.subTest(err=err):
+                result = self._run_proc(tb, "m_vout = 1.8\n", stderr=err)
+                self.assertEqual("failed", result.status)
+
+    def test_406_tran_bench_still_checked_for_exit_status(self):
+        tb = self._tb(["tran 1u 9m", "meas tran vpp PP v(out) FROM=1u TO=9m"])
+        result = self._run_proc(tb, "m_vout = 1.8\n", returncode=2)
+        self.assertEqual("failed", result.status)
+
+    def test_406_generic_deck_needs_no_sweep_marker(self):
+        result = self._run_proc(self._tb(["op"]), "m_vout = 1.8\n")
+        self.assertEqual("ok", result.status)
+        self.assertNotIn("SWEEP COMPLETE", "m_vout = 1.8\n")
+
     def test_the_committed_evidence_log_now_fails_loudly(self):
         """Issue #310's own manual-verification step, replayed: the exact
         committed log the issue cites must trip the gate. Read in isolation
