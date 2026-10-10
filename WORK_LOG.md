@@ -2,6 +2,13 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-09
+
+- **PR #404**: ci: pin the ratified README spec table behind a lock and DR amendments
+- **PR #403**: ci: harden ci.yml (permissions, concurrency, timeouts, pin uv/volare)
+- **Issue #397** (closed): ci: pin the ratified README spec table so a row cannot change without a decision record
+- **Issue #402** (closed): ci: harden ci.yml (least-privilege permissions, concurrency, timeouts, pin uv/volare)
+
 ### 2026-10-08
 
 - **PR #394**: Bind characterization freshness to the designated DUT
