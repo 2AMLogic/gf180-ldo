@@ -979,6 +979,20 @@ def parse_measurements(text: str) -> dict[str, float]:
     return found
 
 
+def _partial_output(*streams: str | bytes | None) -> str:
+    """Join the (possibly bytes/None) partial streams of a killed subprocess."""
+    parts = []
+    for stream in streams:
+        if not stream:
+            continue
+        if isinstance(stream, bytes):
+            stream = stream.decode("utf-8", errors="replace")
+        parts.append(stream)
+    if not parts:
+        return ""
+    return "--- partial ngspice output before the kill ---\n" + "\n".join(parts)
+
+
 def run_point(
     tb: Testbench,
     pdk: Pdk,
@@ -1023,9 +1037,15 @@ def run_point(
         returncode = proc.returncode
     except FileNotFoundError as exc:
         raise NgspiceMissing(str(exc)) from exc
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - started
-        log_path.write_text(f"TIMEOUT after {timeout_s}s\n")
+        # Keep whatever ngspice had printed before it was killed (issue
+        # #409): the bare marker alone cannot tell a stuck DC solve from a
+        # slow transient. The status stays "error" and nothing is parsed
+        # from this text, so a timeout can never read as a measurement.
+        log_path.write_text(
+            f"TIMEOUT after {timeout_s}s\n" + _partial_output(exc.stdout, exc.stderr)
+        )
         return PointResult(
             point=point,
             status="error",

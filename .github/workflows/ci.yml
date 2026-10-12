@@ -89,7 +89,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # timeout-minutes are sized at roughly 10x the observed durations (the two
-# no-PDK jobs finish in ~20-30 s; pvt-smoke in ~6 min).
+# no-PDK jobs finish in ~20-30 s; pvt-smoke in ~6 min before the pass-device
+# startup smoke, ~16 min of CPU for that one point -- issue #409).
 jobs:
   harness-selftest:
     name: harness self-test (unit tests, no PDK required)
@@ -237,7 +238,7 @@ jobs:
   pvt-smoke:
     name: PVT smoke run against gf180mcu (ngspice + PDK)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     if: >-
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
@@ -289,4 +290,26 @@ jobs:
           # --supply-tol 0 collapses the PVT sweep to a single nominal point
           # (mirrors sim/selftest.sh's own --quick); --no-write means this
           # never mints or touches evidence under sim/startup/records/.
-          python3 sim/run_corners.py startup --corners tt --temps 27 --supply-tol 0 --no-write
+          #
+          # --timeout 2400 (issue #409): the single nominal point is ~900 s
+          # of CPU, not seconds. Measured (ngspice-46, tt/27C/3.30V,
+          # 2026-10-12): the near-short branch alone enters a ~1 MHz
+          # current-limit limit cycle (~50 accepted steps/us, ~31% rejected)
+          # costing ~25 s per 0.5 ms of the 6 ms window, while the full-load
+          # and min-load branches cost <1 s each; ngspice has one global
+          # timestep, so the combined deck pays for it (~95 s per 0.5 ms),
+          # completing in 929.6 s wall / 900.8 s user with PASS. The old
+          # 300 s default therefore could never finish. A timeout is still
+          # ERROR / exit 2; this only sizes the budget (~2.6x measured, for
+          # a slower runner/ngspice-42) -- thresholds and stimulus are
+          # untouched. See sim/harness/README.md.
+          python3 sim/run_corners.py startup --corners tt --temps 27 --supply-tol 0 --no-write --timeout 2400
+
+      - name: Upload pass-device startup smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: startup-smoke-logs
+          path: sim/.work/startup/
+          if-no-files-found: warn
+          retention-days: 14
