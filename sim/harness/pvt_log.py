@@ -20,6 +20,7 @@ testbench-specific, not duplicated boilerplate.
 
 from __future__ import annotations
 
+import math
 import pathlib
 import re
 from collections.abc import Callable, Sequence
@@ -48,12 +49,18 @@ def read_measurements(log: pathlib.Path, scalars: Sequence[str]) -> dict[str, fl
         if not m:
             continue
         try:
-            vals[m.group(1)] = float(m.group(2))
+            value = float(m.group(2))
         except ValueError:
             raise SystemExit(
                 f"FATAL: {log.name} has an unparsable value for "
                 f"{m.group(1)}: {m.group(2)!r}"
             ) from None
+        if not math.isfinite(value):
+            raise SystemExit(
+                f"FATAL: {log.name} has a non-finite value for "
+                f"{m.group(1)}: {m.group(2)!r}"
+            )
+        vals[m.group(1)] = value
     missing = [s for s in scalars if s not in vals]
     if missing:
         raise SystemExit(f"FATAL: {log.name} is missing measurements: {missing}")

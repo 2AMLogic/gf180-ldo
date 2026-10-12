@@ -1056,6 +1056,18 @@ class RunPointLadderGateTests(unittest.TestCase):
         self.assertEqual("failed", result.status)
         self.assertIn("pseudo-transient", result.message)
 
+    def test_420_overflowed_required_measurement_fails_the_point(self):
+        """`m_vout = 1e999` parses to inf; the point must not be ok."""
+        result = self._run(
+            self._tb(["tran 1u 9m", "meas tran vpp PP v(out) FROM=1u TO=9m"]),
+            _gate_log("m_vout = 1e999"),
+        )
+        self.assertEqual("failed", result.status)
+        self.assertIn("non-finite", result.message)
+        self.assertIn("vout", result.message)
+        self.assertIn(result.log, result.message)
+        self.assertNotIn("vout", result.measurements)
+
     def _run_proc(self, tb, stdout, stderr="", returncode=0):
         proc = unittest.mock.Mock(returncode=returncode, stdout=stdout, stderr=stderr)
         with unittest.mock.patch("subprocess.run", return_value=proc):
@@ -1346,6 +1358,80 @@ class ChecksTests(unittest.TestCase):
             ),
             [],
         )
+
+
+class NonFiniteFailClosedTests(unittest.TestCase):
+    """Issue #420: overflowed/NaN/inf values and statistics fail closed."""
+
+    def _results(self, values, status="ok"):
+        return [
+            runner.PointResult(
+                corners.PvtPoint(corners.CORNERS[c], 27, 3.3), status, {"x": v}
+            )
+            for c, v in zip(("tt", "ff", "ss"), values)
+        ]
+
+    def test_parse_drops_overflow_token_and_reports_it(self):
+        found, bad = runner.parse_measurements_checked("m_x = 1e999\nm_y = 2.5\n")
+        self.assertEqual({"y": 2.5}, found)
+        self.assertEqual(["x"], bad)
+        self.assertEqual({"y": 2.5}, runner.parse_measurements("m_x = 1e999\nm_y = 2.5"))
+
+    def test_pvt_log_rejects_overflow_token(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "a.log"
+            log.write_text("m_x = 1e999\n")
+            with self.assertRaises(SystemExit) as cm:
+                read_measurements(log, ["m_x"])
+        self.assertIn("non-finite", str(cm.exception))
+
+    def test_nonfinite_constructed_values_never_pass(self):
+        for bad in (float("nan"), float("inf"), float("-inf")):
+            for check in ({"max": 10.0}, {"min": -10.0}, {"max_spread_pct": 1}):
+                with self.subTest(bad=bad, check=check):
+                    results = self._results([1.0, bad])
+                    summary = report.summarize(results, ["x"])
+                    failures = report.evaluate_checks({"x": check}, results, summary)
+                    self.assertTrue(failures)
+                    self.assertIn("nonfinite", {f["kind"] for f in failures})
+
+    def test_all_nonfinite_samples_fail(self):
+        results = self._results([float("inf"), float("inf")])
+        summary = report.summarize(results, ["x"])
+        self.assertIsNone(summary["x"]["spread_pct"])
+        self.assertTrue(
+            report.evaluate_checks({"x": {"max_spread_pct": 1}}, results, summary)
+        )
+
+    def test_huge_finite_samples_give_correct_spread(self):
+        results = self._results([1e308, 1.5e308])
+        summary = report.summarize(results, ["x"])
+        self.assertTrue(summary["x"]["mean"] > 0 and summary["x"]["mean"] < float("inf"))
+        self.assertAlmostEqual(summary["x"]["spread_pct"], 40.0)
+        failures = report.evaluate_checks({"x": {"max_spread_pct": 1}}, results, summary)
+        self.assertEqual("max_spread_pct", failures[0]["kind"])
+
+    def test_huge_opposite_sign_samples_do_not_pass(self):
+        results = self._results([-1.5e308, 1.5e308])
+        summary = report.summarize(results, ["x"])
+        self.assertIsNone(summary["x"]["spread_pct"])  # zero mean: unevaluable
+        self.assertTrue(
+            report.evaluate_checks({"x": {"max_spread_pct": 1}}, results, summary)
+        )
+
+    def test_ordinary_grading_and_waivers_unchanged(self):
+        results = self._results([1.0, 1.2, 0.8])
+        summary = report.summarize(results, ["x"])
+        self.assertAlmostEqual(summary["x"]["spread_pct"], 40.0)
+        self.assertEqual(
+            [], report.evaluate_checks({"x": {"max_spread_pct": 50, "min": 0.5}}, results, summary)
+        )
+        one = self._results([1.0])
+        one_summary = report.summarize(one, ["x"])
+        self.assertEqual(1, len(report.waived_checks({"x": {"max_spread_pct": 1}}, one_summary)))
+        self.assertEqual([], report.evaluate_checks({"x": {"max_spread_pct": 1}}, one, one_summary))
+        zero = self._results([-1.0, 1.0])
+        self.assertIsNone(report.summarize(zero, ["x"])["x"]["spread_pct"])
 
 
 class DegenerateGridSpreadTests(unittest.TestCase):

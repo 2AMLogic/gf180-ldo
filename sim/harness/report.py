@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import getpass
+import math
 import platform
 import socket
 import subprocess
@@ -114,22 +115,69 @@ def allocate_record_id(
         when += _dt.timedelta(seconds=1)
 
 
+def _is_finite(value) -> bool:
+    try:
+        return math.isfinite(value)
+    except TypeError:
+        return False
+
+
+def _safe_mean(values: list[float]) -> float:
+    """Mean that cannot overflow when every sample is finite."""
+    mean = sum(values) / len(values)
+    if math.isfinite(mean):
+        return mean
+    # The plain sum overflowed; the mean of finite values lies within
+    # [min, max], so dividing each term first stays finite.
+    return math.fsum(v / len(values) for v in values)
+
+
+def _spread_pct(lo: float, hi: float, mean: float) -> float | None:
+    """(hi - lo) / |mean| in percent; None if zero-mean or not finite."""
+    if not mean:
+        return None
+    spread = (hi - lo) / abs(mean) * 100.0
+    if not math.isfinite(spread):
+        # Rescale so intermediates cannot overflow.
+        scale = max(abs(lo), abs(hi), abs(mean))
+        spread = ((hi / scale) - (lo / scale)) / (abs(mean) / scale) * 100.0
+    return spread if math.isfinite(spread) else None
+
+
 def summarize(results: list[PointResult], measure_names: list[str]) -> dict:
     """Min / max / mean / spread of each measurement across the PVT grid."""
     summary: dict[str, dict] = {}
     ok = [r for r in results if r.status == "ok"]
     for name in measure_names:
-        samples = [(r.measurements[name], r.point.corner_id) for r in ok if name in r.measurements]
-        if not samples:
+        raw = [(r.measurements[name], r.point.corner_id) for r in ok if name in r.measurements]
+        if not raw:
             summary[name] = {"n": 0}
+            continue
+        # Non-finite samples (NaN/inf from a directly constructed result or an
+        # overflowed parse) are never graded as numbers: they are counted, left
+        # out of the statistics, and force the spread to None (unevaluable) so
+        # a spread check fails closed instead of comparing against NaN.
+        samples = [(v, c) for v, c in raw if _is_finite(v)]
+        n_bad = len(raw) - len(samples)
+        if not samples:
+            summary[name] = {
+                "n": len(raw),
+                "min": None,
+                "min_at": None,
+                "max": None,
+                "max_at": None,
+                "mean": None,
+                "spread_pct": None,
+                "nonfinite": n_bad,
+            }
             continue
         values = [v for v, _ in samples]
         lo_value, lo_at = min(samples, key=lambda s: s[0])
         hi_value, hi_at = max(samples, key=lambda s: s[0])
-        mean = sum(values) / len(values)
-        spread_pct = (hi_value - lo_value) / abs(mean) * 100.0 if mean else None
+        mean = _safe_mean(values)
+        spread_pct = None if n_bad else _spread_pct(lo_value, hi_value, mean)
         summary[name] = {
-            "n": len(values),
+            "n": len(raw),
             "min": lo_value,
             "min_at": lo_at,
             "max": hi_value,
@@ -137,6 +185,8 @@ def summarize(results: list[PointResult], measure_names: list[str]) -> dict:
             "mean": mean,
             "spread_pct": spread_pct,
         }
+        if n_bad:
+            summary[name]["nonfinite"] = n_bad
     return summary
 
 
@@ -206,11 +256,29 @@ def evaluate_checks(
     for name, spec in checks.items():
         low = spec.get("min")
         high = spec.get("max")
+        # Fail closed on NaN/inf: every comparison against NaN is False, so a
+        # non-finite value would otherwise pass every bound (issue #420).
+        if any(spec.get(k) is not None for k in ("min", "max", *SPREAD_KINDS)):
+            for result in results:
+                if result.status != "ok" or name not in result.measurements:
+                    continue
+                if not _is_finite(result.measurements[name]):
+                    failures.append(
+                        {
+                            "measurement": name,
+                            "kind": "nonfinite",
+                            "limit": None,
+                            "value": str(result.measurements[name]),
+                            "at": result.point.corner_id,
+                        }
+                    )
         if low is not None or high is not None:
             for result in results:
                 if result.status != "ok" or name not in result.measurements:
                     continue
                 value = result.measurements[name]
+                if not _is_finite(value):
+                    continue
                 if low is not None and value < low:
                     failures.append(
                         {

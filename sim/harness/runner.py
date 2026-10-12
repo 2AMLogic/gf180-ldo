@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 import shutil
@@ -967,16 +968,37 @@ class PointResult:
         return record
 
 
-def parse_measurements(text: str) -> dict[str, float]:
+def parse_measurements_checked(text: str) -> tuple[dict[str, float], list[str]]:
+    """Parse ``m_name = value`` lines; also report names whose value overflowed.
+
+    A numeric token such as ``1e999`` matches the measurement regex but
+    ``float()`` turns it into infinity. Such a value is never usable
+    evidence, so it is excluded from the returned dict and its name is
+    returned in the second element instead (issue #420).
+    """
     found: dict[str, float] = {}
+    nonfinite: list[str] = []
     for line in text.splitlines():
         match = _MEAS_RE.match(line)
         if match:
             try:
-                found[match.group(1)] = float(match.group(2))
+                value = float(match.group(2))
             except ValueError:  # pragma: no cover - regex already constrains this
                 continue
-    return found
+            name = match.group(1)
+            if math.isfinite(value):
+                found[name] = value
+                if name in nonfinite:
+                    nonfinite.remove(name)
+            else:
+                found.pop(name, None)
+                if name not in nonfinite:
+                    nonfinite.append(name)
+    return found, nonfinite
+
+
+def parse_measurements(text: str) -> dict[str, float]:
+    return parse_measurements_checked(text)[0]
 
 
 def _partial_output(*streams: str | bytes | None) -> str:
@@ -1062,7 +1084,7 @@ def run_point(
     # failing and erroring corners too -- those are precisely the ones whose
     # rung a reader wants to compare against the last run's.
     dc_path = classify_dc_path(output)
-    measurements = parse_measurements(output)
+    measurements, nonfinite = parse_measurements_checked(output)
     missing = [name for name in tb.measure if name not in measurements]
 
     # #310: a DC-solve bench (no .tran analysis) whose log shows the ladder
@@ -1106,6 +1128,24 @@ def run_point(
             deck=deck_path.name,
             log=log_path.name,
             message=problem,
+            dc_path=dc_path,
+        )
+
+    bad_required = [name for name in tb.measure if name in nonfinite]
+    if bad_required:
+        return PointResult(
+            point=point,
+            status="failed",
+            measurements=measurements,
+            missing=missing,
+            seconds=elapsed,
+            deck=deck_path.name,
+            log=log_path.name,
+            message=(
+                "non-finite measurement value (numeric overflow) for "
+                f"{', '.join(bad_required)} in {log_path.name} at "
+                f"{point.corner_id}"
+            ),
             dc_path=dc_path,
         )
 
