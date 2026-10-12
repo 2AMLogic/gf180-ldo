@@ -107,6 +107,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import math
 import pathlib
 import re
 import sys
@@ -446,11 +447,21 @@ def classify(snippets: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 class EnvelopeFilter:
-    def __init__(self, name: str, decision_record: str, predicate):
+    def __init__(
+        self,
+        name: str,
+        decision_record: str,
+        predicate,
+        required_coords: frozenset | None = None,
+    ):
         self.name = name
         self.decision_record = decision_record
         # callable(csv_row: dict[str, str]) -> bool
         self.predicate = predicate
+        # Every distinct coordinate tuple (see ``_coord_key``) the envelope
+        # claims. When set, a whole-row PASS requires each one to be present
+        # in the CSV exactly as a distinct, well-formed row (issue #410).
+        self.required_coords = required_coords
 
 
 def _in_dr0018_stability_envelope(row: dict[str, str]) -> bool:
@@ -463,10 +474,59 @@ def _in_dr0018_stability_envelope(row: dict[str, str]) -> bool:
     )
 
 
+def _coord_key(row: dict[str, str]) -> tuple:
+    """Normalized identity of one matrix point: (process, temp C, supply V,
+    load mA, C_eff uF, ESR ohm). Numbers are rounded so legacy formatting
+    ("3.30" vs "3.3", "-40.0" vs "-40") compares equal. Raises
+    KeyError/ValueError/TypeError on a missing, blank or non-finite field.
+    """
+    process = row["process"].strip().lower()
+    if not process:
+        raise ValueError("blank process")
+    nums = []
+    for col in ("temp_c", "vin_v", "iload_ma", "ceff_uf", "esr_ohm"):
+        v = float(row[col])
+        if not math.isfinite(v):
+            raise ValueError(f"non-finite {col}")
+        nums.append(round(v, 6) + 0.0)
+    return (process, *nums)
+
+
+# Axes of the DR-0018 envelope, mirroring ``sim/loop-stability/testbench/
+# sweep.py`` (PROCESS_CORNERS, TEMPS_C, NOMINAL_SUPPLY_V +/- SUPPLY_TOL,
+# ILOADS_A minus the DR-0007 no-load point, ESRS_OHM >= 0.2) and DR-0018's
+# 630-point accounting. A unit test cross-checks them against sweep.py.
+DR0018_PROCESSES = ("tt", "ff", "ss", "fs", "sf", "res_ff", "res_ss")
+DR0018_TEMPS_C = (-40.0, 27.0, 125.0)
+DR0018_SUPPLIES_V = (2.97, 3.3, 3.63)
+DR0018_LOADS_MA = (0.1, 1.0, 10.0, 25.0, 50.0)
+DR0018_CEFF_UF = (1.0,)
+DR0018_ESRS_OHM = (0.2, 0.5)
+
+DR0018_REQUIRED_COORDS = frozenset(
+    _coord_key(
+        {
+            "process": p,
+            "temp_c": str(t),
+            "vin_v": str(v),
+            "iload_ma": str(i),
+            "ceff_uf": str(c),
+            "esr_ohm": str(e),
+        }
+    )
+    for p in DR0018_PROCESSES
+    for t in DR0018_TEMPS_C
+    for v in DR0018_SUPPLIES_V
+    for i in DR0018_LOADS_MA
+    for c in DR0018_CEFF_UF
+    for e in DR0018_ESRS_OHM
+)
+
 DR0018_STABILITY_ENVELOPE = EnvelopeFilter(
     name="0.1-50 mA / C_eff=1uF nominal / ESR>=200 mOhm",
     decision_record="DR-0018",
     predicate=_in_dr0018_stability_envelope,
+    required_coords=DR0018_REQUIRED_COORDS,
 )
 
 
@@ -491,9 +551,18 @@ def envelope_verdict(record: pathlib.Path, envelope: EnvelopeFilter) -> dict:
     n_total_full = len(rows)
     n_pass_full = sum(1 for r in rows if r.get("result", "").upper() == "PASS")
 
-    subset = [r for r in rows if envelope.predicate(r)]
+    subset: list[dict[str, str]] = []
+    n_malformed = 0
+    for r in rows:
+        try:
+            if envelope.predicate(r):
+                subset.append(r)
+        except (KeyError, ValueError, TypeError, AttributeError):
+            # Unparseable coordinates can neither be graded as in-envelope
+            # nor fill a required slot (issue #410).
+            n_malformed += 1
     if not subset:
-        return {
+        result = {
             "available": True,
             "verdict": "UNKNOWN",
             "n_pass": 0,
@@ -501,6 +570,9 @@ def envelope_verdict(record: pathlib.Path, envelope: EnvelopeFilter) -> dict:
             "n_total_full": n_total_full,
             "n_pass_full": n_pass_full,
         }
+        if n_malformed:
+            result["n_malformed"] = n_malformed
+        return result
 
     def _point_passes(r: dict[str, str]) -> bool:
         result_ok = r.get("result", "").upper() == "PASS"
@@ -512,19 +584,65 @@ def envelope_verdict(record: pathlib.Path, envelope: EnvelopeFilter) -> dict:
     n_resurge_flagged = sum(
         1 for r in subset if r.get("resurgence_result", "PASS").upper() != "PASS"
     )
-    result: dict = {
+
+    coverage: dict | None = None
+    if envelope.required_coords is not None:
+        required = envelope.required_coords
+        seen: dict[tuple, int] = {}
+        for r in subset:
+            try:
+                key = _coord_key(r)
+            except (KeyError, ValueError, TypeError, AttributeError):
+                n_malformed += 1
+                continue
+            seen[key] = seen.get(key, 0) + 1
+        covered = required & seen.keys()
+        coverage = {
+            "n_covered": len(covered),
+            "n_required": len(required),
+            "n_missing": len(required) - len(covered),
+            "n_duplicate_rows": sum(c - 1 for c in seen.values() if c > 1),
+            "n_unexpected": len(seen.keys() - required),
+            "n_malformed": n_malformed,
+        }
+        coverage["complete"] = (
+            coverage["n_missing"] == 0 and n_malformed == 0
+        )
+
+    if n_pass != n_total:
+        verdict = "FAIL"
+    elif coverage is not None and not coverage["complete"]:
+        verdict = "UNKNOWN"
+    else:
+        verdict = "PASS"
+    result = {
         "available": True,
-        "verdict": "PASS" if n_pass == n_total else "FAIL",
+        "verdict": verdict,
         "n_pass": n_pass,
         "n_total": n_total,
         "n_resurge_flagged": n_resurge_flagged,
         "n_total_full": n_total_full,
         "n_pass_full": n_pass_full,
     }
+    if coverage is not None:
+        result["coverage"] = coverage
     if "phase_margin_deg" in subset[0] and "gain_margin_db" in subset[0]:
         result["worst_pm"] = min(float(r["phase_margin_deg"]) for r in subset)
         result["worst_gm"] = min(float(r["gain_margin_db"]) for r in subset)
     return result
+
+
+def _coverage_note(cov: dict) -> str:
+    parts = [f"{cov['n_covered']}/{cov['n_required']} required distinct points measured"]
+    if cov["n_missing"]:
+        parts.append(f"{cov['n_missing']} missing")
+    if cov["n_duplicate_rows"]:
+        parts.append(f"{cov['n_duplicate_rows']} duplicate rows ignored")
+    if cov["n_unexpected"]:
+        parts.append(f"{cov['n_unexpected']} unrequired coordinates ignored")
+    if cov["n_malformed"]:
+        parts.append(f"{cov['n_malformed']} malformed rows ignored")
+    return ", ".join(parts)
 
 
 def _render_envelope_snippet(env: dict, envelope: EnvelopeFilter) -> str:
@@ -534,9 +652,12 @@ def _render_envelope_snippet(env: dict, envelope: EnvelopeFilter) -> str:
             "-- no `-matrix.csv` committed alongside this record"
         )
     if env["n_total"] == 0:
+        malformed = ""
+        if env.get("n_malformed"):
+            malformed = f" ({env['n_malformed']} malformed rows ignored)"
         return (
             f"envelope ({envelope.decision_record}, {envelope.name}): UNKNOWN "
-            "-- no matrix point falls inside this envelope"
+            f"-- no matrix point falls inside this envelope{malformed}"
         )
     margin = ""
     if "worst_pm" in env and "worst_gm" in env:
@@ -547,11 +668,17 @@ def _render_envelope_snippet(env: dict, envelope: EnvelopeFilter) -> str:
             f"; full matrix (DR-0001's original, wider window): "
             f"{env['n_pass_full']}/{env['n_total_full']} passing"
         )
+    cov = env.get("coverage")
+    coverage = ""
+    if cov is not None and not cov["complete"]:
+        coverage = f"; incomplete coverage: {_coverage_note(cov)}"
+    elif cov is not None and cov["n_duplicate_rows"]:
+        coverage = f"; coverage: {_coverage_note(cov)}"
     return (
         f"envelope ({envelope.decision_record}, {envelope.name}): "
         f"**{env['verdict']}** -- {env['n_pass']}/{env['n_total']} points passing"
         f"{margin}, DR-0008 resurgence flagged {env.get('n_resurge_flagged', 0)}/"
-        f"{env['n_total']}{full}"
+        f"{env['n_total']}{coverage}{full}"
     )
 
 

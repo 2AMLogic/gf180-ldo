@@ -313,12 +313,15 @@ def _matrix_row(
     pm=60.0,
     gm=20.0,
     resurgence_result="PASS",
+    process="tt",
+    temp_c="27",
+    vin_v="3.30",
 ):
     return {
-        "corner_id": "tt_27c_3.30v",
-        "process": "tt",
-        "temp_c": "27",
-        "vin_v": "3.30",
+        "corner_id": f"{process}_{temp_c}c_{vin_v}v",
+        "process": process,
+        "temp_c": str(temp_c),
+        "vin_v": str(vin_v),
         "iload_ma": str(iload_ma),
         "ceff_uf": str(ceff_uf),
         "esr_ohm": str(esr_ohm),
@@ -332,6 +335,19 @@ def _matrix_row(
         "resurgence_db": "-1.0",
         "resurgence_result": resurgence_result,
     }
+
+
+def _full_envelope_rows(result="PASS") -> list[dict]:
+    """One row per required DR-0018 coordinate (630), straight from the axes."""
+    return [
+        _matrix_row(i, c, e, result, process=p, temp_c=f"{t:g}", vin_v=f"{v:g}")
+        for p in bcr.DR0018_PROCESSES
+        for t in bcr.DR0018_TEMPS_C
+        for v in bcr.DR0018_SUPPLIES_V
+        for i in bcr.DR0018_LOADS_MA
+        for c in bcr.DR0018_CEFF_UF
+        for e in bcr.DR0018_ESRS_OHM
+    ]
 
 
 class _EnvelopeFixture:
@@ -363,10 +379,8 @@ class TestEnvelopeVerdict(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.tmpdir = Path(self._tmp.name)
 
-    def test_envelope_passes_when_every_in_envelope_point_passes(self):
-        rows = [
-            _matrix_row(0.1, 1.0, 0.2, "PASS"),
-            _matrix_row(50, 1.0, 0.5, "PASS"),
+    def test_envelope_passes_when_every_required_point_is_present_and_passes(self):
+        rows = _full_envelope_rows() + [
             # Outside the envelope (0.33 uF) and FAILing -- must not affect
             # the envelope verdict, only the full-matrix count below.
             _matrix_row(50, 0.33, 0.001, "FAIL"),
@@ -374,10 +388,152 @@ class TestEnvelopeVerdict(unittest.TestCase):
         fixture = _EnvelopeFixture(self.tmpdir, rows, overall="PASS")
         env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
         self.assertEqual(env["verdict"], "PASS")
+        self.assertEqual(env["n_pass"], 630)
+        self.assertEqual(env["n_total"], 630)
+        self.assertEqual(env["n_pass_full"], 630)
+        self.assertEqual(env["n_total_full"], 631)
+        self.assertEqual(env["coverage"]["n_covered"], 630)
+        self.assertTrue(env["coverage"]["complete"])
+
+    def test_two_passing_points_no_longer_establish_the_whole_row(self):
+        """Issue #410: the former positive fixture (two passing points at
+        tt / 27 C / 3.30 V) is a diagnostic subset, not the 630-point row."""
+        rows = [
+            _matrix_row(0.1, 1.0, 0.2, "PASS"),
+            _matrix_row(50, 1.0, 0.5, "PASS"),
+            _matrix_row(50, 0.33, 0.001, "FAIL"),
+        ]
+        fixture = _EnvelopeFixture(self.tmpdir, rows, overall="PASS")
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
         self.assertEqual(env["n_pass"], 2)
         self.assertEqual(env["n_total"], 2)
-        self.assertEqual(env["n_pass_full"], 2)
         self.assertEqual(env["n_total_full"], 3)
+        self.assertEqual(env["coverage"]["n_covered"], 2)
+        self.assertEqual(env["coverage"]["n_required"], 630)
+        snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertIn("incomplete coverage", snippet)
+        self.assertIn("2/630", snippet)
+        self.assertIn("2/2 points passing", snippet)
+
+    def test_single_passing_point_is_unknown(self):
+        fixture = _EnvelopeFixture(self.tmpdir, [_matrix_row(1, 1.0, 0.5, "PASS")])
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+
+    def test_one_point_repeated_630_times_cannot_fill_the_matrix(self):
+        rows = [_matrix_row(1, 1.0, 0.5, "PASS") for _ in range(630)]
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["n_total"], 630)
+        self.assertEqual(env["coverage"]["n_covered"], 1)
+        self.assertEqual(env["coverage"]["n_duplicate_rows"], 629)
+        snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertIn("629 duplicate rows", snippet)
+
+    def test_legacy_number_formatting_normalizes_to_the_same_slot(self):
+        rows = _full_envelope_rows()
+        for r in rows:
+            r["vin_v"] = f"{float(r['vin_v']):.2f}"
+            r["temp_c"] = f"{float(r['temp_c']):.1f}"
+            r["esr_ohm"] = f"{float(r['esr_ohm']):.3f}"
+            r["process"] = r["process"].upper()
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "PASS")
+
+    def _assert_missing(self, predicate, n_missing):
+        rows = [r for r in _full_envelope_rows() if not predicate(r)]
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["coverage"]["n_missing"], n_missing)
+        self.assertEqual(env["coverage"]["n_covered"], 630 - n_missing)
+
+    def test_missing_process_corner_prevents_pass(self):
+        self._assert_missing(lambda r: r["process"] == "res_ss", 90)
+
+    def test_missing_temperature_prevents_pass(self):
+        self._assert_missing(lambda r: r["temp_c"] == "125", 210)
+
+    def test_missing_supply_prevents_pass(self):
+        self._assert_missing(lambda r: r["vin_v"] == "2.97", 210)
+
+    def test_missing_load_prevents_pass(self):
+        self._assert_missing(lambda r: r["iload_ma"] == "0.1", 126)
+
+    def test_missing_esr_prevents_pass(self):
+        self._assert_missing(lambda r: r["esr_ohm"] == "0.5", 315)
+
+    def test_malformed_coordinates_never_fill_a_slot_or_pass(self):
+        rows = _full_envelope_rows()
+        victim = rows.pop()
+        bad = dict(victim, vin_v="not-a-number")
+        blank = dict(victim, process="")
+        fixture = _EnvelopeFixture(self.tmpdir, rows + [bad, blank])
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["coverage"]["n_missing"], 1)
+        self.assertGreaterEqual(env["coverage"]["n_malformed"], 2)
+
+    def test_malformed_row_alongside_complete_coverage_blocks_pass(self):
+        rows = _full_envelope_rows()
+        rows.append(dict(rows[0], process=""))
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["coverage"]["n_missing"], 0)
+
+    def test_partial_matrix_with_in_envelope_failure_is_fail_with_coverage(self):
+        rows = [
+            _matrix_row(1, 1.0, 0.5, "PASS"),
+            _matrix_row(25, 1.0, 0.5, "FAIL", pm=10.0, gm=1.0),
+        ]
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "FAIL")
+        self.assertEqual(env["coverage"]["n_covered"], 2)
+        snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertIn("**FAIL**", snippet)
+        self.assertIn("incomplete coverage", snippet)
+
+    def test_complete_matrix_with_one_failure_or_resurgence_flag_still_fails(self):
+        rows = _full_envelope_rows()
+        rows[5]["resurgence_result"] = "FAIL"
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "FAIL")
+        self.assertTrue(env["coverage"]["complete"])
+
+    def test_out_of_envelope_failures_stay_disclosed_not_graded_on_a_complete_matrix(self):
+        rows = _full_envelope_rows() + [_matrix_row(0, 0.33, 0.001, "FAIL")]
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "PASS")
+        snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertIn("630/631 passing", snippet)
+
+    def test_required_axes_match_the_sweep_definitions_and_dr0018_accounting(self):
+        src = (SIM_DIR / "loop-stability" / "testbench" / "sweep.py").read_text()
+
+        def tup(name):
+            m = re.search(rf"^{name}\s*=\s*\(([^)]*)\)", src, re.MULTILINE)
+            return [eval(x.strip()) for x in m.group(1).split(",") if x.strip()]
+
+        self.assertEqual(tuple(tup("PROCESS_CORNERS")), bcr.DR0018_PROCESSES)
+        self.assertEqual(tuple(tup("TEMPS_C")), bcr.DR0018_TEMPS_C)
+        loads = tuple(round(v * 1e3, 6) for v in tup("ILOADS_A") if v > 0)
+        self.assertEqual(loads, bcr.DR0018_LOADS_MA)
+        esrs = tuple(v for v in tup("ESRS_OHM") if v >= 0.2)
+        self.assertEqual(esrs, bcr.DR0018_ESRS_OHM)
+        nominal = float(re.search(r"^NOMINAL_SUPPLY_V\s*=\s*([\d.]+)", src, re.M).group(1))
+        tol = float(re.search(r"^SUPPLY_TOL\s*=\s*([\d.]+)", src, re.M).group(1))
+        self.assertEqual(
+            tuple(round(nominal * k, 2) for k in (1 - tol, 1.0, 1 + tol)),
+            bcr.DR0018_SUPPLIES_V,
+        )
+        self.assertEqual(len(bcr.DR0018_STABILITY_ENVELOPE.required_coords), 630)
 
     def test_a_failing_point_inside_the_envelope_fails_the_row_even_when_the_records_own_prose_says_pass(self):
         """The core case the issue's Acceptance Criteria calls out: a point
@@ -429,19 +585,19 @@ class TestEnvelopeVerdict(unittest.TestCase):
         self.assertEqual(env["n_total_full"], 1)
 
     def test_rendered_snippet_names_the_decision_record_and_shows_the_full_matrix_count(self):
-        rows = [
-            _matrix_row(0.1, 1.0, 0.2, "PASS", pm=55.0, gm=12.0),
-            _matrix_row(50, 0.33, 0.001, "FAIL"),
-        ]
+        rows = _full_envelope_rows()
+        rows[0]["phase_margin_deg"] = "55.0"
+        rows[0]["gain_margin_db"] = "12.0"
+        rows.append(_matrix_row(50, 0.33, 0.001, "FAIL"))
         fixture = _EnvelopeFixture(self.tmpdir, rows, overall="PASS")
         env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
         snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
         self.assertIn("DR-0018", snippet)
-        self.assertIn("PASS", snippet)
-        self.assertIn("1/1", snippet)
+        self.assertIn("**PASS**", snippet)
+        self.assertIn("630/630", snippet)
         # The wider-matrix result must stay visible alongside the envelope
         # verdict, not be dropped (issue #276 acceptance criteria).
-        self.assertIn("1/2 passing", snippet)
+        self.assertIn("630/631 passing", snippet)
 
 
 class TestStabilityRowUsesEnvelopeVerdict(unittest.TestCase):
@@ -585,6 +741,38 @@ class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):
         record, snapshot = bcr.latest_substantive_record(self.SLUG)
         self.assertEqual(record.stem, "20260923-093349-7674ddf")
         self.assertIsNone(snapshot)
+
+    def _write_matrix(self, record_id: str, rows: list[dict]) -> None:
+        with (self.records_dir / f"{record_id}-matrix.csv").open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_MATRIX_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def test_a_newly_selected_partial_record_cannot_render_a_current_full_row_pass(self):
+        """Issue #410: freshness-first selection keeps choosing the newest
+        record that matches the current DUT, even when it is a diagnostic
+        subset. The older complete record must not be silently substituted,
+        and the subset must not read as a whole-row PASS.
+        """
+        full_id, partial_id = "20260923-005938-b62ac83", "20260924-010101-abcdef0"
+        self._add_record(full_id, self.CURRENT_DUT)
+        self._write_matrix(full_id, _full_envelope_rows())
+        self._add_record(partial_id, self.CURRENT_DUT)
+        self._write_matrix(partial_id, [_matrix_row(1, 1.0, 0.5, "PASS")])
+
+        record, snapshot = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, partial_id)
+        self.assertEqual(bcr.freshness(snapshot, "ldo_core")[0], "fresh")
+        env = bcr.envelope_verdict(record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["coverage"]["n_covered"], 1)
+        self.assertEqual(env["coverage"]["n_required"], 630)
+
+        # The older complete record, graded on its own, is still a PASS --
+        # the downgrade comes from the selected record, not from the grader.
+        older = bcr.envelope_verdict(self.records_dir / f"{full_id}.md",
+                                     bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(older["verdict"], "PASS")
 
     def test_an_empty_or_missing_records_directory_is_still_none_none(self):
         self.assertEqual(bcr.latest_substantive_record(self.SLUG), (None, None))
