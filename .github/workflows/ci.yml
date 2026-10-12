@@ -24,6 +24,10 @@ name: CI
 #                                       renames committed evidence under
 #                                       sim/*/records, sim/*/corners, or
 #                                       layout/records; issue #371)
+#   - sim/check_record_host_paths.py  (PR-only: fails if records added/modified
+#                                       under sim/*/records, signoff/records or
+#                                       layout/records embed /home/<user> paths;
+#                                       tests in sim/tests, issues #365/#413)
 #   - signoff/check.sh                (re-grades this block's T1 state from
 #                                       signoff/block-manifest.json via `klt
 #                                       signoff --manifest` and fails if a
@@ -152,20 +156,14 @@ jobs:
       - name: Verify new/modified records carry no absolute host paths
         if: github.event_name == 'pull_request'
         run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          files="$(git diff --name-only --diff-filter=AM "$base"...HEAD -- \
-            'sim/*/records/*' 'signoff/records/*' 'layout/*/records/*')"
-          bad=""
-          for f in $files; do
-            if grep -nE '/home/[a-z]|/Users/[a-z]' "$f"; then bad="$bad $f"; fi
-          done
-          if [ -n "$bad" ]; then
-            echo "::error::records added or modified in this PR embed absolute host paths (/home/<user> or /Users/<user>):$bad -- render paths repo-relative or via sim/harness/paths.py (issue #365)."
-            exit 1
-          fi
+          python3 sim/check_record_host_paths.py \
+            --base "${{ github.event.pull_request.base.sha }}"
         # Scoped to files added/modified in the PR so the existing append-only
         # records (which predate this check) do not break CI; they are not
         # rewritten here (issue #365). Needs full history for the base diff.
+        # Pathspecs live in sim/check_record_host_paths.py (incl. top-level
+        # layout/records/, issue #413); tests: sim/tests/test_check_record_host_paths.py
+        # (discovered by sim/selftest.sh).
 
       - name: Verify spec/decision-records/README.md is up to date
         run: |
