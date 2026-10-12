@@ -11,6 +11,7 @@ import dataclasses
 import datetime
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -1418,6 +1419,45 @@ class NonFiniteFailClosedTests(unittest.TestCase):
         self.assertTrue(
             report.evaluate_checks({"x": {"max_spread_pct": 1}}, results, summary)
         )
+
+    def test_underflowing_scaled_mean_is_unevaluable_not_a_crash(self):
+        # PR #421 review: abs(mean)/scale underflowed to zero and the rescaled
+        # spread raised ZeroDivisionError. It must be None and fail closed.
+        results = self._results([-1e308, 1e308, 1e-300])
+        summary = report.summarize(results, ["x"])
+        self.assertTrue(math.isfinite(summary["x"]["mean"]))
+        self.assertIsNone(summary["x"]["spread_pct"])
+        for check in ({"max_spread_pct": 1}, {"min_spread_pct": 1}):
+            with self.subTest(check=check):
+                failures = report.evaluate_checks({"x": check}, results, summary)
+                self.assertTrue(failures)
+
+    def test_float_max_samples_do_not_overflow_the_mean(self):
+        # PR #421 review: fsum(v / n) raised "intermediate overflow in fsum".
+        big = sys.float_info.max
+        results = self._results([big, big, big])
+        summary = report.summarize(results, ["x"])
+        self.assertEqual(big, summary["x"]["mean"])
+        self.assertEqual(0.0, summary["x"]["spread_pct"])
+        self.assertEqual(
+            [], report.evaluate_checks({"x": {"max_spread_pct": 1}}, results, summary)
+        )
+        failures = report.evaluate_checks({"x": {"min_spread_pct": 1}}, results, summary)
+        self.assertEqual("min_spread_pct", failures[0]["kind"])
+
+    def test_safe_mean_stays_within_sample_range(self):
+        big = sys.float_info.max
+        for values in (
+            [big, big, big],
+            [-big, -big, -big],
+            [big, big / 2, big],
+            [big, -big, big],
+            [-1e308, 1e308, 1e-300],
+        ):
+            with self.subTest(values=values):
+                mean = report._safe_mean(values)
+                self.assertTrue(math.isfinite(mean))
+                self.assertTrue(min(values) <= mean <= max(values))
 
     def test_ordinary_grading_and_waivers_unchanged(self):
         results = self._results([1.0, 1.2, 0.8])

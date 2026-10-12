@@ -123,24 +123,41 @@ def _is_finite(value) -> bool:
 
 
 def _safe_mean(values: list[float]) -> float:
-    """Mean that cannot overflow when every sample is finite."""
+    """Mean that cannot overflow (or raise) when every sample is finite."""
     mean = sum(values) / len(values)
     if math.isfinite(mean):
         return mean
-    # The plain sum overflowed; the mean of finite values lies within
-    # [min, max], so dividing each term first stays finite.
-    return math.fsum(v / len(values) for v in values)
+    # The plain sum overflowed. Normalise by the largest magnitude first so
+    # every term lies in [-1, 1]: fsum of n such terms is bounded by n and
+    # cannot overflow (dividing by n per term is not enough -- rounding can
+    # push fsum's intermediates past float max; see PR #421 review).
+    lo, hi = min(values), max(values)
+    scale = max(abs(lo), abs(hi))
+    mean = math.fsum(v / scale for v in values) / len(values) * scale
+    # The true mean of finite samples lies within [lo, hi]; clamp so final
+    # rounding of the rescale cannot step outside (or to +/-inf).
+    return min(max(mean, lo), hi)
 
 
 def _spread_pct(lo: float, hi: float, mean: float) -> float | None:
-    """(hi - lo) / |mean| in percent; None if zero-mean or not finite."""
-    if not mean:
+    """(hi - lo) / |mean| in percent; None if zero-mean or not finite.
+
+    None means "unevaluable": spread checks fail closed on it. A spread that
+    cannot be represented (overflow, or a denominator that underflows to
+    zero once rescaled) is reported as None, never as zero or NaN.
+    """
+    if not mean or not math.isfinite(mean):
         return None
     spread = (hi - lo) / abs(mean) * 100.0
     if not math.isfinite(spread):
         # Rescale so intermediates cannot overflow.
         scale = max(abs(lo), abs(hi), abs(mean))
-        spread = ((hi / scale) - (lo / scale)) / (abs(mean) / scale) * 100.0
+        denom = abs(mean) / scale
+        if not denom or not math.isfinite(denom):
+            # |mean| is so small relative to the range that the scaled
+            # denominator underflows: the spread is not representable.
+            return None
+        spread = ((hi / scale) - (lo / scale)) / denom * 100.0
     return spread if math.isfinite(spread) else None
 
 
