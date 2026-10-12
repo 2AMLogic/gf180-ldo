@@ -1061,6 +1061,41 @@ class RunPointLadderGateTests(unittest.TestCase):
         with unittest.mock.patch("subprocess.run", return_value=proc):
             return runner.run_point(tb, self.pdk, self._point(), self.workdir)
 
+    def test_409_timeout_stays_error_and_keeps_partial_output(self):
+        """A timeout is ERROR (never ok), parses no measurements even if the
+        partial output contains a well-formed `m_` line, and the partial
+        ngspice output survives in the log for diagnosis (issue #409)."""
+        import subprocess
+
+        exc = subprocess.TimeoutExpired(
+            cmd="ngspice",
+            timeout=7,
+            output=b"m_vout = 1.8\nPartial transient noise\n",
+            stderr="Note: Starting dynamic gmin stepping",
+        )
+        with unittest.mock.patch("subprocess.run", side_effect=exc):
+            result = runner.run_point(
+                self._tb(["op"]), self.pdk, self._point(), self.workdir, timeout_s=7
+            )
+        self.assertEqual("error", result.status)
+        self.assertEqual({}, result.measurements)
+        self.assertIn("timed out after 7s", result.message)
+        log = (self.workdir / result.log).read_text()
+        self.assertTrue(log.startswith("TIMEOUT after 7s\n"))
+        self.assertIn("Partial transient noise", log)
+        self.assertIn("dynamic gmin stepping", log)
+
+    def test_409_timeout_without_partial_output_is_bare_marker(self):
+        import subprocess
+
+        exc = subprocess.TimeoutExpired(cmd="ngspice", timeout=7)
+        with unittest.mock.patch("subprocess.run", side_effect=exc):
+            result = runner.run_point(
+                self._tb(["op"]), self.pdk, self._point(), self.workdir, timeout_s=7
+            )
+        self.assertEqual("error", result.status)
+        self.assertEqual("TIMEOUT after 7s\n", (self.workdir / result.log).read_text())
+
     def test_406_clean_control_stays_ok(self):
         result = self._run_proc(self._tb(["op"]), "m_vout = 1.8\n")
         self.assertEqual("ok", result.status)
