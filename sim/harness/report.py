@@ -104,7 +104,9 @@ def allocate_record_id(
 
     Append-only: if a record with this id already exists (same second, same
     commit) we advance the timestamp until the id is free rather than
-    overwriting or inventing a non-conforming suffix.
+    overwriting or inventing a non-conforming suffix. The id is not reserved
+    here; the writers publish with exclusive creation and raise
+    :class:`RecordExists` if another run took it first.
     """
     when = when or _dt.datetime.now(_dt.timezone.utc)
     short_sha = (git or git_provenance(repo_root))["short"]
@@ -568,6 +570,30 @@ class RecordExists(RuntimeError):
     """Refused to overwrite an existing append-only record."""
 
 
+def _publish_exclusive(path: Path, text: str) -> None:
+    """Create ``path`` with ``text``, failing if it already exists.
+
+    The existence checks elsewhere in this module are only early, advisory
+    refusals: between a check and a separate ``Path.write_text`` (which
+    truncates) a concurrent writer could publish the same path and be
+    clobbered. Exclusive creation (``open(..., "x")`` -> ``O_CREAT|O_EXCL``)
+    makes the filesystem enforce the append-only invariant atomically.
+
+    ``text`` must be fully rendered *before* calling, so a rendering failure
+    never leaves a destination behind. If the write itself fails after the
+    file was created, the partial file is left in place (never deleted or
+    overwritten on retry; a retry raises :class:`RecordExists`).
+    """
+    try:
+        fh = open(path, "x")
+    except FileExistsError:
+        raise RecordExists(
+            f"{path} already exists; records are append-only -- mint a new record-id"
+        ) from None
+    with fh:
+        fh.write(text)
+
+
 def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str) -> Path:
     """Freeze the DUT netlist for this record.
 
@@ -635,7 +661,7 @@ def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str) 
         )
         + tb.netlist.read_text()
     )
-    path.write_text("\n".join(chunks))
+    _publish_exclusive(path, "\n".join(chunks))
     return path
 
 
@@ -962,6 +988,11 @@ def render_record(record: dict, experiment: str) -> str:
 def reserve_record_path(record_id: str, records_dir: Path) -> Path:
     """Return ``<records_dir>/<record_id>.md``, refusing an existing record.
 
+    This is an early, *advisory* check, not an exclusive reservation: the
+    returned path is not held for the caller. The actual no-overwrite
+    guarantee is made at creation time by :func:`_publish_exclusive`, which
+    every writer in this module uses to publish the file.
+
     ``allocate_record_id()`` only guarantees an id is free at *allocation*
     time, and a sweep can run for a long while between minting its record-id
     and spending it. Re-checking immediately before the write is what keeps
@@ -987,14 +1018,15 @@ def write_markdown_record(record_id: str, text: str, records_dir: Path) -> Path:
     overwrites: raises :class:`RecordExists` on a collision.
     """
     path = reserve_record_path(record_id, records_dir)
-    path.write_text(text)
+    _publish_exclusive(path, text)
     return path
 
 
 def write_record(record: dict, experiment_dir: Path) -> Path:
     """Write ``records/<record-id>.md``; never overwrite an existing record."""
     path = reserve_record_path(record["record_id"], experiment_dir / RECORDS_DIR)
-    path.write_text(render_record(record, experiment_dir.name))
+    text = render_record(record, experiment_dir.name)  # render before creating
+    _publish_exclusive(path, text)
     return path
 
 

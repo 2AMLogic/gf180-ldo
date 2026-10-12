@@ -2603,6 +2603,114 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             self.assertNotIn("MISMATCH", out)
 
 
+class ExclusiveRecordWriteTests(unittest.TestCase):
+    """Append-only evidence is enforced by exclusive creation, not check-then-write.
+
+    Deterministic: both writers are held at a barrier placed after their
+    collision checks and immediately before publication, so both have
+    observed "absent" before either creates the file (issue #422).
+    """
+
+    ID = "20260729-153000-abc1234"
+
+    def setUp(self):
+        import threading
+
+        self.threading = threading
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def _race(self, writers):
+        """Run ``writers`` (callables) concurrently, all paused before publish."""
+        barrier = self.threading.Barrier(len(writers), timeout=10)
+        real = report._publish_exclusive
+
+        def gated(path, text):
+            barrier.wait()  # every writer has passed its existence check
+            return real(path, text)
+
+        outcomes = [None] * len(writers)
+
+        def run(i, fn):
+            try:
+                outcomes[i] = ("ok", fn())
+            except report.RecordExists as exc:
+                outcomes[i] = ("exists", exc)
+
+        with unittest.mock.patch.object(report, "_publish_exclusive", gated):
+            threads = [
+                self.threading.Thread(target=run, args=(i, fn))
+                for i, fn in enumerate(writers)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(30)
+        return outcomes
+
+    def _assert_one_winner(self, outcomes, path, winners_text):
+        kinds = sorted(o[0] for o in outcomes)
+        self.assertEqual(kinds, ["exists", "ok"])
+        self.assertIn(path.read_text(), winners_text)
+
+    def test_markdown_record_concurrent_writers(self):
+        records = self.root / "records"
+        outcomes = self._race(
+            [lambda t=t: report.write_markdown_record(self.ID, t, records) for t in ("A\n", "B\n")]
+        )
+        self._assert_one_winner(outcomes, records / f"{self.ID}.md", ("A\n", "B\n"))
+        self.assertEqual(len(list(records.iterdir())), 1)
+
+    def test_write_record_concurrent_writers(self):
+        experiment = self.root / "exp"
+        rec = {"record_id": self.ID}
+        with unittest.mock.patch.object(
+            report, "render_record", side_effect=["A\n", "B\n"]
+        ):
+            outcomes = self._race(
+                [lambda: report.write_record(rec, experiment) for _ in range(2)]
+            )
+        self._assert_one_winner(
+            outcomes, experiment / report.RECORDS_DIR / f"{self.ID}.md", ("A\n", "B\n")
+        )
+
+    def test_netlist_snapshot_concurrent_writers(self):
+        tb_dir = self.root / "smoke-bias" / "testbench"
+        tb_dir.mkdir(parents=True)
+        (tb_dir / "x.spice").write_text("v1 out 0 dc {vdd_val}\n")
+        (tb_dir / "tb.json").write_text(
+            json.dumps({"name": "smoke-bias", "netlist": "x.spice", "measure": {"v": "v(out)"}})
+        )
+        tb = testbench.load(tb_dir)
+        outcomes = self._race(
+            [lambda: report.write_netlist_snapshot(tb, tb.experiment_dir, self.ID) for _ in range(2)]
+        )
+        path = tb.experiment_dir / report.SNAPSHOT_DIR / f"{self.ID}.spice"
+        self.assertEqual(sorted(o[0] for o in outcomes), ["exists", "ok"])
+        self.assertIn("v1 out 0 dc {vdd_val}", path.read_text())
+
+    def test_exclusive_publish_never_overwrites_or_deletes(self):
+        path = self.root / "r.md"
+        report._publish_exclusive(path, "keep\n")
+        with self.assertRaises(report.RecordExists):
+            report._publish_exclusive(path, "clobber\n")
+        self.assertEqual("keep\n", path.read_text())
+
+    def test_partial_file_is_left_alone_on_retry(self):
+        path = self.root / "r.md"
+        path.write_text("partial")
+        with self.assertRaises(report.RecordExists):
+            report.write_markdown_record("r", "full\n", self.root)
+        self.assertEqual("partial", path.read_text())
+
+    def test_render_failure_creates_no_destination(self):
+        experiment = self.root / "exp"
+        with self.assertRaises(KeyError):
+            report.write_record({"record_id": self.ID}, experiment)
+        self.assertEqual(list((experiment / report.RECORDS_DIR).glob("*")), [])
+
+
 if __name__ == "__main__":
     unittest.main()
 
