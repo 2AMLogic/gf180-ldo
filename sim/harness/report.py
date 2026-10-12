@@ -203,7 +203,11 @@ def evaluate_checks(
 ) -> list[dict]:
     """Return a list of check failures (empty list == everything passed)."""
     failures: list[dict] = []
+    known = {"description", "min", "max", *SPREAD_KINDS}
     for name, spec in checks.items():
+        unknown = sorted(set(spec) - known)
+        if unknown:
+            raise ValueError(f"check {name!r} has unsupported key(s) {unknown}")
         low = spec.get("min")
         high = spec.get("max")
         if low is not None or high is not None:
