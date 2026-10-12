@@ -301,13 +301,21 @@ python3 spec/check_spec_table.py --check --base origin/main   # + authorization 
 python3 spec/check_spec_table.py --write --base origin/main --dr DR-NNNN
 ```
 
-Editing a row without a matching, freshly appended lock amendment fails CI.
+Editing a row, or a numbered ratified note (including `5a`), without a matching,
+freshly appended lock amendment fails CI.
 An amendment must cite a decision record that is either new in the PR (status
 proposed or ratified) or flipped from proposed to ratified in the PR. This is
 a structural audit trail only: eligibility is **not** operator ratification
 (a proposed record may be approved on the same PR) and the reviewer still
-confirms the record actually authorizes the named rows. The ratified notes
-below the table are not covered by this guard yet. Workflow:
+confirms the record actually authorizes the named rows. The guard also locks the
+numbered ratified notes under the table, keyed by their literal ids and
+whitespace-normalized (wording, numbers, units, links and punctuation are
+preserved, so editing historical context or evidence references inside a note
+is an amendment too; a note id change counts as removal plus addition). The
+lock is schema version 2; a version 1 (table-only) lock is accepted only as a
+base, and migrating it passes only if the notes are unchanged, so a migration
+cannot hide a note edit. Deleting the notes lock or downgrading the schema,
+duplicate note ids and a missing notes section all fail. Workflow:
 `spec/decision-records/TEMPLATE.md`. On PRs, CI validates GitHub's merge
 checkout against the PR's base SHA.
 

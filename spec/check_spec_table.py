@@ -7,15 +7,18 @@
     python3 spec/check_spec_table.py --write --base origin/main --dr DR-0037
 
 CLAUDE.md says agents do not relax the ratified spec; this makes a silent edit
-of a table row fail CI (issue #397). The lock `spec/spec-table-lock.json`
-(schema_version 1) holds, per normalized Parameter, the normalized Target and
-Stretch cells and their sha256, plus an append-only `amendments` ledger of
-`{row, before, after, dr}` transitions (hashes, null for absence).
+of a table row or of a numbered ratified note fail CI (issues #397, #416). The
+lock `spec/spec-table-lock.json` (schema_version 2) holds, per normalized
+Parameter, the normalized Target and Stretch cells and their sha256, per
+numbered README note (keyed by its literal id, e.g. `5a`) the whitespace-
+normalized text and its sha256, plus an append-only `amendments` ledger of
+`{row, before, after, dr}` transitions (hashes, null for absence). Note
+entries use the ledger key `note:<id>`; the table cannot have such a Parameter.
 
 What this proves, and what it does not. `--check --base <ref>` reads the
 README, lock and decision-record set at `git merge-base <ref> HEAD` and
-compares them with the checked-out tree. Every changed/added/removed row must
-have a freshly appended, exactly matching amendment citing a decision record
+compares them with the checked-out tree. Every changed/added/removed row or note
+must have a freshly appended, exactly matching amendment citing a decision record
 that is structurally eligible: (1) a DR number absent at base and added now
 with a proposed or ratified Status, or (2) a DR that was `proposed` at base
 (same file name) and is `ratified` now with a changed Status block. That is a
@@ -26,8 +29,18 @@ the DR semantically authorizes the named rows; reviewers still check that.
 Row identity is the Parameter text with whitespace trimmed/collapsed; cells
 are likewise normalized (case, Markdown, units, punctuation preserved), so
 whitespace-only edits and row reordering pass. A rename is a removal plus an
-addition. Only the table is locked; the ratified notes below it are out of
-scope for this first guard.
+addition; likewise an id change for a note. The notes are the `N.` / `5a.`
+items under the README paragraph "Notes — these are part of the ratified
+spec"; wording, numbers, units, links and punctuation are preserved and only
+whitespace is normalized. Historical context or evidence edits inside a note
+are therefore amendments too. A missing section, duplicate ids, text before
+the first id or an unrecognized boundary fails.
+
+Schema migration: a schema_version 1 (table-only) lock is accepted only as a
+base. Migrating to version 2 passes only if the base and candidate notes are
+identical, so it cannot hide a simultaneous note edit. Once a base lock is
+version 2 the candidate must be version 2 too (no notes-lock deletion or
+downgrade).
 
 Any Git failure (missing ref, unreadable object) or malformed input fails; it
 never falls back to a current-tree check. Stdlib only; no PDK, no network.
@@ -49,7 +62,9 @@ DEFAULT_ROOT = HERE.parent
 README = "README.md"
 LOCK = "spec/spec-table-lock.json"
 DR_DIR = "spec/decision-records"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+LEGACY_SCHEMA_VERSION = 1
+NOTE_PREFIX = "note:"
 
 _bi_spec = importlib.util.spec_from_file_location(
     "dr_build_index", HERE / "decision-records" / "build_index.py"
@@ -106,6 +121,8 @@ def parse_table(text: str) -> dict[str, tuple[str, str]]:
         name, target, stretch = cells
         if name in rows:
             raise CheckError("duplicate spec-table Parameter: %r" % name)
+        if name.startswith(NOTE_PREFIX):
+            raise CheckError("spec-table Parameter %r collides with the note ledger namespace" % name)
         rows[name] = (target, stretch)
     if not rows:
         raise CheckError("spec table has no rows")
@@ -117,6 +134,66 @@ def table_hashes(table: dict[str, tuple[str, str]]) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Ratified notes parsing / hashing
+# ---------------------------------------------------------------------------
+
+NOTES_HEADER_RE = re.compile(r"^Notes\b.*\bpart of the ratified spec")
+NOTE_ID_RE = re.compile(r"^(\d+[a-z]?)\.(?:\s+(.*))?$")
+
+
+def note_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def parse_notes(text: str) -> dict[str, str]:
+    """Strict parse of the numbered ratified notes in README text.
+
+    Returns {id: whitespace-normalized text without the id marker}.
+    """
+    lines = text.splitlines()
+    heads = [i for i, line in enumerate(lines) if NOTES_HEADER_RE.match(line)]
+    if not heads:
+        raise CheckError("ratified notes section ('Notes — these are part of the ratified spec') not found")
+    if len(heads) > 1:
+        raise CheckError("ratified notes section appears more than once")
+    items: list[tuple[str, list[str]]] = []
+    prev_blank = True
+    for line in lines[heads[0] + 1:]:
+        if not line.strip():
+            prev_blank = True
+            continue
+        m = NOTE_ID_RE.match(line)
+        if m:
+            items.append((m.group(1), [m.group(2) or ""]))
+        elif line[0] in " \t":
+            if not items:
+                raise CheckError("text before the first ratified note id: %r" % line.strip()[:60])
+            items[-1][1].append(line)
+        elif not items:
+            raise CheckError("text before the first ratified note id: %r" % line.strip()[:60])
+        elif prev_blank:
+            break  # first unindented non-note paragraph or heading ends the section
+        else:
+            raise CheckError("malformed ratified-note boundary (unindented continuation): %r" % line[:60])
+        prev_blank = False
+    notes: dict[str, str] = {}
+    for nid, parts in items:
+        if nid in notes:
+            raise CheckError("duplicate ratified note id: %r" % nid)
+        body = norm(" ".join(parts))
+        if not body:
+            raise CheckError("ratified note %r is empty" % nid)
+        notes[nid] = body
+    if not notes:
+        raise CheckError("ratified notes section has no numbered notes")
+    return notes
+
+
+def notes_hashes(notes: dict[str, str]) -> dict[str, str]:
+    return {NOTE_PREFIX + k: note_hash(v) for k, v in notes.items()}
+
+
+# ---------------------------------------------------------------------------
 # Lock
 # ---------------------------------------------------------------------------
 
@@ -124,13 +201,14 @@ HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 DR_RE = re.compile(r"^DR-(\d{4})$")
 
 
-def render_lock(table: dict[str, tuple[str, str]], amendments: list[dict]) -> str:
+def render_lock(table: dict[str, tuple[str, str]], notes: dict[str, str], amendments: list[dict]) -> str:
     obj = {
         "schema_version": SCHEMA_VERSION,
         "rows": {
             k: {"target": v[0], "stretch": v[1], "hash": row_hash(*v)}
             for k, v in table.items()
         },
+        "notes": {k: {"text": v, "hash": note_hash(v)} for k, v in notes.items()},
         "amendments": amendments,
     }
     return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
@@ -141,10 +219,14 @@ def parse_lock(text: str, label: str = "lock") -> dict:
         obj = json.loads(text)
     except ValueError as exc:
         raise CheckError("%s is not valid JSON: %s" % (label, exc))
-    if not isinstance(obj, dict) or set(obj) != {"schema_version", "rows", "amendments"}:
-        raise CheckError("%s: top level must have exactly schema_version, rows, amendments" % label)
-    if type(obj["schema_version"]) is not int or obj["schema_version"] != SCHEMA_VERSION:
-        raise CheckError("%s: unsupported schema_version %r" % (label, obj["schema_version"]))
+    if not isinstance(obj, dict) or "schema_version" not in obj:
+        raise CheckError("%s: top level must be an object with schema_version" % label)
+    ver = obj["schema_version"]
+    if type(ver) is not int or ver not in (LEGACY_SCHEMA_VERSION, SCHEMA_VERSION):
+        raise CheckError("%s: unsupported schema_version %r" % (label, ver))
+    keys = {"schema_version", "rows", "amendments"} | ({"notes"} if ver == SCHEMA_VERSION else set())
+    if set(obj) != set(keys):
+        raise CheckError("%s: schema_version %d must have exactly %s" % (label, ver, ", ".join(sorted(keys))))
     if not isinstance(obj["rows"], dict) or not obj["rows"]:
         raise CheckError("%s: rows must be a non-empty object" % label)
     for name, r in obj["rows"].items():
@@ -158,6 +240,20 @@ def parse_lock(text: str, label: str = "lock") -> dict:
             raise CheckError("%s: row %r is not normalized" % (label, name))
         if r["hash"] != row_hash(r["target"], r["stretch"]):
             raise CheckError("%s: row %r hash does not match its values" % (label, name))
+    if ver == SCHEMA_VERSION:
+        if not isinstance(obj["notes"], dict) or not obj["notes"]:
+            raise CheckError("%s: notes must be a non-empty object" % label)
+        for nid, n in obj["notes"].items():
+            if (
+                not isinstance(n, dict)
+                or set(n) != {"text", "hash"}
+                or not all(isinstance(n[k], str) for k in n)
+            ):
+                raise CheckError("%s: note %r must be {text, hash} strings" % (label, nid))
+            if not NOTE_ID_RE.match(nid + ".") or n["text"] != norm(n["text"]) or not n["text"]:
+                raise CheckError("%s: note %r is not a normalized note id/text" % (label, nid))
+            if n["hash"] != note_hash(n["text"]):
+                raise CheckError("%s: note %r hash does not match its text" % (label, nid))
     if not isinstance(obj["amendments"], list):
         raise CheckError("%s: amendments must be an array" % label)
     for a in obj["amendments"]:
@@ -186,7 +282,10 @@ def _check_chains(lock: dict, label: str) -> None:
         seen.add(r)
         last[r] = a["after"]
     for r, after in last.items():
-        cur = lock["rows"].get(r)
+        if r.startswith(NOTE_PREFIX):
+            cur = (lock.get("notes") or {}).get(r[len(NOTE_PREFIX):])
+        else:
+            cur = lock["rows"].get(r)
         want = cur["hash"] if cur else None
         if want != after:
             raise CheckError("%s: ledger for %r ends at a state that is not the locked row" % (label, r))
@@ -293,25 +392,40 @@ def check_dr_eligible(dr: str, base_drs: dict, cand_drs: dict) -> str:
 # Checks
 # ---------------------------------------------------------------------------
 
-def current_tree_check(readme: str, lock_text: str | None) -> tuple[dict, dict]:
+def current_tree_check(readme: str, lock_text: str | None) -> tuple[dict, dict, dict]:
     table = parse_table(readme)
+    notes = parse_notes(readme)
     if lock_text is None:
         raise CheckError("%s is missing" % LOCK)
     lock = parse_lock(lock_text, LOCK)
-    want = table_hashes(table)
+    if lock["schema_version"] != SCHEMA_VERSION:
+        raise CheckError(
+            "%s is legacy schema_version %d (table-only); migrate with --write (notes must be unchanged)"
+            % (LOCK, lock["schema_version"])
+        )
+    want = {**table_hashes(table), **notes_hashes(notes)}
     have = {k: v["hash"] for k, v in lock["rows"].items()}
+    have.update({NOTE_PREFIX + k: v["hash"] for k, v in lock["notes"].items()})
     for k in sorted(set(want) | set(have)):
         if want.get(k) != have.get(k):
             kind = "added to README" if k not in have else "removed from README" if k not in want else "changed"
-            raise CheckError("spec row %r %s but %s does not match (update via a decision record; see TEMPLATE.md)" % (k, kind, LOCK))
+            what = "ratified note %r" % k[len(NOTE_PREFIX):] if k.startswith(NOTE_PREFIX) else "spec row %r" % k
+            raise CheckError("%s %s but %s does not match (update via a decision record; see TEMPLATE.md)" % (what, kind, LOCK))
     for k, v in lock["rows"].items():
         if (v["target"], v["stretch"]) != table[k]:
             raise CheckError("lock row %r values disagree with README" % k)
-    return table, lock
+    for k, v in lock["notes"].items():
+        if v["text"] != notes[k]:
+            raise CheckError("lock note %r text disagrees with README" % k)
+    return table, notes, lock
 
 
-def transitions(base_table: dict, cand_table: dict) -> list[tuple[str, str | None, str | None]]:
+def transitions(base_table: dict, cand_table: dict, base_notes: dict | None = None,
+                cand_notes: dict | None = None) -> list[tuple[str, str | None, str | None]]:
     bh, ch = table_hashes(base_table), table_hashes(cand_table)
+    if base_notes is not None or cand_notes is not None:
+        bh.update(notes_hashes(base_notes or {}))
+        ch.update(notes_hashes(cand_notes or {}))
     return [
         (k, bh.get(k), ch.get(k))
         for k in sorted(set(bh) | set(ch))
@@ -319,22 +433,41 @@ def transitions(base_table: dict, cand_table: dict) -> list[tuple[str, str | Non
     ]
 
 
-def base_check(base: dict, cand_table: dict, cand_lock: dict, cand_drs: dict) -> list:
+def _label(key: str) -> str:
+    return "note " + repr(key[len(NOTE_PREFIX):]) if key.startswith(NOTE_PREFIX) else repr(key)
+
+
+def _parse_base(base: dict) -> tuple[dict, dict]:
     try:
-        base_table = parse_table(base["readme"])
+        return parse_table(base["readme"]), parse_notes(base["readme"])
     except CheckError as exc:
         raise CheckError("base README: %s" % exc)
-    trans = transitions(base_table, cand_table)
+
+
+def base_check(base: dict, cand_table: dict, cand_notes: dict, cand_lock: dict, cand_drs: dict) -> list:
+    base_table, base_notes = _parse_base(base)
+    trans = transitions(base_table, cand_table, base_notes, cand_notes)
+    if cand_lock["schema_version"] != SCHEMA_VERSION or "notes" not in cand_lock:
+        raise CheckError("candidate lock must be schema_version %d with a notes section" % SCHEMA_VERSION)
     if base["lock"] is None:
         if trans:
             raise CheckError(
-                "base has no lock: bootstrap requires an unchanged spec table, but %d row(s) differ (%s)"
-                % (len(trans), ", ".join(repr(t[0]) for t in trans))
+                "base has no lock: bootstrap requires an unchanged spec table and notes, but %d entr(ies) differ (%s)"
+                % (len(trans), ", ".join(_label(t[0]) for t in trans))
             )
         if cand_lock["amendments"]:
             raise CheckError("bootstrap lock must have an empty amendments ledger")
         return []
     base_lock = parse_lock(base["lock"], "base " + LOCK)
+    if cand_lock["schema_version"] < base_lock["schema_version"]:
+        raise CheckError("lock schema downgrade (%d -> %d)" % (base_lock["schema_version"], cand_lock["schema_version"]))
+    if base_lock["schema_version"] < SCHEMA_VERSION:
+        note_trans = [t for t in trans if t[0].startswith(NOTE_PREFIX)]
+        if note_trans:
+            raise CheckError(
+                "lock schema migration %d -> %d must not change ratified notes, but differ: %s"
+                % (base_lock["schema_version"], SCHEMA_VERSION, ", ".join(_label(t[0]) for t in note_trans))
+            )
     ba, ca = base_lock["amendments"], cand_lock["amendments"]
     if ca[: len(ba)] != ba or len(ca) < len(ba):
         raise CheckError("existing amendment history was rewritten, reordered or removed")
@@ -344,69 +477,78 @@ def base_check(base: dict, cand_table: dict, cand_lock: dict, cand_drs: dict) ->
         key = (a["row"], a["before"], a["after"])
         if key not in expected:
             raise CheckError(
-                "amendment for %r (%s -> %s) is duplicate, unrelated or contradicts the table change"
-                % (a["row"], a["before"] and a["before"][:8], a["after"] and a["after"][:8])
+                "amendment for %s (%s -> %s) is duplicate, unrelated or contradicts the table change"
+                % (_label(a["row"]), a["before"] and a["before"][:8], a["after"] and a["after"][:8])
             )
         expected.remove(key)
         check_dr_eligible(a["dr"], base["drs"], cand_drs)
     if expected:
         raise CheckError(
             "no fresh amendment for changed/added/removed row(s): %s"
-            % ", ".join(repr(t[0]) for t in expected)
+            % ", ".join(_label(t[0]) for t in expected)
         )
     return new
 
 
 def run_check(root: Path, base_ref: str | None) -> str:
     readme, lock_text, cand_drs = read_candidate(root)
-    table, lock = current_tree_check(readme, lock_text)
+    table, notes, lock = current_tree_check(readme, lock_text)
     if base_ref is None:
-        return "ok: %d spec rows match %s (current tree only)" % (len(table), LOCK)
+        return "ok: %d spec rows and %d ratified notes match %s (current tree only)" % (len(table), len(notes), LOCK)
     base = read_base(root, base_ref)
-    new = base_check(base, table, lock, cand_drs)
-    return "ok: %d spec rows, %d new amendment(s) vs merge-base %s" % (len(table), len(new), base["commit"][:12])
+    new = base_check(base, table, notes, lock, cand_drs)
+    return "ok: %d spec rows, %d notes, %d new amendment(s) vs merge-base %s" % (
+        len(table), len(notes), len(new), base["commit"][:12])
 
 
 def run_write(root: Path, base_ref: str | None, dr: str | None) -> str:
     readme, lock_text, cand_drs = read_candidate(root)
     table = parse_table(readme)
+    notes = parse_notes(readme)
     path = root / LOCK
     if base_ref is None:
         if dr is not None:
             raise CheckError("--dr requires --base")
         if lock_text is None:
-            text = render_lock(table, [])
+            text = render_lock(table, notes, [])
         else:
             old = parse_lock(lock_text, LOCK)
             if {k: v["hash"] for k, v in old["rows"].items()} != table_hashes(table):
                 raise CheckError("table differs from lock: amending requires --base <ref> --dr DR-NNNN")
-            text = render_lock(table, old["amendments"])
+            if old["schema_version"] == SCHEMA_VERSION and (
+                {NOTE_PREFIX + k: v["hash"] for k, v in old["notes"].items()} != notes_hashes(notes)
+            ):
+                raise CheckError("ratified notes differ from lock: amending requires --base <ref> --dr DR-NNNN")
+            text = render_lock(table, notes, old["amendments"])
     else:
         base = read_base(root, base_ref)
-        base_table = parse_table(base["readme"])
-        trans = transitions(base_table, table)
-        base_amend = parse_lock(base["lock"], "base " + LOCK)["amendments"] if base["lock"] else []
-        if base["lock"] is None:
+        base_table, base_notes = _parse_base(base)
+        trans = transitions(base_table, table, base_notes, notes)
+        base_lock = parse_lock(base["lock"], "base " + LOCK) if base["lock"] else None
+        base_amend = base_lock["amendments"] if base_lock else []
+        if base_lock is None:
             if trans:
-                raise CheckError("base has no lock and the table changed; bootstrap cannot carry amendments")
+                raise CheckError("base has no lock and the table/notes changed; bootstrap cannot carry amendments")
             if dr is not None:
                 raise CheckError("--dr given but base has no lock; bootstrap cannot carry amendments")
-            text = render_lock(table, [])
+            text = render_lock(table, notes, [])
         else:
+            if base_lock["schema_version"] < SCHEMA_VERSION and any(t[0].startswith(NOTE_PREFIX) for t in trans):
+                raise CheckError("lock schema migration cannot carry ratified-note changes")
             if trans and dr is None:
-                raise CheckError("table changed vs base: pass --dr DR-NNNN naming the authorizing record")
+                raise CheckError("table/notes changed vs base: pass --dr DR-NNNN naming the authorizing record")
             if dr is not None:
                 if not DR_RE.match(dr):
                     raise CheckError("--dr must look like DR-NNNN")
                 if not trans:
-                    raise CheckError("--dr given but no row differs from base")
+                    raise CheckError("--dr given but no row or note differs from base")
                 check_dr_eligible(dr, base["drs"], cand_drs)
             amend = base_amend + [{"row": k, "before": b, "after": a, "dr": dr} for k, b, a in trans]
-            text = render_lock(table, amend)
+            text = render_lock(table, notes, amend)
         try:
             parse_lock(text, "generated lock")
             current_tree_check(readme, text)
-            base_check(base, table, json.loads(text), cand_drs)
+            base_check(base, table, notes, json.loads(text), cand_drs)
         except CheckError as exc:
             raise CheckError("refusing to write: %s" % exc)
     if path.exists() and path.read_text(encoding="utf-8") == text:
