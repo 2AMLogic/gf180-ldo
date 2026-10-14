@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 import shutil
@@ -341,6 +342,30 @@ class NgspiceMissing(RuntimeError):
     pass
 
 
+def validate_process_output(returncode: int, text: str, log_name: str) -> str | None:
+    """Shared exit-status + diagnostic validation (issue #406).
+
+    Returns a human-readable problem description, or ``None`` when the run
+    is clean. Checks, in order: nonzero exit, :data:`FATAL_LOG_RE`, and
+    :data:`_UNDEFINED_VECTOR_LET_RE`. Used by both :func:`run_ngspice_deck`
+    (which raises) and :func:`run_point` (which returns a failed result).
+    The sweep-only completion marker and the analysis-gated DC-ladder check
+    are deliberately not part of this helper.
+    """
+    if returncode != 0:
+        return f"ngspice exited {returncode} (see {log_name})"
+    if FATAL_LOG_RE.search(text):
+        bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
+        return f"ngspice reported a fatal condition: {bad} (see {log_name})"
+    if _UNDEFINED_VECTOR_LET_RE.search(text):
+        bad = [ln for ln in text.splitlines() if _UNDEFINED_VECTOR_LET_RE.search(ln)][:3]
+        return (
+            f"ngspice's .let/v(...) referenced a vector that does not exist "
+            f"in the netlist: {bad} (see {log_name})"
+        )
+    return None
+
+
 def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     """Run one ngspice deck to completion and validate its output.
 
@@ -397,19 +422,9 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     )
     text = proc.stdout + proc.stderr
     log.write_text(text)
-    if proc.returncode != 0:
-        raise RuntimeError(f"ngspice exited {proc.returncode} (see {display_path(log)})")
-    if FATAL_LOG_RE.search(text):
-        bad = [ln for ln in text.splitlines() if FATAL_LOG_RE.search(ln)][:3]
-        raise RuntimeError(f"ngspice reported a fatal condition: {bad} (see {display_path(log)})")
-    if _UNDEFINED_VECTOR_LET_RE.search(text):
-        bad = [
-            ln for ln in text.splitlines() if _UNDEFINED_VECTOR_LET_RE.search(ln)
-        ][:3]
-        raise RuntimeError(
-            f"ngspice's .let/v(...) referenced a vector that does not exist "
-            f"in the netlist: {bad} (see {display_path(log)})"
-        )
+    problem = validate_process_output(proc.returncode, text, display_path(log))
+    if problem:
+        raise RuntimeError(problem)
     if not _runs_transient_analysis(deck.read_text()):
         exhausted = _ladder_exhaustion_lines(text)
         if exhausted:
@@ -953,16 +968,51 @@ class PointResult:
         return record
 
 
-def parse_measurements(text: str) -> dict[str, float]:
+def parse_measurements_checked(text: str) -> tuple[dict[str, float], list[str]]:
+    """Parse ``m_name = value`` lines; also report names whose value overflowed.
+
+    A numeric token such as ``1e999`` matches the measurement regex but
+    ``float()`` turns it into infinity. Such a value is never usable
+    evidence, so it is excluded from the returned dict and its name is
+    returned in the second element instead (issue #420).
+    """
     found: dict[str, float] = {}
+    nonfinite: list[str] = []
     for line in text.splitlines():
         match = _MEAS_RE.match(line)
         if match:
             try:
-                found[match.group(1)] = float(match.group(2))
+                value = float(match.group(2))
             except ValueError:  # pragma: no cover - regex already constrains this
                 continue
-    return found
+            name = match.group(1)
+            if math.isfinite(value):
+                found[name] = value
+                if name in nonfinite:
+                    nonfinite.remove(name)
+            else:
+                found.pop(name, None)
+                if name not in nonfinite:
+                    nonfinite.append(name)
+    return found, nonfinite
+
+
+def parse_measurements(text: str) -> dict[str, float]:
+    return parse_measurements_checked(text)[0]
+
+
+def _partial_output(*streams: str | bytes | None) -> str:
+    """Join the (possibly bytes/None) partial streams of a killed subprocess."""
+    parts = []
+    for stream in streams:
+        if not stream:
+            continue
+        if isinstance(stream, bytes):
+            stream = stream.decode("utf-8", errors="replace")
+        parts.append(stream)
+    if not parts:
+        return ""
+    return "--- partial ngspice output before the kill ---\n" + "\n".join(parts)
 
 
 def run_point(
@@ -1009,9 +1059,15 @@ def run_point(
         returncode = proc.returncode
     except FileNotFoundError as exc:
         raise NgspiceMissing(str(exc)) from exc
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         elapsed = time.monotonic() - started
-        log_path.write_text(f"TIMEOUT after {timeout_s}s\n")
+        # Keep whatever ngspice had printed before it was killed (issue
+        # #409): the bare marker alone cannot tell a stuck DC solve from a
+        # slow transient. The status stays "error" and nothing is parsed
+        # from this text, so a timeout can never read as a measurement.
+        log_path.write_text(
+            f"TIMEOUT after {timeout_s}s\n" + _partial_output(exc.stdout, exc.stderr)
+        )
         return PointResult(
             point=point,
             status="error",
@@ -1028,7 +1084,7 @@ def run_point(
     # failing and erroring corners too -- those are precisely the ones whose
     # rung a reader wants to compare against the last run's.
     dc_path = classify_dc_path(output)
-    measurements = parse_measurements(output)
+    measurements, nonfinite = parse_measurements_checked(output)
     missing = [name for name in tb.measure if name not in measurements]
 
     # #310: a DC-solve bench (no .tran analysis) whose log shows the ladder
@@ -1058,6 +1114,40 @@ def run_point(
                 ),
                 dc_path=dc_path,
             )
+
+    # #406: a nonzero exit or fatal/undefined-vector diagnostic invalidates
+    # the run even when every requested measurement parsed.
+    problem = validate_process_output(returncode, output, log_path.name)
+    if problem:
+        return PointResult(
+            point=point,
+            status="failed",
+            measurements=measurements,
+            missing=missing,
+            seconds=elapsed,
+            deck=deck_path.name,
+            log=log_path.name,
+            message=problem,
+            dc_path=dc_path,
+        )
+
+    bad_required = [name for name in tb.measure if name in nonfinite]
+    if bad_required:
+        return PointResult(
+            point=point,
+            status="failed",
+            measurements=measurements,
+            missing=missing,
+            seconds=elapsed,
+            deck=deck_path.name,
+            log=log_path.name,
+            message=(
+                "non-finite measurement value (numeric overflow) for "
+                f"{', '.join(bad_required)} in {log_path.name} at "
+                f"{point.corner_id}"
+            ),
+            dc_path=dc_path,
+        )
 
     if missing:
         errors = "; ".join(_ERROR_RE.findall(output)[:3])

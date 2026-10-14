@@ -30,16 +30,21 @@ def read(log):
     return read_measurements(log, SCALARS)
 
 
-def main() -> None:
-    log_dir, csv_path, corners, temps, supplies = sys.argv[1:6]
-    log_dir = pathlib.Path(log_dir)
+def rollup(log_dir: pathlib.Path, corners: str, temps: str, supplies: str) -> list[tuple]:
+    """Read ``<log_dir>/<corner>_<temp>c_<vin>v.log`` for every point of the
+    full-factorial grid and return ``(cid, corner, temp, vin, vals)`` rows,
+    with the derived flatness column added. Pure: no printing, no writing.
 
+    Fails loud on a missing log (``FileNotFoundError``) and on a log with a
+    missing or unparsable measurement (``SystemExit``, via
+    ``read_measurements``) -- every grid point is required.
+    """
     rows = []
     for c in corners.split():
         for t in temps.split():
             for v in supplies.split():
                 cid = "%s_%sc_%.2fv" % (c, t, float(v))
-                vals = read(log_dir / f"{cid}.log")
+                vals = read(pathlib.Path(log_dir) / f"{cid}.log")
                 # Brickwall test: a constant-current clamp holds the same current
                 # as the output collapses. Positive = short-circuit current is
                 # HIGHER than at Vout = 1.5 V (inverse foldback, the bad direction
@@ -48,13 +53,42 @@ def main() -> None:
                     (vals["m_ilim_0000_ma"] - vals["m_ilim_1500_ma"])
                     / vals["m_ilim_1500_ma"] * 100)
                 rows.append((cid, c, t, v, vals))
+    if not rows:
+        raise SystemExit("FATAL: empty corner grid")
+    return rows
 
-    cols = SCALARS + ["m_flat_0_vs_1500_pct"]
+
+CSV_COLS = SCALARS + ["m_flat_0_vs_1500_pct"]
+
+
+def write_csv(rows, csv_path) -> None:
     with open(csv_path, "w") as fh:
         fh.write("corner_id,corner,temp_c,vin_v,"
-                 + ",".join(c[2:] for c in cols) + "\n")
+                 + ",".join(c[2:] for c in CSV_COLS) + "\n")
         for cid, c, t, v, vals in rows:
-            fh.write(f"{cid},{c},{t},{v}," + ",".join(f"{vals[k]:.6g}" for k in cols) + "\n")
+            fh.write(f"{cid},{c},{t},{v}," + ",".join(f"{vals[k]:.6g}" for k in CSV_COLS) + "\n")
+
+
+def checks(rows) -> dict:
+    """The summary lines' numbers: the onset range at Vout = 1.764 V and the
+    corner lists each check names."""
+    lim = [vals["m_ilim_1764_ma"] for *_, vals in rows]
+    return {
+        "lim_min": min(lim),
+        "lim_max": max(lim),
+        "engages_at_or_below_50ma": [cid for cid, *_, vals in rows
+                                     if vals["m_ilim_1764_ma"] <= 50.0],
+        "outside_window_at_50ma": [cid for cid, *_, vals in rows
+                                   if not (1.764 <= vals["m_vout_50ma"] <= 1.836)],
+        "outside_65_80ma": [cid for cid, *_, vals in rows
+                            if not (65.0 <= vals["m_ilim_1764_ma"] <= 80.0)],
+    }
+
+
+def main() -> None:
+    log_dir, csv_path, corners, temps, supplies = sys.argv[1:6]
+    rows = rollup(pathlib.Path(log_dir), corners, temps, supplies)
+    write_csv(rows, csv_path)
 
     print(f"\n{len(rows)} PVT points")
     for m in ("m_vout_0ma", "m_vout_50ma", "m_ivin_0ma_ua", "m_sense_margin_pct",
@@ -62,18 +96,17 @@ def main() -> None:
               "m_pshort_mw"):
         report_minmax(rows, m, val_width=10, val_prec=4)
 
-    lim = [vals["m_ilim_1764_ma"] for *_, vals in rows]
-    mid = (max(lim) + min(lim)) / 2
+    ck = checks(rows)
+    lo, hi = ck["lim_min"], ck["lim_max"]
+    mid = (hi + lo) / 2
     print(f"\n  limit at the edge of the +/-2% window (Vout = 1.764 V):"
-          f" {min(lim):.2f} .. {max(lim):.2f} mA"
-          f"  = {mid:.2f} mA +/-{(max(lim)-min(lim))/2/mid*100:.1f}%")
-    bad = [cid for cid, *_, vals in rows if vals["m_ilim_1764_ma"] <= 50.0]
+          f" {lo:.2f} .. {hi:.2f} mA"
+          f"  = {mid:.2f} mA +/-{(hi-lo)/2/mid*100:.1f}%")
+    bad = ck["engages_at_or_below_50ma"]
     print(f"  corners where the limit engages at or below 50 mA: {bad or 'none'}")
-    oos = [cid for cid, *_, vals in rows
-           if not (1.764 <= vals["m_vout_50ma"] <= 1.836)]
+    oos = ck["outside_window_at_50ma"]
     print(f"  corners outside the +/-2% window at 50 mA load:     {oos or 'none'}")
-    ratified = [cid for cid, *_, vals in rows
-                if not (65.0 <= vals["m_ilim_1764_ma"] <= 80.0)]
+    ratified = ck["outside_65_80ma"]
     print(f"  corners outside the ratified 65-80 mA window:       "
           f"{len(ratified)}/{len(rows)}")
 

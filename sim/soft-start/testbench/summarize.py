@@ -87,10 +87,14 @@ def read_log(log: pathlib.Path) -> dict[str, float]:
     return read_measurements(log, SCALARS)
 
 
-def main() -> None:
-    log_dir = pathlib.Path(sys.argv[1])
-    csv_path = pathlib.Path(sys.argv[2])
+def rollup(log_dir: pathlib.Path) -> list[tuple[str, dict, dict]]:
+    """Parse every ``*.log`` under ``log_dir`` into ``(corner_id, axes, vals)``
+    rows, with the derived columns added. Pure: no printing, no writing.
 
+    Fails loud (``SystemExit``, via ``read_measurements``) on a log with a
+    missing or unparsable measurement, on an unparsable corner id, and on a
+    directory with no logs at all.
+    """
     rows = []
     for log in sorted(log_dir.glob("*.log")):
         cid = log.stem
@@ -110,64 +114,84 @@ def main() -> None:
         # predicates only, and deliberately NOT a CSV column.
         v["m_cout_is_bound"] = 1.0 if m.group("cout") == COUT_BOUND_UF else 0.0
         rows.append((cid, m.groupdict(), v))
+    if not rows:
+        raise SystemExit(f"FATAL: no *.log files under {log_dir}")
+    return rows
 
-    cols = SCALARS + ["m_slope_vpms", "m_t_startup_ms"]
+
+CSV_COLS = SCALARS + ["m_slope_vpms", "m_t_startup_ms"]
+
+
+def write_csv(rows, csv_path: pathlib.Path) -> None:
     with csv_path.open("w") as fh:
         fh.write("corner_id,corner,temp_c,vin_v,cout,esr_ohm,rload_ohm,"
-                 + ",".join(c[2:] for c in cols) + "\n")
+                 + ",".join(c[2:] for c in CSV_COLS) + "\n")
         for cid, g, v in rows:
             fh.write(
                 f"{cid},{g['corner']},{g['temp']},{g['vin']},"
                 f"{g['cout']},{g['esr']},{g['rload']},"
-                + ",".join(f"{v[k]:.6g}" for k in cols) + "\n")
+                + ",".join(f"{v[k]:.6g}" for k in CSV_COLS) + "\n")
 
-    def rep(name: str, scale: float = 1.0, unit: str = "") -> None:
-        report_minmax(rows, name, scale=scale, unit=unit, name_width=16, cid_width=34)
+
+MINMAX = ("m_slope_vpms", "m_dvout_max", "m_dvout_min",
+          "m_t_startup_ms", "m_vout_max_en", "m_vout_settled",
+          "m_icap_peak_ma", "m_isup_peak_ma", "m_vout_pp_late",
+          "m_ssr_end", "m_hg_end",
+          "m_vout_off_tran", "m_ssr_off_tran")
+
+# (label, predicate) -- a point is FLAGGED (fails the clause) when the
+# predicate holds. Module-level so the clause set can be re-derived and
+# counted without parsing the printed report.
+FLAGS = [
+    (f"steady ramp rate above the proposed {RAMP_MAX_VPMS} V/ms (DR-0024):",
+     lambda v: v["m_slope_vpms"] > RAMP_MAX_VPMS),
+    ("peak dVout/dt above the same bound (incl. transients):",
+     lambda v: v["m_dvout_max"] > RAMP_MAX_VPMS),
+    ("non-monotonic ramp (dVout/dt went negative):",
+     lambda v: v["m_dvout_min"] < -RAMP_MAX_VPMS),
+    (f"inrush above {INRUSH_MAX_MA} mA at C_eff = {COUT_BOUND_UF} "
+     "(characterized only above that, DR-0022/DR-0024):",
+     lambda v: v["m_cout_is_bound"] and v["m_icap_peak_ma"] > INRUSH_MAX_MA),
+    (f"peak supply current within 10 mA of the {ILIMIT_MIN_MA} mA limit, "
+     f"at C_eff = {COUT_BOUND_UF} (characterized only above that):",
+     lambda v: v["m_cout_is_bound"] and v["m_isup_peak_ma"] > ILIMIT_MIN_MA - 10.0),
+    (f"startup overshoot above +2% ({VOUT_HI} V):",
+     lambda v: v["m_vout_max_en"] > VOUT_HI),
+    (f"failed to reach {VOUT_LO} V within the proposed {SETTLE_MAX_S * 1e3:g} ms "
+     "(DR-0024):",
+     lambda v: not (0 < v["m_t_startup"] < SETTLE_MAX_S)),
+    ("failed to reach 1.764 V at all inside the enable window:",
+     lambda v: not (v["m_t_startup"] > 0)),
+    ("settled output outside +/-2% while enabled:",
+     lambda v: not (VOUT_LO <= v["m_vout_settled"] <= VOUT_HI)),
+    ("still ringing at the end of the enable window (>18 mV pp):",
+     lambda v: v["m_vout_pp_late"] > 0.018),
+    ("soft-start ramp did not finish above VREF (clamp still engaged):",
+     lambda v: v["m_ssr_end"] < 1.2),
+    (f"hold gate ended >{HG_END_BELOW_VIN_MAX} V below VIN "
+     "(Mhold_ss not fully off):",
+     lambda v: v["m_hg_end_below_vin"] > HG_END_BELOW_VIN_MAX),
+    ("disabled output above 10 mV at the end of the tail:",
+     lambda v: v["m_vout_off_tran"] > 0.010),
+    ("soft-start ramp capacitor not reset by disable (>10 mV):",
+     lambda v: v["m_ssr_off_tran"] > 0.010),
+]
+
+
+def main() -> None:
+    log_dir = pathlib.Path(sys.argv[1])
+    csv_path = pathlib.Path(sys.argv[2])
+
+    rows = rollup(log_dir)
+    write_csv(rows, csv_path)
 
     print(f"\n{len(rows)} points")
-    for name in ("m_slope_vpms", "m_dvout_max", "m_dvout_min",
-                 "m_t_startup_ms", "m_vout_max_en", "m_vout_settled",
-                 "m_icap_peak_ma", "m_isup_peak_ma", "m_vout_pp_late",
-                 "m_ssr_end", "m_hg_end",
-                 "m_vout_off_tran", "m_ssr_off_tran"):
-        rep(name)
-
-    def flag(label: str, pred) -> None:
-        report_flag(rows, label, pred)
+    for name in MINMAX:
+        report_minmax(rows, name, name_width=16, cid_width=34)
 
     print()
-    flag(f"steady ramp rate above the proposed {RAMP_MAX_VPMS} V/ms (DR-0024):",
-         lambda v: v["m_slope_vpms"] > RAMP_MAX_VPMS)
-    flag("peak dVout/dt above the same bound (incl. transients):",
-         lambda v: v["m_dvout_max"] > RAMP_MAX_VPMS)
-    flag("non-monotonic ramp (dVout/dt went negative):",
-         lambda v: v["m_dvout_min"] < -RAMP_MAX_VPMS)
-    flag(f"inrush above {INRUSH_MAX_MA} mA at C_eff = {COUT_BOUND_UF} "
-         "(characterized only above that, DR-0022/DR-0024):",
-         lambda v: v["m_cout_is_bound"] and v["m_icap_peak_ma"] > INRUSH_MAX_MA)
-    flag(f"peak supply current within 10 mA of the {ILIMIT_MIN_MA} mA limit, "
-         f"at C_eff = {COUT_BOUND_UF} (characterized only above that):",
-         lambda v: v["m_cout_is_bound"] and v["m_isup_peak_ma"] > ILIMIT_MIN_MA - 10.0)
-    flag(f"startup overshoot above +2% ({VOUT_HI} V):",
-         lambda v: v["m_vout_max_en"] > VOUT_HI)
-    flag(f"failed to reach {VOUT_LO} V within the proposed {SETTLE_MAX_S * 1e3:g} ms "
-         "(DR-0024):",
-         lambda v: not (0 < v["m_t_startup"] < SETTLE_MAX_S))
-    flag("failed to reach 1.764 V at all inside the enable window:",
-         lambda v: not (v["m_t_startup"] > 0))
-    flag("settled output outside +/-2% while enabled:",
-         lambda v: not (VOUT_LO <= v["m_vout_settled"] <= VOUT_HI))
-    flag("still ringing at the end of the enable window (>18 mV pp):",
-         lambda v: v["m_vout_pp_late"] > 0.018)
-    flag("soft-start ramp did not finish above VREF (clamp still engaged):",
-         lambda v: v["m_ssr_end"] < 1.2)
-    flag(f"hold gate ended >{HG_END_BELOW_VIN_MAX} V below VIN "
-         "(Mhold_ss not fully off):",
-         lambda v: v["m_hg_end_below_vin"] > HG_END_BELOW_VIN_MAX)
-    flag("disabled output above 10 mV at the end of the tail:",
-         lambda v: v["m_vout_off_tran"] > 0.010)
-    flag("soft-start ramp capacitor not reset by disable (>10 mV):",
-         lambda v: v["m_ssr_off_tran"] > 0.010)
+    for label, pred in FLAGS:
+        report_flag(rows, label, pred)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,12 @@ new records must follow TEMPLATE.md's ``proposed | ratified | superseded by``
 shape. Ratified records are immutable, so irregular existing ones are
 classified in STATUS_OVERRIDES below rather than edited.
 
+The same file also carries a "design citations of unratified records" table
+(issue #387): ``design/*.sch`` is scanned for ``DR-NNNN`` and joined with the
+parsed statuses. Citing a proposed/held record is report-only; citing a record
+with no file, or a superseded record with no ``superseded by`` pointer, exits
+non-zero.
+
 Stdlib only; no PDK, no network. Output is deterministic.
 """
 
@@ -25,6 +31,7 @@ import sys
 from pathlib import Path
 
 RECORDS_DIR = Path(__file__).resolve().parent
+DESIGN_DIR = RECORDS_DIR.parents[1] / "design"
 
 # DR number -> normalized status, for records whose Status line cannot be
 # classified from its first word alone.
@@ -108,7 +115,61 @@ def parse_record(path: Path) -> dict:
     }
 
 
-def render(records: list[dict]) -> str:
+def scan_citations(design_dir: Path) -> dict[int, dict[str, int]]:
+    """Map DR number -> {schematic filename: citation count}."""
+    found: dict[int, dict[str, int]] = {}
+    for p in sorted(design_dir.glob("*.sch")):
+        for m in re.finditer(r"DR-(\d{4})", p.read_text(encoding="utf-8")):
+            per = found.setdefault(int(m.group(1)), {})
+            per[p.name] = per.get(p.name, 0) + 1
+    return found
+
+
+def citation_rows(records: list[dict], found: dict[int, dict[str, int]]) -> list[tuple]:
+    """Join citations with statuses; raise on dangling/unpointed-superseded."""
+    by_num = {r["number"]: r for r in records}
+    rows = []
+    for num, files in sorted(found.items()):
+        rec = by_num.get(num)
+        where = ", ".join(sorted(files))
+        if rec is None:
+            raise ClassifyError(
+                "design cites DR-%04d (%s) but no such record file exists" % (num, where)
+            )
+        if rec["status"] == "superseded" and not rec["superseded_by"]:
+            raise ClassifyError(
+                "design cites superseded DR-%04d (%s) with no 'superseded by' pointer"
+                % (num, where)
+            )
+        if rec["status"] == "ratified":
+            continue
+        for fname, n in sorted(files.items()):
+            rows.append((num, rec["status"], fname, n, sum(files.values())))
+    # Ranked worklist: most-cited record first, then record, then file.
+    rows.sort(key=lambda r: (-r[4], r[0], r[2]))
+    return rows
+
+
+def render_citations(rows: list[tuple]) -> list[str]:
+    out = [
+        "",
+        "## Design citations of unratified records",
+        "",
+        "`design/*.sch` cites these records that are not ratified (report-only; "
+        "ranked by total citations). CI fails on a cited record with no file, "
+        "or a cited superseded record with no `superseded by` pointer.",
+        "",
+    ]
+    if not rows:
+        return out + ["None.", ""]
+    out += ["| DR | Status | Citing file | Count |", "|---|---|---|---|"]
+    for num, status, fname, n, _ in rows:
+        out.append("| DR-%04d | %s | design/%s | %d |" % (num, status, fname, n))
+    out.append("")
+    return out
+
+
+def render(records: list[dict], cite_rows: list[tuple] | None = None) -> str:
     counts = {s: sum(1 for r in records if r["status"] == s) for s in STATUSES}
     out = [
         "# Decision records: status index",
@@ -134,13 +195,22 @@ def render(records: list[dict]) -> str:
             "| [DR-%04d](%s) | %s | %s | %s |"
             % (r["number"], r["file"], title, r["status"], r["superseded_by"] or "-")
         )
-    out.append("")
+    if cite_rows is not None:
+        out += render_citations(cite_rows)
+    else:
+        out.append("")
     return "\n".join(out)
 
 
-def build(directory: Path = RECORDS_DIR) -> str:
+def build(directory: Path = RECORDS_DIR, design_dir: Path | None = None) -> str:
+    if design_dir is None and directory == RECORDS_DIR:
+        design_dir = DESIGN_DIR
     paths = sorted(directory.glob("DR-[0-9][0-9][0-9][0-9]-*.md"))
-    return render([parse_record(p) for p in paths])
+    records = [parse_record(p) for p in paths]
+    rows = None
+    if design_dir is not None:
+        rows = citation_rows(records, scan_citations(design_dir))
+    return render(records, rows)
 
 
 def main() -> int:

@@ -165,6 +165,29 @@ point tuned for an 18-core host with other load on it, not a universal
 constant — a quieter or larger host may tolerate `-j 4`-`6`; if you still see
 timeouts at `-j 3`, lower `-j` further before raising `--timeout` again.
 
+#### `startup` is no longer a ~12 s deck (#409)
+
+The #232 figures above (and `tb_startup.spice`'s "11.7 s CPU" note) predate the
+current DUT. Measured 2026-10-12 at tt/27 C/3.30 V, one point, `-j 1`, ngspice-46:
+
+| deck | window | wall |
+| --- | --- | --- |
+| `_full` branch only | 0.5 ms | 1.0 s |
+| `_min` branch only | 0.5 ms | 0.9 s |
+| `_short` (near-short) branch only | 0.5 ms | 25 s (24,014 accepted + 11,087 rejected steps; matrix load 22 s) |
+| all three branches | 0.5 ms | 95 s |
+| all three branches, full 6 ms window | 6 ms | 929.6 s wall / 900.8 s user, PASS |
+
+The near-short branch sits in a ~1 MHz current-limit limit cycle (output current
+pulsing 0 to ~0.4 A, ~50 accepted steps per us); ngspice has one global timestep,
+so the other two branches pay for it. It is CPU, not host contention (user time
+~= wall time), and the 300 s default can never complete this deck. The nightly
+`pvt-smoke` single-point run therefore passes `--timeout 2400`. A timeout is still
+`ERROR` / exit 2 and its log now keeps ngspice's partial output.
+
+The one-point smoke does not substitute for #345: it is a single nominal
+corner, not the full-matrix acquisition / hand-over characterization.
+
 ## Writing a testbench
 
 Create `sim/<experiment-slug>/testbench/` with a manifest and a netlist

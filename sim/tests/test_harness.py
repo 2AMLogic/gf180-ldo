@@ -11,6 +11,7 @@ import dataclasses
 import datetime
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -1056,6 +1057,107 @@ class RunPointLadderGateTests(unittest.TestCase):
         self.assertEqual("failed", result.status)
         self.assertIn("pseudo-transient", result.message)
 
+    def test_420_overflowed_required_measurement_fails_the_point(self):
+        """`m_vout = 1e999` parses to inf; the point must not be ok."""
+        result = self._run(
+            self._tb(["tran 1u 9m", "meas tran vpp PP v(out) FROM=1u TO=9m"]),
+            _gate_log("m_vout = 1e999"),
+        )
+        self.assertEqual("failed", result.status)
+        self.assertIn("non-finite", result.message)
+        self.assertIn("vout", result.message)
+        self.assertIn(result.log, result.message)
+        self.assertNotIn("vout", result.measurements)
+
+    def _run_proc(self, tb, stdout, stderr="", returncode=0):
+        proc = unittest.mock.Mock(returncode=returncode, stdout=stdout, stderr=stderr)
+        with unittest.mock.patch("subprocess.run", return_value=proc):
+            return runner.run_point(tb, self.pdk, self._point(), self.workdir)
+
+    def test_409_timeout_stays_error_and_keeps_partial_output(self):
+        """A timeout is ERROR (never ok), parses no measurements even if the
+        partial output contains a well-formed `m_` line, and the partial
+        ngspice output survives in the log for diagnosis (issue #409)."""
+        import subprocess
+
+        exc = subprocess.TimeoutExpired(
+            cmd="ngspice",
+            timeout=7,
+            output=b"m_vout = 1.8\nPartial transient noise\n",
+            stderr="Note: Starting dynamic gmin stepping",
+        )
+        with unittest.mock.patch("subprocess.run", side_effect=exc):
+            result = runner.run_point(
+                self._tb(["op"]), self.pdk, self._point(), self.workdir, timeout_s=7
+            )
+        self.assertEqual("error", result.status)
+        self.assertEqual({}, result.measurements)
+        self.assertIn("timed out after 7s", result.message)
+        log = (self.workdir / result.log).read_text()
+        self.assertTrue(log.startswith("TIMEOUT after 7s\n"))
+        self.assertIn("Partial transient noise", log)
+        self.assertIn("dynamic gmin stepping", log)
+
+    def test_409_timeout_without_partial_output_is_bare_marker(self):
+        import subprocess
+
+        exc = subprocess.TimeoutExpired(cmd="ngspice", timeout=7)
+        with unittest.mock.patch("subprocess.run", side_effect=exc):
+            result = runner.run_point(
+                self._tb(["op"]), self.pdk, self._point(), self.workdir, timeout_s=7
+            )
+        self.assertEqual("error", result.status)
+        self.assertEqual("TIMEOUT after 7s\n", (self.workdir / result.log).read_text())
+
+    def test_406_clean_control_stays_ok(self):
+        result = self._run_proc(self._tb(["op"]), "m_vout = 1.8\n")
+        self.assertEqual("ok", result.status)
+
+    def test_406_nonzero_exit_with_complete_measurements_fails(self):
+        result = self._run_proc(self._tb(["op"]), "m_vout = 1.8\n", returncode=1)
+        self.assertEqual("failed", result.status)
+        self.assertIn("exited 1", result.message)
+        self.assertEqual(1.8, result.measurements["vout"])
+        self.assertEqual([], result.missing)
+        self.assertIsNotNone(result.dc_path)
+        self.assertTrue((self.workdir / result.log).is_file())
+
+    def test_406_fatal_log_with_complete_measurements_fails(self):
+        result = self._run_proc(
+            self._tb(["op"]),
+            "m_vout = 1.8\nFatal error: Simulation interrupted\n",
+        )
+        self.assertEqual("failed", result.status)
+        self.assertIn("fatal", result.message)
+        self.assertEqual(1.8, result.measurements["vout"])
+
+    def test_406_undefined_vector_on_stdout_fails(self):
+        result = self._run_proc(
+            self._tb(["op"]), 'm_vout = 1.8\nError: RHS "v(missing)" invalid\n'
+        )
+        self.assertEqual("failed", result.status)
+        self.assertIn("does not exist", result.message)
+
+    def test_406_diagnostics_on_stderr_fail(self):
+        tb = self._tb(["op"])
+        for err in (
+            'Error: RHS "v(missing)" invalid\n',
+            "Fatal error: Simulation interrupted\n",
+        ):
+            with self.subTest(err=err):
+                result = self._run_proc(tb, "m_vout = 1.8\n", stderr=err)
+                self.assertEqual("failed", result.status)
+
+    def test_406_tran_bench_still_checked_for_exit_status(self):
+        tb = self._tb(["tran 1u 9m", "meas tran vpp PP v(out) FROM=1u TO=9m"])
+        result = self._run_proc(tb, "m_vout = 1.8\n", returncode=2)
+        self.assertEqual("failed", result.status)
+
+    def test_406_generic_deck_needs_no_sweep_marker(self):
+        result = self._run_proc(self._tb(["op"]), "m_vout = 1.8\n")
+        self.assertEqual("ok", result.status)
+        self.assertNotIn("SWEEP COMPLETE", "m_vout = 1.8\n")
+
     def test_the_committed_evidence_log_now_fails_loudly(self):
         """Issue #310's own manual-verification step, replayed: the exact
         committed log the issue cites must trip the gate. Read in isolation
@@ -1257,6 +1359,119 @@ class ChecksTests(unittest.TestCase):
             ),
             [],
         )
+
+
+class NonFiniteFailClosedTests(unittest.TestCase):
+    """Issue #420: overflowed/NaN/inf values and statistics fail closed."""
+
+    def _results(self, values, status="ok"):
+        return [
+            runner.PointResult(
+                corners.PvtPoint(corners.CORNERS[c], 27, 3.3), status, {"x": v}
+            )
+            for c, v in zip(("tt", "ff", "ss"), values)
+        ]
+
+    def test_parse_drops_overflow_token_and_reports_it(self):
+        found, bad = runner.parse_measurements_checked("m_x = 1e999\nm_y = 2.5\n")
+        self.assertEqual({"y": 2.5}, found)
+        self.assertEqual(["x"], bad)
+        self.assertEqual({"y": 2.5}, runner.parse_measurements("m_x = 1e999\nm_y = 2.5"))
+
+    def test_pvt_log_rejects_overflow_token(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "a.log"
+            log.write_text("m_x = 1e999\n")
+            with self.assertRaises(SystemExit) as cm:
+                read_measurements(log, ["m_x"])
+        self.assertIn("non-finite", str(cm.exception))
+
+    def test_nonfinite_constructed_values_never_pass(self):
+        for bad in (float("nan"), float("inf"), float("-inf")):
+            for check in ({"max": 10.0}, {"min": -10.0}, {"max_spread_pct": 1}):
+                with self.subTest(bad=bad, check=check):
+                    results = self._results([1.0, bad])
+                    summary = report.summarize(results, ["x"])
+                    failures = report.evaluate_checks({"x": check}, results, summary)
+                    self.assertTrue(failures)
+                    self.assertIn("nonfinite", {f["kind"] for f in failures})
+
+    def test_all_nonfinite_samples_fail(self):
+        results = self._results([float("inf"), float("inf")])
+        summary = report.summarize(results, ["x"])
+        self.assertIsNone(summary["x"]["spread_pct"])
+        self.assertTrue(
+            report.evaluate_checks({"x": {"max_spread_pct": 1}}, results, summary)
+        )
+
+    def test_huge_finite_samples_give_correct_spread(self):
+        results = self._results([1e308, 1.5e308])
+        summary = report.summarize(results, ["x"])
+        self.assertTrue(summary["x"]["mean"] > 0 and summary["x"]["mean"] < float("inf"))
+        self.assertAlmostEqual(summary["x"]["spread_pct"], 40.0)
+        failures = report.evaluate_checks({"x": {"max_spread_pct": 1}}, results, summary)
+        self.assertEqual("max_spread_pct", failures[0]["kind"])
+
+    def test_huge_opposite_sign_samples_do_not_pass(self):
+        results = self._results([-1.5e308, 1.5e308])
+        summary = report.summarize(results, ["x"])
+        self.assertIsNone(summary["x"]["spread_pct"])  # zero mean: unevaluable
+        self.assertTrue(
+            report.evaluate_checks({"x": {"max_spread_pct": 1}}, results, summary)
+        )
+
+    def test_underflowing_scaled_mean_is_unevaluable_not_a_crash(self):
+        # PR #421 review: abs(mean)/scale underflowed to zero and the rescaled
+        # spread raised ZeroDivisionError. It must be None and fail closed.
+        results = self._results([-1e308, 1e308, 1e-300])
+        summary = report.summarize(results, ["x"])
+        self.assertTrue(math.isfinite(summary["x"]["mean"]))
+        self.assertIsNone(summary["x"]["spread_pct"])
+        for check in ({"max_spread_pct": 1}, {"min_spread_pct": 1}):
+            with self.subTest(check=check):
+                failures = report.evaluate_checks({"x": check}, results, summary)
+                self.assertTrue(failures)
+
+    def test_float_max_samples_do_not_overflow_the_mean(self):
+        # PR #421 review: fsum(v / n) raised "intermediate overflow in fsum".
+        big = sys.float_info.max
+        results = self._results([big, big, big])
+        summary = report.summarize(results, ["x"])
+        self.assertEqual(big, summary["x"]["mean"])
+        self.assertEqual(0.0, summary["x"]["spread_pct"])
+        self.assertEqual(
+            [], report.evaluate_checks({"x": {"max_spread_pct": 1}}, results, summary)
+        )
+        failures = report.evaluate_checks({"x": {"min_spread_pct": 1}}, results, summary)
+        self.assertEqual("min_spread_pct", failures[0]["kind"])
+
+    def test_safe_mean_stays_within_sample_range(self):
+        big = sys.float_info.max
+        for values in (
+            [big, big, big],
+            [-big, -big, -big],
+            [big, big / 2, big],
+            [big, -big, big],
+            [-1e308, 1e308, 1e-300],
+        ):
+            with self.subTest(values=values):
+                mean = report._safe_mean(values)
+                self.assertTrue(math.isfinite(mean))
+                self.assertTrue(min(values) <= mean <= max(values))
+
+    def test_ordinary_grading_and_waivers_unchanged(self):
+        results = self._results([1.0, 1.2, 0.8])
+        summary = report.summarize(results, ["x"])
+        self.assertAlmostEqual(summary["x"]["spread_pct"], 40.0)
+        self.assertEqual(
+            [], report.evaluate_checks({"x": {"max_spread_pct": 50, "min": 0.5}}, results, summary)
+        )
+        one = self._results([1.0])
+        one_summary = report.summarize(one, ["x"])
+        self.assertEqual(1, len(report.waived_checks({"x": {"max_spread_pct": 1}}, one_summary)))
+        self.assertEqual([], report.evaluate_checks({"x": {"max_spread_pct": 1}}, one, one_summary))
+        zero = self._results([-1.0, 1.0])
+        self.assertIsNone(report.summarize(zero, ["x"])["x"]["spread_pct"])
 
 
 class DegenerateGridSpreadTests(unittest.TestCase):
@@ -2386,6 +2601,114 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             self.assertIn("ngspice-42", out)
             self.assertIn(runner.PINNED_NGSPICE_VERSION, out)
             self.assertNotIn("MISMATCH", out)
+
+
+class ExclusiveRecordWriteTests(unittest.TestCase):
+    """Append-only evidence is enforced by exclusive creation, not check-then-write.
+
+    Deterministic: both writers are held at a barrier placed after their
+    collision checks and immediately before publication, so both have
+    observed "absent" before either creates the file (issue #422).
+    """
+
+    ID = "20260729-153000-abc1234"
+
+    def setUp(self):
+        import threading
+
+        self.threading = threading
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def _race(self, writers):
+        """Run ``writers`` (callables) concurrently, all paused before publish."""
+        barrier = self.threading.Barrier(len(writers), timeout=10)
+        real = report._publish_exclusive
+
+        def gated(path, text):
+            barrier.wait()  # every writer has passed its existence check
+            return real(path, text)
+
+        outcomes = [None] * len(writers)
+
+        def run(i, fn):
+            try:
+                outcomes[i] = ("ok", fn())
+            except report.RecordExists as exc:
+                outcomes[i] = ("exists", exc)
+
+        with unittest.mock.patch.object(report, "_publish_exclusive", gated):
+            threads = [
+                self.threading.Thread(target=run, args=(i, fn))
+                for i, fn in enumerate(writers)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(30)
+        return outcomes
+
+    def _assert_one_winner(self, outcomes, path, winners_text):
+        kinds = sorted(o[0] for o in outcomes)
+        self.assertEqual(kinds, ["exists", "ok"])
+        self.assertIn(path.read_text(), winners_text)
+
+    def test_markdown_record_concurrent_writers(self):
+        records = self.root / "records"
+        outcomes = self._race(
+            [lambda t=t: report.write_markdown_record(self.ID, t, records) for t in ("A\n", "B\n")]
+        )
+        self._assert_one_winner(outcomes, records / f"{self.ID}.md", ("A\n", "B\n"))
+        self.assertEqual(len(list(records.iterdir())), 1)
+
+    def test_write_record_concurrent_writers(self):
+        experiment = self.root / "exp"
+        rec = {"record_id": self.ID}
+        with unittest.mock.patch.object(
+            report, "render_record", side_effect=["A\n", "B\n"]
+        ):
+            outcomes = self._race(
+                [lambda: report.write_record(rec, experiment) for _ in range(2)]
+            )
+        self._assert_one_winner(
+            outcomes, experiment / report.RECORDS_DIR / f"{self.ID}.md", ("A\n", "B\n")
+        )
+
+    def test_netlist_snapshot_concurrent_writers(self):
+        tb_dir = self.root / "smoke-bias" / "testbench"
+        tb_dir.mkdir(parents=True)
+        (tb_dir / "x.spice").write_text("v1 out 0 dc {vdd_val}\n")
+        (tb_dir / "tb.json").write_text(
+            json.dumps({"name": "smoke-bias", "netlist": "x.spice", "measure": {"v": "v(out)"}})
+        )
+        tb = testbench.load(tb_dir)
+        outcomes = self._race(
+            [lambda: report.write_netlist_snapshot(tb, tb.experiment_dir, self.ID) for _ in range(2)]
+        )
+        path = tb.experiment_dir / report.SNAPSHOT_DIR / f"{self.ID}.spice"
+        self.assertEqual(sorted(o[0] for o in outcomes), ["exists", "ok"])
+        self.assertIn("v1 out 0 dc {vdd_val}", path.read_text())
+
+    def test_exclusive_publish_never_overwrites_or_deletes(self):
+        path = self.root / "r.md"
+        report._publish_exclusive(path, "keep\n")
+        with self.assertRaises(report.RecordExists):
+            report._publish_exclusive(path, "clobber\n")
+        self.assertEqual("keep\n", path.read_text())
+
+    def test_partial_file_is_left_alone_on_retry(self):
+        path = self.root / "r.md"
+        path.write_text("partial")
+        with self.assertRaises(report.RecordExists):
+            report.write_markdown_record("r", "full\n", self.root)
+        self.assertEqual("partial", path.read_text())
+
+    def test_render_failure_creates_no_destination(self):
+        experiment = self.root / "exp"
+        with self.assertRaises(KeyError):
+            report.write_record({"record_id": self.ID}, experiment)
+        self.assertEqual(list((experiment / report.RECORDS_DIR).glob("*")), [])
 
 
 if __name__ == "__main__":

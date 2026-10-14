@@ -313,12 +313,15 @@ def _matrix_row(
     pm=60.0,
     gm=20.0,
     resurgence_result="PASS",
+    process="tt",
+    temp_c="27",
+    vin_v="3.30",
 ):
     return {
-        "corner_id": "tt_27c_3.30v",
-        "process": "tt",
-        "temp_c": "27",
-        "vin_v": "3.30",
+        "corner_id": f"{process}_{temp_c}c_{vin_v}v",
+        "process": process,
+        "temp_c": str(temp_c),
+        "vin_v": str(vin_v),
         "iload_ma": str(iload_ma),
         "ceff_uf": str(ceff_uf),
         "esr_ohm": str(esr_ohm),
@@ -332,6 +335,19 @@ def _matrix_row(
         "resurgence_db": "-1.0",
         "resurgence_result": resurgence_result,
     }
+
+
+def _full_envelope_rows(result="PASS") -> list[dict]:
+    """One row per required DR-0018 coordinate (630), straight from the axes."""
+    return [
+        _matrix_row(i, c, e, result, process=p, temp_c=f"{t:g}", vin_v=f"{v:g}")
+        for p in bcr.DR0018_PROCESSES
+        for t in bcr.DR0018_TEMPS_C
+        for v in bcr.DR0018_SUPPLIES_V
+        for i in bcr.DR0018_LOADS_MA
+        for c in bcr.DR0018_CEFF_UF
+        for e in bcr.DR0018_ESRS_OHM
+    ]
 
 
 class _EnvelopeFixture:
@@ -363,10 +379,8 @@ class TestEnvelopeVerdict(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.tmpdir = Path(self._tmp.name)
 
-    def test_envelope_passes_when_every_in_envelope_point_passes(self):
-        rows = [
-            _matrix_row(0.1, 1.0, 0.2, "PASS"),
-            _matrix_row(50, 1.0, 0.5, "PASS"),
+    def test_envelope_passes_when_every_required_point_is_present_and_passes(self):
+        rows = _full_envelope_rows() + [
             # Outside the envelope (0.33 uF) and FAILing -- must not affect
             # the envelope verdict, only the full-matrix count below.
             _matrix_row(50, 0.33, 0.001, "FAIL"),
@@ -374,10 +388,152 @@ class TestEnvelopeVerdict(unittest.TestCase):
         fixture = _EnvelopeFixture(self.tmpdir, rows, overall="PASS")
         env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
         self.assertEqual(env["verdict"], "PASS")
+        self.assertEqual(env["n_pass"], 630)
+        self.assertEqual(env["n_total"], 630)
+        self.assertEqual(env["n_pass_full"], 630)
+        self.assertEqual(env["n_total_full"], 631)
+        self.assertEqual(env["coverage"]["n_covered"], 630)
+        self.assertTrue(env["coverage"]["complete"])
+
+    def test_two_passing_points_no_longer_establish_the_whole_row(self):
+        """Issue #410: the former positive fixture (two passing points at
+        tt / 27 C / 3.30 V) is a diagnostic subset, not the 630-point row."""
+        rows = [
+            _matrix_row(0.1, 1.0, 0.2, "PASS"),
+            _matrix_row(50, 1.0, 0.5, "PASS"),
+            _matrix_row(50, 0.33, 0.001, "FAIL"),
+        ]
+        fixture = _EnvelopeFixture(self.tmpdir, rows, overall="PASS")
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
         self.assertEqual(env["n_pass"], 2)
         self.assertEqual(env["n_total"], 2)
-        self.assertEqual(env["n_pass_full"], 2)
         self.assertEqual(env["n_total_full"], 3)
+        self.assertEqual(env["coverage"]["n_covered"], 2)
+        self.assertEqual(env["coverage"]["n_required"], 630)
+        snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertIn("incomplete coverage", snippet)
+        self.assertIn("2/630", snippet)
+        self.assertIn("2/2 points passing", snippet)
+
+    def test_single_passing_point_is_unknown(self):
+        fixture = _EnvelopeFixture(self.tmpdir, [_matrix_row(1, 1.0, 0.5, "PASS")])
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+
+    def test_one_point_repeated_630_times_cannot_fill_the_matrix(self):
+        rows = [_matrix_row(1, 1.0, 0.5, "PASS") for _ in range(630)]
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["n_total"], 630)
+        self.assertEqual(env["coverage"]["n_covered"], 1)
+        self.assertEqual(env["coverage"]["n_duplicate_rows"], 629)
+        snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertIn("629 duplicate rows", snippet)
+
+    def test_legacy_number_formatting_normalizes_to_the_same_slot(self):
+        rows = _full_envelope_rows()
+        for r in rows:
+            r["vin_v"] = f"{float(r['vin_v']):.2f}"
+            r["temp_c"] = f"{float(r['temp_c']):.1f}"
+            r["esr_ohm"] = f"{float(r['esr_ohm']):.3f}"
+            r["process"] = r["process"].upper()
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "PASS")
+
+    def _assert_missing(self, predicate, n_missing):
+        rows = [r for r in _full_envelope_rows() if not predicate(r)]
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["coverage"]["n_missing"], n_missing)
+        self.assertEqual(env["coverage"]["n_covered"], 630 - n_missing)
+
+    def test_missing_process_corner_prevents_pass(self):
+        self._assert_missing(lambda r: r["process"] == "res_ss", 90)
+
+    def test_missing_temperature_prevents_pass(self):
+        self._assert_missing(lambda r: r["temp_c"] == "125", 210)
+
+    def test_missing_supply_prevents_pass(self):
+        self._assert_missing(lambda r: r["vin_v"] == "2.97", 210)
+
+    def test_missing_load_prevents_pass(self):
+        self._assert_missing(lambda r: r["iload_ma"] == "0.1", 126)
+
+    def test_missing_esr_prevents_pass(self):
+        self._assert_missing(lambda r: r["esr_ohm"] == "0.5", 315)
+
+    def test_malformed_coordinates_never_fill_a_slot_or_pass(self):
+        rows = _full_envelope_rows()
+        victim = rows.pop()
+        bad = dict(victim, vin_v="not-a-number")
+        blank = dict(victim, process="")
+        fixture = _EnvelopeFixture(self.tmpdir, rows + [bad, blank])
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["coverage"]["n_missing"], 1)
+        self.assertGreaterEqual(env["coverage"]["n_malformed"], 2)
+
+    def test_malformed_row_alongside_complete_coverage_blocks_pass(self):
+        rows = _full_envelope_rows()
+        rows.append(dict(rows[0], process=""))
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["coverage"]["n_missing"], 0)
+
+    def test_partial_matrix_with_in_envelope_failure_is_fail_with_coverage(self):
+        rows = [
+            _matrix_row(1, 1.0, 0.5, "PASS"),
+            _matrix_row(25, 1.0, 0.5, "FAIL", pm=10.0, gm=1.0),
+        ]
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "FAIL")
+        self.assertEqual(env["coverage"]["n_covered"], 2)
+        snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertIn("**FAIL**", snippet)
+        self.assertIn("incomplete coverage", snippet)
+
+    def test_complete_matrix_with_one_failure_or_resurgence_flag_still_fails(self):
+        rows = _full_envelope_rows()
+        rows[5]["resurgence_result"] = "FAIL"
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "FAIL")
+        self.assertTrue(env["coverage"]["complete"])
+
+    def test_out_of_envelope_failures_stay_disclosed_not_graded_on_a_complete_matrix(self):
+        rows = _full_envelope_rows() + [_matrix_row(0, 0.33, 0.001, "FAIL")]
+        fixture = _EnvelopeFixture(self.tmpdir, rows)
+        env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "PASS")
+        snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertIn("630/631 passing", snippet)
+
+    def test_required_axes_match_the_sweep_definitions_and_dr0018_accounting(self):
+        src = (SIM_DIR / "loop-stability" / "testbench" / "sweep.py").read_text()
+
+        def tup(name):
+            m = re.search(rf"^{name}\s*=\s*\(([^)]*)\)", src, re.MULTILINE)
+            return [eval(x.strip()) for x in m.group(1).split(",") if x.strip()]
+
+        self.assertEqual(tuple(tup("PROCESS_CORNERS")), bcr.DR0018_PROCESSES)
+        self.assertEqual(tuple(tup("TEMPS_C")), bcr.DR0018_TEMPS_C)
+        loads = tuple(round(v * 1e3, 6) for v in tup("ILOADS_A") if v > 0)
+        self.assertEqual(loads, bcr.DR0018_LOADS_MA)
+        esrs = tuple(v for v in tup("ESRS_OHM") if v >= 0.2)
+        self.assertEqual(esrs, bcr.DR0018_ESRS_OHM)
+        nominal = float(re.search(r"^NOMINAL_SUPPLY_V\s*=\s*([\d.]+)", src, re.M).group(1))
+        tol = float(re.search(r"^SUPPLY_TOL\s*=\s*([\d.]+)", src, re.M).group(1))
+        self.assertEqual(
+            tuple(round(nominal * k, 2) for k in (1 - tol, 1.0, 1 + tol)),
+            bcr.DR0018_SUPPLIES_V,
+        )
+        self.assertEqual(len(bcr.DR0018_STABILITY_ENVELOPE.required_coords), 630)
 
     def test_a_failing_point_inside_the_envelope_fails_the_row_even_when_the_records_own_prose_says_pass(self):
         """The core case the issue's Acceptance Criteria calls out: a point
@@ -429,19 +585,19 @@ class TestEnvelopeVerdict(unittest.TestCase):
         self.assertEqual(env["n_total_full"], 1)
 
     def test_rendered_snippet_names_the_decision_record_and_shows_the_full_matrix_count(self):
-        rows = [
-            _matrix_row(0.1, 1.0, 0.2, "PASS", pm=55.0, gm=12.0),
-            _matrix_row(50, 0.33, 0.001, "FAIL"),
-        ]
+        rows = _full_envelope_rows()
+        rows[0]["phase_margin_deg"] = "55.0"
+        rows[0]["gain_margin_db"] = "12.0"
+        rows.append(_matrix_row(50, 0.33, 0.001, "FAIL"))
         fixture = _EnvelopeFixture(self.tmpdir, rows, overall="PASS")
         env = bcr.envelope_verdict(fixture.record, bcr.DR0018_STABILITY_ENVELOPE)
         snippet = bcr._render_envelope_snippet(env, bcr.DR0018_STABILITY_ENVELOPE)
         self.assertIn("DR-0018", snippet)
-        self.assertIn("PASS", snippet)
-        self.assertIn("1/1", snippet)
+        self.assertIn("**PASS**", snippet)
+        self.assertIn("630/630", snippet)
         # The wider-matrix result must stay visible alongside the envelope
         # verdict, not be dropped (issue #276 acceptance criteria).
-        self.assertIn("1/2 passing", snippet)
+        self.assertIn("630/631 passing", snippet)
 
 
 class TestStabilityRowUsesEnvelopeVerdict(unittest.TestCase):
@@ -519,6 +675,7 @@ class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):
         for name, value in (
             ("SIM_DIR", root),
             ("DUT_CANDIDATES", {"ldo_core": dut}),
+            ("DUT_BY_SLUG", {self.SLUG: "ldo_core"}),
         ):
             original = getattr(bcr, name)
             setattr(bcr, name, value)
@@ -552,7 +709,7 @@ class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):
         self.assertEqual(record.stem, "20260923-005938-b62ac83")
         # ...and the row therefore reports fresh, which is the whole point:
         # the false downgrade was the observable defect.
-        self.assertEqual(bcr.freshness(snapshot), ("fresh", "ldo_core"))
+        self.assertEqual(bcr.freshness(snapshot, "ldo_core"), ("fresh", "ldo_core", None))
 
     def test_the_newest_record_still_wins_when_it_matches_the_current_dut(self):
         """Recency is still the tiebreak among records that do match."""
@@ -575,7 +732,7 @@ class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):
 
         record, snapshot = bcr.latest_substantive_record(self.SLUG)
         self.assertEqual(record.stem, "20260923-093349-7674ddf")
-        self.assertEqual(bcr.freshness(snapshot), ("stale", None))
+        self.assertEqual(bcr.freshness(snapshot, "ldo_core"), ("stale", None, None))
 
     def test_no_snapshots_at_all_falls_back_to_the_newest_record(self):
         self._add_record("20260801-003015-b64d60e", snapshot_of=None)
@@ -584,6 +741,38 @@ class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):
         record, snapshot = bcr.latest_substantive_record(self.SLUG)
         self.assertEqual(record.stem, "20260923-093349-7674ddf")
         self.assertIsNone(snapshot)
+
+    def _write_matrix(self, record_id: str, rows: list[dict]) -> None:
+        with (self.records_dir / f"{record_id}-matrix.csv").open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=_MATRIX_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def test_a_newly_selected_partial_record_cannot_render_a_current_full_row_pass(self):
+        """Issue #410: freshness-first selection keeps choosing the newest
+        record that matches the current DUT, even when it is a diagnostic
+        subset. The older complete record must not be silently substituted,
+        and the subset must not read as a whole-row PASS.
+        """
+        full_id, partial_id = "20260923-005938-b62ac83", "20260924-010101-abcdef0"
+        self._add_record(full_id, self.CURRENT_DUT)
+        self._write_matrix(full_id, _full_envelope_rows())
+        self._add_record(partial_id, self.CURRENT_DUT)
+        self._write_matrix(partial_id, [_matrix_row(1, 1.0, 0.5, "PASS")])
+
+        record, snapshot = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, partial_id)
+        self.assertEqual(bcr.freshness(snapshot, "ldo_core")[0], "fresh")
+        env = bcr.envelope_verdict(record, bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(env["verdict"], "UNKNOWN")
+        self.assertEqual(env["coverage"]["n_covered"], 1)
+        self.assertEqual(env["coverage"]["n_required"], 630)
+
+        # The older complete record, graded on its own, is still a PASS --
+        # the downgrade comes from the selected record, not from the grader.
+        older = bcr.envelope_verdict(self.records_dir / f"{full_id}.md",
+                                     bcr.DR0018_STABILITY_ENVELOPE)
+        self.assertEqual(older["verdict"], "PASS")
 
     def test_an_empty_or_missing_records_directory_is_still_none_none(self):
         self.assertEqual(bcr.latest_substantive_record(self.SLUG), (None, None))
@@ -608,7 +797,10 @@ class TestCommittedTreeSelection(unittest.TestCase):
         return [
             record.stem
             for record in sorted(records_dir.glob("*.md"))
-            if bcr.freshness(snapshots_dir / f"{record.stem}.spice")[0] == "fresh"
+            if bcr.freshness(
+                snapshots_dir / f"{record.stem}.spice", bcr.expected_dut(slug)
+            )[0]
+            == "fresh"
         ]
 
     def test_no_cited_slug_is_reported_stale_while_a_matching_record_exists(self):
@@ -622,9 +814,160 @@ class TestCommittedTreeSelection(unittest.TestCase):
             checked += 1
             with self.subTest(slug=slug):
                 record, snapshot = bcr.latest_substantive_record(slug)
-                self.assertEqual(bcr.freshness(snapshot)[0], "fresh")
+                self.assertEqual(bcr.freshness(snapshot, bcr.expected_dut(slug))[0], "fresh")
                 self.assertEqual(record.stem, fresh_ids[-1])
         self.assertGreater(checked, 0, "no committed slug has a fresh record")
+
+
+class TestFreshnessBindsToDesignatedDut(unittest.TestCase):
+    """Freshness identifies the circuit actually measured (issue #393).
+
+    A snapshot that merely *contains* the current standalone amplifier as an
+    included supporting cell must not be fresh for a core source. Synthetic
+    trees only; the committed evidence is not consulted.
+    """
+
+    CORE = ".subckt ldo_core vin vout\nRz n1 n2 1k ppolyf_u_3k\n.ends\n"
+    STALE_CORE = ".subckt ldo_core vin vout\nRz n1 n2 1k ppolyf_u_1k\n.ends\n"
+    AMP = ".subckt error_amp inp inn out\nRa a b 1k\n.ends\n"
+    STALE_AMP = ".subckt error_amp inp inn out\nRa a b 2k\n.ends\n"
+    CORE_REL = "design/netlist/ldo_core.spice"
+    AMP_REL = "design/netlist/error_amp.spice"
+    SLUG = "zz-bind-fixture"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        netlists = self.root / "design" / "netlist"
+        netlists.mkdir(parents=True)
+        core = netlists / "ldo_core.spice"
+        amp = netlists / "error_amp.spice"
+        core.write_text(self.CORE)
+        amp.write_text(self.AMP)
+        for name, value in (
+            ("REPO_ROOT", self.root),
+            ("SIM_DIR", self.root / "sim"),
+            ("DUT_CANDIDATES", {"ldo_core": core, "error_amp": amp}),
+            ("DUT_BY_SLUG", {self.SLUG: "ldo_core"}),
+        ):
+            original = getattr(bcr, name)
+            setattr(bcr, name, value)
+            self.addCleanup(setattr, bcr, name, original)
+
+    @staticmethod
+    def _section(label: str, path: str, body: str) -> str:
+        bar = "* " + "=" * 70
+        return f"{bar}\n* {label:<21}: {path}\n* sha256               : 00\n{bar}\n{body}"
+
+    def _snap(self, name: str, text: str) -> Path:
+        path = self.root / f"{name}.spice"
+        path.write_text(text)
+        return path
+
+    def _harness(self, dut_rel: str, dut_body: str, cells=()) -> str:
+        parts = ["* Frozen netlist snapshot\n\n"]
+        parts.append(self._section("DUT netlist", dut_rel, dut_body))
+        for rel, body in cells:
+            parts.append(self._section("included design cell", rel, body))
+        parts.append(self._section("testbench fragment", "sim/x/tb.spice", ".end\n"))
+        return "\n".join(parts)
+
+    def test_stale_core_with_current_included_amp_is_stale_for_a_core_source(self):
+        snap = self._snap(
+            "a",
+            self._harness(self.CORE_REL, self.STALE_CORE, [(self.AMP_REL, self.AMP)]),
+        )
+        self.assertEqual(bcr.freshness(snap, "ldo_core"), ("stale", None, None))
+
+    def test_current_core_dut_is_fresh_for_core(self):
+        snap = self._snap(
+            "b",
+            self._harness(self.CORE_REL, self.CORE, [(self.AMP_REL, self.STALE_AMP)]),
+        )
+        self.assertEqual(bcr.freshness(snap, "ldo_core"), ("fresh", "ldo_core", None))
+
+    def test_current_core_with_stale_supporting_amp_is_not_an_amp_measurement(self):
+        snap = self._snap(
+            "c",
+            self._harness(self.CORE_REL, self.CORE, [(self.AMP_REL, self.STALE_AMP)]),
+        )
+        status, label, reason = bcr.freshness(snap, "error_amp")
+        self.assertEqual(status, "unknown")
+        self.assertIsNone(label)
+        self.assertIn(self.CORE_REL, reason)
+
+    def test_current_core_with_current_included_amp_is_not_fresh_for_an_amp_source(self):
+        snap = self._snap(
+            "d",
+            self._harness(self.CORE_REL, self.CORE, [(self.AMP_REL, self.AMP)]),
+        )
+        self.assertEqual(bcr.freshness(snap, "error_amp")[0], "unknown")
+
+    def test_standalone_amp_with_current_content_is_fresh_for_amp(self):
+        bar = self._section("included design cell", self.AMP_REL, self.AMP)
+        snap = self._snap("e", "* hdr\n" + bar + self._section("testbench fragment", "t", "x\n"))
+        self.assertEqual(bcr.freshness(snap, "error_amp"), ("fresh", "error_amp", None))
+
+    def test_standalone_stale_amp_is_stale_for_amp(self):
+        snap = self._snap("f", "* hdr\n" + self._section("DUT netlist", self.AMP_REL, self.STALE_AMP))
+        self.assertEqual(bcr.freshness(snap, "error_amp"), ("stale", None, None))
+
+    def test_legacy_headerless_snapshots_are_compared_to_the_expected_netlist_only(self):
+        core_only = self._snap("g", "* legacy\n" + self.CORE)
+        amp_only = self._snap("h", "* legacy\n" + self.AMP)
+        self.assertEqual(bcr.freshness(core_only, "ldo_core")[0], "fresh")
+        self.assertEqual(bcr.freshness(core_only, "error_amp")[0], "stale")
+        self.assertEqual(bcr.freshness(amp_only, "error_amp")[0], "fresh")
+        # The demonstrated defect: stale core + current amp, headerless.
+        mixed = self._snap("i", "* legacy\n" + self.STALE_CORE + self.AMP)
+        self.assertEqual(bcr.freshness(mixed, "ldo_core"), ("stale", None, None))
+
+    def test_legacy_source_header_naming_another_netlist_is_unknown(self):
+        snap = self._snap("j", f"* source     : {self.AMP_REL}\n" + self.AMP)
+        status, _label, reason = bcr.freshness(snap, "ldo_core")
+        self.assertEqual(status, "unknown")
+        self.assertIn(self.AMP_REL, reason)
+
+    def test_missing_snapshot_unmapped_dut_and_ambiguous_dut_are_unknown_with_reason(self):
+        self.assertEqual(bcr.freshness(None, "ldo_core")[0], "unknown")
+        snap = self._snap("k", "* legacy\n" + self.CORE)
+        status, _l, reason = bcr.freshness(snap, None)
+        self.assertEqual((status, bool(reason)), ("unknown", True))
+        two = self._snap(
+            "l",
+            "* h\n"
+            + self._section("DUT netlist", self.CORE_REL, self.CORE)
+            + self._section("DUT netlist", self.CORE_REL, self.CORE),
+        )
+        status, _l, reason = bcr.freshness(two, "ldo_core")
+        self.assertEqual(status, "unknown")
+        self.assertIn("more than one", reason)
+
+    def test_selection_rejects_incidental_amp_match_but_keeps_genuine_earlier_fresh(self):
+        records = self.root / "sim" / self.SLUG / "records"
+        snaps = self.root / "sim" / self.SLUG / "netlist-snapshots"
+        records.mkdir(parents=True)
+        snaps.mkdir(parents=True)
+        for rid in ("20260901-000000-aaaaaaa", "20260902-000000-bbbbbbb"):
+            (records / f"{rid}.md").write_text("**Overall: PASS**\n")
+        # Older: genuinely current core. Newer: stale core + current amp.
+        (snaps / "20260901-000000-aaaaaaa.spice").write_text(
+            self._harness(self.CORE_REL, self.CORE)
+        )
+        (snaps / "20260902-000000-bbbbbbb.spice").write_text(
+            self._harness(self.CORE_REL, self.STALE_CORE, [(self.AMP_REL, self.AMP)])
+        )
+        record, _snap = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, "20260901-000000-aaaaaaa")
+        # With only the incidental match available the row stays stale and
+        # cites the newest evidence.
+        (snaps / "20260901-000000-aaaaaaa.spice").write_text(
+            self._harness(self.CORE_REL, self.STALE_CORE)
+        )
+        record, snap = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, "20260902-000000-bbbbbbb")
+        self.assertEqual(bcr.freshness(snap, "ldo_core")[0], "stale")
 
 
 if __name__ == "__main__":

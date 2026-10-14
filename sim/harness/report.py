@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import getpass
+import math
 import platform
 import socket
 import subprocess
@@ -103,7 +104,9 @@ def allocate_record_id(
 
     Append-only: if a record with this id already exists (same second, same
     commit) we advance the timestamp until the id is free rather than
-    overwriting or inventing a non-conforming suffix.
+    overwriting or inventing a non-conforming suffix. The id is not reserved
+    here; the writers publish with exclusive creation and raise
+    :class:`RecordExists` if another run took it first.
     """
     when = when or _dt.datetime.now(_dt.timezone.utc)
     short_sha = (git or git_provenance(repo_root))["short"]
@@ -114,22 +117,86 @@ def allocate_record_id(
         when += _dt.timedelta(seconds=1)
 
 
+def _is_finite(value) -> bool:
+    try:
+        return math.isfinite(value)
+    except TypeError:
+        return False
+
+
+def _safe_mean(values: list[float]) -> float:
+    """Mean that cannot overflow (or raise) when every sample is finite."""
+    mean = sum(values) / len(values)
+    if math.isfinite(mean):
+        return mean
+    # The plain sum overflowed. Normalise by the largest magnitude first so
+    # every term lies in [-1, 1]: fsum of n such terms is bounded by n and
+    # cannot overflow (dividing by n per term is not enough -- rounding can
+    # push fsum's intermediates past float max; see PR #421 review).
+    lo, hi = min(values), max(values)
+    scale = max(abs(lo), abs(hi))
+    mean = math.fsum(v / scale for v in values) / len(values) * scale
+    # The true mean of finite samples lies within [lo, hi]; clamp so final
+    # rounding of the rescale cannot step outside (or to +/-inf).
+    return min(max(mean, lo), hi)
+
+
+def _spread_pct(lo: float, hi: float, mean: float) -> float | None:
+    """(hi - lo) / |mean| in percent; None if zero-mean or not finite.
+
+    None means "unevaluable": spread checks fail closed on it. A spread that
+    cannot be represented (overflow, or a denominator that underflows to
+    zero once rescaled) is reported as None, never as zero or NaN.
+    """
+    if not mean or not math.isfinite(mean):
+        return None
+    spread = (hi - lo) / abs(mean) * 100.0
+    if not math.isfinite(spread):
+        # Rescale so intermediates cannot overflow.
+        scale = max(abs(lo), abs(hi), abs(mean))
+        denom = abs(mean) / scale
+        if not denom or not math.isfinite(denom):
+            # |mean| is so small relative to the range that the scaled
+            # denominator underflows: the spread is not representable.
+            return None
+        spread = ((hi / scale) - (lo / scale)) / denom * 100.0
+    return spread if math.isfinite(spread) else None
+
+
 def summarize(results: list[PointResult], measure_names: list[str]) -> dict:
     """Min / max / mean / spread of each measurement across the PVT grid."""
     summary: dict[str, dict] = {}
     ok = [r for r in results if r.status == "ok"]
     for name in measure_names:
-        samples = [(r.measurements[name], r.point.corner_id) for r in ok if name in r.measurements]
-        if not samples:
+        raw = [(r.measurements[name], r.point.corner_id) for r in ok if name in r.measurements]
+        if not raw:
             summary[name] = {"n": 0}
+            continue
+        # Non-finite samples (NaN/inf from a directly constructed result or an
+        # overflowed parse) are never graded as numbers: they are counted, left
+        # out of the statistics, and force the spread to None (unevaluable) so
+        # a spread check fails closed instead of comparing against NaN.
+        samples = [(v, c) for v, c in raw if _is_finite(v)]
+        n_bad = len(raw) - len(samples)
+        if not samples:
+            summary[name] = {
+                "n": len(raw),
+                "min": None,
+                "min_at": None,
+                "max": None,
+                "max_at": None,
+                "mean": None,
+                "spread_pct": None,
+                "nonfinite": n_bad,
+            }
             continue
         values = [v for v, _ in samples]
         lo_value, lo_at = min(samples, key=lambda s: s[0])
         hi_value, hi_at = max(samples, key=lambda s: s[0])
-        mean = sum(values) / len(values)
-        spread_pct = (hi_value - lo_value) / abs(mean) * 100.0 if mean else None
+        mean = _safe_mean(values)
+        spread_pct = None if n_bad else _spread_pct(lo_value, hi_value, mean)
         summary[name] = {
-            "n": len(values),
+            "n": len(raw),
             "min": lo_value,
             "min_at": lo_at,
             "max": hi_value,
@@ -137,6 +204,8 @@ def summarize(results: list[PointResult], measure_names: list[str]) -> dict:
             "mean": mean,
             "spread_pct": spread_pct,
         }
+        if n_bad:
+            summary[name]["nonfinite"] = n_bad
     return summary
 
 
@@ -206,11 +275,29 @@ def evaluate_checks(
     for name, spec in checks.items():
         low = spec.get("min")
         high = spec.get("max")
+        # Fail closed on NaN/inf: every comparison against NaN is False, so a
+        # non-finite value would otherwise pass every bound (issue #420).
+        if any(spec.get(k) is not None for k in ("min", "max", *SPREAD_KINDS)):
+            for result in results:
+                if result.status != "ok" or name not in result.measurements:
+                    continue
+                if not _is_finite(result.measurements[name]):
+                    failures.append(
+                        {
+                            "measurement": name,
+                            "kind": "nonfinite",
+                            "limit": None,
+                            "value": str(result.measurements[name]),
+                            "at": result.point.corner_id,
+                        }
+                    )
         if low is not None or high is not None:
             for result in results:
                 if result.status != "ok" or name not in result.measurements:
                     continue
                 value = result.measurements[name]
+                if not _is_finite(value):
+                    continue
                 if low is not None and value < low:
                     failures.append(
                         {
@@ -483,6 +570,30 @@ class RecordExists(RuntimeError):
     """Refused to overwrite an existing append-only record."""
 
 
+def _publish_exclusive(path: Path, text: str) -> None:
+    """Create ``path`` with ``text``, failing if it already exists.
+
+    The existence checks elsewhere in this module are only early, advisory
+    refusals: between a check and a separate ``Path.write_text`` (which
+    truncates) a concurrent writer could publish the same path and be
+    clobbered. Exclusive creation (``open(..., "x")`` -> ``O_CREAT|O_EXCL``)
+    makes the filesystem enforce the append-only invariant atomically.
+
+    ``text`` must be fully rendered *before* calling, so a rendering failure
+    never leaves a destination behind. If the write itself fails after the
+    file was created, the partial file is left in place (never deleted or
+    overwritten on retry; a retry raises :class:`RecordExists`).
+    """
+    try:
+        fh = open(path, "x")
+    except FileExistsError:
+        raise RecordExists(
+            f"{path} already exists; records are append-only -- mint a new record-id"
+        ) from None
+    with fh:
+        fh.write(text)
+
+
 def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str) -> Path:
     """Freeze the DUT netlist for this record.
 
@@ -550,7 +661,7 @@ def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str) 
         )
         + tb.netlist.read_text()
     )
-    path.write_text("\n".join(chunks))
+    _publish_exclusive(path, "\n".join(chunks))
     return path
 
 
@@ -877,6 +988,11 @@ def render_record(record: dict, experiment: str) -> str:
 def reserve_record_path(record_id: str, records_dir: Path) -> Path:
     """Return ``<records_dir>/<record_id>.md``, refusing an existing record.
 
+    This is an early, *advisory* check, not an exclusive reservation: the
+    returned path is not held for the caller. The actual no-overwrite
+    guarantee is made at creation time by :func:`_publish_exclusive`, which
+    every writer in this module uses to publish the file.
+
     ``allocate_record_id()`` only guarantees an id is free at *allocation*
     time, and a sweep can run for a long while between minting its record-id
     and spending it. Re-checking immediately before the write is what keeps
@@ -902,14 +1018,15 @@ def write_markdown_record(record_id: str, text: str, records_dir: Path) -> Path:
     overwrites: raises :class:`RecordExists` on a collision.
     """
     path = reserve_record_path(record_id, records_dir)
-    path.write_text(text)
+    _publish_exclusive(path, text)
     return path
 
 
 def write_record(record: dict, experiment_dir: Path) -> Path:
     """Write ``records/<record-id>.md``; never overwrite an existing record."""
     path = reserve_record_path(record["record_id"], experiment_dir / RECORDS_DIR)
-    path.write_text(render_record(record, experiment_dir.name))
+    text = render_record(record, experiment_dir.name)  # render before creating
+    _publish_exclusive(path, text)
     return path
 
 

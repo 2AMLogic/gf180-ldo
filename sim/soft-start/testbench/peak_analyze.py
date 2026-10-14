@@ -17,7 +17,24 @@ CORE = ["vout", "pg", "en", "bg", "fb", "ssr", "hg", "enb", "icap", "ivin", "ilo
 
 
 def load(p, names):
+    """Parse a ``wrdata <file> time <v1> <v2> ...`` dump (one header line, then
+    ``t t t v1 t v2 ...`` rows) into ``(t, {name: values})``.
+
+    Fails loud (``ValueError``) on a dump with no data rows, on a ragged row (a
+    truncated last line would otherwise be read as if complete), or on rows
+    too short to hold every requested vector -- never a partial table.
+    """
     rows = [list(map(float, l.split())) for l in p.read_text().splitlines()[1:] if l.strip()]
+    if not rows:
+        raise ValueError(f"{p.name}: no data rows")
+    width = len(rows[0])
+    need = 2 + 2 * len(names)
+    if width < need:
+        raise ValueError(f"{p.name}: rows have {width} columns, {need} needed for {len(names)} vectors")
+    ragged = [k + 1 for k, r in enumerate(rows) if len(r) != width]
+    if ragged:
+        raise ValueError(f"{p.name}: {len(ragged)} row(s) do not have {width} columns "
+                         f"(first at data row {ragged[0]}; truncated dump?)")
     return [r[0] for r in rows], {n: [r[3 + 2 * i] for r in rows] for i, n in enumerate(names)}
 
 
@@ -27,13 +44,13 @@ def peak(t, v):
     return ic[i] * 1e3, t[i] * 1e6, max(dv)
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--dat-dir", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--conv", default="100n,20n,5n,2n,1n")
     ap.add_argument("--win-tag", default="_x"); ap.add_argument("--extra-names", default="co,clg,i2,vth,isns")
     ap.add_argument("--win", default="151.5,152.0")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     d, out = Path(a.dat_dir), Path(a.out); out.mkdir(parents=True, exist_ok=True)
     with open(out / "convergence.csv", "w", newline="") as f:
         w = csv.writer(f); w.writerow(["tmax", "dut", "icap_peak_ma", "t_peak_us", "dvout_max_vpms"])

@@ -872,7 +872,7 @@ SIZING AS BUILT
   wanted.
 
   DO NOT recover this adder at the branches. DR-0036 measures the branch-
-  supply gating mechanism DR-0029 proposed and DR-0028 / PR #267 implemented
+  supply gating mechanism DR-0029 proposed and closed PR #267 implemented
   (one pfet between VIN and a new VING node both degeneration resistors move
   onto, gated by GMRM, plus a bleed across it) head to head on one tree
   against DR-0035's VIN-referenced ramp ceiling. Gating recovers 4.982 uA of

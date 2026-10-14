@@ -337,7 +337,7 @@ def main() -> int:
     print(f"  I_inj at VREF     "
           f"{min(c.iinj_at_vref_a for c in curves) * 1e9:.2f} .. "
           f"{max(c.iinj_at_vref_a for c in curves) * 1e9:.2f} nA")
-    print(f"  release V(SSR)    "
+    print("  release V(SSR)    "
           + (f"{min(rel):.3f} .. {max(rel):.3f} V" if len(rel) == len(curves)
              else f"never, at {len(curves) - len(rel)}/{len(curves)} corners"))
     print(f"  settled Vout err  "

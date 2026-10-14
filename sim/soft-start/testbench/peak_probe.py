@@ -10,14 +10,13 @@ around the EN edge to CSV. It exists to locate the time and cause of the
 peak Icap / dV/dt that the klt-measured probe reports only as a scalar. It is
 a diagnostic, not a PVT matrix: grids go through klt_run.py.
 """
-import argparse, csv, subprocess, sys, tempfile
+import argparse, subprocess, sys, tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness.corners import CORNERS  # noqa: E402
-from harness import klt_batch as kb  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 
 SNAP = HERE.parent / "corners/20261007-ss-320-tt27-probe/main"

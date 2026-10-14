@@ -289,6 +289,36 @@ after any `sim/` record lands or `design/netlist/*.spice` changes; this
 table (the ratified spec + notes above) stays the authority on what is
 required, `sim/CHARACTERIZATION.md` on what the evidence currently shows.
 
+### Spec-table guard
+
+The Parameter/Target/Stretch table above is pinned by
+`spec/spec-table-lock.json` and checked by `spec/check_spec_table.py` (stdlib
+only, no PDK) in CI's `harness-selftest` job:
+
+```
+python3 spec/check_spec_table.py --check                      # table vs lock
+python3 spec/check_spec_table.py --check --base origin/main   # + authorization diff
+python3 spec/check_spec_table.py --write --base origin/main --dr DR-NNNN
+```
+
+Editing a row, or a numbered ratified note (including `5a`), without a matching,
+freshly appended lock amendment fails CI.
+An amendment must cite a decision record that is either new in the PR (status
+proposed or ratified) or flipped from proposed to ratified in the PR. This is
+a structural audit trail only: eligibility is **not** operator ratification
+(a proposed record may be approved on the same PR) and the reviewer still
+confirms the record actually authorizes the named rows. The guard also locks the
+numbered ratified notes under the table, keyed by their literal ids and
+whitespace-normalized (wording, numbers, units, links and punctuation are
+preserved, so editing historical context or evidence references inside a note
+is an amendment too; a note id change counts as removal plus addition). The
+lock is schema version 2; a version 1 (table-only) lock is accepted only as a
+base, and migrating it passes only if the notes are unchanged, so a migration
+cannot hide a note edit. Deleting the notes lock or downgrading the schema,
+duplicate note ids and a missing notes section all fail. Workflow:
+`spec/decision-records/TEMPLATE.md`. On PRs, CI validates GitHub's merge
+checkout against the PR's base SHA.
+
 Maturity ladder: simulation-complete → layout DRC/LVS-clean → shuttle
 seat → measured silicon over temperature.
 
@@ -299,8 +329,18 @@ spec/          ratified spec + decision records
 design/        schematics / netlists (xschem)
 sim/           testbenches + PVT corner results (ngspice)
 layout/        GDS + DRC/LVS reports (klayout-tools driven)
+signoff/       T1 verdict of record, graded against the design-evidence ladder
+ratification/  EE and market ratification keys (rubrics, manifests)
+docs/          environment setup and challenge proposals
 measurements/  silicon characterization (empty until tape-out)
+reuse.lock.json  sibling blocks reused in-tree (status per block)
+WORK_PLAN.md   generated -- do not hand-edit
+WORK_LOG.md    generated -- do not hand-edit
 ```
+
+Tooling directories (`.agents/`, `.claude/`, `.github/`, `.loom/`) hold agent
+and CI configuration, not design content. Where a directory has its own
+`README.md`, that carries the detail.
 
 ## Environment Setup
 

@@ -1,0 +1,7 @@
+# Correctness-only lint gate (issue #377): pyflakes + syntax errors.
+# No style rules, no formatter.
+extend-exclude = ["sim/*/records", "sim/*/corners", "layout/records"]  # append-only evidence
+
+[lint]
+select = ["F", "E9"]
+

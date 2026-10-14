@@ -25,6 +25,10 @@ name: CI
 #                                       sim/*/records, sim/*/corners,
 #                                       sim/*/netlist-snapshots, or
 #                                       layout/records; issues #371, #378)
+#   - sim/check_record_host_paths.py  (PR-only: fails if records added/modified
+#                                       under sim/*/records, signoff/records or
+#                                       layout/records embed /home/<user> paths;
+#                                       tests in sim/tests, issues #365/#413)
 #   - signoff/check.sh                (re-grades this block's T1 state from
 #                                       signoff/block-manifest.json via `klt
 #                                       signoff --manifest` and fails if a
@@ -36,7 +40,13 @@ name: CI
 #                                       of silently, see issue #270. Needs klt
 #                                       (fetched by uvx) but no PDK/KLayout:
 #                                       --manifest mode only reads committed
-#                                       JSON envelopes.)
+#                                       JSON envelopes. It also fails if the
+#                                       "Today ... tier ... T1 N of M items
+#                                       met" sentences in README.md and
+#                                       signoff/README.md disagree with that
+#                                       record; matcher tests live in
+#                                       sim/tests/test_readme_claims.py,
+#                                       issue #398.)
 #
 # CLAUDE.md's "headless only" flow keeps the default PR path free of any PDK
 # or GUI dependency: `harness-selftest` below runs on every push/PR and never
@@ -65,9 +75,10 @@ name: CI
 #     are a data-regeneration workflow (re-run manually when device models
 #     change) rather than a pass/fail check — nothing here asserts a result
 #     against a threshold, so there is nothing for CI to gate on.
-#   - No linter/formatter is configured for this repo yet (package.json's
-#     `lint` script is an honest "not configured" placeholder); add a CI job
-#     for it if/when one is adopted.
+#   - No formatter is configured. The only lint is the correctness-only ruff
+#     gate (rules F + E9, see ruff.toml; issue #377), run in `harness-selftest`
+#     via a pinned `uvx ruff==0.16.10 check .` and mirrored by `npm run lint`.
+#     Append-only evidence dirs are excluded in ruff.toml.
 
 on:
   push:
@@ -79,10 +90,23 @@ on:
     - cron: "0 7 * * *"
   workflow_dispatch: {}
 
+# Least privilege: every job only reads the repo.
+permissions:
+  contents: read
+
+# Supersede stale PR runs; never cancel main-branch, scheduled, or manual runs.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# timeout-minutes are sized at roughly 10x the observed durations (the two
+# no-PDK jobs finish in ~20-30 s; pvt-smoke in ~6 min before the pass-device
+# startup smoke, ~16 min of CPU for that one point -- issue #409).
 jobs:
   harness-selftest:
     name: harness self-test (unit tests, no PDK required)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -93,6 +117,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Install uv (provides uvx for the pinned ruff lint gate)
+        run: python3 -m pip install uv==0.12.24
+
+      - name: Lint Python (ruff F + E9, correctness only)
+        run: uvx ruff==0.16.10 check .
 
       - name: Run sim/selftest.sh
         run: bash sim/selftest.sh
@@ -134,20 +164,14 @@ jobs:
       - name: Verify new/modified records carry no absolute host paths
         if: github.event_name == 'pull_request'
         run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          files="$(git diff --name-only --diff-filter=AM "$base"...HEAD -- \
-            'sim/*/records/*' 'signoff/records/*' 'layout/*/records/*')"
-          bad=""
-          for f in $files; do
-            if grep -nE '/home/[a-z]|/Users/[a-z]' "$f"; then bad="$bad $f"; fi
-          done
-          if [ -n "$bad" ]; then
-            echo "::error::records added or modified in this PR embed absolute host paths (/home/<user> or /Users/<user>):$bad -- render paths repo-relative or via sim/harness/paths.py (issue #365)."
-            exit 1
-          fi
+          python3 sim/check_record_host_paths.py \
+            --base "${{ github.event.pull_request.base.sha }}"
         # Scoped to files added/modified in the PR so the existing append-only
         # records (which predate this check) do not break CI; they are not
         # rewritten here (issue #365). Needs full history for the base diff.
+        # Pathspecs live in sim/check_record_host_paths.py (incl. top-level
+        # layout/records/, issue #413); tests: sim/tests/test_check_record_host_paths.py
+        # (discovered by sim/selftest.sh).
 
       - name: Verify spec/decision-records/README.md is up to date
         run: |
@@ -157,9 +181,25 @@ jobs:
             exit 1
           fi
         # Also fails (non-zero exit from the generator) when a record's Status
-        # line cannot be classified, so new records must follow TEMPLATE.md.
+        # line cannot be classified, so new records must follow TEMPLATE.md, or
+        # when design/*.sch cites a DR-NNNN with no record file or a superseded
+        # record with no pointer (issue #387; proposed citations are report-only).
         # Parser unit tests: sim/tests/test_decision_record_index.py, run by
         # sim/selftest.sh above. No PDK needed.
+
+      - name: Verify the ratified spec table matches its lock (current tree)
+        if: github.event_name != 'pull_request'
+        run: python3 spec/check_spec_table.py --check
+        # Push/schedule/manual: table <-> spec/spec-table-lock.json consistency.
+        # The authorization diff is supplied by the PR run below (issue #397).
+
+      - name: Verify spec-table changes carry fresh decision-record amendments (PR only)
+        if: github.event_name == 'pull_request'
+        run: python3 spec/check_spec_table.py --check --base "${{ github.event.pull_request.base.sha }}"
+        # The PR checkout is GitHub's merge commit: that is the candidate being
+        # validated, compared against the merge-base with the PR's base SHA
+        # (full history from fetch-depth: 0). Structural audit trail only; it
+        # is not operator ratification. Tests: sim/tests/test_check_spec_table.py.
 
       - name: Verify evidence is append-only (PR only)
         if: github.event_name == 'pull_request'
@@ -172,6 +212,7 @@ jobs:
   signoff-tier-report:
     name: T1 tier report (klt signoff --manifest, no PDK required)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -180,7 +221,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv (fetches the pinned klt revision for signoff/check.sh)
-        run: python3 -m pip install --upgrade uv
+        run: python3 -m pip install uv==0.12.24
 
       - name: Re-grade this block's T1 state
         run: bash signoff/check.sh
@@ -202,6 +243,7 @@ jobs:
   pvt-smoke:
     name: PVT smoke run against gf180mcu (ngspice + PDK)
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     if: >-
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
@@ -221,9 +263,10 @@ jobs:
 
       - name: Fetch the pinned gf180mcu PDK via volare
         run: |
-          python3 -m pip install --upgrade volare
-          # Pinned hash from docs/environment-setup.md section 1 — keep this
-          # in sync with that doc rather than tracking volare's "latest".
+          python3 -m pip install volare==0.20.6
+          # Pinned volare version and PDK hash from docs/environment-setup.md
+          # section 1 — keep these in sync with that doc rather than tracking
+          # "latest".
           volare fetch  --pdk gf180mcu c6d73a35f524070e85faff4a6a9eef49553ebc2b
           volare enable --pdk gf180mcu c6d73a35f524070e85faff4a6a9eef49553ebc2b
 
@@ -252,4 +295,26 @@ jobs:
           # --supply-tol 0 collapses the PVT sweep to a single nominal point
           # (mirrors sim/selftest.sh's own --quick); --no-write means this
           # never mints or touches evidence under sim/startup/records/.
-          python3 sim/run_corners.py startup --corners tt --temps 27 --supply-tol 0 --no-write
+          #
+          # --timeout 2400 (issue #409): the single nominal point is ~900 s
+          # of CPU, not seconds. Measured (ngspice-46, tt/27C/3.30V,
+          # 2026-10-12): the near-short branch alone enters a ~1 MHz
+          # current-limit limit cycle (~50 accepted steps/us, ~31% rejected)
+          # costing ~25 s per 0.5 ms of the 6 ms window, while the full-load
+          # and min-load branches cost <1 s each; ngspice has one global
+          # timestep, so the combined deck pays for it (~95 s per 0.5 ms),
+          # completing in 929.6 s wall / 900.8 s user with PASS. The old
+          # 300 s default therefore could never finish. A timeout is still
+          # ERROR / exit 2; this only sizes the budget (~2.6x measured, for
+          # a slower runner/ngspice-42) -- thresholds and stimulus are
+          # untouched. See sim/harness/README.md.
+          python3 sim/run_corners.py startup --corners tt --temps 27 --supply-tol 0 --no-write --timeout 2400
+
+      - name: Upload pass-device startup smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: startup-smoke-logs
+          path: sim/.work/startup/
+          if-no-files-found: warn
+          retention-days: 14
