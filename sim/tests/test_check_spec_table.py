@@ -58,6 +58,9 @@ class Repo:
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.email", "t@example.invalid")
         self.git("config", "user.name", "t")
+        # No detached background gc/maintenance racing temp-dir cleanup.
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
         (tmp / "spec" / "decision-records").mkdir(parents=True)
         self.write("README.md", TABLE)
         self.write_dr("DR-0001-old.md", dr_text(1, "ratified"))
