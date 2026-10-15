@@ -13,8 +13,8 @@ Conclusions and recommendations: [`CONCLUSIONS.md`](CONCLUSIONS.md).
 | Item | Value used for the committed results |
 |---|---|
 | Simulator | `ngspice-46` (Homebrew) |
-| PDK | `gf180mcuD` installed via volare |
-| Model root | `$PDK_ROOT/gf180mcuD/libs.tech/ngspice` (`PDK_ROOT` defaults to `~/.volare`) |
+| PDK | `gf180mcuD` installed via ciel 2.6.1 (open_pdks `f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7`) |
+| Model root | `$PDK_ROOT/gf180mcuD/libs.tech/ngspice` (`PDK_ROOT` defaults to `~/.ciel`) |
 | Model files | `sm141064.ngspice`, `sm141064_mim.ngspice`, `design.ngspice` |
 
 ## Re-running

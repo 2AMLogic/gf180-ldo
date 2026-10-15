@@ -8,7 +8,7 @@
 # its own (see the per-directory run.sh) without disturbing the others.
 #
 # Requires: ngspice on PATH, and the gf180mcuD PDK models under
-# $PDK_ROOT/gf180mcuD/libs.tech/ngspice (PDK_ROOT defaults to ~/.volare).
+# $PDK_ROOT/gf180mcuD/libs.tech/ngspice (PDK_ROOT defaults to ~/.ciel).
 
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
