@@ -2,6 +2,11 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-10
+
+- **PR #407**: sim: reject failed ngspice runs even when all generic PVT measurements parse
+- **Issue #406** (closed): sim: reject failed ngspice runs even when all generic PVT measurements parse
+
 ### 2026-10-09
 
 - **PR #404**: ci: pin the ratified README spec table behind a lock and DR amendments
