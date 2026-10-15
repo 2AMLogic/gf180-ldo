@@ -38,6 +38,9 @@ class HostPathGuardTests(unittest.TestCase):
         os.chdir(self.tmp.name)
         self.addCleanup(os.chdir, self.cwd)
         self.git("init", "-q")
+        # No detached background gc/maintenance racing temp-dir cleanup.
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
         self.write(HIST, BAD)  # historical evidence with a host path
         self.git("add", "-A")
         self.commit("base")
