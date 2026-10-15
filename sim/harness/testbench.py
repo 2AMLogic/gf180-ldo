@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -221,6 +222,51 @@ def _require(manifest: dict, key: str, path: Path):
     return manifest[key]
 
 
+#: Supported numeric bound operators in a ``checks`` entry (see
+#: ``report.evaluate_checks``); ``description`` is preserved free-text metadata.
+CHECK_BOUNDS = ("min", "max", "max_spread_pct", "min_spread_pct")
+CHECK_METADATA = ("description",)
+
+
+def validate_checks(checks, measure, path) -> None:
+    """Reject check definitions that would silently disable an assertion."""
+    if not isinstance(checks, dict):
+        raise ValueError(f"{path}: 'checks' must be a mapping of measurement -> bounds")
+    for name, spec in checks.items():
+        if name not in measure:
+            raise ValueError(
+                f"{path}: check target {name!r} is not a declared measurement "
+                f"(measure: {', '.join(sorted(measure))})"
+            )
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"{path}: check {name!r} must be a mapping of bounds, got {type(spec).__name__}"
+            )
+        bounds = 0
+        for key, value in spec.items():
+            if key in CHECK_METADATA:
+                continue
+            if key not in CHECK_BOUNDS:
+                raise ValueError(
+                    f"{path}: check {name!r} has unknown key {key!r} "
+                    f"(supported: {', '.join(CHECK_BOUNDS + CHECK_METADATA)})"
+                )
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                raise ValueError(
+                    f"{path}: check {name!r} bound {key!r} must be a finite number, got {value!r}"
+                )
+            bounds += 1
+        if bounds == 0:
+            raise ValueError(
+                f"{path}: check {name!r} defines no bound (need at least one of "
+                f"{', '.join(CHECK_BOUNDS)})"
+            )
+
+
 def load(directory: str | Path) -> Testbench:
     """Load a testbench manifest into a :class:`Testbench`.
 
@@ -261,6 +307,8 @@ def load(directory: str | Path) -> Testbench:
                 f"{manifest_path}: measurement name {key!r} must be alphanumeric/underscore "
                 "(it becomes an ngspice vector name)"
             )
+
+    validate_checks(manifest.get("checks", {}), measure, manifest_path)
 
     includes = []
     for entry in manifest.get("includes", []):

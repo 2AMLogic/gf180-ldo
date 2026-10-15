@@ -295,6 +295,58 @@ class TestbenchTests(unittest.TestCase):
             )
         self.assertIn("included design netlist", str(ctx.exception))
 
+    def _rejects(self, checks, *needles):
+        tb_dir = self._write("v1 out 0 dc {vdd_val}\n", {"checks": checks})
+        with self.assertRaises(ValueError) as ctx:
+            testbench.load(tb_dir)
+        msg = str(ctx.exception)
+        self.assertIn("tb.json", msg)
+        for needle in needles:
+            self.assertIn(needle, msg)
+
+    def test_check_with_unknown_target_is_rejected(self):
+        self._rejects({"typo": {"max": 1}}, "typo")
+
+    def test_check_with_unknown_operator_is_rejected(self):
+        self._rejects({"vout": {"maximum": 1}}, "vout", "maximum")
+
+    def test_check_with_malformed_definition_is_rejected(self):
+        self._rejects({"vout": 1.0}, "vout")
+        self._rejects({"vout": [1.0]}, "vout")
+
+    def test_check_with_no_bound_is_rejected(self):
+        self._rejects({"vout": {}}, "vout")
+        self._rejects({"vout": {"description": "only prose"}}, "vout")
+
+    def test_check_with_non_finite_or_non_numeric_limit_is_rejected(self):
+        for bad in (float("nan"), float("inf"), "1.0", None, True):
+            with self.subTest(bad=bad):
+                self._rejects({"vout": {"max": bad}}, "vout", "max")
+
+    def test_valid_checks_load_unchanged(self):
+        checks = {
+            "vout": {
+                "min": 1.0,
+                "max": 2,
+                "max_spread_pct": 5.0,
+                "min_spread_pct": 0.0,
+                "description": "note",
+            }
+        }
+        tb = testbench.load(self._write("v1 out 0 dc {vdd_val}\n", {"checks": checks}))
+        self.assertEqual(tb.checks, checks)
+        tb = testbench.load(self._write("v1 out 0 dc {vdd_val}\n", {"checks": {}}))
+        self.assertEqual(tb.checks, {})
+
+    def test_every_repo_manifest_loads(self):
+        for exp in testbench.discover(SIM_DIR):
+            with self.subTest(exp=exp.name):
+                testbench.load(exp)
+
+    def test_evaluate_checks_rejects_unknown_keys_on_direct_testbenches(self):
+        with self.assertRaises(ValueError):
+            report.evaluate_checks({"v": {"maximum": 1}}, [], {})
+
     def test_the_repo_smoke_testbench_is_valid(self):
         tb = testbench.load(SIM_DIR / "smoke-bias")
         self.assertEqual(tb.nominal_supply_v, 3.3)
