@@ -15,6 +15,7 @@ _spec.loader.exec_module(cao)
 
 REC = "sim/psrr-dc/records/20260101-000000-abc1234.md"
 LOG = "sim/psrr-dc/corners/20260101-000000-abc1234/tt_27c_3.3v.log"
+SNAP = "sim/psrr-dc/netlist-snapshots/20260101-000000-abc1234.spice"
 
 
 class ClassifyTests(unittest.TestCase):
@@ -48,6 +49,31 @@ class ClassifyTests(unittest.TestCase):
 
     def test_layout_records_protected(self):
         self.assertEqual(len(self.v("M\tlayout/records/x.md\n")), 1)
+
+    def test_snapshot_added_ok(self):
+        self.assertEqual(self.v(f"A\t{SNAP}\n"), [])
+
+    def test_snapshot_modified_deleted_fail(self):
+        self.assertEqual(len(self.v(f"M\t{SNAP}\nD\t{SNAP}\n")), 2)
+
+    def test_snapshot_rename_fails(self):
+        self.assertEqual(len(self.v(f"R100\t{SNAP}\tdocs/x.spice\n")), 1)
+        self.assertEqual(len(self.v(
+            f"R100\t{SNAP}\tsim/psrr-dc/netlist-snapshots/y.spice\n")), 1)
+
+    def test_rename_into_snapshot_ok(self):
+        self.assertEqual(self.v(f"R100\tdocs/x.spice\t{SNAP}\n"), [])
+
+    def test_snapshot_allowlist_exact_path(self):
+        viol, ok = cao.classify(f"M\t{SNAP}\n", {SNAP: "DR-0001"})
+        self.assertEqual(viol, [])
+        self.assertIn("DR-0001", ok[0])
+        viol, _ = cao.classify(f"M\t{SNAP}\n", {REC: "DR-0001"})
+        self.assertEqual(len(viol), 1)
+
+    def test_editable_sources_ignored(self):
+        self.assertEqual(self.v("M\tsim/psrr-dc/testbench/a.sp\n"
+                                "M\tdesign/ldo.sch\n"), [])
 
     def test_blank_lines(self):
         self.assertEqual(self.v("\n\n"), [])

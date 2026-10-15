@@ -194,7 +194,8 @@ verdict. Illustrate the format in prose; only real runs write files.
 **Enforcement.** The writer refuses to overwrite in-process, and CI enforces
 the rule on every pull request: `sim/check_append_only.py` diffs
 `origin/<base>...HEAD` and fails if any path under `sim/*/records/`,
-`sim/*/corners/`, or `layout/records/` is modified, deleted, or renamed (only
+`sim/*/corners/`, `sim/*/netlist-snapshots/` (the frozen DUT netlists that a
+record's fresh/stale attribution depends on), or `layout/records/` is modified, deleted, or renamed (only
 additions pass). The "no exceptions" stance stands; if a decision record ever
 ratifies one, it must be listed with its DR number in
 `sim/append-only-allowlist.txt` so it stays visible in review (empty today).
