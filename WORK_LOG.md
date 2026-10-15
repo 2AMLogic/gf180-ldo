@@ -2,6 +2,44 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-15
+
+- **PR #432**: sim(quiescent-current): 81-point PVT record for the DR-0037 bias servo (#320, partial)
+- **PR #427**: test: disable git auto-maintenance in temp-repo test fixtures
+- **PR #425**: sim(current-limit): full PVT record for the DR-0037 bias servo (#320, partial)
+- **PR #424**: Bump Repo Skills 0.19.5 -> 0.24.1
+- **PR #419**: fix(harness): validate manifest checks at load (#418)
+- **PR #380**: fix(sim): protect frozen netlist snapshots with the append-only guard
+- **Issue #426** (closed): test flake: test_lock_note_text_tamper_fails errors on temp-dir cleanup (Directory not empty)
+- **Issue #418** (closed): sim: reject malformed check definitions before a PVT run
+- **Issue #378** (closed): Protect frozen DUT netlist snapshots with the append-only evidence guard
+- **Issue #374** (closed): sim: phase 2 of #366 - route current-limit, enable-shutdown, soft-start, soft-start-loop-gain grid drivers through klt_batch
+
+### 2026-10-14
+
+- **Issue #293** (closed): README: embed the fleet burndown chart (one line)
+
+### 2026-10-13
+
+- **PR #400**: ci: fail when README T1 tier/count prose disagrees with the verdict of record
+- **Issue #398** (closed): ci: fail when README T1 tier/count prose disagrees with signoff/records/t1-tier-report.json
+
+### 2026-10-12
+
+- **PR #423**: sim: make append-only record writes atomic under concurrent writers
+- **PR #421**: fix(sim): fail closed on non-finite measurements and statistics (#420)
+- **PR #417**: spec: extend the amendment guard to ratified README notes
+- **PR #415**: fix(ci): size nightly startup smoke budget from measurement (#409)
+- **PR #414**: fix(ci): cover top-level layout/records in host-path guard (#413)
+- **PR #412**: fix(sim): require complete unique stability-matrix coverage before row PASS
+- **Issue #422** (closed): sim: make append-only record writes atomic under concurrent writers
+- **Issue #420** (closed): sim: prevent measurement overflow from silently passing spread checks
+- **Issue #416** (closed): spec: extend the amendment guard to ratified README notes
+- **Issue #413** (closed): ci: include top-level layout records in the host-path evidence guard
+- **Issue #411** (closed): Auditor: CI reader counts superseded cancelled checks as failures
+- **Issue #410** (closed): Require complete, unique stability-matrix coverage before the characterization row can PASS
+- **Issue #409** (closed): Build/runtime failure on main: nightly startup smoke times out after 300 seconds
+
 ### 2026-10-10
 
 - **PR #407**: sim: reject failed ngspice runs even when all generic PVT measurements parse
