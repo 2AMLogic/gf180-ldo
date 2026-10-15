@@ -1,0 +1,348 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "res_ff",
+        "sections": [
+          "typical",
+          "res_ff",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ss",
+        "sections": [
+          "typical",
+          "res_ss",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vin": [
+        2.97,
+        3.63
+      ]
+    },
+    "temperature_c": [
+      -40,
+      125
+    ]
+  },
+  "analysis": {
+    "kind": "tran",
+    "args": "1u 9m"
+  },
+  "measurements": [
+    {
+      "name": "t_v04_1",
+      "spice": ".meas tran t_v04_1 WHEN v(vout1)=0.4 RISE=1"
+    },
+    {
+      "name": "t_v14_1",
+      "spice": ".meas tran t_v14_1 WHEN v(vout1)=1.4 RISE=1"
+    },
+    {
+      "name": "t_startup_1",
+      "spice": ".meas tran t_startup_1 TRIG v(en) VAL=1.4 RISE=1 TARG v(vout1) VAL=1.764 RISE=1"
+    },
+    {
+      "name": "vout_max_en_1",
+      "spice": ".meas tran vout_max_en_1 MAX v(vout1) FROM=101u TO=8m"
+    },
+    {
+      "name": "vout_settled_1",
+      "spice": ".meas tran vout_settled_1 FIND v(vout1) AT=7.9m"
+    },
+    {
+      "name": "icap_peak_a_1",
+      "spice": ".meas tran icap_peak_a_1 MAX i(vcmeas1) FROM=100u TO=8m"
+    },
+    {
+      "name": "isup_peak_a_1",
+      "spice": ".meas tran isup_peak_a_1 MAX i(vamm1) FROM=100u TO=8m"
+    },
+    {
+      "name": "ssr_end_1",
+      "spice": ".meas tran ssr_end_1 FIND v(xdut1.xsoftstart.ssr) AT=7.9m"
+    },
+    {
+      "name": "hg_end_1",
+      "spice": ".meas tran hg_end_1 FIND v(xdut1.xsoftstart.hg) AT=7.9m"
+    },
+    {
+      "name": "vout_pp_late_1",
+      "spice": ".meas tran vout_pp_late_1 PP v(vout1) FROM=7.5m TO=7.9m"
+    },
+    {
+      "name": "vout_off_tran_1",
+      "spice": ".meas tran vout_off_tran_1 FIND v(vout1) AT=8.9m"
+    },
+    {
+      "name": "ssr_off_tran_1",
+      "spice": ".meas tran ssr_off_tran_1 FIND v(xdut1.xsoftstart.ssr) AT=8.9m"
+    },
+    {
+      "name": "dvout_max_vpms_1",
+      "expr": "vecmax(deriv(v(vout1)))*1e-3"
+    },
+    {
+      "name": "t_v04_2",
+      "spice": ".meas tran t_v04_2 WHEN v(vout2)=0.4 RISE=1"
+    },
+    {
+      "name": "t_v14_2",
+      "spice": ".meas tran t_v14_2 WHEN v(vout2)=1.4 RISE=1"
+    },
+    {
+      "name": "t_startup_2",
+      "spice": ".meas tran t_startup_2 TRIG v(en) VAL=1.4 RISE=1 TARG v(vout2) VAL=1.764 RISE=1"
+    },
+    {
+      "name": "vout_max_en_2",
+      "spice": ".meas tran vout_max_en_2 MAX v(vout2) FROM=101u TO=8m"
+    },
+    {
+      "name": "vout_settled_2",
+      "spice": ".meas tran vout_settled_2 FIND v(vout2) AT=7.9m"
+    },
+    {
+      "name": "icap_peak_a_2",
+      "spice": ".meas tran icap_peak_a_2 MAX i(vcmeas2) FROM=100u TO=8m"
+    },
+    {
+      "name": "isup_peak_a_2",
+      "spice": ".meas tran isup_peak_a_2 MAX i(vamm2) FROM=100u TO=8m"
+    },
+    {
+      "name": "ssr_end_2",
+      "spice": ".meas tran ssr_end_2 FIND v(xdut2.xsoftstart.ssr) AT=7.9m"
+    },
+    {
+      "name": "hg_end_2",
+      "spice": ".meas tran hg_end_2 FIND v(xdut2.xsoftstart.hg) AT=7.9m"
+    },
+    {
+      "name": "vout_pp_late_2",
+      "spice": ".meas tran vout_pp_late_2 PP v(vout2) FROM=7.5m TO=7.9m"
+    },
+    {
+      "name": "vout_off_tran_2",
+      "spice": ".meas tran vout_off_tran_2 FIND v(vout2) AT=8.9m"
+    },
+    {
+      "name": "ssr_off_tran_2",
+      "spice": ".meas tran ssr_off_tran_2 FIND v(xdut2.xsoftstart.ssr) AT=8.9m"
+    },
+    {
+      "name": "dvout_max_vpms_2",
+      "expr": "vecmax(deriv(v(vout2)))*1e-3"
+    },
+    {
+      "name": "t_v04_3",
+      "spice": ".meas tran t_v04_3 WHEN v(vout3)=0.4 RISE=1"
+    },
+    {
+      "name": "t_v14_3",
+      "spice": ".meas tran t_v14_3 WHEN v(vout3)=1.4 RISE=1"
+    },
+    {
+      "name": "t_startup_3",
+      "spice": ".meas tran t_startup_3 TRIG v(en) VAL=1.4 RISE=1 TARG v(vout3) VAL=1.764 RISE=1"
+    },
+    {
+      "name": "vout_max_en_3",
+      "spice": ".meas tran vout_max_en_3 MAX v(vout3) FROM=101u TO=8m"
+    },
+    {
+      "name": "vout_settled_3",
+      "spice": ".meas tran vout_settled_3 FIND v(vout3) AT=7.9m"
+    },
+    {
+      "name": "icap_peak_a_3",
+      "spice": ".meas tran icap_peak_a_3 MAX i(vcmeas3) FROM=100u TO=8m"
+    },
+    {
+      "name": "isup_peak_a_3",
+      "spice": ".meas tran isup_peak_a_3 MAX i(vamm3) FROM=100u TO=8m"
+    },
+    {
+      "name": "ssr_end_3",
+      "spice": ".meas tran ssr_end_3 FIND v(xdut3.xsoftstart.ssr) AT=7.9m"
+    },
+    {
+      "name": "hg_end_3",
+      "spice": ".meas tran hg_end_3 FIND v(xdut3.xsoftstart.hg) AT=7.9m"
+    },
+    {
+      "name": "vout_pp_late_3",
+      "spice": ".meas tran vout_pp_late_3 PP v(vout3) FROM=7.5m TO=7.9m"
+    },
+    {
+      "name": "vout_off_tran_3",
+      "spice": ".meas tran vout_off_tran_3 FIND v(vout3) AT=8.9m"
+    },
+    {
+      "name": "ssr_off_tran_3",
+      "spice": ".meas tran ssr_off_tran_3 FIND v(xdut3.xsoftstart.ssr) AT=8.9m"
+    },
+    {
+      "name": "dvout_max_vpms_3",
+      "expr": "vecmax(deriv(v(vout3)))*1e-3"
+    },
+    {
+      "name": "t_v04_4",
+      "spice": ".meas tran t_v04_4 WHEN v(vout4)=0.4 RISE=1"
+    },
+    {
+      "name": "t_v14_4",
+      "spice": ".meas tran t_v14_4 WHEN v(vout4)=1.4 RISE=1"
+    },
+    {
+      "name": "t_startup_4",
+      "spice": ".meas tran t_startup_4 TRIG v(en) VAL=1.4 RISE=1 TARG v(vout4) VAL=1.764 RISE=1"
+    },
+    {
+      "name": "vout_max_en_4",
+      "spice": ".meas tran vout_max_en_4 MAX v(vout4) FROM=101u TO=8m"
+    },
+    {
+      "name": "vout_settled_4",
+      "spice": ".meas tran vout_settled_4 FIND v(vout4) AT=7.9m"
+    },
+    {
+      "name": "icap_peak_a_4",
+      "spice": ".meas tran icap_peak_a_4 MAX i(vcmeas4) FROM=100u TO=8m"
+    },
+    {
+      "name": "isup_peak_a_4",
+      "spice": ".meas tran isup_peak_a_4 MAX i(vamm4) FROM=100u TO=8m"
+    },
+    {
+      "name": "ssr_end_4",
+      "spice": ".meas tran ssr_end_4 FIND v(xdut4.xsoftstart.ssr) AT=7.9m"
+    },
+    {
+      "name": "hg_end_4",
+      "spice": ".meas tran hg_end_4 FIND v(xdut4.xsoftstart.hg) AT=7.9m"
+    },
+    {
+      "name": "vout_pp_late_4",
+      "spice": ".meas tran vout_pp_late_4 PP v(vout4) FROM=7.5m TO=7.9m"
+    },
+    {
+      "name": "vout_off_tran_4",
+      "spice": ".meas tran vout_off_tran_4 FIND v(vout4) AT=8.9m"
+    },
+    {
+      "name": "ssr_off_tran_4",
+      "spice": ".meas tran ssr_off_tran_4 FIND v(xdut4.xsoftstart.ssr) AT=8.9m"
+    },
+    {
+      "name": "dvout_max_vpms_4",
+      "expr": "vecmax(deriv(v(vout4)))*1e-3"
+    },
+    {
+      "name": "t_v04_5",
+      "spice": ".meas tran t_v04_5 WHEN v(vout5)=0.4 RISE=1"
+    },
+    {
+      "name": "t_v14_5",
+      "spice": ".meas tran t_v14_5 WHEN v(vout5)=1.4 RISE=1"
+    },
+    {
+      "name": "t_startup_5",
+      "spice": ".meas tran t_startup_5 TRIG v(en) VAL=1.4 RISE=1 TARG v(vout5) VAL=1.764 RISE=1"
+    },
+    {
+      "name": "vout_max_en_5",
+      "spice": ".meas tran vout_max_en_5 MAX v(vout5) FROM=101u TO=8m"
+    },
+    {
+      "name": "vout_settled_5",
+      "spice": ".meas tran vout_settled_5 FIND v(vout5) AT=7.9m"
+    },
+    {
+      "name": "icap_peak_a_5",
+      "spice": ".meas tran icap_peak_a_5 MAX i(vcmeas5) FROM=100u TO=8m"
+    },
+    {
+      "name": "isup_peak_a_5",
+      "spice": ".meas tran isup_peak_a_5 MAX i(vamm5) FROM=100u TO=8m"
+    },
+    {
+      "name": "ssr_end_5",
+      "spice": ".meas tran ssr_end_5 FIND v(xdut5.xsoftstart.ssr) AT=7.9m"
+    },
+    {
+      "name": "hg_end_5",
+      "spice": ".meas tran hg_end_5 FIND v(xdut5.xsoftstart.hg) AT=7.9m"
+    },
+    {
+      "name": "vout_pp_late_5",
+      "spice": ".meas tran vout_pp_late_5 PP v(vout5) FROM=7.5m TO=7.9m"
+    },
+    {
+      "name": "vout_off_tran_5",
+      "spice": ".meas tran vout_off_tran_5 FIND v(vout5) AT=8.9m"
+    },
+    {
+      "name": "ssr_off_tran_5",
+      "spice": ".meas tran ssr_off_tran_5 FIND v(xdut5.xsoftstart.ssr) AT=8.9m"
+    },
+    {
+      "name": "dvout_max_vpms_5",
+      "expr": "vecmax(deriv(v(vout5)))*1e-3"
+    }
+  ],
+  "options": {
+    "timeout_s": 7200,
+    "keep_artifacts": true
+  }
+}

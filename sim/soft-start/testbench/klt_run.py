@@ -123,7 +123,7 @@ def main(argv=None) -> int:
                     rows.append({"dut": tag, "corner": cid, "cout": cout, "esr": esr, "rload": rload,
                                  **derive(v, k), "status": v.get("_status"),
                                  "diagnostics": v.get("_diagnostics")})
-    keys = list(rows[0]) if rows else []
+    keys = list(dict.fromkeys(k for r in rows for k in r))  # union: a point missing a crossing lacks derived keys
     with open(dest / "summary.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=keys)
         w.writeheader()
