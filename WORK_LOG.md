@@ -2,6 +2,10 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-16
+
+- **PR #434**: Bump Repo Skills 0.24.1 -> 0.24.3
+
 ### 2026-10-15
 
 - **PR #432**: sim(quiescent-current): 81-point PVT record for the DR-0037 bias servo (#320, partial)
