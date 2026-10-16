@@ -81,7 +81,7 @@ def measurements(n: int) -> list:
 def job(name, dut, configs, axes) -> kb.Job:
     return kb.Job(name=name, body=body(configs), dut_netlist=dut,
                   analysis={"kind": "tran", "args": "1u 9m"},
-                  measurements=measurements(len(configs)), timeout_s=7200, **axes)
+                  measurements=measurements(len(configs)), timeout_s=3480, **axes)
 
 
 def derive(v: dict, k: int) -> dict:
