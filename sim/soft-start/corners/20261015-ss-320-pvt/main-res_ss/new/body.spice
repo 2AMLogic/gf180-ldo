@@ -1,0 +1,34 @@
+.param sw_stat_global=0 sw_stat_mismatch=0 mc_skew=3 res_mc_skew=3 cap_mc_skew=3 fnoicor=0
+.options wnflag=1
+* soft-start -- klt sim circuit body template (issue #320).
+*
+* tb_soft_start.spice.in's circuit, in the shape `klt sim` accepts (no
+* .control block, one `tran` per corner -- see sim/harness/klt_batch.py).
+* klt_run.py instantiates the output network N times from the block between
+* the BEGIN/END markers: once for the 63-point main matrix, and once per
+* DR-0001 capacitor-window point for the 20-point bracketing subset, so the
+* five extra (C_eff, ESR, R_load) configurations of run.sh's EXTRA_* sweep
+* run as five INDEPENDENT ldo_core instances in one transient (they share only
+* ideal sources; each has its own 0 V supply ammeter Vamm<k>, so its supply
+* current is metered alone). Per-instance measurements carry a _<k> suffix.
+*
+* EN follows VIN through an ideal behavioural source gated by a 0/1 PWL with
+* run.sh's exact edges (low to 100 us, high 101 us .. 8 ms, low after), so the
+* request's supply axis can `alter vin` alone. Solver options are the deck's.
+
+.include "dut.spice"
+.options reltol=1e-3 vntol=1e-5 abstol=1e-11 chgtol=1e-14
+
+Vin VIN 0 DC 3.3
+Venctl ENCTL 0 DC 0 PWL(0 0 100u 0 101u 1 8m 1 8.001m 0)
+Ben EN 0 V = 'v(vin) * v(enctl)'
+Vref VREF 0 DC 1.2
+
+Vamm1 VIN VIN1 0
+Xdut1 VIN1 VOUT1 EN 0 EOUT1 PG1 VREF ldo_core
+Vloop1 PG1 EOUT1 DC 0
+Resr1 VOUT1 n_esr1 0.1
+Cout1 n_esr1 n_cap1 1u
+Vcmeas1 n_cap1 0 DC 0
+Rload1 VOUT1 LN1 36
+Vlmeas1 LN1 0 DC 0
