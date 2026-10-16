@@ -37,7 +37,7 @@ Issues currently being built (`loom:building`).
 
 PRs waiting on Judge (`loom:review-requested`).
 
-_None._
+- **#442**: sim(soft-start): cap batch per-unit timeout at 3480 s
 
 ## Approved (Awaiting Merge)
 
@@ -79,7 +79,7 @@ _None._
 | Important | 2 |
 | Ready (`loom:issue`) | 2 |
 | In Progress (`loom:building`) | 1 |
-| PRs awaiting review | 0 |
+| PRs awaiting review | 1 |
 | Approved PRs awaiting merge | 1 |
 | Curated | 11 |
 | Architect / Hermit proposals | 2 |
