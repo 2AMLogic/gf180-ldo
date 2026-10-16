@@ -107,6 +107,9 @@ def main(argv=None) -> int:
     ap.add_argument("--backend", default=None)
     ap.add_argument("--only", default=None, help="one point, e.g. tt,27,3.30 (debug; runs locally)")
     ap.add_argument("--part", choices=("main", "extra", "both"), default="both")
+    ap.add_argument("--process", default=None,
+                    help="shard: run one process corner only (e.g. tt); output goes to <part>-<process>/ "
+                         "so each batch job stays under the fleet's 3600 s whole-job ceiling")
     args = ap.parse_args(argv)
     dest = HERE.parent / "corners" / args.record_id
     parts = [("main", MAIN, {}), ("extra", EXTRA, EXTRA_AXES)]
@@ -114,21 +117,26 @@ def main(argv=None) -> int:
 
     rows = []
     for part, configs, axes in parts:
-        ax = kb.only_axes(args.only) or axes
+        ax = kb.only_axes(args.only) or dict(axes)
+        sub = part
+        if args.process:
+            ax["process"] = (args.process,)
+            sub = f"{part}-{args.process}"
         res = run_ab(lambda n, d, c=configs, a=ax: job(n, d, c, a), Path(args.dut), args.baseline_ref,
-                     dest / part, REPO, backend=args.backend)
+                     dest / sub, REPO, backend=args.backend)
         for tag, vals in res.items():
             for cid, v in sorted(vals.items()):
                 for k, (cout, esr, rload) in enumerate(configs, 1):
                     rows.append({"dut": tag, "corner": cid, "cout": cout, "esr": esr, "rload": rload,
                                  **derive(v, k), "status": v.get("_status"),
                                  "diagnostics": v.get("_diagnostics")})
-    keys = list(rows[0]) if rows else []
-    with open(dest / "summary.csv", "w", newline="") as f:
+    keys = list(dict.fromkeys(k for r in rows for k in r))  # union: a point missing a crossing lacks derived keys
+    out = dest / (f"summary-{args.process}.csv" if args.process else "summary.csv")
+    with open(out, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=keys)
         w.writeheader()
         w.writerows(rows)
-    print(f"wrote {dest / 'summary.csv'}")
+    print(f"wrote {out}")
     return 0
 
 

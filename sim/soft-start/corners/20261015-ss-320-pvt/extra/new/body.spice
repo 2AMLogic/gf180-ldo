@@ -1,0 +1,66 @@
+.param sw_stat_global=0 sw_stat_mismatch=0 mc_skew=3 res_mc_skew=3 cap_mc_skew=3 fnoicor=0
+.options wnflag=1
+* soft-start -- klt sim circuit body template (issue #320).
+*
+* tb_soft_start.spice.in's circuit, in the shape `klt sim` accepts (no
+* .control block, one `tran` per corner -- see sim/harness/klt_batch.py).
+* klt_run.py instantiates the output network N times from the block between
+* the BEGIN/END markers: once for the 63-point main matrix, and once per
+* DR-0001 capacitor-window point for the 20-point bracketing subset, so the
+* five extra (C_eff, ESR, R_load) configurations of run.sh's EXTRA_* sweep
+* run as five INDEPENDENT ldo_core instances in one transient (they share only
+* ideal sources; each has its own 0 V supply ammeter Vamm<k>, so its supply
+* current is metered alone). Per-instance measurements carry a _<k> suffix.
+*
+* EN follows VIN through an ideal behavioural source gated by a 0/1 PWL with
+* run.sh's exact edges (low to 100 us, high 101 us .. 8 ms, low after), so the
+* request's supply axis can `alter vin` alone. Solver options are the deck's.
+
+.include "dut.spice"
+.options reltol=1e-3 vntol=1e-5 abstol=1e-11 chgtol=1e-14
+
+Vin VIN 0 DC 3.3
+Venctl ENCTL 0 DC 0 PWL(0 0 100u 0 101u 1 8m 1 8.001m 0)
+Ben EN 0 V = 'v(vin) * v(enctl)'
+Vref VREF 0 DC 1.2
+
+Vamm1 VIN VIN1 0
+Xdut1 VIN1 VOUT1 EN 0 EOUT1 PG1 VREF ldo_core
+Vloop1 PG1 EOUT1 DC 0
+Resr1 VOUT1 n_esr1 0.001
+Cout1 n_esr1 n_cap1 0.33u
+Vcmeas1 n_cap1 0 DC 0
+Rload1 VOUT1 LN1 36
+Vlmeas1 LN1 0 DC 0
+Vamm2 VIN VIN2 0
+Xdut2 VIN2 VOUT2 EN 0 EOUT2 PG2 VREF ldo_core
+Vloop2 PG2 EOUT2 DC 0
+Resr2 VOUT2 n_esr2 0.5
+Cout2 n_esr2 n_cap2 0.33u
+Vcmeas2 n_cap2 0 DC 0
+Rload2 VOUT2 LN2 36
+Vlmeas2 LN2 0 DC 0
+Vamm3 VIN VIN3 0
+Xdut3 VIN3 VOUT3 EN 0 EOUT3 PG3 VREF ldo_core
+Vloop3 PG3 EOUT3 DC 0
+Resr3 VOUT3 n_esr3 0.001
+Cout3 n_esr3 n_cap3 4.7u
+Vcmeas3 n_cap3 0 DC 0
+Rload3 VOUT3 LN3 36
+Vlmeas3 LN3 0 DC 0
+Vamm4 VIN VIN4 0
+Xdut4 VIN4 VOUT4 EN 0 EOUT4 PG4 VREF ldo_core
+Vloop4 PG4 EOUT4 DC 0
+Resr4 VOUT4 n_esr4 0.5
+Cout4 n_esr4 n_cap4 4.7u
+Vcmeas4 n_cap4 0 DC 0
+Rload4 VOUT4 LN4 36
+Vlmeas4 LN4 0 DC 0
+Vamm5 VIN VIN5 0
+Xdut5 VIN5 VOUT5 EN 0 EOUT5 PG5 VREF ldo_core
+Vloop5 PG5 EOUT5 DC 0
+Resr5 VOUT5 n_esr5 0.1
+Cout5 n_esr5 n_cap5 1u
+Vcmeas5 n_cap5 0 DC 0
+Rload5 VOUT5 LN5 1e9
+Vlmeas5 LN5 0 DC 0
