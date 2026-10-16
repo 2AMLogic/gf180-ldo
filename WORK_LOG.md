@@ -4,6 +4,7 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-10-16
 
+- **PR #439**: sim(soft-start): complete the 63-point PVT matrix for the DR-0037 servo via per-process batch shards
 - **PR #434**: Bump Repo Skills 0.24.1 -> 0.24.3
 
 ### 2026-10-15
