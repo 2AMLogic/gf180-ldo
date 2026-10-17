@@ -1,0 +1,30 @@
+* soft-start-loop-gain -- klt sim circuit body template, DC hand-over deck (issue #451).
+*
+* tb_ss_handover.spice.in's circuit as a plain operating-point job: the deck is
+* `op`-only (a `foreach` over V(SSR) with `alter Vssr dc` and an `op` each), so
+* it has no `tian` analogue and is NOT approximated by one. Instead each ramp
+* state is a row of the request's `corners.params` axis (`vssr`, zipped with the
+* supply `vsup`), `analysis.kind` is `op`, and the HOV fields are `expr`
+* measurements. Same circuit, same loop break (Vinj a DC short), same 36 ohm
+* resistive load as the margin deck's `ramp` phase.
+
+.include "dut.spice"
+
+Vin VIN 0 DC {vsup}
+Ven EN 0 DC {vsup}
+Vref VREF 0 DC 1.2
+.param vsup=3.3
+.param vssr=0
+
+Xdut VIN VOUT EN 0 AINJ BINJ VREF SSRPIN ldo_core
+Vinj AINJ BINJ DC 0 AC 0
+
+Vssr SSRPIN 0 DC {vssr}
+
+Rload VOUT NLD 36.0
+Vlmeas NLD 0 DC 0
+Resr VOUT NESR 0.001
+Cout NESR 0 1e-6
+
+.model dclamp d(is=1e-14 cjo=0 tt=0 n=1 rs=0)
+Dclamp 0 VOUT dclamp

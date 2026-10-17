@@ -423,6 +423,78 @@ def main() -> int:
           f"objects, so the two experiments cannot drift apart on what a "
           f"margin means")
 
+    # (g) the `klt sim` front end (issue #451): request shape and report parsing
+    klt_run = sweep.klt_run
+    dut = HERE / "selftest.py"      # any file: only copied/named, never simulated
+    axes = {"process": ("tt",), "temps": (27.0,), "supplies": (2.97, 3.30)}
+    ramp, anchor = sweep.PHASES["ramp"], sweep.PHASES["anchor"]
+    req = klt_run.margin_job("t", ramp, 1e-6, 0.1, dut, 400, "0.01", "1e9", axes).request()
+    prm = req["corners"]["params"]
+    check("a pinned phase zips the supply with every ramp state as corners.params rows",
+          (len(prm["vsup"]) == len(prm["vssr"]) == 2 * len(ramp["ssr"])
+           and set(zip(prm["vsup"], prm["vssr"]))
+           == {(s_, v) for s_ in axes["supplies"] for v in ramp["ssr"]}
+           and "supply_v" not in req["corners"]),
+          f"{len(prm['vsup'])} rows; the supply and V(SSR) are .param axes, "
+          f"not `alter` of a source")
+    req = klt_run.margin_job("t", anchor, 1e-6, 0.1, dut, 400, "0.01", "1e9", axes).request()
+    check("the anchor phase has no ramp-state axis and leaves SSRPIN unconnected",
+          (list(req["corners"]["params"]) == ["vsup"]
+           and not any(ln.startswith("Vssr ")
+                       for ln in klt_run.margin_body(anchor, 1e-6, 0.1).splitlines())),
+          "supply axis only")
+    check("the margin request is a dual-injection AC with the landing quantities as expr",
+          ([p_["name"] for p_ in req["analysis"]["passes"]] == ["inj_v", "inj_i"]
+           and {m["name"] for m in req["measurements"]}
+           == {"ssr_v", "fb_v", "vout_v", "isup_a", *klt_run.ROW_METRICS}),
+          "all seven margin fields are tian metrics, nothing is left ungraded")
+    req = klt_run.handover_job("h", dut, sweep.HANDOVER_SSR_V, axes).request()
+    check("the hand-over deck is an op request with V(SSR) as a zipped .param row, no tian",
+          (req["analysis"]["kind"] == "op"
+           and len(req["corners"]["params"]["vssr"]) == 2 * len(sweep.HANDOVER_SSR_V)
+           and all("tian" not in m for m in req["measurements"])
+           and {m["name"] for m in req["measurements"]} == set(sweep.HOV_FIELDS) - {"ssr_cmd"}),
+          f"{len(sweep.HANDOVER_SSR_V)} states x {len(axes['supplies'])} supplies")
+
+    def corner(ssr, vals, diags=()):
+        return {"process": "tt", "temperature_c": 27.0, "status": "ok", "passes": [],
+                "params": {"vsup": 3.3, "vssr": ssr}, "diagnostics": list(diags),
+                "measurements": [{"name": k, "value": v, "status": "ok"}
+                                 for k, v in vals.items()]}
+    full = dict(ssr_v=0.05, fb_v=1.2, vout_v=0.075, isup_a=1e-4, dcgain_db=60.0,
+                f0_hz=1e5, phase_at_f0_deg=-120.0, f180_hz=1e6, gain_at_f180_db=15.0,
+                f0_rising_hz=2e5, resurgence_db=-1.0)
+    cid = "tt_27c_3.30v"
+    vals, probs = klt_run.collect({"corners": [corner(0.05, full),
+                                               corner(1.15, dict(full, ssr_v=1.15))]})
+    check("report values are keyed by (corner, ramp state), not collapsed per corner",
+          not probs and set(vals) == {(cid, "0.05"), (cid, "1.15")}
+          and vals[(cid, "1.15")]["ssr_v"] == 1.15 and vals[(cid, "0.05")]["ssr_v"] == 0.05,
+          "two ramp states at one corner stay two entries")
+    log = klt_run.margin_log(cid, "device", "ramp", {"ssr": (0.05, 1.15)}, [1e-6], [0.1],
+                             {("device", "ramp", 1e-6, 0.1): vals})
+    rows = [sweep.parse_row_fields(ln) for ln in log.splitlines() if ln.startswith("ROW ")]
+    check("the klt-written ROW lines parse with the deck's own strict ROW parser, "
+          "ramp state outermost, gain margin sign as the deck's (-klt's)",
+          [r["ssr_cmd"] for r in rows] == ["0.05", "1.15"]
+          and float(rows[0]["gain_at_f180_db"]) == -15.0,
+          "same field list as tb_ss_loop_gain.spice.in")
+    # an unavailable crossing (no -180 deg in band) is an empty field, not a problem
+    gone = dict(full, f180_hz=None, gain_at_f180_db=None)
+    diag = [{"code": "measurement", "message":
+             f"[tian_metric_unavailable] measurement '{n}': no crossing"}
+            for n in ("f180_hz", "gain_at_f180_db")]
+    vals2, probs2 = klt_run.collect({"corners": [corner(0.05, gone, diag)]})
+    line = klt_run.row_line("0.05", 1e-6, 0.1, vals2[(cid, "0.05")])
+    check("a tian metric klt reports unavailable is an empty ROW field, as a failed meas is locally",
+          not probs2 and sweep.parse_row_fields(line)["f180_hz"] == "",
+          "empty, parsed back as empty")
+    hlog = klt_run.handover_log(cid, (0.05,), {(cid, "0.05"): full})
+    check("the klt-written HOV line parses with the hand-over deck's strict HOV parser",
+          sweep.parse_hov_fields(
+              [ln for ln in hlog.splitlines() if ln.startswith("HOV ")][0])["ssr_cmd"] == "0.05",
+          "same field list as tb_ss_handover.spice.in")
+
     print(f"\nSELFTEST {'PASS' if OK else 'FAIL'}")
     return 0 if OK else 1
 
