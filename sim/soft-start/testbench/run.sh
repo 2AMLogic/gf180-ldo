@@ -5,6 +5,12 @@
 #   ./sim/soft-start/testbench/run.sh                  # full matrix, writes evidence
 #   NO_RECORD=1 CORNERS=tt TEMPS=27 SUPPLIES=3.30 CAPS=1u/0.1 \
 #       ./sim/soft-start/testbench/run.sh              # single point, writes nothing
+#   BACKEND=local ./sim/soft-start/testbench/run.sh    # full grid on THIS host
+#
+# A grid of more than one PVT point is refused unless BACKEND=local (issue
+# #366): on a shared dispatch worker run it on the batch fleet with
+# sim/soft-start/testbench/klt_run.py instead (it does not port dvout_min --
+# see its docstring). Local JOBS defaults to 2.
 #
 # Same structure, and the same standalone-rather-than-sim/harness rationale,
 # as sim/enable-shutdown/testbench/run.sh and sim/current-limit/testbench/run.sh
@@ -48,7 +54,7 @@ EXTRA_CORNERS="${EXTRA_CORNERS-tt ff ss res_ff res_ss}"
 EXTRA_TEMPS="${EXTRA_TEMPS--40 125}"
 EXTRA_SUPPLIES="${EXTRA_SUPPLIES-2.97 3.63}"
 EXTRA_CAPS="${EXTRA_CAPS-0.33u/0.001/36 0.33u/0.5/36 4.7u/0.001/36 4.7u/0.5/36 1u/0.1/1e9}"
-JOBS="${JOBS:-8}"
+JOBS="${JOBS:-2}"
 
 # Shared corner name -> "mos res bjt diode moscap mimcap" model-section
 # codegen (single implementation: sim/harness/lib/corner_sections.sh,
@@ -154,6 +160,9 @@ done; done; done; done
 for c in $EXTRA_CORNERS; do for t in $EXTRA_TEMPS; do for v in $EXTRA_SUPPLIES; do for k in $EXTRA_CAPS; do
   points+=("$c $t $v $k")
 done; done; done; done
+
+source "$REPO_ROOT/sim/harness/lib/local_grid_guard.sh"
+harness_local_grid_guard "${#points[@]}" "python3 sim/soft-start/testbench/klt_run.py --record-id <id> (no dvout_min)"
 
 printf '%s\n' "${points[@]}" \
   | xargs -P "$JOBS" -I{} bash -c 'run_point $0' "{}" \
