@@ -2,6 +2,10 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-17
+
+- **PR #446**: sim: cap local jobs at 2 and require explicit backend for remaining grid drivers
+
 ### 2026-10-16
 
 - **PR #442**: sim(soft-start): cap per-unit batch timeout at 3480 s to fit the fleet job ceiling (#320, partial)
