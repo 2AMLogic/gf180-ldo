@@ -35,7 +35,8 @@ over and the injection is off; nothing measured it *during* the hand-over.
 
     ./sim/soft-start-loop-gain/testbench/run.sh              # the whole thing
     ./sim/soft-start-loop-gain/testbench/sweep.py --explore  # tt/27C only, no record
-    ./sim/soft-start-loop-gain/testbench/sweep.py --backend local -j2  # a PVT grid, on THIS host (issue #366)
+    ./sim/soft-start-loop-gain/testbench/sweep.py --backend batch      # the grid on the Spot batch fleet via `klt sim` (issue #451)
+    ./sim/soft-start-loop-gain/testbench/sweep.py --backend local -j2  # a PVT grid, on THIS host (explicit, issue #366)
     ./sim/soft-start-loop-gain/testbench/sweep.py --help     # every option
 
 Everything about the loop-gain extraction itself -- the Tian/Middlebrook dual
@@ -111,6 +112,14 @@ ls = importlib.util.module_from_spec(_spec)
 sys.modules["loop_stability_sweep"] = ls
 _spec.loader.exec_module(ls)
 
+# `klt_run` is also the name of loop-stability's module (which `ls` has just put
+# in sys.modules), so this bench's own front end for `--backend batch` is
+# loaded by path under a distinct name, like `ls` above (issue #451).
+_spec = importlib.util.spec_from_file_location("ss_loop_gain_klt_run", HERE / "klt_run.py")
+klt_run = importlib.util.module_from_spec(_spec)
+sys.modules["ss_loop_gain_klt_run"] = klt_run
+_spec.loader.exec_module(klt_run)
+
 PM_MIN_DEG = ls.PM_MIN_DEG            # DR-0001, 45 deg
 GM_MIN_DB = ls.GM_MIN_DB              # DR-0001, 10 dB
 RESURGENCE_MAX_DB = ls.RESURGENCE_MAX_DB   # DR-0008 precondition, 0 dB
@@ -133,20 +142,6 @@ NOMINAL_SUPPLY_V = ls.NOMINAL_SUPPLY_V
 #: defaults to every core starves other sweeps. Pass ``-j`` on a box you own.
 DEFAULT_JOBS = min(2, os.cpu_count() or 2)
 
-BATCH_UNSUPPORTED = """\
---backend batch is not available for the soft-start-loop-gain bench (issue #366).
-
-`klt sim` owns the deck's single .control block and runs one analysis per
-corner. This bench uses the same Tian dual-injection extraction as
-sim/loop-stability (a DC `op`, two `ac` sweeps with `alter` of the injection
-sources between them, and a derived loop-gain vector built from both), so the
-grid cannot be submitted to the batch fleet unchanged and it is not
-approximated here. See BATCH_UNSUPPORTED in sim/loop-stability/testbench/sweep.py.
-
-Options: run the grid on a host you own with `--backend local -jN`, or run a
-single PVT point (`--explore`, or --corners/--temps/--supply-tol narrowing to
-one point) which needs no flag.
-"""
 SUPPLY_TOL = ls.SUPPLY_TOL
 
 # Output-network configurations, all at the rated 50 mA load point. Two of
@@ -535,7 +530,19 @@ def run_point(pvt, pdk, *, phase: str, variant: str, netlist: Path, ceffs, esrs,
         text = run_ngspice_deck(deck, log, workdir)
     except RuntimeError as exc:
         return pvt, [], str(exc)
+    rows, err = rows_from_log(pvt, text, phase=phase, variant=variant, ceffs=ceffs,
+                              esrs=esrs, ssr_values=ssr_values, log=log)
+    return pvt, rows, err
 
+
+def rows_from_log(pvt, text: str, *, phase: str, variant: str, ceffs, esrs,
+                  ssr_values, log: Path):
+    """Parse a deck's ``ROW`` lines and apply the landing rule. -> (rows, error | None).
+
+    Shared by the local ngspice path and the ``klt sim`` path (``klt_run.py``
+    writes the same ``ROW`` lines), so both enter a record through one parser
+    and one landing check.
+    """
     rows: list[Row] = []
     for line in text.splitlines():
         if not line.startswith("ROW "):
@@ -543,7 +550,7 @@ def run_point(pvt, pdk, *, phase: str, variant: str, netlist: Path, ceffs, esrs,
         try:
             f = parse_row_fields(line)
         except ValueError as exc:
-            return pvt, [], f"{exc} (see {display_path(log)})"
+            return [], f"{exc} (see {display_path(log)})"
         rows.append(Row(
             corner_id=pvt.corner_id, corner=pvt.corner.name,
             temp_c=pvt.temp_c, vin_v=pvt.vdd,
@@ -573,18 +580,18 @@ def run_point(pvt, pdk, *, phase: str, variant: str, netlist: Path, ceffs, esrs,
         n_ssr = len(PHASES[phase]["ssr"])
     expected = n_ssr * len(ceffs) * len(esrs)
     if len(rows) != expected:
-        return pvt, rows, f"expected {expected} rows, parsed {len(rows)} (see {display_path(log)})"
+        return rows, f"expected {expected} rows, parsed {len(rows)} (see {display_path(log)})"
 
     bad = [r for r in rows if r.landed]
     if bad:
         w = bad[0]
-        return pvt, rows, (
+        return rows, (
             f"{len(bad)}/{len(rows)} points did not land on the intended DC "
             f"branch; first is {w.state_id} / {w.cfg_id}: {w.landed}. A "
             f"loop-gain margin about a bias point that is not the one named is "
             f"meaningless, so this run is void (see {display_path(log)})"
         )
-    return pvt, rows, None
+    return rows, None
 
 
 def run_curve(pvt, pdk, row: Row, netlist: Path, ac_dec, logdir: Path,
@@ -897,7 +904,15 @@ def run_handover(pvt, pdk, *, variant: str, netlist: Path, workdir: Path,
         text = run_ngspice_deck(deck, log, workdir)
     except RuntimeError as exc:
         return None, str(exc)
+    return curve_from_log(pvt, variant, text, log)
 
+
+def curve_from_log(pvt, variant: str, text: str, log: Path):
+    """Parse a hand-over deck's ``HOV`` lines. -> (curve, error | None).
+
+    Shared by the local path and the ``klt sim`` path (``klt_run.py`` writes
+    the same ``HOV`` lines).
+    """
     pts: list[HovPoint] = []
     for line in text.splitlines():
         if not line.startswith("HOV "):
@@ -1277,7 +1292,8 @@ LS_MATRIX_CSV = (REPO_ROOT / "sim" / "loop-stability" / "records"
 LS_DIAGNOSTIC_RECORD = "20260906-090647-3981d88"
 
 
-def run_loop_stability_here(args, workdir: Path, logdir: Path, corners, temps):
+def run_loop_stability_here(args, workdir: Path, logdir: Path, corners, temps,
+                            backend: str = "local"):
     """Run `sim/loop-stability/`'s OWN sweep, unmodified, on this host.
 
     The point of running it rather than only reading its committed record is
@@ -1301,8 +1317,11 @@ def run_loop_stability_here(args, workdir: Path, logdir: Path, corners, temps):
         "--caps-uf", *[f"{c * 1e6:g}" for c in CEFFS_F],
         "--esrs", *[f"{e:g}" for e in ESRS_OHM],
         "--ac-dec", str(args.ac_dec),
-        "--no-write", "--backend", "local", "-j", str(args.jobs),
+        "--no-write", "--backend", backend,
     ]
+    # A grid goes to the fleet through loop-stability's own `klt sim` front end,
+    # never to a local fan-out on this host (issue #451).
+    cmd += ["-j", str(args.jobs)] if backend == "local" else ["--in-flight", str(args.in_flight)]
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(workdir))
     out = proc.stdout + proc.stderr
     (logdir / "loop-stability-rerun.console.log").write_text(
@@ -1414,17 +1433,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help=f"AC points per decade (default {AC_DEC}, "
                          "sim/loop-stability's own resolution policy, issue "
                          "#58 -- running below it needs --subset-reason)")
-    ap.add_argument("--backend", choices=("local", "batch"), default=None,
-                    help="where a multi-corner grid runs (issue #366). The "
-                         "dispatch-worker rule is that a PVT grid goes to the "
-                         "Spot batch fleet via `klt sim`, but this bench uses "
-                         "the same Tian dual-injection extraction as "
-                         "sim/loop-stability and cannot be expressed as one "
-                         "`klt sim` analysis per corner yet, so `batch` is "
-                         "refused. `local` fans ngspice out on THIS host and "
-                         "must be passed explicitly for any grid of more than "
-                         "one PVT point; a single-PVT run (e.g. --explore) "
-                         "is local without the flag.")
+    ap.add_argument("--backend", choices=("local", "batch", "klt-local"), default=None,
+                    help="where the grid runs (issues #366, #451). `batch`: "
+                         "each (variant, phase, C_eff, ESR) is a `klt sim` "
+                         "request over the PVT grid, submitted to the Spot "
+                         "batch fleet (klt_run.py), and the DC hand-over "
+                         "transfer is one `op` request per variant -- the "
+                         "default for any grid of more than one PVT point, as "
+                         "the dispatch-worker rule requires. `local` fans "
+                         "ngspice out on THIS host and must be passed "
+                         "explicitly for more than one PVT point. `klt-local` "
+                         "runs the same `klt sim` requests as `batch` but "
+                         "locally, one at a time, for a single-PVT-point "
+                         "batch-vs-local check only. A single-PVT run (e.g. "
+                         "--explore) is `local` without the flag. A failed "
+                         "batch submit is an error; it never falls back to a "
+                         "local grid.")
+    ap.add_argument("--in-flight", type=int, default=6,
+                    help="with --backend batch, how many requests are "
+                         "submitted at once (default: 6; the fleet's own "
+                         "concurrency cap re-queues the rest)")
     ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS,
                     help=f"local worker threads (default: {DEFAULT_JOBS}, "
                          "deliberately not os.cpu_count(): dispatch workers "
@@ -1450,28 +1478,142 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _klt_axes(grid, corners, temps) -> dict:
+    return {"process": tuple(c.name for c in corners), "temps": tuple(temps),
+            "supplies": tuple(sorted({p.vdd for p in grid}))}
+
+
+def run_grid_klt(grid, corners, args, ceffs, esrs, netlists, logdir: Path,
+                 klt_backend: str):
+    """Run the margin grid through ``klt sim`` (``klt_run.py``) instead of local ngspice.
+
+    One request per (variant, phase, C_eff, ESR) over the whole PVT grid, the
+    ramp state a ``corners.params`` row. The returned values are written per
+    (corner, variant, phase) as ``<corner>_<variant>_<phase>.log`` ``ROW``
+    lines and parsed by ``rows_from_log()`` -- the parser and landing rule the
+    local path uses. A deck that misses the intended DC branch is re-run once,
+    whole, with ``dc_seed_lines()`` in the body (log ``..._dcseed.log``), and
+    voided if it still misses, exactly as the local path does. Returns
+    ``(rows, failures, seeded, voided, info)``; never falls back to local.
+    """
+    phases = {p: PHASES[p] for p in args.phases}
+    print(f"klt sim   : {len(args.variants) * len(phases) * len(ceffs) * len(esrs)} "
+          f"requests x {len(grid)} corners, backend {klt_backend}")
+    results, problems, bad = klt_run.run_margin(
+        args.variants, phases, ceffs, esrs, netlists, args.ac_dec, F_START, F_STOP,
+        _klt_axes(grid, corners, args.temps), logdir, klt_backend, args.in_flight)
+    for pr in problems:
+        print(f"  WARNING {pr}", file=sys.stderr)
+
+    rows: list[Row] = []
+    failures: list[str] = []
+    seeded: list[str] = []
+    voided: list[str] = []
+
+    def parse(pvt, variant, phase, res, suffix=""):
+        text = klt_run.margin_log(pvt.corner_id, variant, phase, PHASES[phase],
+                                  ceffs, esrs, res)
+        log = logdir / f"{pvt.corner_id}_{variant}_{phase}{suffix}.log"
+        log.write_text(text)
+        return rows_from_log(pvt, text, phase=phase, variant=variant, ceffs=ceffs,
+                             esrs=esrs, ssr_values=None, log=log)
+
+    def report(pvt, variant, phase, pt_rows, note=""):
+        measured = [r for r in pt_rows if r.pm_deg is not None]
+        w = worst_of(measured) if measured else pt_rows[0]
+        print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} worst PM "
+              f"{pm_str(w):>7} deg GM {gm_str(w):>7} dB{note}"
+              + ("" if measured else "  (no crossover at any point)"))
+
+    retries = []
+    for pvt in grid:
+        for variant in args.variants:
+            for phase in args.phases:
+                pt_rows, err = parse(pvt, variant, phase, results)
+                if (pvt.corner_id, variant, phase) in bad:
+                    # klt itself reported a problem (failed batch job, errored
+                    # pass, unattributable measurement): not a DC-branch miss,
+                    # and a seeded retry would not change it.
+                    err = "klt reported a problem for this deck (see warnings above)"
+                if err and "did not land on the intended DC branch" in err:
+                    retries.append((pvt, variant, phase))
+                    print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} DC branch "
+                          f"miss, retrying with the intended-branch seed")
+                elif err:
+                    failures.append(f"{pvt.corner_id}/{variant}/{phase}: {err}")
+                    print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} SIM ERROR {err}")
+                else:
+                    rows.extend(pt_rows)
+                    report(pvt, variant, phase, pt_rows)
+
+    for pvt, variant, phase in retries:
+        one = {"process": (pvt.corner.name,), "temps": (pvt.temp_c,), "supplies": (pvt.vdd,)}
+        res, probs, _ = klt_run.run_margin(
+            [variant], {phase: PHASES[phase]}, ceffs, esrs, netlists, args.ac_dec,
+            F_START, F_STOP, one, logdir, klt_backend, args.in_flight,
+            dc_seed=dc_seed_lines(pvt, "free"))
+        for pr in probs:
+            print(f"  WARNING {pr}", file=sys.stderr)
+        pt_rows, err = parse(pvt, variant, phase, res, "_dcseed")
+        if probs:
+            err = "klt reported a problem for this deck (see warnings above)"
+        if err and "did not land on the intended DC branch" in err:
+            # Still refuses the intended branch with the seed: void the deck
+            # (named in the record, excluded from the row set), as the local
+            # path does -- not a run-wide failure.
+            voided.append(f"{pvt.corner_id}/{variant}/{phase}: {err}")
+            print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} VOIDED (no DC "
+                  f"branch near VREF, even seeded) {err}")
+        elif err:
+            failures.append(f"{pvt.corner_id}/{variant}/{phase} (with DC seed): {err}")
+            print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} SIM ERROR {err}")
+        else:
+            seeded.append(f"{pvt.corner_id}/{variant}/{phase}")
+            rows.extend(pt_rows)
+            report(pvt, variant, phase, pt_rows, "  [DC seed]")
+    info = {"backend": klt_backend, "klt": klt_run.klt_version(),
+            "requests": len(args.variants) * len(phases) * len(ceffs) * len(esrs)}
+    return rows, failures, seeded, voided, info
+
+
+def run_handover_klt(grid, corners, args, netlists, logdir: Path, klt_backend: str):
+    """The DC hand-over transfer through ``klt sim``: one ``op`` request per variant.
+
+    V(SSR) and the supply are zipped ``corners.params`` rows; the ``HOV``
+    fields are ``expr`` measurements (the deck is ``op``-only, so there is no
+    ``tian`` metric to map). Returns ``(curves, failures)``.
+    """
+    res, problems = klt_run.run_handover(
+        args.variants, HANDOVER_SSR_V, netlists, _klt_axes(grid, corners, args.temps),
+        logdir, klt_backend, args.in_flight)
+    failures = [f"handover: {pr}" for pr in problems]
+    curves: list[HovCurve] = []
+    for variant in args.variants:
+        for pvt in grid:
+            text = klt_run.handover_log(pvt.corner_id, HANDOVER_SSR_V, res.get(variant, {}))
+            log = logdir / f"{pvt.corner_id}_{variant}_handover.log"
+            log.write_text(text)
+            curve, err = curve_from_log(pvt, variant, text, log)
+            if err:
+                failures.append(f"{pvt.corner_id}/{variant}/handover: {err}")
+            else:
+                curves.append(curve)
+    return curves, failures
+
+
 def main() -> int:
     args = build_arg_parser().parse_args()
     if args.explore:
         args.corners, args.temps, args.supply_tol = ["tt"], [27.0], 0.0
         args.no_write = True
 
-    if args.backend == "batch":
-        print(BATCH_UNSUPPORTED, file=sys.stderr)
-        return 3
     n_pvt = len(resolve_corners(args.corners)) * len(args.temps) * len(
         supply_points(NOMINAL_SUPPLY_V, args.supply_tol))
-    if n_pvt > 1 and args.backend != "local":
-        print(
-            f"FATAL: this grid is {n_pvt} PVT points, which would fan out "
-            "ngspice on this host.\n"
-            "       Multi-corner grids belong on the batch fleet, but this "
-            "bench cannot be expressed as a `klt sim` request yet (--backend "
-            "batch explains why).\n"
-            "       On a host you own, pass --backend local explicitly "
-            f"(default -j{DEFAULT_JOBS}).",
-            file=sys.stderr,
-        )
+    backend = args.backend or ("local" if n_pvt == 1 else "batch")
+    use_klt = backend in ("batch", "klt-local")
+    if backend == "klt-local" and n_pvt > 1:
+        print(f"FATAL: --backend klt-local is a single-PVT-point check; this grid is "
+              f"{n_pvt} PVT points. Use --backend batch.", file=sys.stderr)
         return 3
 
     if shutil.which("ngspice") is None:
@@ -1557,12 +1699,20 @@ def main() -> int:
           f"loop-gain points")
     print()
 
-    jobs = [(pvt, variant, phase)
-            for pvt in grid for variant in args.variants for phase in args.phases]
+    # On the `klt sim` path the whole margin grid is run by run_grid_klt() and
+    # the local loops below have nothing to run.
+    jobs = [] if use_klt else [(pvt, variant, phase)
+                               for pvt in grid for variant in args.variants
+                               for phase in args.phases]
     rows: list[Row] = []
     failures: list[str] = []
     seeded: list[str] = []
     voided: list[str] = []
+    klt_info: dict = {}
+    if use_klt:
+        rows, failures, seeded, voided, klt_info = run_grid_klt(
+            grid, corners, args, ceffs, esrs, netlists, logdir,
+            "local" if backend == "klt-local" else "batch")
 
     def submit(pool, todo, seed: bool):
         return {
@@ -1662,7 +1812,14 @@ def main() -> int:
         print(f"\n=== DC hand-over transfer: {len(HANDOVER_SSR_V)} pinned "
               f"V(SSR) from {HANDOVER_SSR_V[0]:g} to {HANDOVER_SSR_V[-1]:g} V, "
               f"{len(grid)} PVT x {len(args.variants)} variant ===")
-        hov_jobs = [(pvt, variant) for pvt in grid for variant in args.variants]
+        hov_jobs = [] if use_klt else [(pvt, variant) for pvt in grid
+                                       for variant in args.variants]
+        if use_klt:
+            curves, failures = run_handover_klt(
+                grid, corners, args, netlists, logdir,
+                "local" if backend == "klt-local" else "batch")
+            for f in failures:
+                print(f"  SIM ERROR {f}")
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
             futs = {pool.submit(run_handover, pvt, pdk, variant=variant,
                                 netlist=netlists[variant], workdir=workdir,
@@ -1711,8 +1868,9 @@ def main() -> int:
     xcheck: dict = {"skipped": args.skip_crosscheck or not anchor_rows}
     if not xcheck["skipped"]:
         print("\n=== cross-check: re-running sim/loop-stability/ on this host ===")
-        here_rows, err = run_loop_stability_here(args, workdir, logdir,
-                                                 args.corners, args.temps)
+        here_rows, err = run_loop_stability_here(
+            args, workdir, logdir, args.corners, args.temps,
+            backend if use_klt else "local")
         if err:
             print(f"  cross-check could not run: {err}", file=sys.stderr)
             xcheck["error"] = err
@@ -1780,7 +1938,7 @@ def main() -> int:
                        esrs=esrs, pdk=pdk, prov=prov, args=args,
                        xcheck=xcheck, attribution=attribution, seeded=seeded,
                        voided=voided, curves=curves,
-                       hov_consistency=hov_consistency)
+                       hov_consistency=hov_consistency, klt_info=klt_info)
     record_path = write_markdown_record(record_id, md, records_dir)
 
     print()
@@ -2633,7 +2791,7 @@ def attribution_section(attribution: dict | None) -> str:
 
 def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
                   xcheck, attribution, seeded, voided=(), curves=(),
-                  hov_consistency=None) -> str:
+                  hov_consistency=None, klt_info=None) -> str:
     now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     dirty = prov["dirty"]
     variants = sorted({r.variant for r in rows})
@@ -2641,6 +2799,22 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
     temps = ", ".join(f"{t:g}" for t in sorted({r.temp_c for r in rows}))
     supplies = ", ".join(f"{v:.2f}" for v in sorted({r.vin_v for r in rows}))
     anchor_rows = [r for r in rows if r.phase == "anchor" and r.variant == "device"]
+    if klt_info:
+        klt_md = (
+            f"- Backend: `klt sim` (`--backend {klt_info['backend']}`), "
+            f"{klt_info['requests']} margin requests (one per variant/phase/"
+            f"C_eff/ESR, the ramp state a `corners.params` row) over the PVT "
+            f"grid plus one `op` request per variant for the hand-over "
+            f"transfer, client `{klt_info['klt']}` (`klt_run.py`, issue "
+            f"#451). The per-corner logs are `ROW`/`HOV` lines of values "
+            f"`klt` returned (each request's report JSON is under "
+            f"`corners/{record_id}/klt-reports/`), so the ngspice version/hash "
+            f"and host below describe only the local attribution and curve "
+            f"re-runs, not the grid; the grid ran on the engine and host "
+            f"named in those reports. Crossings are `klt`'s log-frequency "
+            f"interpolation, not the deck's `meas ... when`.\n")
+    else:
+        klt_md = ""
 
     st_tbl = state_table(rows)
     ab_tbl, pairs = ab_table(rows)
@@ -3068,7 +3242,7 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   string alone does not pin the resolved binary's content -- see
   `sim/README.md`'s reproducibility caveat)
 - Host: `{socket.gethostname()}`
-- ngspice startup settings, pinned by this driver rather than left to the host
+{klt_md}- ngspice startup settings, pinned by this driver rather than left to the host
   (a generated `.spiceinit` in the run's work directory, which is the cwd of
   every ngspice invocation this record made, including the cross-check's):
   `set wnflag=1` (model binning divides W by nf -- without it the W=2000u

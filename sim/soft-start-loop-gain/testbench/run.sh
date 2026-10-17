@@ -21,6 +21,10 @@
 # the injection element, that the AC-only sensitivity transforms are DC-inert,
 # and that the landing rule refuses the DC branches it exists to refuse.
 #
+# A grid of more than one PVT point runs through `klt sim` (the Spot batch fleet)
+# by default: `--backend batch` (klt_run.py is its front end; issue #451).
+# `--backend local` fans ngspice out on THIS host, explicit only, default -j2.
+#
 # Everything else -- PDK discovery, the DUT netlist variants, deck generation,
 # the PVT grid, the cross-check against sim/loop-stability/, the attribution
 # runs and the evidence record -- lives in sweep.py; see its --help and

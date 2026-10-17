@@ -1,0 +1,54 @@
+* soft-start-loop-gain -- klt sim circuit body template, margin deck (issue #451).
+*
+* tb_ss_loop_gain.spice.in's circuit, in the shape `klt sim` accepts: no
+* .control block, no model .lib cards, no .temp (klt binds all of those per
+* corner). The deck's single .control block sweeps ramp state x C_eff x ESR with
+* `alter` and chains op / ac / alter / ac per point; here the Tian dual
+* injection is `analysis.passes` (see klt_run.py), C_eff / ESR / the load model
+* are baked into the body, and BOTH the supply and the ramp state are `.param`
+* axes of the request (`corners.params`, alterparam + reset), not `alter` of a
+* source. loop-stability/testbench/klt_body.spice.in measured `alter vin`
+* moving the crossover ~3 % against the deck; the same reasoning applies to
+* `alter Vssr`, so Vssr is driven by `.param vssr`, never altered.
+*
+* Tokens (klt_run.py substitutes the at-sign-delimited names used in the cards
+* below; they are not spelled out in this header because a substitution here
+* would land in a comment):
+*
+*   ILOAD, RLOAD   the phase's load model (ideal sink XOR 36 ohm, the other
+*                  parked at 0 A / 1e12 ohm), as the deck has it
+*   CEFF, ESR      the swept output network
+*   SSR_SOURCE     `Vssr SSRPIN 0 DC {vssr}` for a pinned phase, or a comment
+*                  for `anchor` (SSRPIN left unconnected)
+*   DC_SEED        empty, or sweep.py's dc_seed_lines() for a retry
+*
+* The DUT netlist is the SSR-instrumented ldo_core_<variant>.spice that
+* sweep.py already builds; klt_batch.stage() copies it to dut.spice.
+
+.include "dut.spice"
+
+Vin VIN 0 DC {vsup}
+Ven EN 0 DC {vsup}
+Vref VREF 0 DC 1.2
+.param vsup=3.3
+.param vssr=0
+
+* Port order: VIN VOUT EN VSS ERRAMP_OUT PASS_GATE VREF SSR
+Xdut VIN VOUT EN 0 AINJ BINJ VREF SSRPIN ldo_core
+
+@SSR_SOURCE@
+
+* Tian dual-injection network; both AC magnitudes are 0 here, the passes set them.
+Vinj AINJ BINJ DC 0 AC 0
+Iinj 0 BINJ DC 0 AC 0
+
+Iload VOUT 0 DC @ILOAD@
+Rload VOUT NLD @RLOAD@
+Vlmeas NLD 0 DC 0
+Resr VOUT NESR @ESR@
+Cout NESR 0 @CEFF@
+
+.model dclamp d(is=1e-14 cjo=0 tt=0 n=1 rs=0)
+Dclamp 0 VOUT dclamp
+
+@DC_SEED@
