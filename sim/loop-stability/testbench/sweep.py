@@ -76,6 +76,7 @@ TEMPLATE = HERE / "tb_loop_stability.spice.in"
 LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
+sys.path.insert(0, str(HERE))  # sibling klt_run: sweep.py is also loaded by path
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
