@@ -347,15 +347,15 @@ and CI configuration, not design content. Where a directory has its own
 Before running xschem/ngspice against the gf180mcu PDK, follow
 [`docs/environment-setup.md`](docs/environment-setup.md) — xschem
 build-from-source steps (no Homebrew formula exists), the pinned gf180mcu
-PDK hash fetched via `volare`, the `PDK_ROOT`/`PDK` env convention, and the
+PDK revision fetched via `ciel`, the `PDK_ROOT`/`PDK` env convention, and the
 harness's own end-to-end acceptance test.
 
 ## Getting set up
 
 ```bash
 brew install ngspice                          # or apt-get install ngspice
-pip install volare
-volare enable --pdk gf180mcu <version-hash>   # volare ls-remote --pdk gf180mcu
+pip install ciel==2.6.1
+ciel enable --pdk-family gf180mcu -l gf180mcu_fd_pr f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7
 
 python3 sim/run_corners.py --check-env        # confirm ngspice + PDK are visible
 bash sim/selftest.sh                          # prove the harness runs end to end
