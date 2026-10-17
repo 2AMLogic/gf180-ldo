@@ -61,6 +61,10 @@ if ! bash "${SIM_DIR}/harness/lib/test_run_point.sh"; then
   echo "FAIL: sim/harness/lib/test_run_point.sh"
   exit 1
 fi
+if ! bash "${SIM_DIR}/harness/lib/test_local_grid_guard.sh"; then
+  echo "FAIL: sim/harness/lib/test_local_grid_guard.sh"
+  exit 1
+fi
 if ! bash "${SIM_DIR}/devchar/lib/test_devchar.sh"; then
   echo "FAIL: sim/devchar/lib/test_devchar.sh"
   exit 1

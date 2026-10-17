@@ -107,7 +107,10 @@ dual injection), a derived loop-gain vector T built from both, and
 crossover / -180 degree / resurgence searches on its unwrapped phase and
 magnitude. None of that reduces to one analysis plus scalar measurements, so
 the grid cannot be submitted to the batch fleet unchanged and it is not
-approximated here. Tool gap: 2AMLogic/klayout-tools#2847.
+approximated here. klt's `tian` form (klayout-tools#2847, delivered) takes
+unit-stimulus return-ratio vectors, but this bench's Tv = -v(ainj)/v(binj) and
+Ti = -i(vinj)/(i(vinj)+1) are quotients of phasors, not saved vectors. Tool gap:
+2AMLogic/klayout-tools#3737.
 
 Options: run the grid on a host you own with `--backend local -jN`, or run a
 single PVT point (`--explore`, or --corners/--temps/--supply-tol narrowing to

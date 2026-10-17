@@ -35,6 +35,7 @@ over and the injection is off; nothing measured it *during* the hand-over.
 
     ./sim/soft-start-loop-gain/testbench/run.sh              # the whole thing
     ./sim/soft-start-loop-gain/testbench/sweep.py --explore  # tt/27C only, no record
+    ./sim/soft-start-loop-gain/testbench/sweep.py --backend local -j2  # a PVT grid, on THIS host (issue #366)
     ./sim/soft-start-loop-gain/testbench/sweep.py --help     # every option
 
 Everything about the loop-gain extraction itself -- the Tian/Middlebrook dual
@@ -126,6 +127,26 @@ worst_of, worst_resurgence_of = ls.worst_of, ls.worst_resurgence_of
 PROCESS_CORNERS = ls.PROCESS_CORNERS       # tt ff ss fs sf res_ff res_ss
 TEMPS_C = ls.TEMPS_C
 NOMINAL_SUPPLY_V = ls.NOMINAL_SUPPLY_V
+
+#: Default local worker count, capped at 2 rather than ``os.cpu_count()``
+#: (issue #366): this driver runs on shared dispatch workers where a grid that
+#: defaults to every core starves other sweeps. Pass ``-j`` on a box you own.
+DEFAULT_JOBS = min(2, os.cpu_count() or 2)
+
+BATCH_UNSUPPORTED = """\
+--backend batch is not available for the soft-start-loop-gain bench (issue #366).
+
+`klt sim` owns the deck's single .control block and runs one analysis per
+corner. This bench uses the same Tian dual-injection extraction as
+sim/loop-stability (a DC `op`, two `ac` sweeps with `alter` of the injection
+sources between them, and a derived loop-gain vector built from both), so the
+grid cannot be submitted to the batch fleet unchanged and it is not
+approximated here. See BATCH_UNSUPPORTED in sim/loop-stability/testbench/sweep.py.
+
+Options: run the grid on a host you own with `--backend local -jN`, or run a
+single PVT point (`--explore`, or --corners/--temps/--supply-tol narrowing to
+one point) which needs no flag.
+"""
 SUPPLY_TOL = ls.SUPPLY_TOL
 
 # Output-network configurations, all at the rated 50 mA load point. Two of
@@ -1280,7 +1301,7 @@ def run_loop_stability_here(args, workdir: Path, logdir: Path, corners, temps):
         "--caps-uf", *[f"{c * 1e6:g}" for c in CEFFS_F],
         "--esrs", *[f"{e:g}" for e in ESRS_OHM],
         "--ac-dec", str(args.ac_dec),
-        "--no-write", "-j", str(args.jobs),
+        "--no-write", "--backend", "local", "-j", str(args.jobs),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(workdir))
     out = proc.stdout + proc.stderr
@@ -1393,7 +1414,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help=f"AC points per decade (default {AC_DEC}, "
                          "sim/loop-stability's own resolution policy, issue "
                          "#58 -- running below it needs --subset-reason)")
-    ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("--backend", choices=("local", "batch"), default=None,
+                    help="where a multi-corner grid runs (issue #366). The "
+                         "dispatch-worker rule is that a PVT grid goes to the "
+                         "Spot batch fleet via `klt sim`, but this bench uses "
+                         "the same Tian dual-injection extraction as "
+                         "sim/loop-stability and cannot be expressed as one "
+                         "`klt sim` analysis per corner yet, so `batch` is "
+                         "refused. `local` fans ngspice out on THIS host and "
+                         "must be passed explicitly for any grid of more than "
+                         "one PVT point; a single-PVT run (e.g. --explore) "
+                         "is local without the flag.")
+    ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS,
+                    help=f"local worker threads (default: {DEFAULT_JOBS}, "
+                         "deliberately not os.cpu_count(): dispatch workers "
+                         "are shared). Only meaningful with --backend local.")
     ap.add_argument("--no-write", action="store_true",
                     help="run and report, write no record (debugging)")
     ap.add_argument("--explore", action="store_true",
@@ -1420,6 +1455,24 @@ def main() -> int:
     if args.explore:
         args.corners, args.temps, args.supply_tol = ["tt"], [27.0], 0.0
         args.no_write = True
+
+    if args.backend == "batch":
+        print(BATCH_UNSUPPORTED, file=sys.stderr)
+        return 3
+    n_pvt = len(resolve_corners(args.corners)) * len(args.temps) * len(
+        supply_points(NOMINAL_SUPPLY_V, args.supply_tol))
+    if n_pvt > 1 and args.backend != "local":
+        print(
+            f"FATAL: this grid is {n_pvt} PVT points, which would fan out "
+            "ngspice on this host.\n"
+            "       Multi-corner grids belong on the batch fleet, but this "
+            "bench cannot be expressed as a `klt sim` request yet (--backend "
+            "batch explains why).\n"
+            "       On a host you own, pass --backend local explicitly "
+            f"(default -j{DEFAULT_JOBS}).",
+            file=sys.stderr,
+        )
+        return 3
 
     if shutil.which("ngspice") is None:
         print("FATAL: ngspice not on PATH", file=sys.stderr)
