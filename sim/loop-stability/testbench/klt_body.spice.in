@@ -1,0 +1,47 @@
+* loop-stability -- klt sim circuit body template (issue #366).
+*
+* tb_loop_stability.spice.in's circuit, in the shape `klt sim` accepts: no
+* .control block, no model .lib cards, no .temp (klt binds all of those per
+* corner). The deck's single .control block sweeps load x C_eff x ESR with
+* `alter` and chains op / ac / alter / ac per point; here the Tian dual
+* injection is `analysis.passes` (two AC passes altering Vinj/Iinj) with
+* `tian.series_injection` forming T, and the three swept values are baked into
+* the body, so klt_run.py submits one request (the whole PVT grid) per
+* (load, C_eff, ESR) configuration. Tokens (klt_run.py substitutes them):
+*
+*   @ILOAD@  @CEFF@  @ESR@   the swept values
+*   @DC_SEED@                empty, or the regulating-branch .nodeset cards
+*                            (sweep.py's dc_seed_lines()) for a retry
+*
+* The supply is `.param vsup`, moved by the request's `corners.params` axis
+* (alterparam + reset) rather than `corners.supply_v` (`alter vin`). Vin and Ven
+* are the deck's own sources at the same voltage. Two other ways of moving the
+* supply were tried and are NOT equivalent here: `alter vin`+`alter ven`, and EN
+* as a behavioural source of v(vin). At one point (tt/27C/3.3V, 1 mA, 0.33 uF,
+* 1 mohm) both moved the crossover by ~3 % against the deck with an identical DC
+* operating point; the .param axis reproduces the deck to its printed digits.
+* The deck's reasoning for Vinj/Iinj, the ideal-current-source load and the
+* Dclamp diode that removes the non-physical DC branch applies unchanged.
+
+.include "dut.spice"
+
+Vin VIN 0 DC {vsup}
+Ven EN 0 DC {vsup}
+Vref VREF 0 DC 1.2
+.param vsup=3.3
+
+* Port order (design/ldo_core.sym / .sch): VIN VOUT EN VSS ERRAMP_OUT PASS_GATE VREF
+Xdut VIN VOUT EN 0 AINJ BINJ VREF ldo_core
+
+* Tian dual-injection network; both AC magnitudes are 0 here, the passes set them.
+Vinj AINJ BINJ DC 0 AC 0
+Iinj 0 BINJ DC 0 AC 0
+
+Iload VOUT 0 DC @ILOAD@
+Resr VOUT NESR @ESR@
+Cout NESR 0 @CEFF@
+
+.model dclamp d(is=1e-14 cjo=0 tt=0 n=1 rs=0)
+Dclamp 0 VOUT dclamp
+
+@DC_SEED@

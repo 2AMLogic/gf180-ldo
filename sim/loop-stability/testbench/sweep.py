@@ -46,6 +46,7 @@ Usage::
 
     ./sim/loop-stability/testbench/sweep.py                # full matrix, writes a record
     ./sim/loop-stability/testbench/sweep.py --explore      # tt/27C/3.3V only, writes nothing
+    ./sim/loop-stability/testbench/sweep.py --backend batch  # full matrix on the Spot batch fleet via `klt sim`
     ./sim/loop-stability/testbench/sweep.py --no-write --backend local -j2  # run locally (explicit), record nothing
 
 Exit codes mirror ``sim/run_corners.py``: 0 pass, 1 a stability check failed,
@@ -78,6 +79,7 @@ sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
+import klt_run  # noqa: E402  (sibling module; sweep.py runs as a script)
 from harness.report import (  # noqa: E402
     allocate_record_id,
     format_record_id,
@@ -96,26 +98,6 @@ from harness.runner import (  # noqa: E402
 #: that defaults to every core starves other sweeps. Pass ``-j`` to raise it
 #: on a box you own.
 DEFAULT_JOBS = min(2, os.cpu_count() or 2)
-
-BATCH_UNSUPPORTED = """\
---backend batch is not available for the loop-stability bench (issue #366).
-
-`klt sim` owns the deck's single .control block and runs one analysis per
-corner. This bench needs, per (load, C_eff, ESR) configuration: a DC `op`,
-TWO `ac` sweeps with `alter` of the injection sources between them (Tian
-dual injection), a derived loop-gain vector T built from both, and
-crossover / -180 degree / resurgence searches on its unwrapped phase and
-magnitude. None of that reduces to one analysis plus scalar measurements, so
-the grid cannot be submitted to the batch fleet unchanged and it is not
-approximated here. klt's `tian` form (klayout-tools#2847, delivered) takes
-unit-stimulus return-ratio vectors, but this bench's Tv = -v(ainj)/v(binj) and
-Ti = -i(vinj)/(i(vinj)+1) are quotients of phasors, not saved vectors. Tool gap:
-2AMLogic/klayout-tools#3737.
-
-Options: run the grid on a host you own with `--backend local -jN`, or run a
-single PVT point (`--explore`, or --corners/--temps/--supply-tol narrowing to
-one point) which needs no flag.
-"""
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
 DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
@@ -442,7 +424,17 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
         text = run_ngspice_deck(deck, log, workdir)
     except RuntimeError as exc:
         return pvt, [], str(exc)
+    rows, err = rows_from_log(pvt, text, len(iloads) * len(ceffs) * len(esrs), log)
+    return pvt, rows, err
 
+
+def rows_from_log(pvt, text: str, expected: int, log: Path):
+    """Parse a corner's ``ROW`` lines and apply the regulating-branch check.
+
+    Shared by the local ngspice path and the ``klt sim`` batch path
+    (``klt_run.py`` writes the same ``ROW`` lines), so both enter a record
+    through one parser and one VOUT test. Returns ``(rows, error | None)``.
+    """
     rows: list[Row] = []
     for line in text.splitlines():
         if not line.startswith("ROW "):
@@ -450,7 +442,7 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
         try:
             f = parse_row_fields(line)
         except ValueError as exc:
-            return pvt, [], f"{exc} (see {display_path(log)})"
+            return [], f"{exc} (see {display_path(log)})"
         rows.append(
             Row(
                 corner_id=pvt.corner_id,
@@ -470,9 +462,8 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
                 resurgence_db=_f(f["resurgence_db"]),
             )
         )
-    expected = len(iloads) * len(ceffs) * len(esrs)
     if len(rows) != expected:
-        return pvt, rows, f"expected {expected} rows, parsed {len(rows)} (see {display_path(log)})"
+        return rows, f"expected {expected} rows, parsed {len(rows)} (see {display_path(log)})"
 
     # A margin is only meaningful about the REGULATING bias point. The core has
     # a second, non-regulating DC solution (the current-limit latch state -- see
@@ -484,14 +475,14 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
     off = nonregulating(rows)
     if off:
         w = off[0]
-        return pvt, rows, (
+        return rows, (
             f"{len(off)}/{len(rows)} points did not settle on the regulating DC "
             f"solution (|VOUT - {VOUT_NOM_V:g} V| > {VOUT_TOL_FRAC:.0%}); first is "
             f"{w.config_id} at VOUT = {w.vout_v:g} V. A loop-gain margin about a "
             f"non-regulating bias point is meaningless, so this run is void "
             f"(see {display_path(log)})"
         )
-    return pvt, rows, None
+    return rows, None
 
 
 def run_curve(pvt, pdk, row: Row, ac_dec, logdir: Path, workdir: Path, suffix: str) -> Path:
@@ -743,6 +734,78 @@ def render_analysis(rows: list[Row], failing: list[Row]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def run_grid_klt(grid, corners, args, iloads, ceffs, esrs, logdir: Path, workdir: Path, klt_backend: str):
+    """Run the PVT grid through ``klt sim`` (``klt_run.py``) instead of local ngspice.
+
+    One request per (load, C_eff, ESR) configuration over the whole grid; the
+    returned values are written per corner as ``<corner-id>.log`` ``ROW`` lines
+    and parsed by ``rows_from_log()`` -- the same parser and the same
+    regulating-branch VOUT check the local path uses. A corner that misses the
+    regulating branch is re-run once, whole, with ``dc_seed_lines()`` in the
+    body (log ``<corner-id>_dcseed.log``), exactly as the local path does.
+    Returns ``(rows, failures, seeded, info)``; never falls back to local.
+    """
+    configs = [(il, ce, es) for il in iloads for ce in ceffs for es in esrs]
+    axes = {"process": tuple(c.name for c in corners), "temps": tuple(args.temps),
+            "supplies": tuple(sorted({p.vdd for p in grid}))}
+    rows: list[Row] = []
+    failures: list[str] = []
+    seeded: list[str] = []
+    klt_backend_arg = klt_backend  # "batch" or "local", passed to `klt sim --backend`
+    print(f"klt sim   : {len(configs)} requests x {len(grid)} corners, backend {klt_backend}")
+    results, problems, bad = klt_run.run_configs(
+        configs, LDO_NETLIST, args.ac_dec, F_START, F_STOP, axes, workdir, logdir,
+        klt_backend_arg, args.in_flight)
+    for p in problems:
+        print(f"  WARNING {p}", file=sys.stderr)
+
+    def parse(pvt, res, suffix=""):
+        text = klt_run.corner_log(pvt.corner_id, configs, res)
+        log = logdir / f"{pvt.corner_id}{suffix}.log"
+        log.write_text(text)
+        return rows_from_log(pvt, text, len(configs), log)
+
+    retries = []
+    for pvt in grid:
+        pt_rows, err = parse(pvt, results)
+        if pvt.corner_id in bad:
+            # klt itself reported a problem (failed batch job, errored pass,
+            # unattributable measurement): that is not a DC-branch miss and a
+            # seeded retry would not change it.
+            err = "klt reported a problem for this corner (see warnings above)"
+        if err:
+            if "regulating DC solution" in err:
+                retries.append(pvt)
+                print(f"  {pvt.corner_id:<22} DC branch miss, retrying with the regulating-branch seed")
+                continue
+            failures.append(f"{pvt.corner_id}: {err}")
+            print(f"  {pvt.corner_id:<22} SIM ERROR  {err}")
+            continue
+        rows.extend(pt_rows)
+        w = worst_of(pt_rows)
+        print(f"  {pvt.corner_id:<22} worst PM {pm_str(w):>7} deg  GM {gm_str(w):>7} dB  at {w.config_id}")
+
+    for pvt in retries:
+        one = {"process": (pvt.corner.name,), "temps": (pvt.temp_c,), "supplies": (pvt.vdd,)}
+        res, probs, _ = klt_run.run_configs(
+            configs, LDO_NETLIST, args.ac_dec, F_START, F_STOP, one, workdir, logdir,
+            klt_backend_arg, args.in_flight, dc_seed=dc_seed_lines(pvt))
+        for p in probs:
+            print(f"  WARNING {p}", file=sys.stderr)
+        pt_rows, err = parse(pvt, res, "_dcseed")
+        if err or probs:
+            failures.append(f"{pvt.corner_id} (with DC seed): {err or '; '.join(probs)}")
+            print(f"  {pvt.corner_id:<22} SIM ERROR  {err or probs[0]}")
+            continue
+        seeded.append(pvt.corner_id)
+        rows.extend(pt_rows)
+        w = worst_of(pt_rows)
+        print(f"  {pvt.corner_id:<22} worst PM {pm_str(w):>7} deg  GM {gm_str(w):>7} dB  "
+              f"at {w.config_id}  [regulating-branch DC seed]")
+    info = {"backend": klt_backend, "requests": len(configs), "klt": klt_run.klt_version()}
+    return rows, failures, seeded, info
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--corners", nargs="+", default=list(PROCESS_CORNERS),
@@ -761,18 +824,24 @@ def main() -> int:
                          "how the default is derived. Running BELOW the default "
                          "needs --subset-reason, exactly as a narrowed PVT grid "
                          "does.")
-    ap.add_argument("--backend", choices=("local", "batch"), default=None,
-                    help="where a multi-corner grid runs (issue #366). The "
-                         "dispatch-worker rule is that a PVT grid goes to the "
-                         "Spot batch fleet via `klt sim` "
-                         "(sim/harness/klt_batch.py), but this bench cannot be "
-                         "expressed as one `klt sim` analysis per corner yet "
-                         "(see BATCH_UNSUPPORTED in this file), so "
-                         "`batch` is refused with an explanation. `local` "
-                         "fans ngspice out on THIS host and must be passed "
-                         "explicitly for any grid of more than one PVT "
-                         "point; a single-PVT run (e.g. --explore) is local "
-                         "without the flag.")
+    ap.add_argument("--backend", choices=("local", "batch", "klt-local"), default=None,
+                    help="where the grid runs (issue #366). `batch`: each "
+                         "(load, C_eff, ESR) configuration is a `klt sim` "
+                         "request over the PVT grid, submitted to the Spot "
+                         "batch fleet (klt_run.py) -- the default for any grid "
+                         "of more than one PVT point, as the dispatch-worker "
+                         "rule requires. `local` fans ngspice out on THIS host "
+                         "and must be passed explicitly for more than one PVT "
+                         "point. `klt-local` runs the same `klt sim` requests "
+                         "as `batch` but locally, one at a time, for a "
+                         "single-PVT-point batch-vs-local check only. A "
+                         "single-PVT run (e.g. --explore) is `local` without "
+                         "the flag. A failed batch submit is an error; it "
+                         "never falls back to a local grid.")
+    ap.add_argument("--in-flight", type=int, default=6,
+                    help="with --backend batch, how many configuration "
+                         "requests are submitted at once (default: 6; the "
+                         "fleet's own concurrency cap re-queues the rest)")
     ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS,
                     help=f"local worker threads (default: {DEFAULT_JOBS}, "
                          "deliberately not os.cpu_count(): dispatch workers "
@@ -796,23 +865,13 @@ def main() -> int:
         args.supply_tol = 0.0
         args.no_write = True
 
-    if args.backend == "batch":
-        print(BATCH_UNSUPPORTED, file=sys.stderr)
-        return 3
-
     n_pvt = len(resolve_corners(args.corners)) * len(args.temps) * len(
         supply_points(NOMINAL_SUPPLY_V, args.supply_tol))
-    if n_pvt > 1 and args.backend != "local":
-        print(
-            f"FATAL: this grid is {n_pvt} PVT points, which would fan out "
-            "ngspice on this host.\n"
-            "       Multi-corner grids belong on the batch fleet, but this bench "
-            "cannot be expressed as a `klt sim` request yet (--backend batch "
-            "explains why).\n"
-            "       On a host you own, pass --backend local explicitly "
-            f"(default -j{DEFAULT_JOBS}).",
-            file=sys.stderr,
-        )
+    backend = args.backend or ("local" if n_pvt == 1 else "batch")
+    use_klt = backend in ("batch", "klt-local")
+    if backend == "klt-local" and n_pvt > 1:
+        print(f"FATAL: --backend klt-local is a single-PVT-point check; this grid is "
+              f"{n_pvt} PVT points. Use --backend batch.", file=sys.stderr)
         return 3
     if shutil.which("ngspice") is None:
         print("FATAL: ngspice not on PATH", file=sys.stderr)
@@ -898,11 +957,19 @@ def main() -> int:
     rows: list[Row] = []
     failures: list[str] = []
     seeded: list[str] = []
+    klt_info: dict = {}
+    if use_klt:
+        # The `klt sim` path fills rows/failures/seeded; the local loops below
+        # then have nothing to run (`local_grid` is empty).
+        rows, failures, seeded, klt_info = run_grid_klt(
+            grid, corners, args, iloads, ceffs, esrs, logdir, workdir,
+            "local" if backend == "klt-local" else "batch")
+    local_grid = [] if use_klt else grid
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         futures = {
             pool.submit(run_point, pvt, pdk, iloads, ceffs, esrs, args.ac_dec,
                         workdir, logdir): pvt
-            for pvt in grid
+            for pvt in local_grid
         }
         retries = []
         for done in concurrent.futures.as_completed(futures):
@@ -1005,7 +1072,7 @@ def main() -> int:
         record_id=record_id, rows=rows, worst=worst, failing=failing,
         multi_cross=multi_cross, resurging=resurging, grid=grid, iloads=iloads,
         ceffs=ceffs, esrs=esrs, pdk=pdk, dirty=dirty, args=args,
-        curve_log=curve_log, seeded=seeded, prov=prov,
+        curve_log=curve_log, seeded=seeded, prov=prov, klt_info=klt_info,
     )
     # Append-only: the record-id was minted before the sweep ran, so re-check
     # that it is still free rather than clobbering whatever landed meanwhile.
@@ -1021,7 +1088,7 @@ def main() -> int:
 
 def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
                   grid, iloads, ceffs, esrs, pdk, dirty, args, curve_log,
-                  prov, seeded=()) -> str:
+                  prov, seeded=(), klt_info=None) -> str:
     rel = lambda p: str(Path(p).resolve().relative_to(REPO_ROOT))  # noqa: E731
     overall = "PASS" if not failing else "FAIL"
     by_corner: dict[str, list[Row]] = {}
@@ -1115,6 +1182,19 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
             f"in terms of."
         )
 
+    if klt_info:
+        klt_md = (
+            f" (`--backend {klt_info['backend']}`)\n"
+            f"- Backend: `klt sim`, {klt_info['requests']} requests (one per load/C_eff/ESR "
+            f"configuration) over the PVT grid, client `{klt_info['klt']}` "
+            f"(`klt_run.py`, issue #366). The per-corner logs and the full-curve "
+            f"log are `ROW` lines of values `klt` returned (the report JSON of each "
+            f"request is under `corners/{record_id}/klt-reports/`), so the ngspice "
+            f"version/hash and host above describe only the local full-curve re-run, "
+            f"not the grid; the grid ran on the engine and host named in those reports."
+        )
+    else:
+        klt_md = ""
     subset = args.subset_reason.strip()
     subset_md = (f"\n  - **Subset reason**: {subset}\n" if subset else "")
     if seeded:
@@ -1329,7 +1409,7 @@ Everything needed to re-run this record:
   makes a cross-host toolchain divergence attributable)
 - git: `{prov['short']}` on `{prov['branch']}`
   ({'DIRTY' if dirty else 'clean'} at generation time)
-- Command: `./sim/loop-stability/testbench/run.sh`
+- Command: `./sim/loop-stability/testbench/run.sh`{klt_md}
 - AC sweep: `dec {args.ac_dec} {F_START} {F_STOP}` per injection, two injections
   per point{'' if args.ac_dec == int(AC_DEC) else f' (**not** the default `dec {AC_DEC}` -- see Subset reason)'}.
   The resolution is part of this measurement, not a performance setting
