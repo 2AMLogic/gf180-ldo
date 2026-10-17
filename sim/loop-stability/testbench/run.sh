@@ -12,6 +12,10 @@
 # number from an unvalidated extraction is worse than no number, and this
 # repo's whole premise is that the verification is the product.
 #
+# A grid of more than one PVT point runs through `klt sim` (the Spot batch fleet)
+# by default: `--backend batch` (klt_run.py is its front end; issue #366).
+# `--backend local` fans ngspice out on THIS host, explicit only, default -j2.
+#
 # Everything else -- PDK discovery, deck generation, the PVT grid, parsing,
 # the evidence record -- lives in sweep.py; see its --help and
 # sim/loop-stability/README.md.

@@ -91,7 +91,8 @@ def only_axes(only: str | None) -> dict:
 
 
 def corner_id(c: dict, supply_key: str) -> str:
-    vin = float(c["supply_v"][supply_key])
+    vin = float(c["params"][supply_key] if supply_key in (c.get("params") or {})
+                else c["supply_v"][supply_key])
     t = c["temperature_c"]
     t = int(t) if float(t).is_integer() else t
     return f"{c['process']}_{t}c_{vin:.2f}v"
@@ -105,6 +106,11 @@ class Job:
     analysis: dict
     measurements: list
     supply_key: str = "vin"
+    #: When set, the supply axis is the ``corners.params`` row of this top-level
+    #: ``.param`` (``alterparam`` + ``reset``) instead of ``corners.supply_v``
+    #: (``alter``). For a bench whose result must not pass through an ``alter``
+    #: of its supply sources (see loop-stability/testbench/klt_body.spice.in).
+    supply_param: str | None = None
     process: tuple = LDO_PROCESS
     temps: tuple = TEMPS
     supplies: tuple = SUPPLIES
@@ -118,7 +124,8 @@ class Job:
             "models": {"pdk": "gf180mcuD", "lib": "libs.tech/ngspice/sm141064.ngspice"},
             "corners": {
                 "process": process_axis(self.process),
-                "supply_v": {self.supply_key: list(self.supplies)},
+                **({"params": {self.supply_param: list(self.supplies)}} if self.supply_param
+                   else {"supply_v": {self.supply_key: list(self.supplies)}}),
                 "temperature_c": list(self.temps),
             },
             "analysis": self.analysis,
