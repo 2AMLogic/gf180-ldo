@@ -8,8 +8,11 @@
 #   BACKEND=local ./sim/enable-shutdown/testbench/run.sh  # full grid on THIS host
 #
 # A grid of more than one PVT point is refused unless BACKEND=local (issue
-# #366). This bench has no `klt sim` front end yet, so the batch fleet cannot
-# run it; local JOBS defaults to 2.
+# #366). Run the grid through `klt sim` instead (the batch fleet, the same 63
+# points, one request per analysis state, run.sh's m_* log names so summarize.py
+# is unchanged):
+#   python3 sim/enable-shutdown/testbench/klt_run.py --record-id <id>
+# Local JOBS defaults to 2.
 #
 # Same structure, and the same standalone-rather-than-sim/harness rationale,
 # as sim/current-limit/testbench/run.sh -- see that script's header. Each
@@ -83,7 +86,7 @@ for c in $CORNERS; do for t in $TEMPS; do for v in $SUPPLIES; do
 done; done; done
 
 source "$REPO_ROOT/sim/harness/lib/local_grid_guard.sh"
-harness_local_grid_guard "${#points[@]}" "no klt sim front end exists for this bench yet (issue #366)"
+harness_local_grid_guard "${#points[@]}" "python3 sim/enable-shutdown/testbench/klt_run.py --record-id <id>"
 
 printf '%s\n' "${points[@]}" \
   | xargs -P "$JOBS" -I{} bash -c 'run_point $0' "{}" \
