@@ -4,6 +4,7 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-10-17
 
+- **PR #450**: sim: add klt sim batch front end for enable-shutdown PVT grid
 - **PR #446**: sim: cap local jobs at 2 and require explicit backend for remaining grid drivers
 
 ### 2026-10-16
