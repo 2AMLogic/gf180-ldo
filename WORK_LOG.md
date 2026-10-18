@@ -2,6 +2,11 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-18
+
+- **PR #458**: refactor(sim): share klt_run argparse prologue and summary.csv writer
+- **Issue #456** (closed): Dedupe klt_run.py wrappers: shared argparse prologue and summary.csv writer
+
 ### 2026-10-17
 
 - **PR #455**: sim(soft-start-loop-gain): add klt sim batch front end for the margin and hand-over decks
