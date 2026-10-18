@@ -16,7 +16,6 @@ hand, as for run.sh. Grading mirrors summarize.py's bounds (DR-0005).
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
@@ -24,7 +23,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import klt_batch as kb  # noqa: E402
-from harness.klt_ab import run_ab  # noqa: E402
+from harness.klt_ab import add_ab_args, run_ab, write_summary_csv  # noqa: E402
 
 # index of each read point in `dc Vforce 0 1.764 0.012`
 IDX = {"1764": 147, "1500": 125, "0900": 75, "0300": 25, "0000": 0}
@@ -68,11 +67,7 @@ def grade(v: dict, vin: float) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--record-id", required=True)
-    ap.add_argument("--dut", default=str(REPO / "design/netlist/ldo_core.spice"))
-    ap.add_argument("--baseline-ref", default=None)
-    ap.add_argument("--backend", default=None)
-    ap.add_argument("--only", default=None, help="one point, e.g. tt,27,3.30 (debug; runs locally)")
+    add_ab_args(ap, REPO)
     args = ap.parse_args(argv)
     dest = HERE.parent / "corners" / args.record_id
     results = run_ab(lambda n, d: job(n, d, args.only), Path(args.dut), args.baseline_ref, dest, REPO, backend=args.backend)
@@ -83,12 +78,7 @@ def main(argv=None) -> int:
             vin = float(cid.rsplit("_", 1)[1].rstrip("v"))
             rows.append({"dut": tag or "new", "corner": cid, **{k: v.get(k) for k in v if not k.startswith("_")},
                          "status": v.get("_status"), "diagnostics": v.get("_diagnostics"), **grade(v, vin)})
-    keys = sorted({k for r in rows for k in r}, key=lambda k: (k not in ("dut", "corner"), k))
-    with open(dest / "summary.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        w.writerows(rows)
-    print(f"wrote {dest / 'summary.csv'}")
+    write_summary_csv(rows, dest / "summary.csv")
     return 0
 
 
