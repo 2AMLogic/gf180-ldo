@@ -40,7 +40,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import klt_batch as kb  # noqa: E402
-from harness.klt_ab import run_ab  # noqa: E402
+from harness.klt_ab import add_ab_args, run_ab  # noqa: E402
 
 TRAN_ENCTL = "DC 0 PWL(0 0 100u 0 101u 1 8m 1 8.001m 0)"
 IQ_SUM = "-i(vin)*1e6 - i(vref)*1e6"  # supply + reference delivery, uA
@@ -137,11 +137,7 @@ def write_logs(per_state: dict, dest: Path) -> list[str]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--record-id", required=True)
-    ap.add_argument("--dut", default=str(REPO / "design/netlist/ldo_core.spice"))
-    ap.add_argument("--baseline-ref", default=None)
-    ap.add_argument("--backend", default=None)
-    ap.add_argument("--only", default=None, help="one point, e.g. tt,27,3.30 (debug; runs locally)")
+    add_ab_args(ap, REPO)
     args = ap.parse_args(argv)
     dest = HERE.parent / "corners" / args.record_id
     axes = kb.only_axes(args.only)

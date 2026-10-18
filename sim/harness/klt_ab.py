@@ -12,6 +12,7 @@ netlist it measured, ``dut.spice``, beside its logs.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import shutil
 import subprocess
@@ -20,6 +21,26 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import klt_batch as kb
+
+
+def add_ab_args(ap, repo: Path) -> None:
+    """The flags every ``klt_run.py`` wrapper takes ahead of its own."""
+    ap.add_argument("--record-id", required=True)
+    ap.add_argument("--dut", default=str(repo / "design/netlist/ldo_core.spice"))
+    ap.add_argument("--baseline-ref", default=None)
+    ap.add_argument("--backend", default=None)
+    ap.add_argument("--only", default=None, help="one point, e.g. tt,27,3.30 (debug; runs locally)")
+
+
+def write_summary_csv(rows: list[dict], path: Path, keys: list[str] | None = None) -> None:
+    """Write ``rows`` to ``path``; default columns are the sorted union, ``dut`` and ``corner`` first."""
+    if keys is None:
+        keys = sorted({k for r in rows for k in r}, key=lambda k: (k not in ("dut", "corner"), k))
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=keys)
+        w.writeheader()
+        w.writerows(rows)
+    print(f"wrote {path}")
 
 
 def _sha256(p: Path) -> str:

@@ -24,7 +24,6 @@ same backend. Output: ``sim/soft-start/corners/<record-id>/``.
 from __future__ import annotations
 
 import argparse
-import csv
 import re
 import sys
 from pathlib import Path
@@ -33,7 +32,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import klt_batch as kb  # noqa: E402
-from harness.klt_ab import run_ab  # noqa: E402
+from harness.klt_ab import add_ab_args, run_ab, write_summary_csv  # noqa: E402
 
 MAIN = [("1u", "0.1", "36")]
 EXTRA = [("0.33u", "0.001", "36"), ("0.33u", "0.5", "36"), ("4.7u", "0.001", "36"),
@@ -101,11 +100,7 @@ def derive(v: dict, k: int) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--record-id", required=True)
-    ap.add_argument("--dut", default=str(REPO / "design/netlist/ldo_core.spice"))
-    ap.add_argument("--baseline-ref", default=None)
-    ap.add_argument("--backend", default=None)
-    ap.add_argument("--only", default=None, help="one point, e.g. tt,27,3.30 (debug; runs locally)")
+    add_ab_args(ap, REPO)
     ap.add_argument("--part", choices=("main", "extra", "both"), default="both")
     ap.add_argument("--process", default=None,
                     help="shard: run one process corner only (e.g. tt); output goes to <part>-<process>/ "
@@ -132,11 +127,7 @@ def main(argv=None) -> int:
                                  "diagnostics": v.get("_diagnostics")})
     keys = list(dict.fromkeys(k for r in rows for k in r))  # union: a point missing a crossing lacks derived keys
     out = dest / (f"summary-{args.process}.csv" if args.process else "summary.csv")
-    with open(out, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        w.writerows(rows)
-    print(f"wrote {out}")
+    write_summary_csv(rows, out, keys)
     return 0
 
 
