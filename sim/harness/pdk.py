@@ -8,12 +8,17 @@ Resolution order (first hit wins):
 
 1. ``GF180_PDK_PATH``   -- absolute path to the *variant* directory
                            (the one containing ``libs.tech/``), e.g.
-                           ``~/.volare/gf180mcuD``.
+                           ``~/.ciel/gf180mcuD``.
 2. ``PDK_ROOT`` (+ ``PDK``, default ``gf180mcuD``) -- the conventional
-                           open_pdks / volare / OpenLane environment.
+                           open_pdks / ciel / OpenLane environment.
 3. ``sim/pdk.local.json`` -- machine-local override, git-ignored.
 4. ``sim/pdk.json``      -- committed defaults: variant + search roots.
-5. Built-in search roots -- volare store, open_pdks install prefixes.
+5. Built-in search roots -- ciel store, open_pdks install prefixes.
+
+Whichever way a tree is resolved (explicit override included), its
+``SOURCES`` open_pdks revision is checked against ``PINNED_OPEN_PDKS_REVISION``;
+a mismatch or unreadable revision raises :class:`PdkPinMismatch` rather than
+silently simulating against the wrong PDK.
 
 This is the same resolution order (and the same env var names) as
 2AMLogic/gf180-bandgap's harness, deliberately -- cross-block tooling and
@@ -37,11 +42,17 @@ SIM_DIR = REPO_ROOT / "sim"
 
 DEFAULT_VARIANT = "gf180mcuD"
 
+# The single source of truth for the PDK revision this repo is verified
+# against (open_pdks commit, as recorded in the tree's SOURCES file).
+# docs/environment-setup.md and CI cite this constant; bump it here first.
+PINNED_OPEN_PDKS_REVISION = "f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7"
+PINNED_CIEL_VERSION = "2.6.1"
+
 # Search roots used when nothing else pins the PDK down. Each is a directory
 # that is expected to *contain* variant directories (gf180mcuA..D).
 BUILTIN_SEARCH_ROOTS = (
-    "~/.volare",
     "~/.ciel",
+    "~/.volare",   # retired install path: still searched, but pin-checked
     "/usr/share/pdk",
     "/usr/local/share/pdk",
     "~/share/pdk",
@@ -51,12 +62,12 @@ BUILTIN_SEARCH_ROOTS = (
 INSTALL_HINT = """\
 gf180mcu PDK not found.
 
-Install it with volare (recommended, ~5 GB):
+Install the pinned revision with ciel (recommended, ~5 GB):
 
-    pip install volare
-    volare enable --pdk gf180mcu <version-hash>     # see: volare ls-remote --pdk gf180mcu
+    pip install ciel==%(ciel)s
+    ciel enable --pdk-family gf180mcu -l gf180mcu_fd_pr %(rev)s
 
-volare installs into ~/.volare/<variant> and this harness finds it there
+ciel installs into ~/.ciel/<variant> and this harness finds it there
 automatically. If your PDK lives somewhere else, point the harness at it:
 
     export GF180_PDK_PATH=/path/to/gf180mcuD        # variant dir, contains libs.tech/
@@ -67,11 +78,19 @@ automatically. If your PDK lives somewhere else, point the harness at it:
 ...or commit-free machine-local config in sim/pdk.local.json:
 
     {"variant": "gf180mcuD", "search_roots": ["/my/pdks"]}
-"""
+""" % {"ciel": PINNED_CIEL_VERSION, "rev": PINNED_OPEN_PDKS_REVISION}
 
 
 class PdkNotFound(RuntimeError):
     """Raised when no usable gf180mcu install can be located."""
+
+
+class PdkPinMismatch(PdkNotFound):
+    """Raised when a located tree is not at ``PINNED_OPEN_PDKS_REVISION``.
+
+    Subclasses :class:`PdkNotFound` so every existing caller that turns a
+    PDK-resolution failure into a clean error exit handles it too.
+    """
 
 
 @dataclass(frozen=True)
@@ -106,7 +125,7 @@ class Pdk:
 
     @property
     def version(self) -> str:
-        """open_pdks commit recorded by volare, or 'unknown'."""
+        """open_pdks commit recorded in SOURCES by ciel/volare, or 'unknown'."""
         sources = self.path / "SOURCES"
         if sources.is_file():
             for line in sources.read_text().splitlines():
@@ -125,6 +144,25 @@ class Pdk:
             "open_pdks_version": self.version,
             "discovered_via": scrub_source(self.source),
         }
+
+
+def check_pin(pdk: Pdk) -> Pdk:
+    """Return *pdk* if its open_pdks revision is the pinned one, else raise."""
+    found = pdk.version
+    if found == PINNED_OPEN_PDKS_REVISION:
+        return pdk
+    detail = (
+        "has no readable open_pdks revision (missing or empty SOURCES file)"
+        if found == "unknown"
+        else f"is at open_pdks {found}"
+    )
+    raise PdkPinMismatch(
+        f"gf180mcu PDK at {pdk.path} {detail}, but this repo is pinned to "
+        f"open_pdks {PINNED_OPEN_PDKS_REVISION} (found via {pdk.source}). "
+        "Refusing to use a mismatched PDK. A stale ~/.volare tree is the usual "
+        "cause; install the pinned revision with ciel and point PDK_ROOT at "
+        "~/.ciel.\n\n" + INSTALL_HINT
+    )
 
 
 def _is_valid_variant_dir(path: Path) -> bool:
@@ -149,7 +187,7 @@ def _expand(path: str) -> Path:
 
 
 def find_pdk(variant: str | None = None) -> Pdk:
-    """Locate a gf180mcu install, or raise :class:`PdkNotFound`."""
+    """Locate a gf180mcu install, or raise :class:`PdkNotFound` (or :class:`PdkPinMismatch`)."""
     config = _load_config()
     variant = variant or os.environ.get("PDK") or config.get("variant") or DEFAULT_VARIANT
 
@@ -162,7 +200,7 @@ def find_pdk(variant: str | None = None) -> Pdk:
                 f"directory (expected {path}/libs.tech/ngspice/sm141064.ngspice).\n\n"
                 + INSTALL_HINT
             )
-        return Pdk(path=path, variant=path.name, source="GF180_PDK_PATH")
+        return check_pin(Pdk(path=path, variant=path.name, source="GF180_PDK_PATH"))
 
     tried: list[str] = []
 
@@ -171,14 +209,14 @@ def find_pdk(variant: str | None = None) -> Pdk:
         path = _expand(pdk_root) / variant
         tried.append(str(path))
         if _is_valid_variant_dir(path):
-            return Pdk(path=path, variant=variant, source="PDK_ROOT")
+            return check_pin(Pdk(path=path, variant=variant, source="PDK_ROOT"))
 
     roots = list(config.get("search_roots") or ()) + list(BUILTIN_SEARCH_ROOTS)
     for root in roots:
         path = _expand(root) / variant
         tried.append(str(path))
         if _is_valid_variant_dir(path):
-            return Pdk(path=path, variant=variant, source=f"search_root:{root}")
+            return check_pin(Pdk(path=path, variant=variant, source=f"search_root:{root}"))
 
     raise PdkNotFound(
         "Looked for gf180mcu variant %r in:\n  %s\n\n%s"

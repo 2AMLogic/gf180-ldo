@@ -403,7 +403,7 @@ is rushed and no spec row is relaxed to make the date.
   [klayout-tools](https://github.com/2AMLogic/klayout-tools/) (`klt`) — the
   same tool this repository already exercises end to end on its
   one-transistor DRC/LVS test cell (`layout/README.md`); the gf180mcu PDK
-  fetched and pinned via [volare](https://github.com/efabless/volare) under
+  fetched and pinned via [ciel](https://github.com/fossi-foundation/ciel) under
   the `PDK_ROOT`/`PDK` environment convention this repository documents in
   [`docs/environment-setup.md`](../environment-setup.md). Every simulation
   record cited in §4 states the exact pinned toolchain (PDK hash, ngspice

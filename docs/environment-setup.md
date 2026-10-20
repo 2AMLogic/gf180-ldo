@@ -3,7 +3,7 @@
 Bootstrap steps for the open-source design/sim flow described in
 [`CLAUDE.md`](../CLAUDE.md): xschem (schematic capture / netlisting) +
 ngspice (simulation) against the gf180mcu PDK (fetched via
-[volare](https://github.com/efabless/volare)).
+[ciel](https://github.com/fossi-foundation/ciel)).
 
 This doc is intended to be followed **verbatim, from a clean shell**, on any
 fresh machine or agent session. It is ported from the reference bootstrap in
@@ -21,13 +21,13 @@ package manager for the Homebrew dependency installs.
 |---|---|---|
 | xschem | **3.4.7** (tag `3.4.7`) | built from source, see §2 |
 | ngspice | **46_1** (banner `ngspice-46`) | Homebrew — see "Keeping the ngspice pin from drifting" below; `brew install ngspice` is **not** by itself a pin |
-| volare | **0.20.6** | Homebrew / pip (`volare`); CI pins `volare==0.20.6` |
-| gf180mcu PDK | commit hash **`c6d73a35f524070e85faff4a6a9eef49553ebc2b`** | `volare fetch` |
+| ciel | **2.6.1** | pip (`ciel==2.6.1`); CI installs the version in `PINNED_CIEL_VERSION` (`sim/harness/pdk.py`) |
+| gf180mcu PDK | open_pdks commit **`f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7`** (`PINNED_OPEN_PDKS_REVISION` in `sim/harness/pdk.py`) | `ciel enable` |
 | Build deps | `cairo` 1.18.4, `tcl-tk@8` 8.6.18, `xorgproto` 2025.1, XQuartz (cask), `bison`/`flex` (system, not Homebrew) | Homebrew / macOS system tools |
 
 The gf180mcu hash above matches the one pinned in `gf180-bandgap`'s own
 `docs/environment-setup.md` -- reuse it verbatim across sister gf180 canary
-repos (pinned, not "latest"; re-running `volare ls-remote` later will show
+repos (pinned, not "latest"; re-running `ciel ls-remote` later will show
 newer hashes -- do not silently switch without updating this doc and
 re-validating the harness self-test in §6).
 
@@ -231,18 +231,17 @@ entry lands in #8) -- once it does, always invoke xschem for this repo with
 isn't) in any given machine's user-level dotfile, mirroring
 `gf180-bandgap`'s `design/xschemrc`.
 
-## 3. Fetch the gf180mcu PDK via volare
+## 3. Fetch the gf180mcu PDK via ciel
 
 ```bash
-volare --version                              # expect 0.20.6 (or record whatever is installed)
-volare ls-remote --pdk gf180mcu               # lists available commit hashes, newest first
-volare fetch  --pdk gf180mcu c6d73a35f524070e85faff4a6a9eef49553ebc2b
-volare enable --pdk gf180mcu c6d73a35f524070e85faff4a6a9eef49553ebc2b
-volare output --pdk gf180mcu                  # confirm: c6d73a35f524070e85faff4a6a9eef49553ebc2b
+pip install ciel==2.6.1
+ciel --version                                # expect 2.6.1
+ciel enable --pdk-family gf180mcu -l gf180mcu_fd_pr f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7
+ciel output --pdk-family gf180mcu             # confirm: f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7
 ```
 
-This creates `~/.volare/gf180mcuA` / `gf180mcuB` / `gf180mcuC` / `gf180mcuD`
-(symlinks into `~/.volare/volare/gf180mcu/versions/<hash>/...`) -- one
+This creates `~/.ciel/gf180mcuA` / `gf180mcuB` / `gf180mcuC` / `gf180mcuD`
+(symlinks into `~/.ciel/ciel/gf180mcu/versions/<hash>/...`) -- one
 directory per gf180mcu voltage/rule-deck variant. Per
 [`spec/decision-records/DR-0002-input-flavor.md`](../spec/decision-records/DR-0002-input-flavor.md),
 this repo's primary design uses the **3.3 V flavor**, which is variant
@@ -251,11 +250,11 @@ this repo's primary design uses the **3.3 V flavor**, which is variant
 ## 4. `PDK_ROOT` / `PDK` environment convention
 
 ```bash
-export PDK_ROOT="$(volare path)"   # -> ~/.volare (volare's PDK root)
+export PDK_ROOT="$HOME/.ciel"      # ciel's PDK root
 export PDK="gf180mcuD"             # the 3.3V variant this repo targets
 ```
 
-So `$PDK_ROOT/$PDK` resolves to `~/.volare/gf180mcuD`, and the ngspice
+So `$PDK_ROOT/$PDK` resolves to `~/.ciel/gf180mcuD`, and the ngspice
 models live under `$PDK_ROOT/$PDK/libs.tech/ngspice/`.
 
 Add this as a small sourceable snippet rather than a one-off manual export,
@@ -263,7 +262,7 @@ e.g. append to your shell profile:
 
 ```bash
 # gf180-ldo: xschem/ngspice/gf180mcu env (see docs/environment-setup.md)
-export PDK_ROOT="$(volare path)"
+export PDK_ROOT="$HOME/.ciel"
 export PDK="gf180mcuD"
 ```
 
@@ -271,7 +270,7 @@ Demonstrate it survives a fresh shell:
 
 ```bash
 $ echo $PDK_ROOT $PDK
-/Users/you/.volare gf180mcuD
+/Users/you/.ciel gf180mcuD
 ```
 
 ## 5. Reproducibility checklist
@@ -288,7 +287,7 @@ $ echo $PDK_ROOT $PDK
       shell profile snippet from §4 (not just in the shell where you first
       set it).
 - [ ] Confirm the gf180mcu hash in use is the **pinned** one recorded in §1
-      (`volare output --pdk gf180mcu`), not silently "whatever `ls-remote`
+      (`ciel output --pdk-family gf180mcu`), not silently "whatever `ls-remote`
       shows as newest today."
 - [ ] Run `bash sim/selftest.sh --require-pdk` (see §6) and confirm it exits
       0 with the harness's own end-to-end PVT smoke run passing.
@@ -396,7 +395,7 @@ has to be repeated.
 Everything above establishes the *install*. The evidence-producing harness
 sits on top of it and resolves the same PDK by a superset of the same rules
 (`GF180_PDK_PATH` -> `PDK_ROOT` + `PDK` -> `sim/pdk.local.json` ->
-`sim/pdk.json` -> the usual install prefixes, volare first), so the
+`sim/pdk.json` -> the usual install prefixes, ciel first), so the
 `PDK_ROOT`/`PDK` exports from §4 are all it needs:
 
 ```bash

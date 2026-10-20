@@ -127,7 +127,7 @@ tells you which are missing.
 | `klayout` (≥ 0.28) | the DRC/LVS engine — runs the PDK's own decks via `klayout -b -r` | `apt-get install klayout`, or a build from [klayout.de](https://www.klayout.de) |
 | `klt` | [klayout-tools](https://github.com/2AMLogic/klayout-tools): headless, JSON-contracted DRC | `uv tool install klayout-tools` (or `pipx install klayout-tools`) |
 | `xschem` **≥ 3.4.6** | exports the LVS reference netlist from the schematic | build from source — see [`docs/environment-setup.md`](../docs/environment-setup.md) |
-| gf180mcu PDK | rule decks, LVS deck, PCells | `volare enable --pdk gf180mcu <hash>` — same install `sim/` uses |
+| gf180mcu PDK | rule decks, LVS deck, PCells | `ciel enable --pdk-family gf180mcu -l gf180mcu_fd_pr f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7` (ciel 2.6.1) — same install `sim/` uses |
 
 > **The xschem version is load bearing, not a nicety.** `lvs_format` support —
 > the mechanism that produces an LVS-readable netlist at all — landed after

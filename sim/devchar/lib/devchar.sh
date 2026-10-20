@@ -14,13 +14,13 @@
 #   dc_run <template.sp.in> <output.csv> KEY=VALUE ...
 #
 # Environment:
-#   PDK_ROOT  - defaults to $HOME/.volare
+#   PDK_ROOT  - defaults to $HOME/.ciel
 #   PDK       - defaults to gf180mcuD
 #   DC_KEEP   - if set, generated decks are left in the build dir for inspection
 
 set -euo pipefail
 
-: "${PDK_ROOT:=$HOME/.volare}"
+: "${PDK_ROOT:=$HOME/.ciel}"
 : "${PDK:=gf180mcuD}"
 
 DC_MODELS=""
@@ -35,7 +35,7 @@ dc_init() {
 
   if [ ! -f "$DC_MODELS/sm141064.ngspice" ]; then
     echo "FATAL: gf180mcu ngspice models not found at $DC_MODELS" >&2
-    echo "       set PDK_ROOT (currently '$PDK_ROOT') to the volare install root" >&2
+    echo "       set PDK_ROOT (currently '$PDK_ROOT') to the ciel install root" >&2
     exit 1
   fi
   if ! command -v ngspice >/dev/null 2>&1; then
