@@ -2,6 +2,11 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-20
+
+- **PR #431**: feat(sim): pin PDK to open_pdks f6eeac7 via ciel and refuse mismatched trees
+- **Issue #429** (closed): Re-pin open_pdks to f6eeac7: ciel install, PDK search + revision check (phase 1 of #428)
+
 ### 2026-10-18
 
 - **PR #458**: refactor(sim): share klt_run argparse prologue and summary.csv writer
