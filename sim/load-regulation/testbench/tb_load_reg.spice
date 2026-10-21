@@ -2,10 +2,13 @@
 *
 * Load regulation over the ratified 0-50 mA window (README.md Target
 * specification, "Load reg (0-50 mA)" row): a single in-run .dc sweep of
-* the commanded load current from 1 mA to 50 mA (2-point sweep, endpoints
-* only) captures both ends within one ngspice invocation per PVT point --
-* see tb.json's "analyses" field. EN is tied to VIN at instantiation
-* (enabled).
+* the commanded load current from 1 mA to 50 mA captures both ends within
+* one ngspice invocation per PVT point -- see tb.json's "analyses" field.
+* The sweep is 8 points in 7 mA steps (#472), read at its endpoints (points
+* 0 and 7): a single 1 mA -> 50 mA jump lets Newton land on the pass-device-
+* off state at ss / -40 C / 2.97 V (Vout 0.145 V, 4.98 mA delivered), while
+* the same sweep in 24.5 mA, 7 mA or 1 mA steps stays on the physical
+* branch. EN is tied to VIN at instantiation (enabled).
 Vsup VIN 0 DC {vdd_val}
 * --- Reference (issue #174 / DR-0021) ------------------------------------
 * VREF is a TOP-LEVEL PORT of ldo_core as of #174; it used to be an internal
