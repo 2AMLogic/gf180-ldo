@@ -66,6 +66,7 @@ sys.path.insert(0, str(LG_TB))
 import netlist_variants as nv  # noqa: E402
 from harness.corners import build_grid, resolve_corners  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
+from harness.pvt_log import parse_meas_lines  # noqa: E402
 from harness.runner import (  # noqa: E402
     ngspice_binary_sha256,
     ngspice_version,
@@ -98,9 +99,6 @@ FIT_SSR_HI_V = 1.0
 
 ARMS = ("internal", "ideal")
 
-MEAS_RE = re.compile(r"^\s*(m_[a-z0-9_]+)\s*=\s*([-+0-9.eE]+|failed)", re.M)
-
-
 @dataclass
 class Point:
     corner_id: str
@@ -113,9 +111,10 @@ class Point:
 
 
 def parse_meas(text: str) -> dict[str, float | None]:
-    out: dict[str, float | None] = {}
-    for name, val in MEAS_RE.findall(text):
-        out[name] = None if val == "failed" else float(val)
+    """Measurements by name; a `failed` or non-finite value maps to ``None``."""
+    parsed = parse_meas_lines(text)
+    out: dict[str, float | None] = dict(parsed.values)
+    out.update(dict.fromkeys(parsed.failed + parsed.nonfinite))
     return out
 
 
