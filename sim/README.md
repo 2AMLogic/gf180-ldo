@@ -430,7 +430,7 @@ hand).
 | `amp-openloop` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | PASS, 81/81 |
 | `psrr-dc` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | PASS, 81/81 |
 | `psrr-vs-freq` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | FAIL, 42/45 (DR-0031, #302) |
-| `psrr-vs-freq-50ma` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | FAIL, 41/45 (DR-0031, #302; `ss_-40c_2.97v` non-physical, #472) |
+| `psrr-vs-freq-50ma` | `testbench/klt_run.py` | `20261021-034534-0165a0b` | FAIL, 42/45 (DR-0031, #302; `ss_-40c_2.97v` physical since the supply-gated sink, #478) |
 
 For these three, running the same request on the image's `c6d73a3` and on the
 staged `f6eeac7` gave a byte-identical `summary.csv`: the PDK revision alone
