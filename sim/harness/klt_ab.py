@@ -48,13 +48,14 @@ def _sha256(p: Path) -> str:
 
 
 def run_ab(job_factory, dut: Path, baseline_ref: str | None, dest: Path, repo: Path,
-           backend: str | None = None, log=print) -> dict[str, dict]:
+           backend: str | None = None, log=print,
+           dut_rel: str = "design/netlist/ldo_core.spice") -> dict[str, dict]:
     dest.mkdir(parents=True, exist_ok=True)
     duts = {"new": Path(dut)}
     if baseline_ref:
         base = dest / "baseline-dut.spice"
         base.write_bytes(subprocess.run(
-            ["git", "-C", str(repo), "show", f"{baseline_ref}:design/netlist/ldo_core.spice"],
+            ["git", "-C", str(repo), "show", f"{baseline_ref}:{dut_rel}"],
             check=True, capture_output=True).stdout)
         duts["baseline"] = base
     with tempfile.TemporaryDirectory(prefix="klt-ab-") as tmp:

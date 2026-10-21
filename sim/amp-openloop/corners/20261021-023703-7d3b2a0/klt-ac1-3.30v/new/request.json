@@ -1,0 +1,225 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "fs",
+        "sections": [
+          "fs",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "sf",
+        "sections": [
+          "sf",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ff",
+        "sections": [
+          "typical",
+          "res_ff",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ss",
+        "sections": [
+          "typical",
+          "res_ss",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "bjt_ff",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_ff",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "bjt_ss",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_ss",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "temperature_c": [
+      -40.0,
+      27.0,
+      125.0
+    ]
+  },
+  "analysis": {
+    "kind": "ac",
+    "args": "dec 40 0.1 1e9"
+  },
+  "measurements": [
+    {
+      "name": "a0_db",
+      "spice": ".meas ac a0_db find vdb(vg1) at=0.1"
+    },
+    {
+      "name": "ugbw_hz",
+      "spice": ".meas ac ugbw_hz when vdb(vg1)=0 fall=1"
+    },
+    {
+      "name": "ph_ugbw",
+      "spice": ".meas ac ph_ugbw find vp(vg1) when vdb(vg1)=0 fall=1"
+    },
+    {
+      "name": "g1k_db",
+      "spice": ".meas ac g1k_db find vdb(vg1) at=1k"
+    },
+    {
+      "name": "ph1k",
+      "spice": ".meas ac ph1k find vp(vg1) at=1k"
+    },
+    {
+      "name": "a0ll_db",
+      "spice": ".meas ac a0ll_db find vdb(vg2) at=0.1"
+    },
+    {
+      "name": "g1kll_db",
+      "spice": ".meas ac g1kll_db find vdb(vg2) at=1k"
+    },
+    {
+      "name": "a0dr_db",
+      "spice": ".meas ac a0dr_db find vdb(vg3) at=0.1"
+    },
+    {
+      "name": "g1kdr_db",
+      "spice": ".meas ac g1kdr_db find vdb(vg3) at=1k"
+    },
+    {
+      "name": "apk_db",
+      "spice": ".meas ac apk_db max vdb(vg1) from=2e5 to=5e6"
+    },
+    {
+      "name": "a200k_db",
+      "spice": ".meas ac a200k_db find vdb(vg1) at=2e5"
+    },
+    {
+      "name": "apkll_db",
+      "spice": ".meas ac apkll_db max vdb(vg2) from=2e5 to=5e6"
+    },
+    {
+      "name": "a200kll_db",
+      "spice": ".meas ac a200kll_db find vdb(vg2) at=2e5"
+    },
+    {
+      "name": "ugbw_khz",
+      "spice": ".meas ac ugbw_khz param='ugbw_hz/1e3'"
+    },
+    {
+      "name": "pm_deg",
+      "spice": ".meas ac pm_deg param='180 + ph_ugbw'"
+    },
+    {
+      "name": "gain_1k_db",
+      "spice": ".meas ac gain_1k_db param='g1k_db'"
+    },
+    {
+      "name": "phase_1k_deg",
+      "spice": ".meas ac phase_1k_deg param='ph1k'"
+    },
+    {
+      "name": "a0_lightload_db",
+      "spice": ".meas ac a0_lightload_db param='a0ll_db'"
+    },
+    {
+      "name": "gain_1k_lightload_db",
+      "spice": ".meas ac gain_1k_lightload_db param='g1kll_db'"
+    },
+    {
+      "name": "a0_dropout_db",
+      "spice": ".meas ac a0_dropout_db param='a0dr_db'"
+    },
+    {
+      "name": "gain_1k_dropout_db",
+      "spice": ".meas ac gain_1k_dropout_db param='g1kdr_db'"
+    },
+    {
+      "name": "peak_excess_db",
+      "spice": ".meas ac peak_excess_db param='apk_db - a200k_db'"
+    },
+    {
+      "name": "peak_excess_lightload_db",
+      "spice": ".meas ac peak_excess_lightload_db param='apkll_db - a200kll_db'"
+    }
+  ],
+  "options": {
+    "timeout_s": 1800,
+    "keep_artifacts": true,
+    "stage_model_inputs": true,
+    "ngspice_init": [
+      "set units=degrees",
+      "set numdgt=10",
+      "set measureprec=10"
+    ]
+  }
+}

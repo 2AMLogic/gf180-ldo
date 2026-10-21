@@ -1,0 +1,104 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "fs",
+        "sections": [
+          "fs",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "sf",
+        "sections": [
+          "sf",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "temperature_c": [
+      -40.0,
+      27.0,
+      125.0
+    ]
+  },
+  "analysis": {
+    "kind": "ac",
+    "args": "dec 20 10 10meg"
+  },
+  "measurements": [
+    {
+      "name": "vout_1k",
+      "spice": ".meas ac vout_1k FIND vdb(vout) AT=1k"
+    },
+    {
+      "name": "vout_100k",
+      "spice": ".meas ac vout_100k FIND vdb(vout) AT=100k"
+    },
+    {
+      "name": "psrr_1k_db",
+      "spice": ".meas ac psrr_1k_db param='-vout_1k'"
+    },
+    {
+      "name": "psrr_100k_db",
+      "spice": ".meas ac psrr_100k_db param='-vout_100k'"
+    }
+  ],
+  "options": {
+    "timeout_s": 1800,
+    "keep_artifacts": true,
+    "stage_model_inputs": true,
+    "ngspice_init": [
+      "set numdgt=10",
+      "set measureprec=10"
+    ]
+  }
+}

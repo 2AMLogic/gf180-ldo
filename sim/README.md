@@ -343,7 +343,7 @@ part of what the bash driver's ladder-exhaustion *gate* needed to port —
 corner outright the same way, they just do not also classify/census the
 rung for corners that pass.
 
-## Re-qualification at the pinned open_pdks through `klt sim` (#464, #467)
+## Re-qualification at the pinned open_pdks through `klt sim` (#464, #467, #468)
 
 `sim/harness/pdk.py` pins open_pdks `f6eeac7`. The batch fleet's image carries
 a different revision (`c6d73a3` when #467 checked: `worker_environment.pdk.stamp_text`
@@ -360,19 +360,50 @@ lines over it and the measurements and bounds stay in `tb.json`. It maps a
 results to a `.meas … param=` card (a card's result is a printed scalar, not a
 vector a later `let` can read), and any other `measure` entry to an `expr`,
 with `m_<name>` references and the bench's own `<kind>1.` plot qualifiers
-rewritten. A bench that chains several analyses is refused by name rather than
-approximated.
+rewritten. A single-request bench that reads a plot its analysis does not
+produce is refused by name rather than approximated.
+
+A bench that chains analyses in one `.control` block (`op`, `ac dec …`,
+`ac lin 1 1k 1k`) cannot be one request, because `klt sim` runs one analysis per
+corner. `tb_adapter.states()` splits it into one request per analysis and sends
+each `measure` entry to the analysis whose plot it reads (`ac1.x` and `meas ac`
+results to `ac1`; an unqualified vector read to the last analysis, ngspice's
+current plot); an entry that reads two analyses is refused. These fragments take
+their supply from `.param vdd_val`, and the fleet's worker answers a swept
+`corners.params` axis with `params_unsupported_worker`, so each supply point is
+its own request with `vdd_val` written into the body: a 3-supply bench is
+`states x 3` requests, and the driver merges the values per corner. `klt_run.py`
+leaves `summary.csv` and the per-request reports and logs under
+`corners/<record-id>/klt-<state>-<vin>v/`; `PYTHONPATH=sim python3 -m
+harness.klt_record <slug> --record-id <id>` turns them into the record and
+netlist snapshot, graded with `report.evaluate_checks`, and writes the
+old-vs-new table against the newest earlier record (a *Reading* is written by
+hand).
 
 | bench | driver | latest record at `f6eeac7` (batch) | verdict |
 |---|---|---|---|
 | `dropout-vs-load` | `testbench/klt_run.py` | `20261021-013226-7c57744` | FAIL, 22/27 (#472) |
 | `line-regulation` | `testbench/klt_run.py` | `20261021-013226-7c57744` | FAIL, 25/27 (#472) |
 | `load-regulation` | `testbench/klt_run.py` | `20261021-013226-7c57744` | FAIL, 80/81 (#472) |
+| `amp-openloop` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | PASS, 81/81 |
+| `psrr-dc` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | PASS, 81/81 |
+| `psrr-vs-freq` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | FAIL, 42/45 (DR-0031, #302) |
+| `psrr-vs-freq-50ma` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | FAIL, 41/45 (DR-0031, #302; `ss_-40c_2.97v` non-physical, #472) |
 
 For these three, running the same request on the image's `c6d73a3` and on the
 staged `f6eeac7` gave a byte-identical `summary.csv`: the PDK revision alone
 moved no number. The failures are DUT movement against the previous-DUT
 records, reproduce in a single-corner local run, and are tracked in #472.
+
+`amp-openloop` and `psrr-dc` measure `error_amp.spice`, which has not changed
+since their previous records, so those two are same-DUT comparisons: the DC,
+gain and headroom measurements agree with the earlier local records to within
+their 6-digit rounding and the AC-crossing ones (`ugbw_khz`, `pm_deg`,
+`peak_excess_db`) move by at most 0.7 %, with no verdict change. A single-corner
+local run of the same request against the c6d73a3 and f6eeac7 trees returned
+identical values, so that residual is not the PDK revision. The two PSRR benches
+measure `ldo_core.spice`, which has moved since their previous records, so there
+is no same-DUT record to compare against.
 
 ## Interim evidence note (for #4, device characterization)
 

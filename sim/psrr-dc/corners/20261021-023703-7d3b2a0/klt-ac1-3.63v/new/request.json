@@ -1,0 +1,193 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "fs",
+        "sections": [
+          "fs",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "sf",
+        "sections": [
+          "sf",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ff",
+        "sections": [
+          "typical",
+          "res_ff",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ss",
+        "sections": [
+          "typical",
+          "res_ss",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "bjt_ff",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_ff",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "bjt_ss",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_ss",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "temperature_c": [
+      -40.0,
+      27.0,
+      125.0
+    ]
+  },
+  "analysis": {
+    "kind": "ac",
+    "args": "dec 20 1 1e6"
+  },
+  "measurements": [
+    {
+      "name": "gpsr10_db",
+      "spice": ".meas ac gpsr10_db find vdb(vg1) at=10"
+    },
+    {
+      "name": "gpsr100_db",
+      "spice": ".meas ac gpsr100_db find vdb(vg1) at=100"
+    },
+    {
+      "name": "gpsr1k_db",
+      "spice": ".meas ac gpsr1k_db find vdb(vg1) at=1k"
+    },
+    {
+      "name": "gpsr10k_db",
+      "spice": ".meas ac gpsr10k_db find vdb(vg1) at=10k"
+    },
+    {
+      "name": "gpsr100k_db",
+      "spice": ".meas ac gpsr100k_db find vdb(vg1) at=100k"
+    },
+    {
+      "name": "adiff1k_db",
+      "spice": ".meas ac adiff1k_db find vdb(vg2) at=1k"
+    },
+    {
+      "name": "adiff10k_db",
+      "spice": ".meas ac adiff10k_db find vdb(vg2) at=10k"
+    },
+    {
+      "name": "adiff100k_db",
+      "spice": ".meas ac adiff100k_db find vdb(vg2) at=100k"
+    },
+    {
+      "name": "gpsr_1k_db",
+      "spice": ".meas ac gpsr_1k_db param='gpsr1k_db'"
+    },
+    {
+      "name": "gpsr_100k_db",
+      "spice": ".meas ac gpsr_100k_db param='gpsr100k_db'"
+    },
+    {
+      "name": "adiff_1k_db",
+      "spice": ".meas ac adiff_1k_db param='adiff1k_db'"
+    },
+    {
+      "name": "adiff_100k_db",
+      "spice": ".meas ac adiff_100k_db param='adiff100k_db'"
+    },
+    {
+      "name": "psrr_amp_1k_db",
+      "spice": ".meas ac psrr_amp_1k_db param='adiff1k_db - gpsr1k_db'"
+    },
+    {
+      "name": "psrr_ldo_1k_db",
+      "spice": ".meas ac psrr_ldo_1k_db param='adiff1k_db + (20*log10(abs(2.0/3.0)))'"
+    },
+    {
+      "name": "psrr_ldo_10k_db",
+      "spice": ".meas ac psrr_ldo_10k_db param='adiff10k_db + (20*log10(abs(2.0/3.0)))'"
+    }
+  ],
+  "options": {
+    "timeout_s": 1800,
+    "keep_artifacts": true,
+    "stage_model_inputs": true,
+    "ngspice_init": [
+      "set units=degrees",
+      "set numdgt=10",
+      "set measureprec=10"
+    ]
+  }
+}
