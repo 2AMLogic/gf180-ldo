@@ -2,6 +2,11 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-21
+
+- **PR #462**: refactor: hoist grid rollup and CSV writer into harness.pvt_log
+- **Issue #461** (closed): Dedup rollup/write_csv between enable-shutdown and current-limit summarize.py
+
 ### 2026-10-20
 
 - **PR #431**: feat(sim): pin PDK to open_pdks f6eeac7 via ciel and refuse mismatched trees
