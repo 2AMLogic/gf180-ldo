@@ -194,6 +194,21 @@ class TestRowParsing(unittest.TestCase):
                 "ROW 0.0001 3.3e-07 0.5 1.7994 147.821 300220 -92.307"
             )
 
+    def test_a_zero_vout_or_dcgain_is_kept_not_turned_into_nan(self):
+        # `_f(tok) or nan` treated a legitimate 0.0 as missing.
+        line = self.FULL.replace("vout_v=1.7994", "vout_v=0").replace(
+            "dcgain_db=147.821", "dcgain_db=0.0")
+        kw = sweep.base_row_kwargs(sweep.parse_row_fields(line))
+        self.assertEqual(kw["vout_v"], 0.0)
+        self.assertEqual(kw["dcgain_db"], 0.0)
+
+    def test_an_unparsable_vout_or_dcgain_is_nan(self):
+        line = self.FULL.replace("vout_v=1.7994", "vout_v=").replace(
+            "dcgain_db=147.821", "dcgain_db=")
+        kw = sweep.base_row_kwargs(sweep.parse_row_fields(line))
+        self.assertTrue(math.isnan(kw["vout_v"]))
+        self.assertTrue(math.isnan(kw["dcgain_db"]))
+
     def test_the_field_list_matches_the_decks_own_echo(self):
         text = (REPO_ROOT / "sim" / "loop-stability" / "testbench"
                 / "tb_loop_stability.spice.in").read_text()

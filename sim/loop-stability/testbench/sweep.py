@@ -314,6 +314,13 @@ ROW_FIELDS = (
 )
 
 
+def nan_or(tok: str) -> float:
+    """``_f(tok)``, but an unparsable token becomes NaN. A legitimate 0.0 is kept
+    (``_f(tok) or nan`` would turn it into NaN)."""
+    v = _f(tok)
+    return float("nan") if v is None else v
+
+
 def parse_row_fields(line: str) -> dict[str, str]:
     """Parse one ``ROW k=v k=v ...`` line against this module's ``ROW_FIELDS``.
 
@@ -429,6 +436,22 @@ def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path
     return pvt, rows, err
 
 
+def base_row_kwargs(f: dict[str, str]) -> dict[str, float | None]:
+    """Row fields coerced from a parsed ``ROW`` line that every sweep shares."""
+    return dict(
+        ceff_f=float(f["ceff_f"]),
+        esr_ohm=float(f["esr_ohm"]),
+        vout_v=nan_or(f["vout_v"]),
+        dcgain_db=nan_or(f["dcgain_db"]),
+        f0_hz=_f(f["f0_hz"]),
+        phase_at_f0_deg=_f(f["phase_at_f0_deg"]),
+        f180_hz=_f(f["f180_hz"]),
+        gain_at_f180_db=_f(f["gain_at_f180_db"]),
+        f0_rising_hz=_f(f["f0_rising_hz"]),
+        resurgence_db=_f(f["resurgence_db"]),
+    )
+
+
 def rows_from_log(pvt, text: str, expected: int, log: Path):
     """Parse a corner's ``ROW`` lines and apply the regulating-branch check.
 
@@ -451,16 +474,7 @@ def rows_from_log(pvt, text: str, expected: int, log: Path):
                 temp_c=pvt.temp_c,
                 vin_v=pvt.vdd,
                 iload_a=float(f["iload_a"]),
-                ceff_f=float(f["ceff_f"]),
-                esr_ohm=float(f["esr_ohm"]),
-                vout_v=_f(f["vout_v"]) or float("nan"),
-                dcgain_db=_f(f["dcgain_db"]) or float("nan"),
-                f0_hz=_f(f["f0_hz"]),
-                phase_at_f0_deg=_f(f["phase_at_f0_deg"]),
-                f180_hz=_f(f["f180_hz"]),
-                gain_at_f180_db=_f(f["gain_at_f180_db"]),
-                f0_rising_hz=_f(f["f0_rising_hz"]),
-                resurgence_db=_f(f["resurgence_db"]),
+                **base_row_kwargs(f),
             )
         )
     if len(rows) != expected:
@@ -486,23 +500,33 @@ def rows_from_log(pvt, text: str, expected: int, log: Path):
     return rows, None
 
 
+def print_curve_log(deck_text: str, header: str, log: Path, deck: Path,
+                    cwd: Path | None = None) -> Path:
+    """Splice ``print tdb tph`` ahead of the ``ROW`` echo, run the single-config
+    deck once and write ``header`` + the shared column note + output to ``log``.
+    Shared by every sweep's ``run_curve()``."""
+    deck.write_text(deck_text.replace('      echo "ROW', "      print tdb tph\n" + '      echo "ROW'))
+    proc = subprocess.run(["ngspice", "-b", str(deck)], capture_output=True, text=True,
+                          cwd=None if cwd is None else str(cwd))
+    log.write_text(
+        header
+        + "* the two printed columns after the frequency are |T| in dB and "
+        "unwrapped phase(T) in degrees\n"
+        + proc.stdout + proc.stderr
+    )
+    return log
+
+
 def run_curve(pvt, pdk, row: Row, ac_dec, logdir: Path, workdir: Path, suffix: str) -> Path:
     """Re-run one single config with the whole T(f) curve printed to the log."""
     text = render_deck(pvt, pdk, [row.iload_a], [row.ceff_f], [row.esr_ohm], ac_dec)
-    text = text.replace('      echo "ROW', "      print tdb tph\n" + '      echo "ROW')
-    deck = workdir / f"{pvt.corner_id}_{suffix}.spice"
-    deck.write_text(text)
-    log = logdir / f"{pvt.corner_id}_{suffix}.log"
-    proc = subprocess.run(["ngspice", "-b", str(deck)], capture_output=True, text=True)
     header = (
         f"* full loop-gain curve T(f) at the {suffix.replace('-', ' ')} point of this record\n"
         f"* corner={pvt.corner_id} iload={fmt_ma(row.iload_a)} "
         f"ceff={fmt_uf(row.ceff_f)} esr={fmt_esr(row.esr_ohm)}\n"
-        f"* the two printed columns after the frequency are |T| in dB and "
-        f"unwrapped phase(T) in degrees\n"
     )
-    log.write_text(header + proc.stdout + proc.stderr)
-    return log
+    return print_curve_log(text, header, logdir / f"{pvt.corner_id}_{suffix}.log",
+                           workdir / f"{pvt.corner_id}_{suffix}.spice")
 
 
 # ---------------------------------------------------------------------------
