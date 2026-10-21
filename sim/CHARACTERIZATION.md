@@ -19,9 +19,9 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 | Input | N/A | N/A | see note below |
 | Output | FAIL | STALE | `sim/mc-output-accuracy/records/20260905-223503-3093ea1.md` (+ 3 more, see detail) |
 | Load | N/A | N/A | see note below |
-| Dropout @ 50 mA | FAIL | fresh | `sim/dropout-vs-load/records/20261021-013226-7c57744.md` |
-| Line reg | FAIL | fresh | `sim/line-regulation/records/20261021-013226-7c57744.md` |
-| Load reg (0–50 mA) | FAIL | fresh | `sim/load-regulation/records/20261021-013226-7c57744.md` |
+| Dropout @ 50 mA | PASS | fresh | `sim/dropout-vs-load/records/20261021-031411-06b3540.md` |
+| Line reg | FAIL | fresh | `sim/line-regulation/records/20261021-032652-06b3540.md` |
+| Load reg (0–50 mA) | PASS | fresh | `sim/load-regulation/records/20261021-031815-06b3540.md` |
 | Load transient | PASS | STALE | `sim/load-transient/records/20260905-202554-3093ea1.md` |
 | PSRR | FAIL | fresh | `sim/psrr-dc/records/20261021-023703-7d3b2a0.md` (+ 2 more, see detail) |
 | Iq (excluding load current) | MIXED | fresh | `sim/quiescent-current/records/20261020-pdk-f6eeac7-iq.md` (+ 1 more, see detail) |
@@ -51,10 +51,10 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
   - Overall: PASS
 - `amp-openloop` — deterministic systematic-offset term: `sim/amp-openloop/records/20261021-023703-7d3b2a0.md` — **PASS**, fresh (matches current `error_amp`)
   - Overall: PASS
-- `line-regulation` — counted inside the window, not added to it: `sim/line-regulation/records/20261021-013226-7c57744.md` — **FAIL**, fresh (matches current `ldo_core`)
+- `line-regulation` — counted inside the window, not added to it: `sim/line-regulation/records/20261021-032652-06b3540.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
-- `load-regulation` — counted inside the window, not added to it: `sim/load-regulation/records/20261021-013226-7c57744.md` — **FAIL**, fresh (matches current `ldo_core`)
-  - Overall: FAIL
+- `load-regulation` — counted inside the window, not added to it: `sim/load-regulation/records/20261021-031815-06b3540.md` — **PASS**, fresh (matches current `ldo_core`)
+  - Overall: PASS
 
 ### Load
 
@@ -66,10 +66,10 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 **Ratified target**: < 300 mV — binds ss / 125 °C / Vin = 2.10 V (measured, note 4)
 
-**Verdict**: FAIL  **Fresh**: fresh
+**Verdict**: PASS  **Fresh**: fresh
 
-- `dropout-vs-load` — verdict rests on DR-0020's measurement definition (PROPOSED, not ratified): dropout read at the regulation knee. The ratified < 300 mV bound itself is unchanged. If the operator rejects DR-0020 this row reverts to FAIL on the superseded fixed-headroom metric: `sim/dropout-vs-load/records/20261021-013226-7c57744.md` — **FAIL**, fresh (matches current `ldo_core`)
-  - Overall: FAIL
+- `dropout-vs-load` — verdict rests on DR-0020's measurement definition (PROPOSED, not ratified): dropout read at the regulation knee. The ratified < 300 mV bound itself is unchanged. If the operator rejects DR-0020 this row reverts to FAIL on the superseded fixed-headroom metric: `sim/dropout-vs-load/records/20261021-031411-06b3540.md` — **PASS**, fresh (matches current `ldo_core`)
+  - Overall: PASS
 
 ### Line reg
 
@@ -77,17 +77,17 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 **Verdict**: FAIL  **Fresh**: fresh
 
-- `line-regulation`: `sim/line-regulation/records/20261021-013226-7c57744.md` — **FAIL**, fresh (matches current `ldo_core`)
+- `line-regulation`: `sim/line-regulation/records/20261021-032652-06b3540.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 
 ### Load reg (0–50 mA)
 
 **Ratified target**: < 1% (18 mV), counted inside the ±2% accuracy window rather than in addition to it
 
-**Verdict**: FAIL  **Fresh**: fresh
+**Verdict**: PASS  **Fresh**: fresh
 
-- `load-regulation`: `sim/load-regulation/records/20261021-013226-7c57744.md` — **FAIL**, fresh (matches current `ldo_core`)
-  - Overall: FAIL
+- `load-regulation`: `sim/load-regulation/records/20261021-031815-06b3540.md` — **PASS**, fresh (matches current `ldo_core`)
+  - Overall: PASS
 
 ### Load transient
 
@@ -183,7 +183,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 ## Tally
 
-16 ratified rows: 12 testable (5 PASS, 5 FAIL, 2 MIXED, 0 UNKNOWN), 4 N/A.
+16 ratified rows: 12 testable (7 PASS, 3 FAIL, 2 MIXED, 0 UNKNOWN), 4 N/A.
 
 Freshness among the 12 testable rows: 8 fresh, 4 stale, 0 unknown.
 
