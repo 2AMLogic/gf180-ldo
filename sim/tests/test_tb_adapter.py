@@ -132,6 +132,96 @@ class JobGrid(unittest.TestCase):
         self.assertIs(req["options"]["stage_model_inputs"], True)
 
 
+class ParamExpr(unittest.TestCase):
+    def test_db_becomes_log10(self):
+        self.assertEqual(ta.param_expr("a + db(2.0/3.0)"), "a + (20*log10(abs(2.0/3.0)))")
+
+    def test_nested_and_vdb_untouched(self):
+        self.assertEqual(ta.param_expr("db(abs(x)) - db(y)"),
+                         "(20*log10(abs(abs(x)))) - (20*log10(abs(y)))")
+        self.assertEqual(ta.param_expr("vdb(vg1)"), "vdb(vg1)")
+
+
+class States(unittest.TestCase):
+    """Benches that chain ``op`` / ``ac`` in one ``.control`` block (#468)."""
+
+    def _by_state(self, slug):
+        sts, init = ta.states(_tb(slug))
+        return {s.name: s for s in sts}, init
+
+    def test_amp_openloop_splits_into_op_and_ac(self):
+        sts, init = self._by_state("amp-openloop")
+        self.assertEqual(list(sts), ["op1", "ac1"])   # the trailing `ac lin 1 1k 1k` measures nothing
+        self.assertEqual(init, ["set units=degrees"])
+        self.assertEqual(sts["ac1"].analysis, {"kind": "ac", "args": "dec 40 0.1 1e9"})
+        by = {m["name"]: m for m in sts["op1"].specs}
+        self.assertEqual(by["iq_ua"], {"name": "iq_ua", "expr": "-i(vsup1)*1e6"})
+        by = {m["name"]: m for m in sts["ac1"].specs}
+        self.assertEqual(by["pm_deg"]["spice"], ".meas ac pm_deg param='180 + ph_ugbw'")
+        # `a0_db: ac1.a0_db` is the card itself, not a second measurement of that name
+        self.assertEqual([m["name"] for m in sts["ac1"].specs].count("a0_db"), 1)
+
+    def test_psrr_dc_unqualified_vector_reads_go_to_the_last_analysis(self):
+        sts, _ = self._by_state("psrr-dc")
+        self.assertEqual(list(sts), ["ac1", "ac2"])
+        self.assertEqual(sts["ac2"].names, ["gpsr_1k_vv", "psrr_ldo_1k_tracking_db"])
+        self.assertEqual(sts["ac2"].analysis["args"], "lin 1 1k 1k")
+        by = {m["name"]: m for m in sts["ac1"].specs}
+        self.assertEqual(by["psrr_ldo_1k_db"]["spice"],
+                         ".meas ac psrr_ldo_1k_db param='adiff1k_db + (20*log10(abs(2.0/3.0)))'")
+
+    def test_psrr_vs_freq_card_results_follow_their_analysis(self):
+        for slug in ("psrr-vs-freq", "psrr-vs-freq-50ma"):
+            sts, _ = self._by_state(slug)
+            self.assertEqual(sts["op1"].names, ["dc_vout_v", "dc_iload_ma"], slug)
+            self.assertEqual(sts["ac1"].names, ["psrr_1k_db", "psrr_100k_db"], slug)
+
+    def test_every_manifest_measure_lands_in_exactly_one_state(self):
+        for slug in ("amp-openloop", "psrr-dc", "psrr-vs-freq", "psrr-vs-freq-50ma"):
+            tb = _tb(slug)
+            sts, _ = ta.states(tb)
+            got = sorted(n for s in sts for n in s.names)
+            self.assertEqual(got, sorted(tb.measure), slug)
+            for s in sts:
+                self.assertTrue(set(s.names) <= {m["name"] for m in s.specs}, (slug, s.name))
+
+    def test_an_entry_reading_two_analyses_is_refused(self):
+        tb = dataclasses.replace(_tb("amp-openloop"), measure={"bad": "op1.v(a) - ac1.a0_db"})
+        with self.assertRaises(ta.UnsupportedTb):
+            ta.states(tb)
+
+    def test_a_plot_the_deck_never_runs_is_refused(self):
+        tb = dataclasses.replace(_tb("amp-openloop"), measure={"bad": "tran1.v(a)"})
+        with self.assertRaises(ta.UnsupportedTb):
+            ta.states(tb)
+
+
+class MultiStateJobs(unittest.TestCase):
+    def test_grid_follows_the_manifests_corner_set(self):
+        # full = 9 process, mos = 5; x 3 T x 3 supplies
+        for slug, n in (("amp-openloop", 81), ("psrr-dc", 81),
+                        ("psrr-vs-freq", 45), ("psrr-vs-freq-50ma", 45)):
+            tb = _tb(slug)
+            js = ta.jobs(tb, "new", tb.design_netlists[0])
+            self.assertTrue(js, slug)
+            for j in js.values():
+                self.assertEqual(_grid(j), n, slug)
+
+    def test_supply_is_the_param_the_fragment_reads(self):
+        tb = _tb("amp-openloop")
+        req = ta.jobs(tb, "new", tb.design_netlists[0])["ac1"].request()
+        self.assertEqual(req["corners"]["params"], {"vdd_val": [2.97, 3.3, 3.63]})
+        self.assertNotIn("supply_v", req["corners"])
+        self.assertEqual(req["analysis"]["kind"], "ac")
+        self.assertIs(req["options"]["stage_model_inputs"], True)
+        self.assertEqual(req["options"]["ngspice_init"][0], "set units=degrees")
+
+    def test_only_collapses_every_state_to_one_point(self):
+        tb = _tb("psrr-dc")
+        for j in ta.jobs(tb, "new", tb.design_netlists[0], "tt,27,3.30").values():
+            self.assertEqual(_grid(j), 1)
+
+
 class Grade(unittest.TestCase):
     def test_bounds_and_missing_values(self):
         tb = _tb("load-regulation")
