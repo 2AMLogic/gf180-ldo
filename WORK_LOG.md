@@ -4,6 +4,10 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-10-21
 
+- **PR #491**: refactor(sim): share ROW coercion and curve capture between loop sweeps
+- **Issue #489** (closed): Dedup run_curve() and ROW coercion between loop-stability and soft-start-loop-gain sweep.py (falsy-zero NaN drift)
+- **PR #487**: sim(mc-output-accuracy): attribute the divider-identity residual to the soft-start FB injection element
+- **PR #481**: Bump Repo Skills 0.24.3 -> 0.24.7
 - **PR #486**: sim: re-qualify load-transient, startup and mc-output-accuracy at f6eeac7 via klt sim
 - **Issue #464** (closed): sim: add klt sim front ends and re-qualify the tb.json reference benches at open_pdks f6eeac7 (part of #430)
 - **Issue #469** (closed): sim: re-qualify transient and Monte Carlo benches load-transient, startup, mc-output-accuracy at f6eeac7 via klt sim (part of #464)

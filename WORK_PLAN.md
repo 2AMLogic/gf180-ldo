@@ -5,7 +5,7 @@
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
 
-- **#481**: Bump Repo Skills 0.24.3 -> 0.24.7
+_None._
 
 ## Very Important
 
@@ -32,19 +32,19 @@ Human-approved issues ready for implementation (`loom:issue`).
 
 Issues currently being built (`loom:building`).
 
-- **#469**: sim: re-qualify transient and Monte Carlo benches load-transient, startup, mc-output-accuracy at f6eeac7 via klt sim (part of #464)
+- **#492**: Dedup run_grid_klt() DC-seed retry driver and backend selection between loop sweeps
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
-_None._
+- **#490**: sim: attribute load-transient excursions to the DR-0034 pass width and the out-of-envelope output network
 
 ## Approved (Awaiting Merge)
 
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
-- **#481**: Bump Repo Skills 0.24.3 -> 0.24.7
+_None._
 
 ## Proposed
 
@@ -63,7 +63,8 @@ Issues carrying `loom:curated`.
 - **#366**: sim: route the remaining ratified-row PVT grid drivers (loop-stability, current-limit, enable-shutdown, soft-start) through klt_batch instead of local fan-out *(curated)*
 - **#448**: signoff: attest T1 items 1, 9 and 10 with klt signoff --attest envelopes *(curated)*
 - **#465**: sim: re-qualify loop-stability and soft-start reference records at open_pdks f6eeac7 (part of #430) *(curated)*
-- **#469**: sim: re-qualify transient and Monte Carlo benches load-transient, startup, mc-output-accuracy at f6eeac7 via klt sim (part of #464) *(curated)*
+- **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
+- **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -79,14 +80,14 @@ _None._
 
 | Bucket | Count |
 |------|-------|
-| Operator merge-risk holds | 1 |
+| Operator merge-risk holds | 0 |
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`) | 3 |
 | In Progress (`loom:building`) | 1 |
-| PRs awaiting review | 0 |
-| Approved PRs awaiting merge | 1 |
-| Curated | 14 |
+| PRs awaiting review | 1 |
+| Approved PRs awaiting merge | 0 |
+| Curated | 15 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
