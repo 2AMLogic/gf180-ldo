@@ -169,7 +169,7 @@ def job(tb: tbmod.Testbench, name: str, dut: Path, only: str | None = None,
         **kb.only_axes(only),
     }
     return kb.Job(name=name, body=body(tb), dut_netlist=dut, analysis=analysis,
-                  measurements=specs, supply_key=supply_key,
+                  measurements=specs, supply_key=supply_key, stage_model_inputs=True,
                   ngspice_init=(f"set numdgt={DIGITS}", f"set measureprec={DIGITS}"), **axes)
 
 
@@ -185,7 +185,9 @@ def grade(tb: tbmod.Testbench, values: dict) -> bool:
 def main(testbench_dir: Path, doc: str, argv=None) -> int:
     """The whole ``klt_run.py`` for a bench: grid -> fleet -> ``corners/<id>/``."""
     import argparse
+    import os
 
+    from . import pdk
     from .klt_ab import add_ab_args, run_ab, write_summary_csv
 
     repo = Path(__file__).resolve().parents[2]
@@ -193,6 +195,10 @@ def main(testbench_dir: Path, doc: str, argv=None) -> int:
     ap = argparse.ArgumentParser(description=doc, formatter_class=argparse.RawDescriptionHelpFormatter)
     add_ab_args(ap, repo)
     args = ap.parse_args(argv)
+    # Pin klt's PDK search to the harness-resolved, pin-checked tree: with two
+    # installs of the variant on the host klt otherwise takes the first match,
+    # and the client-side stamp it compares the worker's against is unavailable.
+    os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
     dest = tb.experiment_dir / "corners" / args.record_id
     results = run_ab(lambda n, d: job(tb, n, d, args.only), Path(args.dut), args.baseline_ref,
                      dest, repo, backend=args.backend)

@@ -126,6 +126,11 @@ class JobGrid(unittest.TestCase):
         self.assertEqual(req["analysis"]["kind"], "dc")
         self.assertEqual(req["corners"]["supply_v"], {"vsup": [3.3]})
 
+    def test_request_stages_the_submitters_models(self):
+        # Without this the batch image's own PDK revision runs, not the pinned one.
+        req = ta.job(_tb("load-regulation"), "new", DUT).request()
+        self.assertIs(req["options"]["stage_model_inputs"], True)
+
 
 class Grade(unittest.TestCase):
     def test_bounds_and_missing_values(self):
