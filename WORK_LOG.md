@@ -4,6 +4,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-10-21
 
+- **PR #494**: refactor(sim): share klt grid retry driver between loop sweeps
+- **Issue #492** (closed): Dedup run_grid_klt() DC-seed retry driver and backend selection between loop sweeps
 - **PR #491**: refactor(sim): share ROW coercion and curve capture between loop sweeps
 - **Issue #489** (closed): Dedup run_curve() and ROW coercion between loop-stability and soft-start-loop-gain sweep.py (falsy-zero NaN drift)
 - **PR #487**: sim(mc-output-accuracy): attribute the divider-identity residual to the soft-start FB injection element
