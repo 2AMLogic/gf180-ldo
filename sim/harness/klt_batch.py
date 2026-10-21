@@ -115,6 +115,9 @@ class Job:
     temps: tuple = TEMPS
     supplies: tuple = SUPPLIES
     timeout_s: int = 1800
+    #: ``options.ngspice_init`` lines (``set numdgt=10``, ...); empty leaves
+    #: ``klt``'s defaults. See ``tb_adapter.py``.
+    ngspice_init: tuple = ()
 
     def request(self) -> dict:
         return {
@@ -130,7 +133,8 @@ class Job:
             },
             "analysis": self.analysis,
             "measurements": self.measurements,
-            "options": {"timeout_s": self.timeout_s, "keep_artifacts": True},
+            "options": {"timeout_s": self.timeout_s, "keep_artifacts": True,
+                        **({"ngspice_init": list(self.ngspice_init)} if self.ngspice_init else {})},
         }
 
 
