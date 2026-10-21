@@ -115,6 +115,16 @@ class Job:
     temps: tuple = TEMPS
     supplies: tuple = SUPPLIES
     timeout_s: int = 1800
+    #: ``options.ngspice_init`` lines (``set numdgt=10``, ...); empty leaves
+    #: ``klt``'s defaults. See ``tb_adapter.py``.
+    ngspice_init: tuple = ()
+    #: ``options.stage_model_inputs``: ship the submitter's model files with
+    #: the job instead of resolving ``models`` on the runner image. Off-host
+    #: backends otherwise execute whatever PDK revision the image carries
+    #: (the batch image was at open_pdks ``c6d73a3`` when #467 checked), not
+    #: the revision ``sim/harness/pdk.py`` pins; a record that claims the pin
+    #: must stage. No effect on ``local``.
+    stage_model_inputs: bool = False
 
     def request(self) -> dict:
         return {
@@ -130,7 +140,9 @@ class Job:
             },
             "analysis": self.analysis,
             "measurements": self.measurements,
-            "options": {"timeout_s": self.timeout_s, "keep_artifacts": True},
+            "options": {"timeout_s": self.timeout_s, "keep_artifacts": True,
+                        **({"stage_model_inputs": True} if self.stage_model_inputs else {}),
+                        **({"ngspice_init": list(self.ngspice_init)} if self.ngspice_init else {})},
         }
 
 
