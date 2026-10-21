@@ -104,7 +104,8 @@ def body(enctl: str, rload: str, rforce: str) -> str:
 def job(state: str, tag: str, dut: Path, axes: dict) -> kb.Job:
     enctl, rload, rforce, analysis, measurements, timeout_s = STATES[state]
     return kb.Job(name=f"{state}-{tag}", body=body(enctl, rload, rforce), dut_netlist=dut,
-                  analysis=analysis, measurements=measurements, timeout_s=timeout_s, **axes)
+                  analysis=analysis, measurements=measurements, timeout_s=timeout_s,
+                  stage_model_inputs=True, **axes)
 
 
 def write_logs(per_state: dict, dest: Path) -> list[str]:

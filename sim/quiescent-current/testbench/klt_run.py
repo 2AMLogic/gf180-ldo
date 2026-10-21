@@ -41,7 +41,7 @@ def job(name: str, dut: Path, only=None) -> kb.Job:
     body = "\n".join([kb.DESIGN_PARAMS, kb.WNFLAG, (HERE / "klt_body.spice").read_text()])
     axes = {"process": PROCESS, **kb.only_axes(only)}
     return kb.Job(name=name, body=body, dut_netlist=dut, analysis={"kind": "op", "args": ""},
-                  measurements=MEASUREMENTS, supply_key="vsup", timeout_s=900, **axes)
+                  measurements=MEASUREMENTS, supply_key="vsup", timeout_s=900, stage_model_inputs=True, **axes)
 
 
 def grade(v: dict) -> bool:

@@ -381,8 +381,40 @@ pass/fail verdict differs from the same-DUT record at `c6d73a3…`:
 | `current-limit` | `20261020-pdk-f6eeac7-ilim` | `20261015-ilim-320-pvt` | no (63/63 points identical) |
 | `enable-shutdown` | `20261020-pdk-f6eeac7-en` | none (older DUT only) | not separable; all checks pass |
 
-The remaining reference benches are not yet re-qualified and still speak for
-`c6d73a3…` only; they are tracked in #464 (the `tb.json` benches, which first need a `klt sim` front end) and #465 (`loop-stability`, `soft-start`).
+The `tb.json` benches are re-qualified in the section below (#464, #467). The
+remaining benches (`loop-stability`, `soft-start`) are not yet re-qualified and
+still speak for `c6d73a3…` only; they are tracked in #465.
+
+## Re-qualification at the pinned open_pdks through `klt sim` (#464, #467)
+
+`sim/harness/pdk.py` pins open_pdks `f6eeac7`. The batch fleet's image carries
+a different revision (`c6d73a3` when #467 checked: `worker_environment.pdk.stamp_text`
+in a `klt sim` report), and an off-host `klt sim` executes the image's models
+unless the request sets `options.stage_model_inputs`. A record that claims the
+pin must therefore be run with the models staged and show
+`worker_environment.pdk.models_staged: true`; the harness adapter below sets it.
+
+A bench that declares itself in `tb.json` goes to the fleet through
+`sim/harness/tb_adapter.py`, which turns `tb.json` (grid, `analyses`, `measure`,
+`checks`) into a `klt_batch.Job`; the bench's `testbench/klt_run.py` is a few
+lines over it and the measurements and bounds stay in `tb.json`. It maps a
+`meas` analysis line to a `.meas` card, a `measure` entry built from card
+results to a `.meas … param=` card (a card's result is a printed scalar, not a
+vector a later `let` can read), and any other `measure` entry to an `expr`,
+with `m_<name>` references and the bench's own `<kind>1.` plot qualifiers
+rewritten. A bench that chains several analyses is refused by name rather than
+approximated.
+
+| bench | driver | latest record at `f6eeac7` (batch) | verdict |
+|---|---|---|---|
+| `dropout-vs-load` | `testbench/klt_run.py` | `20261021-013226-7c57744` | FAIL, 22/27 (#472) |
+| `line-regulation` | `testbench/klt_run.py` | `20261021-013226-7c57744` | FAIL, 25/27 (#472) |
+| `load-regulation` | `testbench/klt_run.py` | `20261021-013226-7c57744` | FAIL, 80/81 (#472) |
+
+For these three, running the same request on the image's `c6d73a3` and on the
+staged `f6eeac7` gave a byte-identical `summary.csv`: the PDK revision alone
+moved no number. The failures are DUT movement against the previous-DUT
+records, reproduce in a single-corner local run, and are tracked in #472.
 
 ## Interim evidence note (for #4, device characterization)
 

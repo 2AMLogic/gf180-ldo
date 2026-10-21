@@ -26,6 +26,7 @@ sys.path.insert(0, str(SIM_DIR))
 from harness import cli, corners, paths, report, runner, testbench  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
+    parse_meas_lines,
     read_measurements,
     report_flag,
     report_minmax,
@@ -1430,6 +1431,22 @@ class NonFiniteFailClosedTests(unittest.TestCase):
         self.assertEqual(["x"], bad)
         self.assertEqual({"y": 2.5}, runner.parse_measurements("m_x = 1e999\nm_y = 2.5"))
 
+    def test_shared_parser_tolerates_trailing_context_and_reports_failed(self):
+        """#470: one definition of a measurement line for all three consumers."""
+        text = (
+            "  m_t_start = 4.2e-03 targ= 1.0e-03 trig= 2.0e-04\n"
+            "m_t_late = failed\n"
+            "m_x = 1e999\n"
+        )
+        parsed = parse_meas_lines(text)
+        self.assertEqual({"m_t_start": 4.2e-03}, parsed.values)
+        self.assertEqual(["m_t_late"], parsed.failed)
+        self.assertEqual(["m_x"], parsed.nonfinite)
+        # runner strips the prefix and keeps its non-finite reporting
+        found, bad = runner.parse_measurements_checked(text)
+        self.assertEqual({"t_start": 4.2e-03}, found)
+        self.assertEqual(["x"], bad)
+
     def test_pvt_log_rejects_overflow_token(self):
         with tempfile.TemporaryDirectory() as d:
             log = Path(d) / "a.log"
@@ -2150,8 +2167,10 @@ class TestDropoutMeasuresTheRegulationKnee(unittest.TestCase):
 
         Guards that never appear in a record are guards nobody has run. Parse
         the newest dropout record and require a ``knee_uniqueness_mv`` column
-        reading zero at every corner -- otherwise the recorded dropout numbers
-        could be artifact interpolations and no test would notice.
+        in which every corner either reads zero or is graded FAIL -- otherwise
+        the recorded dropout numbers could be artifact interpolations and no
+        test would notice. (A corner that trips the guard is evidence the
+        guard works, as long as the record does not let it pass; #467.)
         """
         records = sorted((SIM_DIR / "dropout-vs-load" / "records").glob("*.md"))
         self.assertTrue(records, "no dropout-vs-load records committed")
@@ -2169,6 +2188,8 @@ class TestDropoutMeasuresTheRegulationKnee(unittest.TestCase):
             f"{records[-1].name} predates the #138 uniqueness guard",
         )
         idx = cols.index("knee_uniqueness_mv")
+        self.assertIn("pass/fail", cols, f"{records[-1].name} has no pass/fail column")
+        verdict_idx = cols.index("pass/fail")
 
         # Only the per-corner rows of the result table: the spread table that
         # follows has the same column count and also quotes corner-ids, so key
@@ -2183,12 +2204,13 @@ class TestDropoutMeasuresTheRegulationKnee(unittest.TestCase):
             if len(cells) != len(cols) or not corner_id.match(cells[0]):
                 continue
             rows += 1
-            self.assertEqual(
-                0.0,
-                float(cells[idx]),
-                f"{records[-1].name}: {cells[0]} crossed the -2% edge more "
-                "than once -- its dropout number may be an artifact",
-            )
+            if float(cells[idx]) != 0.0:
+                self.assertTrue(
+                    cells[verdict_idx].startswith("FAIL"),
+                    f"{records[-1].name}: {cells[0]} crossed the -2% edge more "
+                    "than once -- its dropout number may be an artifact, and "
+                    f"the record grades it {cells[verdict_idx]!r}, not FAIL",
+                )
         self.assertGreaterEqual(rows, 27, "expected the 27-point PVT grid")
 
 
