@@ -90,9 +90,10 @@ def only_axes(only: str | None) -> dict:
     return {"process": (proc,), "temps": (float(temp),), "supplies": (float(vin),)}
 
 
-def corner_id(c: dict, supply_key: str) -> str:
-    vin = float(c["params"][supply_key] if supply_key in (c.get("params") or {})
-                else c["supply_v"][supply_key])
+def corner_id(c: dict, supply_key: str, fixed_supply: float | None = None) -> str:
+    vin = (float(fixed_supply) if fixed_supply is not None
+           else float(c["params"][supply_key] if supply_key in (c.get("params") or {})
+                      else c["supply_v"][supply_key]))
     t = c["temperature_c"]
     t = int(t) if float(t).is_integer() else t
     return f"{c['process']}_{t}c_{vin:.2f}v"
@@ -125,6 +126,12 @@ class Job:
     #: the revision ``sim/harness/pdk.py`` pins; a record that claims the pin
     #: must stage. No effect on ``local``.
     stage_model_inputs: bool = False
+    #: The supply is written into ``body`` (``.param vdd_val=<v>``), not swept:
+    #: the request has no supply axis and ``supplies`` is the single value the
+    #: body carries, which names the corners. For a bench whose supply is a
+    #: ``.param`` the fragment's expressions read, on a backend whose worker
+    #: predates ``corners.params`` (it answers ``params_unsupported_worker``).
+    supply_in_body: bool = False
 
     def request(self) -> dict:
         return {
@@ -134,7 +141,8 @@ class Job:
             "models": {"pdk": "gf180mcuD", "lib": "libs.tech/ngspice/sm141064.ngspice"},
             "corners": {
                 "process": process_axis(self.process),
-                **({"params": {self.supply_param: list(self.supplies)}} if self.supply_param
+                **({} if self.supply_in_body
+                   else {"params": {self.supply_param: list(self.supplies)}} if self.supply_param
                    else {"supply_v": {self.supply_key: list(self.supplies)}}),
                 "temperature_c": list(self.temps),
             },
@@ -208,7 +216,7 @@ def collect(report: dict, job: Job, dest: Path, tag: str = "") -> dict[str, dict
     (dest / f"klt-report{tag}.json").write_text(json.dumps(redact(report), indent=1, sort_keys=True) + "\n")
     values: dict[str, dict] = {}
     for c in report.get("corners", []):
-        cid = corner_id(c, job.supply_key)
+        cid = corner_id(c, job.supply_key, job.supplies[0] if getattr(job, "supply_in_body", False) else None)
         values[cid] = {m["name"]: m.get("value") for m in c.get("measurements", [])}
         values[cid]["_status"] = c.get("status")
         values[cid]["_diagnostics"] = ";".join(d.get("code", "") for d in c.get("diagnostics", []))

@@ -14,6 +14,7 @@ from pathlib import Path
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
+from harness import klt_batch as kb  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
 from harness import testbench  # noqa: E402
 
@@ -197,29 +198,45 @@ class States(unittest.TestCase):
 
 
 class MultiStateJobs(unittest.TestCase):
-    def test_grid_follows_the_manifests_corner_set(self):
-        # full = 9 process, mos = 5; x 3 T x 3 supplies
-        for slug, n in (("amp-openloop", 81), ("psrr-dc", 81),
-                        ("psrr-vs-freq", 45), ("psrr-vs-freq-50ma", 45)):
+    def test_one_job_per_state_and_supply_over_the_manifests_corner_set(self):
+        # full = 9 process, mos = 5; x 3 T per request; 3 supplies; 2 states
+        for slug, n in (("amp-openloop", 27), ("psrr-dc", 27),
+                        ("psrr-vs-freq", 15), ("psrr-vs-freq-50ma", 15)):
             tb = _tb(slug)
             js = ta.jobs(tb, "new", tb.design_netlists[0])
-            self.assertTrue(js, slug)
+            self.assertEqual(len(js), 6, slug)
+            self.assertEqual({v for _, v in js}, {2.97, 3.3, 3.63}, slug)
             for j in js.values():
-                self.assertEqual(_grid(j), n, slug)
+                self.assertEqual(len(j.process) * len(j.temps), n, slug)
 
-    def test_supply_is_the_param_the_fragment_reads(self):
+    def test_the_supply_is_in_the_body_not_an_axis(self):
+        # The fleet worker rejects a swept corners.params axis (params_unsupported_worker).
         tb = _tb("amp-openloop")
-        req = ta.jobs(tb, "new", tb.design_netlists[0])["ac1"].request()
-        self.assertEqual(req["corners"]["params"], {"vdd_val": [2.97, 3.3, 3.63]})
+        j = ta.jobs(tb, "new", tb.design_netlists[0])[("ac1", 2.97)]
+        req = j.request()
+        self.assertNotIn("params", req["corners"])
         self.assertNotIn("supply_v", req["corners"])
+        self.assertIn(".param vdd_val=2.97\n", j.body)
         self.assertEqual(req["analysis"]["kind"], "ac")
         self.assertIs(req["options"]["stage_model_inputs"], True)
         self.assertEqual(req["options"]["ngspice_init"][0], "set units=degrees")
 
+    def test_corner_ids_carry_the_bodys_supply(self):
+        tb = _tb("psrr-vs-freq")
+        j = ta.jobs(tb, "new", tb.design_netlists[0])[("op1", 3.63)]
+        report = {"corners": [{"process": "ff", "temperature_c": -40.0, "status": "pass",
+                               "measurements": [{"name": "dc_vout_v", "value": 1.8}]}]}
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            vals = kb.collect(report, j, Path(tmp))
+        self.assertEqual(list(vals), ["ff_-40c_3.63v"])
+
     def test_only_collapses_every_state_to_one_point(self):
         tb = _tb("psrr-dc")
-        for j in ta.jobs(tb, "new", tb.design_netlists[0], "tt,27,3.30").values():
-            self.assertEqual(_grid(j), 1)
+        js = ta.jobs(tb, "new", tb.design_netlists[0], "tt,27,3.30")
+        self.assertEqual(sorted(js), [("ac1", 3.3), ("ac2", 3.3)])
+        for j in js.values():
+            self.assertEqual(len(j.process) * len(j.temps), 1)
 
 
 class Grade(unittest.TestCase):
