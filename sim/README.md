@@ -424,9 +424,9 @@ hand).
 
 | bench | driver | latest record at `f6eeac7` (batch) | verdict |
 |---|---|---|---|
-| `dropout-vs-load` | `testbench/klt_run.py` | `20261021-013226-7c57744` | FAIL, 22/27 (#472) |
-| `line-regulation` | `testbench/klt_run.py` | `20261021-013226-7c57744` | FAIL, 25/27 (#472) |
-| `load-regulation` | `testbench/klt_run.py` | `20261021-013226-7c57744` | FAIL, 80/81 (#472) |
+| `dropout-vs-load` | `testbench/klt_run.py` | `20261021-031411-06b3540` | PASS, 27/27 (#472) |
+| `line-regulation` | `testbench/klt_run.py` | `20261021-032652-06b3540` | FAIL, 26/27 (`ff_125c_3.30v`, DR-0039, #302) |
+| `load-regulation` | `testbench/klt_run.py` | `20261021-031815-06b3540` | PASS, 81/81 (#472) |
 | `amp-openloop` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | PASS, 81/81 |
 | `psrr-dc` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | PASS, 81/81 |
 | `psrr-vs-freq` | `testbench/klt_run.py` | `20261021-023703-7d3b2a0` | FAIL, 42/45 (DR-0031, #302) |
@@ -434,8 +434,11 @@ hand).
 
 For these three, running the same request on the image's `c6d73a3` and on the
 staged `f6eeac7` gave a byte-identical `summary.csv`: the PDK revision alone
-moved no number. The failures are DUT movement against the previous-DUT
-records, reproduce in a single-corner local run, and are tracked in #472.
+moved no number. The first re-qualification's failures reproduced in a
+single-corner local run; #472 traced them to the sweep path landing on a second
+DC root (pass device off) and changed the three sweeps (dropout Vin rising;
+load current in 7 mA steps, Vsup outer in `line-regulation`) without moving a
+bound. The remaining `line-regulation` failure is `ff_125c_3.30v`, DR-0039.
 
 `amp-openloop` and `psrr-dc` measure `error_amp.spice`, which has not changed
 since their previous records, so those two are same-DUT comparisons: the DC,

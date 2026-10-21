@@ -1,0 +1,169 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "fs",
+        "sections": [
+          "fs",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "sf",
+        "sections": [
+          "sf",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ff",
+        "sections": [
+          "typical",
+          "res_ff",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ss",
+        "sections": [
+          "typical",
+          "res_ss",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "bjt_ff",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_ff",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "bjt_ss",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_ss",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vsup": [
+        2.1
+      ]
+    },
+    "temperature_c": [
+      -40.0,
+      27.0,
+      125.0
+    ]
+  },
+  "analysis": {
+    "kind": "dc",
+    "args": "Vsup 1.75 2.20 0.005"
+  },
+  "measurements": [
+    {
+      "name": "vin_knee_v",
+      "spice": ".meas dc vin_knee_v WHEN v(vout)=1.764 RISE=1"
+    },
+    {
+      "name": "vin_knee_last_v",
+      "spice": ".meas dc vin_knee_last_v WHEN v(vout)=1.764 RISE=LAST"
+    },
+    {
+      "name": "vout_210_v",
+      "spice": ".meas dc vout_210_v FIND v(vout) AT=2.10"
+    },
+    {
+      "name": "i_vlmeas_210_a",
+      "spice": ".meas dc i_vlmeas_210_a FIND i(vlmeas) AT=2.10"
+    },
+    {
+      "name": "vdrop_mv",
+      "spice": ".meas dc vdrop_mv param='(vin_knee_v - 1.764)*1e3'"
+    },
+    {
+      "name": "knee_uniqueness_mv",
+      "spice": ".meas dc knee_uniqueness_mv param='(vin_knee_v - vin_knee_last_v)*1e3'"
+    },
+    {
+      "name": "vout_at_210_mv",
+      "spice": ".meas dc vout_at_210_mv param='vout_210_v*1e3'"
+    },
+    {
+      "name": "iload_ma",
+      "spice": ".meas dc iload_ma param='i_vlmeas_210_a*1e3'"
+    }
+  ],
+  "options": {
+    "timeout_s": 1800,
+    "keep_artifacts": true,
+    "stage_model_inputs": true,
+    "ngspice_init": [
+      "set numdgt=10",
+      "set measureprec=10"
+    ]
+  }
+}

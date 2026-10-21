@@ -2,9 +2,13 @@
 *
 * Line regulation over the ratified 2.97-3.63 V window, at 1 mA and 50 mA
 * (README.md Target specification, "Line reg" row; DR-0004 amendment A5).
-* A single in-run nested .dc sweep (Vilc outer x Vsup inner) captures all
-* four combinations -- (2.97V,1mA) (3.63V,1mA) (2.97V,50mA) (3.63V,50mA) --
-* within one ngspice invocation per PVT (process x temp) point. See
+* A single in-run nested .dc sweep (Vsup outer x Vilc inner, #472) captures
+* all four combinations -- (2.97V,1mA) (3.63V,1mA) (2.97V,50mA) (3.63V,50mA)
+* -- within one ngspice invocation per PVT (process x temp) point. Vilc runs
+* 1 mA -> 50 mA in 7 mA steps (points 0-7 at 2.97 V, 8-15 at 3.63 V), so the
+* 50 mA point is reached by continuation from a physical neighbour instead
+* of by a simultaneous 49 mA and 0.66 V jump, which at ss / -40 C landed on
+* the pass-device-off state (Vout 0.145 V). See
 * tb.json's "analyses" field and its --subset-reason: the harness's usual
 * +/-10% supply GRID axis is deliberately collapsed to one value because
 * this experiment sweeps Vin internally instead (2.97-3.63V exactly, per

@@ -2136,15 +2136,18 @@ class TestDropoutMeasuresTheRegulationKnee(unittest.TestCase):
         reads 281.84 mV on the 4x netlist above.
         """
         analyses = " ".join(self.tb["analyses"]).lower().replace(" ", "")
+        # The sweep direction is #472's: rising from deep dropout, so the
+        # knee is the RISE crossing; FALL is accepted for a falling sweep.
+        direction = "rise" if "rise=1" in analyses else "fall"
         self.assertIn(
-            "fall=1",
+            f"{direction}=1",
             analyses,
-            "the knee must be located at the FIRST falling crossing",
+            "the knee must be located at the FIRST crossing",
         )
         self.assertIn(
-            "fall=last",
+            f"{direction}=last",
             analyses,
-            "the knee must ALSO be located at the LAST falling crossing, so "
+            "the knee must ALSO be located at the LAST crossing, so "
             "a spurious crossing pair is detectable (#138)",
         )
 
