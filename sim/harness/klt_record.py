@@ -68,10 +68,15 @@ def jobs(corner_dir: Path) -> list[dict]:
         rep = json.loads(p.read_text())
         env = rep.get("environment", {})
         rem = env.get("remote") or {}
-        wpdk = (rem.get("worker_environment") or {}).get("pdk") or {}
-        out.append({"request": p.parent.parent.name.removeprefix("klt-"), "job": rem.get("job_id"),
-                    "instance": rem.get("instance_type"), "state": rem.get("state"),
-                    "staged": wpdk.get("models_staged"), "stamp": wpdk.get("stamp_text"),
+        # a request split by ``batch.max_units_per_job`` reports ``remote.fleet``, one entry per job
+        fleet = rem.get("fleet") or [rem]
+        wpdks = [(f.get("worker_environment") or {}).get("pdk") or {} for f in fleet]
+        out.append({"request": p.parent.parent.name.removeprefix("klt-"),
+                    "job": ", ".join(str(f.get("job_id")) for f in fleet),
+                    "instance": ", ".join(sorted({str(f.get("instance_type")) for f in fleet})),
+                    "state": ", ".join(sorted({str(f.get("state")) for f in fleet})),
+                    "staged": all(w.get("models_staged") for w in wpdks),
+                    "stamp": next((w["stamp_text"] for w in wpdks if w.get("stamp_text")), None),
                     "corners": rep.get("corner_count")})
     return out
 

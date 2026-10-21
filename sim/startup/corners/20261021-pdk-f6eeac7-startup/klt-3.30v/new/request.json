@@ -1,0 +1,189 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "fs",
+        "sections": [
+          "fs",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "sf",
+        "sections": [
+          "sf",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ff",
+        "sections": [
+          "typical",
+          "res_ff",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ss",
+        "sections": [
+          "typical",
+          "res_ss",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "bjt_ff",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_ff",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "bjt_ss",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_ss",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "temperature_c": [
+      -40.0,
+      27.0,
+      125.0
+    ]
+  },
+  "analysis": {
+    "kind": "tran",
+    "args": "1u 6m"
+  },
+  "measurements": [
+    {
+      "name": "t_settle_full",
+      "spice": ".meas tran t_settle_full WHEN v(vout_full)=1.782 RISE=1 TD=1u"
+    },
+    {
+      "name": "vpeak_full",
+      "spice": ".meas tran vpeak_full MAX v(vout_full) FROM=1u TO=6m"
+    },
+    {
+      "name": "t_settle_min",
+      "spice": ".meas tran t_settle_min WHEN v(vout_min)=1.782 RISE=1 TD=1u"
+    },
+    {
+      "name": "vpeak_min",
+      "spice": ".meas tran vpeak_min MAX v(vout_min) FROM=1u TO=6m"
+    },
+    {
+      "name": "vpeak_short",
+      "spice": ".meas tran vpeak_short MAX v(vout_short) FROM=1u TO=6m"
+    },
+    {
+      "name": "vfinal_short",
+      "spice": ".meas tran vfinal_short FIND v(vout_short) AT=6m"
+    },
+    {
+      "name": "ipeak_short",
+      "spice": ".meas tran ipeak_short MAX i(vamm_short) FROM=1u TO=6m"
+    },
+    {
+      "name": "tsettle_full_ms",
+      "spice": ".meas tran tsettle_full_ms param='(t_settle_full-1u)*1e3'"
+    },
+    {
+      "name": "overshoot_full_mv",
+      "spice": ".meas tran overshoot_full_mv param='(vpeak_full-1.836)*1e3'"
+    },
+    {
+      "name": "tsettle_min_ms",
+      "spice": ".meas tran tsettle_min_ms param='(t_settle_min-1u)*1e3'"
+    },
+    {
+      "name": "overshoot_min_mv",
+      "spice": ".meas tran overshoot_min_mv param='(vpeak_min-1.836)*1e3'"
+    },
+    {
+      "name": "vfinal_short_v",
+      "spice": ".meas tran vfinal_short_v param='vfinal_short'"
+    },
+    {
+      "name": "ipeak_short_ma",
+      "spice": ".meas tran ipeak_short_ma param='ipeak_short*1e3'"
+    }
+  ],
+  "batch": {
+    "max_units_per_job": 2,
+    "max_concurrent_jobs": 2,
+    "capacity_wait_s": 7200
+  },
+  "options": {
+    "timeout_s": 1700,
+    "keep_artifacts": true,
+    "stage_model_inputs": true,
+    "ngspice_init": [
+      "set numdgt=10",
+      "set measureprec=10"
+    ]
+  }
+}

@@ -29,6 +29,32 @@ def _grid(job) -> int:
     return len(job.process) * len(job.temps) * len(job.supplies)
 
 
+class SupplyWaveform(unittest.TestCase):
+    """A supply written as a ``{vdd_val}`` PWL cannot be ``alter``ed by klt (#469)."""
+
+    def test_detects_the_waveform_benches_only(self):
+        self.assertTrue(ta.supply_in_waveform(_tb("load-transient")))
+        self.assertTrue(ta.supply_in_waveform(_tb("startup")))
+        self.assertFalse(ta.supply_in_waveform(_tb("line-regulation")))
+
+    def test_one_request_per_supply_with_vdd_val_in_the_body(self):
+        jobs = ta.supply_jobs(_tb("load-transient"), "new", DUT)
+        self.assertEqual(sorted(jobs), [2.97, 3.30, 3.63])
+        for vin, job in jobs.items():
+            self.assertTrue(job.supply_in_body)
+            self.assertEqual(job.supplies, (vin,))
+            self.assertIn(f".param vdd_val={vin!r}", job.body)
+            self.assertNotIn("supply_v", job.request()["corners"])
+            self.assertEqual(len(job.process), 9)       # the full 81-point grid, 27 per request
+
+    def test_job_opts_reach_the_request(self):
+        job = dataclasses.replace(next(iter(ta.supply_jobs(_tb("startup"), "new", DUT).values())),
+                                  timeout_s=1700, batch={"max_units_per_job": 2})
+        req = job.request()
+        self.assertEqual(req["options"]["timeout_s"], 1700)
+        self.assertEqual(req["batch"], {"max_units_per_job": 2})
+
+
 class SplitAnalyses(unittest.TestCase):
     def test_single_supply_sweep_and_meas_cards(self):
         analysis, cards = ta.split_analyses(

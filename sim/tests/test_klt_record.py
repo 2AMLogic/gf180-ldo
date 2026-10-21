@@ -35,5 +35,35 @@ class ParsePrior(unittest.TestCase):
         self.assertIsNone(row["pass/fail"])
 
 
+class FleetJobs(unittest.TestCase):
+    def _jobs(self, remote):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            rep = Path(d) / "klt-3.30v" / "new"
+            rep.mkdir(parents=True)
+            (rep / "klt-report.json").write_text(json.dumps({"corner_count": 4, "environment": {"remote": remote}}))
+            return kr.jobs(Path(d))
+
+    def test_split_request_lists_every_fleet_job(self):
+        pdk = {"models_staged": True, "stamp_text": "open_pdks c6d73a3"}
+        job = lambda i: {"job_id": f"klt-sim-{i}", "instance_type": "c7i.8xlarge", "state": "done",
+                         "worker_environment": {"pdk": pdk}}
+        (j,) = self._jobs({"fleet": [job(1), job(2)], "max_concurrent_jobs": 2})
+        self.assertEqual(j["job"], "klt-sim-1, klt-sim-2")
+        self.assertTrue(j["staged"])
+        self.assertEqual(j["stamp"], "open_pdks c6d73a3")
+
+    def test_one_unstaged_fleet_job_unsets_staged(self):
+        mk = lambda s: {"job_id": "x", "worker_environment": {"pdk": {"models_staged": s}}}
+        (j,) = self._jobs({"fleet": [mk(True), mk(False)]})
+        self.assertFalse(j["staged"])
+
+    def test_unsplit_request_keeps_its_single_job(self):
+        (j,) = self._jobs({"job_id": "klt-sim-9", "instance_type": "m7i.4xlarge", "state": "done",
+                           "worker_environment": {"pdk": {"models_staged": True}}})
+        self.assertEqual((j["job"], j["instance"], j["staged"]), ("klt-sim-9", "m7i.4xlarge", True))
+
+
 if __name__ == "__main__":
     unittest.main()
