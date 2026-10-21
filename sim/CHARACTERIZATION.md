@@ -23,7 +23,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 | Line reg | FAIL | fresh | `sim/line-regulation/records/20261021-013226-7c57744.md` |
 | Load reg (0–50 mA) | FAIL | fresh | `sim/load-regulation/records/20261021-013226-7c57744.md` |
 | Load transient | PASS | STALE | `sim/load-transient/records/20260905-202554-3093ea1.md` |
-| PSRR | FAIL | STALE | `sim/psrr-dc/records/20260923-005717-000bdc6.md` (+ 2 more, see detail) |
+| PSRR | FAIL | fresh | `sim/psrr-dc/records/20261021-023703-7d3b2a0.md` (+ 2 more, see detail) |
 | Iq (excluding load current) | PASS | STALE | `sim/quiescent-current/records/20260923-141210-33035d7.md` (+ 1 more, see detail) |
 | Current limit | PASS | STALE | `sim/current-limit/records/20260923-141325-33035d79.md` |
 | Startup | MIXED | STALE | `sim/startup/records/20260916-112114-8b551ab.md` (+ 1 more, see detail) |
@@ -49,7 +49,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 - `mc-output-accuracy` — statistical term (Monte Carlo mismatch): `sim/mc-output-accuracy/records/20260905-223503-3093ea1.md` — **PASS**, stale
   - Overall: PASS
-- `amp-openloop` — deterministic systematic-offset term: `sim/amp-openloop/records/20260923-005553-f9bd4ba.md` — **PASS**, fresh (matches current `error_amp`)
+- `amp-openloop` — deterministic systematic-offset term: `sim/amp-openloop/records/20261021-023703-7d3b2a0.md` — **PASS**, fresh (matches current `error_amp`)
   - Overall: PASS
 - `line-regulation` — counted inside the window, not added to it: `sim/line-regulation/records/20261021-013226-7c57744.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
@@ -102,13 +102,13 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 **Ratified target**: > 50 dB @ 1 kHz and > 20 dB @ 100 kHz, at I_load = 1 mA (binding — light load) and at 50 mA, C_eff = 1 µF nominal, verified across the stability window
 
-**Verdict**: FAIL  **Fresh**: STALE
+**Verdict**: FAIL  **Fresh**: fresh
 
-- `psrr-dc` — amp-level open-loop DC term: `sim/psrr-dc/records/20260923-005717-000bdc6.md` — **PASS**, fresh (matches current `error_amp`)
+- `psrr-dc` — amp-level open-loop DC term: `sim/psrr-dc/records/20261021-023703-7d3b2a0.md` — **PASS**, fresh (matches current `error_amp`)
   - Overall: PASS
-- `psrr-vs-freq` — closed-loop, 1 mA (binding light load): `sim/psrr-vs-freq/records/20260923-233113-1a8fcf7.md` — **FAIL**, stale
+- `psrr-vs-freq` — closed-loop, 1 mA (binding light load): `sim/psrr-vs-freq/records/20261021-023703-7d3b2a0.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
-- `psrr-vs-freq-50ma` — closed-loop, 50 mA (full load): `sim/psrr-vs-freq-50ma/records/20260923-092419-eb81bbb.md` — **FAIL**, stale
+- `psrr-vs-freq-50ma` — closed-loop, 50 mA (full load): `sim/psrr-vs-freq-50ma/records/20261021-023703-7d3b2a0.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 
 ### Iq (excluding load current)
@@ -185,7 +185,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 16 ratified rows: 12 testable (6 PASS, 5 FAIL, 1 MIXED, 0 UNKNOWN), 4 N/A.
 
-Freshness among the 12 testable rows: 3 fresh, 9 stale, 0 unknown.
+Freshness among the 12 testable rows: 4 fresh, 8 stale, 0 unknown.
 
 A row is only a true current PASS if its Verdict column reads PASS **and** its Fresh column reads fresh — a stale PASS reflects a design state this repo has since moved past, not a claim about `design/netlist/ldo_core.spice` as committed today.
 
