@@ -24,12 +24,59 @@ import math
 import pathlib
 import re
 from collections.abc import Callable, Sequence
+from typing import NamedTuple
 
 # ngspice `print`s a length-1 vector measurement as "m_foo = 1.234e+00",
 # sometimes with trailing `targ=`/`trig=`/`at=` context on the same line
 # (soft-start's .meas TRIG/TARG lines) that this pattern deliberately does
 # not anchor past -- only the first `=`-delimited token is a measurement.
-_MEAS_RE = re.compile(r"^(m_\w+)\s*=\s*([-+0-9.eE]+)")
+# A `.meas` that never triggered prints `failed` in place of the number.
+_MEAS_RE = re.compile(r"^\s*(m_\w+)\s*=\s*([-+0-9.eE]+|failed)")
+
+
+class MeasParse(NamedTuple):
+    """Result of :func:`parse_meas_lines`; every name keeps its ``m_`` prefix."""
+
+    values: dict[str, float]  # finite measurements
+    nonfinite: list[str]  # numeric token that overflowed to inf/nan (e.g. 1e999)
+    failed: list[str]  # `.meas` printed `failed`
+    unparsable: dict[str, str]  # name -> raw token ``float()`` rejected
+
+
+def parse_meas_lines(text: str) -> MeasParse:
+    """Single definition of a valid ngspice ``m_name = value`` line.
+
+    Tolerates leading whitespace and trailing ``targ=``/``trig=`` context.
+    A later line for the same name replaces an earlier one, so a name is
+    reported in at most one of the four result fields.
+    """
+    values: dict[str, float] = {}
+    nonfinite: list[str] = []
+    failed: list[str] = []
+    unparsable: dict[str, str] = {}
+    for line in text.splitlines():
+        m = _MEAS_RE.match(line)
+        if not m:
+            continue
+        name, token = m.group(1), m.group(2)
+        values.pop(name, None)
+        unparsable.pop(name, None)
+        for bucket in (nonfinite, failed):
+            if name in bucket:
+                bucket.remove(name)
+        if token == "failed":
+            failed.append(name)
+            continue
+        try:
+            value = float(token)
+        except ValueError:
+            unparsable[name] = token
+            continue
+        if math.isfinite(value):
+            values[name] = value
+        else:
+            nonfinite.append(name)
+    return MeasParse(values, nonfinite, failed, unparsable)
 
 
 def read_measurements(log: pathlib.Path, scalars: Sequence[str]) -> dict[str, float]:
@@ -43,24 +90,15 @@ def read_measurements(log: pathlib.Path, scalars: Sequence[str]) -> dict[str, fl
     Also fails loud, as before, if any of ``scalars`` is absent from the
     parsed log: a missing measurement is a bench error, not a result.
     """
-    vals: dict[str, float] = {}
-    for line in log.read_text().splitlines():
-        m = _MEAS_RE.match(line)
-        if not m:
-            continue
-        try:
-            value = float(m.group(2))
-        except ValueError:
-            raise SystemExit(
-                f"FATAL: {log.name} has an unparsable value for "
-                f"{m.group(1)}: {m.group(2)!r}"
-            ) from None
-        if not math.isfinite(value):
-            raise SystemExit(
-                f"FATAL: {log.name} has a non-finite value for "
-                f"{m.group(1)}: {m.group(2)!r}"
-            )
-        vals[m.group(1)] = value
+    parsed = parse_meas_lines(log.read_text())
+    for name, token in parsed.unparsable.items():
+        raise SystemExit(
+            f"FATAL: {log.name} has an unparsable value for {name}: {token!r}"
+        )
+    if parsed.nonfinite:
+        name = parsed.nonfinite[0]
+        raise SystemExit(f"FATAL: {log.name} has a non-finite value for {name}")
+    vals = parsed.values
     missing = [s for s in scalars if s not in vals]
     if missing:
         raise SystemExit(f"FATAL: {log.name} is missing measurements: {missing}")

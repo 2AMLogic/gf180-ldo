@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import math
 import os
 import re
 import shutil
@@ -16,6 +15,7 @@ from pathlib import Path
 from .corners import PvtPoint
 from .paths import display_path
 from .pdk import Pdk
+from .pvt_log import parse_meas_lines
 from .testbench import Testbench
 
 NGSPICE = "ngspice"
@@ -52,8 +52,6 @@ def _option_key(option: str) -> str:
     """The key half of an ``.options`` card body (``reltol=1e-5`` -> ``reltol``)."""
     return option.split("=", 1)[0].strip().lower()
 
-# `print` output for a length-1 vector: "m_vout = 6.9043645202e-01"
-_MEAS_RE = re.compile(r"^\s*m_(\w+)\s*=\s*([-+]?[0-9.]+(?:[eE][-+]?[0-9]+)?)\s*$")
 _ERROR_RE = re.compile(r"^\s*(?:Error|ERROR|Fatal|fatal error|doAnalyses:)", re.MULTILINE)
 
 # Phrases ngspice writes to stdout/stderr for a fatal condition (bad model
@@ -976,24 +974,9 @@ def parse_measurements_checked(text: str) -> tuple[dict[str, float], list[str]]:
     evidence, so it is excluded from the returned dict and its name is
     returned in the second element instead (issue #420).
     """
-    found: dict[str, float] = {}
-    nonfinite: list[str] = []
-    for line in text.splitlines():
-        match = _MEAS_RE.match(line)
-        if match:
-            try:
-                value = float(match.group(2))
-            except ValueError:  # pragma: no cover - regex already constrains this
-                continue
-            name = match.group(1)
-            if math.isfinite(value):
-                found[name] = value
-                if name in nonfinite:
-                    nonfinite.remove(name)
-            else:
-                found.pop(name, None)
-                if name not in nonfinite:
-                    nonfinite.append(name)
+    parsed = parse_meas_lines(text)
+    found = {name.removeprefix("m_"): v for name, v in parsed.values.items()}
+    nonfinite = [name.removeprefix("m_") for name in parsed.nonfinite]
     return found, nonfinite
 
 

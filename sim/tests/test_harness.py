@@ -26,6 +26,7 @@ sys.path.insert(0, str(SIM_DIR))
 from harness import cli, corners, paths, report, runner, testbench  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
+    parse_meas_lines,
     read_measurements,
     report_flag,
     report_minmax,
@@ -1429,6 +1430,22 @@ class NonFiniteFailClosedTests(unittest.TestCase):
         self.assertEqual({"y": 2.5}, found)
         self.assertEqual(["x"], bad)
         self.assertEqual({"y": 2.5}, runner.parse_measurements("m_x = 1e999\nm_y = 2.5"))
+
+    def test_shared_parser_tolerates_trailing_context_and_reports_failed(self):
+        """#470: one definition of a measurement line for all three consumers."""
+        text = (
+            "  m_t_start = 4.2e-03 targ= 1.0e-03 trig= 2.0e-04\n"
+            "m_t_late = failed\n"
+            "m_x = 1e999\n"
+        )
+        parsed = parse_meas_lines(text)
+        self.assertEqual({"m_t_start": 4.2e-03}, parsed.values)
+        self.assertEqual(["m_t_late"], parsed.failed)
+        self.assertEqual(["m_x"], parsed.nonfinite)
+        # runner strips the prefix and keeps its non-finite reporting
+        found, bad = runner.parse_measurements_checked(text)
+        self.assertEqual({"t_start": 4.2e-03}, found)
+        self.assertEqual(["x"], bad)
 
     def test_pvt_log_rejects_overflow_token(self):
         with tempfile.TemporaryDirectory() as d:
