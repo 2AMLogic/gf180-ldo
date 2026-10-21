@@ -17,7 +17,7 @@ import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "sim"))
-from harness.pvt_log import read_measurements, report_flag, report_minmax  # noqa: E402
+from harness.pvt_log import grid_rollup, report_flag, report_minmax, write_corner_csv  # noqa: E402
 
 SCALARS = ["m_vout_en", "m_iload_en_ma", "m_isup_en_ua", "m_iref_en_ua",
            "m_iq_en_ua",
@@ -30,41 +30,20 @@ SCALARS = ["m_vout_en", "m_iload_en_ma", "m_isup_en_ua", "m_iref_en_ua",
            "m_vout_max_off", "m_pg_off_tran"]
 
 
-def read(log):
-    return read_measurements(log, SCALARS)
+def derive(vals: dict) -> None:
+    vals["m_t_startup_us"] = vals["m_t_startup"] * 1e6
 
 
 def rollup(log_dir: pathlib.Path, corners: str, temps: str, supplies: str) -> list[tuple]:
-    """Read ``<log_dir>/<corner>_<temp>c_<vin>v.log`` for every point of the
-    full-factorial grid and return ``(cid, corner, temp, vin, vals)`` rows,
-    with the derived columns added. Pure: no printing, no writing.
-
-    Fails loud on a missing log (``FileNotFoundError``) and on a log with a
-    missing or unparsable measurement (``SystemExit``, via
-    ``read_measurements``) -- every grid point is required.
-    """
-    rows = []
-    for c in corners.split():
-        for t in temps.split():
-            for v in supplies.split():
-                cid = "%s_%sc_%.2fv" % (c, t, float(v))
-                vals = read(pathlib.Path(log_dir) / f"{cid}.log")
-                vals["m_t_startup_us"] = vals["m_t_startup"] * 1e6
-                vals["_vin"] = float(v)
-                rows.append((cid, c, t, v, vals))
-    if not rows:
-        raise SystemExit("FATAL: empty corner grid")
-    return rows
+    """Full-factorial grid rows, with the derived startup-time column added."""
+    return grid_rollup(log_dir, corners, temps, supplies, SCALARS, derive)
 
 
 CSV_COLS = SCALARS + ["m_t_startup_us"]
 
 
 def write_csv(rows, csv_path) -> None:
-    with open(csv_path, "w") as fh:
-        fh.write("corner_id,corner,temp_c,vin_v," + ",".join(c[2:] for c in CSV_COLS) + "\n")
-        for cid, c, t, v, vals in rows:
-            fh.write(f"{cid},{c},{t},{v}," + ",".join(f"{vals[k]:.6g}" for k in CSV_COLS) + "\n")
+    write_corner_csv(rows, csv_path, CSV_COLS)
 
 
 MINMAX = ("m_vout_en", "m_iq_en_ua", "m_vout_off", "m_iloop_off_ua",
