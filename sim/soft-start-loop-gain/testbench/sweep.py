@@ -76,6 +76,7 @@ TEMPLATE = HERE / "tb_ss_loop_gain.spice.in"
 HANDOVER_TEMPLATE = HERE / "tb_ss_handover.spice.in"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
+from harness import klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
@@ -1466,6 +1467,9 @@ def _klt_axes(grid, corners, temps) -> dict:
             "supplies": tuple(sorted({p.vdd for p in grid}))}
 
 
+BAD_DECK = "klt reported a problem for this deck (see warnings above)"
+
+
 def run_grid_klt(grid, corners, args, ceffs, esrs, netlists, logdir: Path,
                  klt_backend: str):
     """Run the margin grid through ``klt sim`` (``klt_run.py``) instead of local ngspice.
@@ -1488,12 +1492,8 @@ def run_grid_klt(grid, corners, args, ceffs, esrs, netlists, logdir: Path,
     for pr in problems:
         print(f"  WARNING {pr}", file=sys.stderr)
 
-    rows: list[Row] = []
-    failures: list[str] = []
-    seeded: list[str] = []
-    voided: list[str] = []
-
-    def parse(pvt, variant, phase, res, suffix=""):
+    def parse(key, res, suffix=""):
+        pvt, variant, phase = key
         text = klt_run.margin_log(pvt.corner_id, variant, phase, PHASES[phase],
                                   ceffs, esrs, res)
         log = logdir / f"{pvt.corner_id}_{variant}_{phase}{suffix}.log"
@@ -1501,59 +1501,45 @@ def run_grid_klt(grid, corners, args, ceffs, esrs, netlists, logdir: Path,
         return rows_from_log(pvt, text, phase=phase, variant=variant, ceffs=ceffs,
                              esrs=esrs, ssr_values=None, log=log)
 
-    def report(pvt, variant, phase, pt_rows, note=""):
+    def run_retry(key):
+        pvt, variant, phase = key
+        one = {"process": (pvt.corner.name,), "temps": (pvt.temp_c,), "supplies": (pvt.vdd,)}
+        res, probs, _ = klt_run.run_margin(
+            [variant], {phase: PHASES[phase]}, ceffs, esrs, netlists, args.ac_dec,
+            F_START, F_STOP, one, logdir, klt_backend, args.in_flight,
+            dc_seed=dc_seed_lines(pvt, "free"))
+        return res, probs
+
+    def say(key, event, detail):
+        pvt, variant, phase = key
+        head = f"  {pvt.corner_id:<18} {variant:<7} {phase:<7}"
+        if event == "retry":
+            print(f"{head} DC branch miss, retrying with the intended-branch seed")
+        elif event == "voided":
+            # Still refuses the intended branch with the seed: the deck is
+            # voided (named in the record, excluded from the row set), not a
+            # run-wide failure.
+            print(f"{head} VOIDED (no DC branch near VREF, even seeded) {detail}")
+        else:
+            print(f"{head} SIM ERROR {detail}")
+
+    def report(key, pt_rows, note):
+        pvt, variant, phase = key
         measured = [r for r in pt_rows if r.pm_deg is not None]
         w = worst_of(measured) if measured else pt_rows[0]
         print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} worst PM "
               f"{pm_str(w):>7} deg GM {gm_str(w):>7} dB{note}"
               + ("" if measured else "  (no crossover at any point)"))
 
-    retries = []
-    for pvt in grid:
-        for variant in args.variants:
-            for phase in args.phases:
-                pt_rows, err = parse(pvt, variant, phase, results)
-                if (pvt.corner_id, variant, phase) in bad:
-                    # klt itself reported a problem (failed batch job, errored
-                    # pass, unattributable measurement): not a DC-branch miss,
-                    # and a seeded retry would not change it.
-                    err = "klt reported a problem for this deck (see warnings above)"
-                if err and "did not land on the intended DC branch" in err:
-                    retries.append((pvt, variant, phase))
-                    print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} DC branch "
-                          f"miss, retrying with the intended-branch seed")
-                elif err:
-                    failures.append(f"{pvt.corner_id}/{variant}/{phase}: {err}")
-                    print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} SIM ERROR {err}")
-                else:
-                    rows.extend(pt_rows)
-                    report(pvt, variant, phase, pt_rows)
-
-    for pvt, variant, phase in retries:
-        one = {"process": (pvt.corner.name,), "temps": (pvt.temp_c,), "supplies": (pvt.vdd,)}
-        res, probs, _ = klt_run.run_margin(
-            [variant], {phase: PHASES[phase]}, ceffs, esrs, netlists, args.ac_dec,
-            F_START, F_STOP, one, logdir, klt_backend, args.in_flight,
-            dc_seed=dc_seed_lines(pvt, "free"))
-        for pr in probs:
-            print(f"  WARNING {pr}", file=sys.stderr)
-        pt_rows, err = parse(pvt, variant, phase, res, "_dcseed")
-        if probs:
-            err = "klt reported a problem for this deck (see warnings above)"
-        if err and "did not land on the intended DC branch" in err:
-            # Still refuses the intended branch with the seed: void the deck
-            # (named in the record, excluded from the row set), as the local
-            # path does -- not a run-wide failure.
-            voided.append(f"{pvt.corner_id}/{variant}/{phase}: {err}")
-            print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} VOIDED (no DC "
-                  f"branch near VREF, even seeded) {err}")
-        elif err:
-            failures.append(f"{pvt.corner_id}/{variant}/{phase} (with DC seed): {err}")
-            print(f"  {pvt.corner_id:<18} {variant:<7} {phase:<7} SIM ERROR {err}")
-        else:
-            seeded.append(f"{pvt.corner_id}/{variant}/{phase}")
-            rows.extend(pt_rows)
-            report(pvt, variant, phase, pt_rows, "  [DC seed]")
+    keys = [(pvt, variant, phase) for pvt in grid
+            for variant in args.variants for phase in args.phases]
+    rows, failures, seeded, voided = klt_grid.run_retry_grid(
+        keys, results, bad, parse=parse, run_retry=run_retry,
+        miss_marker="did not land on the intended DC branch",
+        name=lambda k: f"{k[0].corner_id}/{k[1]}/{k[2]}",
+        bad_key=lambda k: (k[0].corner_id, k[1], k[2]),
+        bad_message=BAD_DECK, retry_problem=lambda err, probs: BAD_DECK,
+        say=say, report=report, void_on_miss=True)
     info = {"backend": klt_backend, "klt": klt_run.klt_version(),
             "requests": len(args.variants) * len(phases) * len(ceffs) * len(esrs)}
     return rows, failures, seeded, voided, info
@@ -1592,12 +1578,10 @@ def main() -> int:
 
     n_pvt = len(resolve_corners(args.corners)) * len(args.temps) * len(
         supply_points(NOMINAL_SUPPLY_V, args.supply_tol))
-    backend = args.backend or ("local" if n_pvt == 1 else "batch")
-    use_klt = backend in ("batch", "klt-local")
-    if backend == "klt-local" and n_pvt > 1:
-        print(f"FATAL: --backend klt-local is a single-PVT-point check; this grid is "
-              f"{n_pvt} PVT points. Use --backend batch.", file=sys.stderr)
+    selected = klt_grid.select_backend(args.backend, n_pvt)
+    if selected is None:
         return 3
+    backend, use_klt = selected
 
     if shutil.which("ngspice") is None:
         print("FATAL: ngspice not on PATH", file=sys.stderr)
