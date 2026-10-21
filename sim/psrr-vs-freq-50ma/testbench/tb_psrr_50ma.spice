@@ -89,8 +89,29 @@ Xdut VIN VOUT VIN 0 LOOP LOOP VREF ldo_core
 * never reached. Do not retune the knee against a failing corner and do
 * not add a load-side sub-ground clamp -- both were measured and ruled
 * out. See sim/harness/README.md, "What the bound cannot reach".
+*
+* Supply gate on the sink (#478). A cold .op or .ac solve of this deck at
+* ss / -40 C / 2.97 V finds no DC point by gmin stepping (dynamic and true
+* both fail) and, with the 50 mA sink already on at every source level,
+* falls through to ngspice's pseudo-transient fallback, which reports the
+* pass-device-off state (Vout 0.145 V, 5.0 mA delivered) in BOTH the op and
+* the ac request. A preceding .dc sweep of Vilc (the #472 fix for the
+* load/line/dropout benches) does not help here: the .ac analysis re-solves
+* its own operating point from a cold start and ignores the sweep. The
+* continuation therefore has to live in the deck, where every cold solve
+* sees it: the sink is multiplied by a second smooth gate on the supply,
+*     g(VIN) = 0.5 * (1 + tanh((VIN - 2.0) / 0.05))
+* so source stepping (which scales VIN and the commanded current together)
+* brings the regulator up with no load and ramps the 50 mA in as VIN passes
+* 2 V, i.e. it reaches the 50 mA point by continuation along the physical
+* branch. The load is the same physical sink it was: a load on the VIN
+* domain draws nothing without its supply. At the lowest supply this bench
+* runs (2.97 V) 1 - g < 1e-16, the DC sink is ideal to the same precision
+* as the Vout compliance factor, and dg/dVIN * Iload < 1e-15 S, an open
+* circuit at AC. Nothing is seeded (no .nodeset/.ic, #308/#311); dc_vout_v
+* and dc_iload_ma still read the .op plot at every corner.
 Vilc ILC 0 DC 50m
-Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05)) * 0.5 * (1 + tanh((v(vin) - 2.0) / 0.05))'
 Vlmeas NLOAD 0 DC 0
 
 Resr VOUT n_esr 0.1

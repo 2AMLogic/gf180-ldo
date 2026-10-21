@@ -108,7 +108,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
   - Overall: PASS
 - `psrr-vs-freq` — closed-loop, 1 mA (binding light load): `sim/psrr-vs-freq/records/20261021-023703-7d3b2a0.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
-- `psrr-vs-freq-50ma` — closed-loop, 50 mA (full load): `sim/psrr-vs-freq-50ma/records/20261021-023703-7d3b2a0.md` — **FAIL**, fresh (matches current `ldo_core`)
+- `psrr-vs-freq-50ma` — closed-loop, 50 mA (full load): `sim/psrr-vs-freq-50ma/records/20261021-034534-0165a0b.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 
 ### Iq (excluding load current)
