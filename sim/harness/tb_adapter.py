@@ -397,7 +397,7 @@ def main(testbench_dir: Path, doc: str, argv=None, **job_opts) -> int:
     """The whole ``klt_run.py`` for a bench: grid -> fleet -> ``corners/<id>/``.
 
     ``job_opts`` are :class:`klt_batch.Job` fields every request of the bench
-    sets (``timeout_s``, ``max_units_per_job``).
+    sets (``timeout_s``, ``batch``).
     """
     import argparse
     import os

@@ -37,8 +37,8 @@ class RequestOptions(unittest.TestCase):
 
     def test_unit_cap_per_job_is_emitted_only_when_asked(self):
         """A slow-unit bench splits into fleet jobs so none reaches the 3600 s whole-job ceiling (#469)."""
-        self.assertEqual(self._job(max_units_per_job=2, timeout_s=1700).request()["batch"],
-                         {"max_units_per_job": 2})
+        batch = {"max_units_per_job": 2, "max_concurrent_jobs": 2, "capacity_wait_s": 7200}
+        self.assertEqual(self._job(batch=batch, timeout_s=1700).request()["batch"], batch)
         self.assertNotIn("batch", self._job().request())
 
 

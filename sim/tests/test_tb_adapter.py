@@ -49,7 +49,7 @@ class SupplyWaveform(unittest.TestCase):
 
     def test_job_opts_reach_the_request(self):
         job = dataclasses.replace(next(iter(ta.supply_jobs(_tb("startup"), "new", DUT).values())),
-                                  timeout_s=1700, max_units_per_job=2)
+                                  timeout_s=1700, batch={"max_units_per_job": 2})
         req = job.request()
         self.assertEqual(req["options"]["timeout_s"], 1700)
         self.assertEqual(req["batch"], {"max_units_per_job": 2})
