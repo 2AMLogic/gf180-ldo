@@ -4,6 +4,9 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-10-21
 
+- **PR #486**: sim: re-qualify load-transient, startup and mc-output-accuracy at f6eeac7 via klt sim
+- **Issue #464** (closed): sim: add klt sim front ends and re-qualify the tb.json reference benches at open_pdks f6eeac7 (part of #430)
+- **Issue #469** (closed): sim: re-qualify transient and Monte Carlo benches load-transient, startup, mc-output-accuracy at f6eeac7 via klt sim (part of #464)
 - **PR #480**: sim: gate the psrr-vs-freq-50ma sink on the supply so ss/-40C/2.97V reaches 50 mA physically
 - **PR #479**: fix(sim): reach DC bench operating points by continuation so the sweeps stay off the pass-device-off root
 - **PR #477**: sim: re-qualify amp-openloop and the PSRR benches at open_pdks f6eeac7 on the batch fleet
