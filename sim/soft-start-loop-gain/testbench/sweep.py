@@ -555,19 +555,10 @@ def rows_from_log(pvt, text: str, *, phase: str, variant: str, ceffs, esrs,
             corner_id=pvt.corner_id, corner=pvt.corner.name,
             temp_c=pvt.temp_c, vin_v=pvt.vdd,
             iload_a=PHASES[phase]["iload_a"],
-            ceff_f=float(f["ceff_f"]), esr_ohm=float(f["esr_ohm"]),
-            vout_v=ls._f(f["vout_v"]) if ls._f(f["vout_v"]) is not None else float("nan"),
-            dcgain_db=ls._f(f["dcgain_db"]) if ls._f(f["dcgain_db"]) is not None else float("nan"),
-            f0_hz=ls._f(f["f0_hz"]),
-            phase_at_f0_deg=ls._f(f["phase_at_f0_deg"]),
-            f180_hz=ls._f(f["f180_hz"]),
-            gain_at_f180_db=ls._f(f["gain_at_f180_db"]),
-            f0_rising_hz=ls._f(f["f0_rising_hz"]),
-            resurgence_db=ls._f(f["resurgence_db"]),
+            **ls.base_row_kwargs(f),
             variant=variant, phase=phase, ssr_cmd=f["ssr_cmd"],
-            ssr_v=ls._f(f["ssr_v"]) if ls._f(f["ssr_v"]) is not None else float("nan"),
-            fb_v=ls._f(f["fb_v"]) if ls._f(f["fb_v"]) is not None else float("nan"),
-            isup_a=ls._f(f["isup_a"]) if ls._f(f["isup_a"]) is not None else float("nan"),
+            ssr_v=ls.nan_or(f["ssr_v"]), fb_v=ls.nan_or(f["fb_v"]),
+            isup_a=ls.nan_or(f["isup_a"]),
             load_model=PHASES[phase]["load_model"],
             rload_ohm=PHASES[phase]["rload_ohm"],
         ))
@@ -605,21 +596,13 @@ def run_curve(pvt, pdk, row: Row, netlist: Path, ac_dec, logdir: Path,
     text = render_deck(pvt, pdk, phase=row.phase, variant=row.variant,
                        netlist=netlist, ceffs=[row.ceff_f], esrs=[row.esr_ohm],
                        ac_dec=ac_dec, ssr_values=ssr_values)
-    text = text.replace('      echo "ROW', "      print tdb tph\n" + '      echo "ROW')
-    deck = workdir / f"{pvt.corner_id}_{tag}.spice"
-    deck.write_text(text)
-    log = logdir / f"{pvt.corner_id}_{tag}.log"
-    proc = subprocess.run(["ngspice", "-b", str(deck)], capture_output=True,
-                          text=True, cwd=str(workdir))
     header = (
         f"* full loop-gain curve T(f) for this record's {tag} point\n"
         f"* corner={pvt.corner_id} variant={row.variant} phase={row.phase} "
         f"ssr={row.ssr_cmd} ceff={fmt_uf(row.ceff_f)} esr={fmt_esr(row.esr_ohm)}\n"
-        f"* the two printed columns after the frequency are |T| in dB and "
-        f"unwrapped phase(T) in degrees\n"
     )
-    log.write_text(header + proc.stdout + proc.stderr)
-    return log
+    return ls.print_curve_log(text, header, logdir / f"{pvt.corner_id}_{tag}.log",
+                              workdir / f"{pvt.corner_id}_{tag}.spice", cwd=workdir)
 
 
 def parse_curve(path: Path) -> list[tuple[float, float, float]]:
