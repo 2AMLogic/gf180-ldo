@@ -47,7 +47,7 @@ manifest's own ``checks`` bounds.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import klt_batch as kb
@@ -393,8 +393,12 @@ def grade(tb: tbmod.Testbench, values: dict) -> bool:
     return True
 
 
-def main(testbench_dir: Path, doc: str, argv=None) -> int:
-    """The whole ``klt_run.py`` for a bench: grid -> fleet -> ``corners/<id>/``."""
+def main(testbench_dir: Path, doc: str, argv=None, **job_opts) -> int:
+    """The whole ``klt_run.py`` for a bench: grid -> fleet -> ``corners/<id>/``.
+
+    ``job_opts`` are :class:`klt_batch.Job` fields every request of the bench
+    sets (``timeout_s``, ``max_units_per_job``).
+    """
     import argparse
     import os
 
@@ -420,12 +424,12 @@ def main(testbench_dir: Path, doc: str, argv=None) -> int:
     os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
     dest = tb.experiment_dir / "corners" / args.record_id
     if not chained and supply_in_waveform(tb):
-        results = _run_supplies(tb, args, dest, repo, dut_rel)
+        results = _run_supplies(tb, args, dest, repo, dut_rel, job_opts)
     elif not chained:
-        results = run_ab(lambda n, d: job(tb, n, d, args.only), Path(args.dut), args.baseline_ref,
+        results = run_ab(lambda n, d: replace(job(tb, n, d, args.only), **job_opts), Path(args.dut), args.baseline_ref,
                          dest, repo, backend=args.backend)
     else:
-        results = _run_states(tb, args, dest, repo, dut_rel)
+        results = _run_states(tb, args, dest, repo, dut_rel, job_opts)
     rows = []
     for tag, vals in results.items():
         for cid, v in sorted(vals.items()):
@@ -436,7 +440,7 @@ def main(testbench_dir: Path, doc: str, argv=None) -> int:
     return 0
 
 
-def _run_supplies(tb, args, dest: Path, repo: Path, dut_rel: str) -> dict[str, dict]:
+def _run_supplies(tb, args, dest: Path, repo: Path, dut_rel: str, job_opts: dict) -> dict[str, dict]:
     """Run each supply point of a ``{vdd_val}``-waveform bench as its own request.
 
     Raw reports and logs land in ``dest/klt-<vin>v/<new|baseline>/``. Off-host up
@@ -450,7 +454,7 @@ def _run_supplies(tb, args, dest: Path, repo: Path, dut_rel: str) -> dict[str, d
     supplies = list(supply_jobs(tb, "probe", Path(args.dut), args.only))
 
     def go(vin):
-        return run_ab(lambda n, d: supply_jobs(tb, n, d, args.only)[vin], Path(args.dut),
+        return run_ab(lambda n, d: replace(supply_jobs(tb, n, d, args.only)[vin], **job_opts), Path(args.dut),
                       args.baseline_ref, dest / f"klt-{vin:.2f}v", repo,
                       backend=args.backend, dut_rel=dut_rel)
 
@@ -464,7 +468,7 @@ def _run_supplies(tb, args, dest: Path, repo: Path, dut_rel: str) -> dict[str, d
     return merged
 
 
-def _run_states(tb, args, dest: Path, repo: Path, dut_rel: str) -> dict[str, dict]:
+def _run_states(tb, args, dest: Path, repo: Path, dut_rel: str, job_opts: dict) -> dict[str, dict]:
     """Run each analysis state and supply point as its own request; merge per corner.
 
     Raw reports and logs land in ``dest/klt-<state>-<vin>v/<new|baseline>/``.
@@ -479,7 +483,7 @@ def _run_states(tb, args, dest: Path, repo: Path, dut_rel: str) -> dict[str, dic
 
     def go(key):
         state, vin = key
-        return state, run_ab(lambda n, d: jobs(tb, n, d, args.only)[key], Path(args.dut),
+        return state, run_ab(lambda n, d: replace(jobs(tb, n, d, args.only)[key], **job_opts), Path(args.dut),
                              args.baseline_ref, dest / f"klt-{state}-{vin:.2f}v", repo,
                              backend=args.backend, dut_rel=dut_rel)
 

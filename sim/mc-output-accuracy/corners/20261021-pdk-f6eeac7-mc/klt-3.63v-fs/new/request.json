@@ -1,0 +1,153 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "fs",
+        "sections": [
+          "fs",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "temperature_c": [
+      -40.0,
+      27.0,
+      125.0
+    ]
+  },
+  "analysis": {
+    "kind": "op",
+    "args": ""
+  },
+  "monte_carlo": {
+    "n": 40,
+    "seed": 469,
+    "vary": "mismatch"
+  },
+  "measurements": [
+    {
+      "name": "dv_1",
+      "expr": "(v(vo1) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_2",
+      "expr": "(v(vo2) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_3",
+      "expr": "(v(vo3) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_4",
+      "expr": "(v(vo4) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_5",
+      "expr": "(v(vo5) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_6",
+      "expr": "(v(vo6) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_7",
+      "expr": "(v(vo7) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_8",
+      "expr": "(v(vo8) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_9",
+      "expr": "(v(vo9) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_10",
+      "expr": "(v(vo10) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_11",
+      "expr": "(v(vo11) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_12",
+      "expr": "(v(vo12) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_13",
+      "expr": "(v(vo13) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_14",
+      "expr": "(v(vo14) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_15",
+      "expr": "(v(vo15) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_16",
+      "expr": "(v(vo16) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_17",
+      "expr": "(v(vo17) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_18",
+      "expr": "(v(vo18) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_19",
+      "expr": "(v(vo19) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_20",
+      "expr": "(v(vo20) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_21",
+      "expr": "(v(vo21) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_22",
+      "expr": "(v(vo22) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_23",
+      "expr": "(v(vo23) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_24",
+      "expr": "(v(vo24) - 1.8)*1e3"
+    },
+    {
+      "name": "dv_25",
+      "expr": "(v(vo25) - 1.8)*1e3"
+    },
+    {
+      "name": "dfb",
+      "expr": "(v(x1.fb) - 1.2)*1e3"
+    }
+  ],
+  "options": {
+    "timeout_s": 300,
+    "keep_artifacts": true,
+    "stage_model_inputs": true,
+    "ngspice_init": [
+      "set numdgt=10",
+      "set measureprec=10"
+    ]
+  }
+}

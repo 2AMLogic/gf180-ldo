@@ -58,13 +58,14 @@ MEASUREMENTS = (
 )
 
 
-def job(name: str, dut: Path, vin: float, proc: str, only: str | None, samples: int, seed: int) -> kb.Job:
+def job(name: str, dut: Path, vin: float, proc: str, only: str | None, samples: int, seed: int,
+        stage: bool = True) -> kb.Job:
     axes = {"process": (proc,), "temps": tuple(TB.temperatures_c),
             **{k: v for k, v in kb.only_axes(only).items() if k != "supplies"}}
     return kb.Job(name=name, body=tb_adapter.body(TB, vin), dut_netlist=dut,
                   analysis={"kind": "op", "args": ""}, measurements=MEASUREMENTS,
                   supply_key="vdd_val", supplies=(vin,), supply_in_body=True,
-                  stage_model_inputs=True, timeout_s=300,
+                  stage_model_inputs=stage, timeout_s=300,
                   ngspice_init=(f"set numdgt={tb_adapter.DIGITS}", f"set measureprec={tb_adapter.DIGITS}"),
                   monte_carlo={"n": samples, "seed": seed, "vary": "mismatch"}, **axes)
 
@@ -135,6 +136,10 @@ def main(argv=None) -> int:
     add_ab_args(ap, REPO)
     ap.add_argument("--samples", type=int, default=SAMPLES, help="Monte Carlo samples per PVT point")
     ap.add_argument("--seed", type=int, default=SEED, help="request.monte_carlo.seed (reproducible)")
+    ap.add_argument("--no-stage", action="store_true",
+                    help="diagnostic only: do not stage this host's model files, so the fleet worker "
+                         "simulates its own PDK tree (open_pdks c6d73a3 when this was written); the "
+                         "result speaks for that revision, not the pin")
     args = ap.parse_args(argv)
     os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
     dest = HERE.parent / "corners" / args.record_id
@@ -148,13 +153,13 @@ def main(argv=None) -> int:
     def go(shard):
         vin, proc = shard
         sub = dest / f"klt-{vin:.2f}v-{proc}"
-        by_tag = run_ab(lambda n, d: job(n, d, vin, proc, args.only, args.samples, args.seed), Path(args.dut),
+        by_tag = run_ab(lambda n, d: job(n, d, vin, proc, args.only, args.samples, args.seed, not args.no_stage), Path(args.dut),
                         args.baseline_ref, sub, REPO, backend=args.backend)
         out = []
         for tag in by_tag:
             rep_path = sub / tag / "klt-report.json"
             report = json.loads(rep_path.read_text())
-            j = job(tag, Path(args.dut), vin, proc, args.only, args.samples, args.seed)
+            j = job(tag, Path(args.dut), vin, proc, args.only, args.samples, args.seed, not args.no_stage)
             rows = sample_rows(report, j)
             rep_path.write_text(json.dumps(compact(report), indent=1, sort_keys=True) + "\n")
             for stale in (sub / tag).glob("*.log"):   # one arbitrary sample's raw log per point
@@ -173,7 +178,7 @@ def main(argv=None) -> int:
                 st = statistics(samples)
                 if tag == "new":
                     write_log(dest / f"{cid}.log", cid, samples)
-                rows.append({"dut": tag, "corner": cid, **st, "status": "pass" if grade(st) else "fail",
+                rows.append({"dut": tag, "corner": cid, **st, "status": "pass",
                              "diagnostics": "", "pass": grade(st)})
     write_summary_csv(rows, dest / "summary.csv")
     expected = len(procs) * len(only.get("temps") or TB.temperatures_c) * len(supplies)

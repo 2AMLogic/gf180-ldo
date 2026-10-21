@@ -136,6 +136,12 @@ class Job:
     #: re-run ``n`` times with a seed derived from ``seed``. Sample ``k`` of a
     #: corner comes back as its own unit, ``<corner_id>`` + ``sample_index``.
     monte_carlo: dict | None = None
+    #: ``batch.max_units_per_job``: split the request into ``ceil(units / N)``
+    #: fleet jobs. A unit that takes minutes (a 6 ms transient into a near-short)
+    #: otherwise lets one job run into the fleet's 3600 s whole-job ceiling, which
+    #: reports EVERY unit of it ``batch_job_timeout``. klt refuses a cap unless
+    #: ``timeout_s * N + 120 <= 3600``, so ``timeout_s`` is lowered with it.
+    max_units_per_job: int | None = None
 
     def request(self) -> dict:
         return {
@@ -153,6 +159,7 @@ class Job:
             "analysis": self.analysis,
             **({"monte_carlo": self.monte_carlo} if self.monte_carlo else {}),
             "measurements": self.measurements,
+            **({"batch": {"max_units_per_job": self.max_units_per_job}} if self.max_units_per_job else {}),
             "options": {"timeout_s": self.timeout_s, "keep_artifacts": True,
                         **({"stage_model_inputs": True} if self.stage_model_inputs else {}),
                         **({"ngspice_init": list(self.ngspice_init)} if self.ngspice_init else {})},
