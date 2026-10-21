@@ -46,7 +46,8 @@ def job(name: str, dut: Path, only=None) -> kb.Job:
     body = "\n".join([kb.DESIGN_PARAMS, kb.WNFLAG, (HERE / "klt_body.spice").read_text()])
     return kb.Job(name=name, body=body, dut_netlist=dut,
                   analysis={"kind": "dc", "args": "Vforce 0 1.764 0.012"},
-                  measurements=MEASUREMENTS, timeout_s=900, **kb.only_axes(only))
+                  measurements=MEASUREMENTS, timeout_s=900, stage_model_inputs=True,
+                  **kb.only_axes(only))
 
 
 def grade(v: dict, vin: float) -> dict:

@@ -247,6 +247,11 @@ directory per gf180mcu voltage/rule-deck variant. Per
 this repo's primary design uses the **3.3 V flavor**, which is variant
 **`gf180mcuD`**.
 
+Evidence recorded before the re-pin to `f6eeac7…` was measured at open_pdks
+`c6d73a35f524070e85faff4a6a9eef49553ebc2b`; how those records are marked and
+re-qualified is in
+[`sim/README.md`](../sim/README.md#records-measured-under-open_pdks-c6d73a3-are-superseded-as-pdk-evidence-428--430).
+
 ## 4. `PDK_ROOT` / `PDK` environment convention
 
 ```bash

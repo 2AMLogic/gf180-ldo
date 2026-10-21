@@ -24,11 +24,11 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 | Load reg (0–50 mA) | FAIL | fresh | `sim/load-regulation/records/20261021-013226-7c57744.md` |
 | Load transient | PASS | STALE | `sim/load-transient/records/20260905-202554-3093ea1.md` |
 | PSRR | FAIL | fresh | `sim/psrr-dc/records/20261021-023703-7d3b2a0.md` (+ 2 more, see detail) |
-| Iq (excluding load current) | PASS | STALE | `sim/quiescent-current/records/20260923-141210-33035d7.md` (+ 1 more, see detail) |
-| Current limit | PASS | STALE | `sim/current-limit/records/20260923-141325-33035d79.md` |
+| Iq (excluding load current) | MIXED | fresh | `sim/quiescent-current/records/20261020-pdk-f6eeac7-iq.md` (+ 1 more, see detail) |
+| Current limit | PASS | fresh | `sim/current-limit/records/20261020-pdk-f6eeac7-ilim.md` |
 | Startup | MIXED | STALE | `sim/startup/records/20260916-112114-8b551ab.md` (+ 1 more, see detail) |
-| Enable / shutdown | PASS | STALE | `sim/enable-shutdown/records/20260905-232555-3093ea1.md` |
-| Thermal | PASS | STALE | `sim/current-limit/records/20260923-141325-33035d79.md` |
+| Enable / shutdown | PASS | fresh | `sim/enable-shutdown/records/20261020-pdk-f6eeac7-en.md` |
+| Thermal | PASS | fresh | `sim/current-limit/records/20261020-pdk-f6eeac7-ilim.md` |
 | Output noise | N/A | N/A | see note below |
 | Area | N/A | N/A | see note below |
 | Stability | PASS | STALE | `sim/loop-stability/records/20260923-132038-a992b52.md` |
@@ -115,20 +115,20 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 **Ratified target**: < 30 µA at no load **and** at full load — binds ff / 125 °C / 3.63 V
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: MIXED  **Fresh**: fresh
 
-- `quiescent-current`: `sim/quiescent-current/records/20260923-141210-33035d7.md` — **PASS**, stale
-  - Overall: PASS
-- `enable-shutdown` — same run also substantiates this row's full-load enabled-state clause: `sim/enable-shutdown/records/20260905-232555-3093ea1.md` — **PASS**, stale
-  - Overall (Enable/shutdown, ratified bounds): PASS / Overall (Iq, ratified < 30 µA at full load): PASS
+- `quiescent-current`: `sim/quiescent-current/records/20261020-pdk-f6eeac7-iq.md` — **MIXED**, fresh (matches current `ldo_core`)
+  - Overall (Iq, ratified < 30 uA enabled, no load and 50 mA): PASS … FAIL at `ss_-40c_2.97v` / Overall (shutdown Iq, ratified < 3 uA): PASS
+- `enable-shutdown` — same run also substantiates this row's full-load enabled-state clause: `sim/enable-shutdown/records/20261020-pdk-f6eeac7-en.md` — **PASS**, fresh (matches current `ldo_core`)
+  - Overall (Enable / shutdown, ratified shutdown Iq < 3 uA, Vin->Vout leakage <= 1 uA, disabled state): PASS / Overall (Iq at full load, ratified < 30 uA, enabled state): PASS
 
 ### Current limit
 
 **Ratified target**: 62–95 mA over PVT untrimmed, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5, note 9)
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: PASS  **Fresh**: fresh
 
-- `current-limit`: `sim/current-limit/records/20260923-141325-33035d79.md` — **PASS**, stale
+- `current-limit`: `sim/current-limit/records/20261020-pdk-f6eeac7-ilim.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall (current limit, ratified 62–95 mA window): PASS
 
 ### Startup
@@ -146,19 +146,19 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 **Ratified target**: shutdown Iq < 3 µA at ff / 125 °C / 3.63 V; disabled output state is pass device fully off with no internal active discharge; Vin→Vout leakage ≤ 1 µA at the same corner
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: PASS  **Fresh**: fresh
 
-- `enable-shutdown`: `sim/enable-shutdown/records/20260905-232555-3093ea1.md` — **PASS**, stale
-  - Overall (Enable/shutdown, ratified bounds): PASS / Overall (Iq, ratified < 30 µA at full load): PASS
+- `enable-shutdown`: `sim/enable-shutdown/records/20261020-pdk-f6eeac7-en.md` — **PASS**, fresh (matches current `ldo_core`)
+  - Overall (Enable / shutdown, ratified shutdown Iq < 3 uA, Vin->Vout leakage <= 1 uA, disabled state): PASS / Overall (Iq at full load, ratified < 30 uA, enabled state): PASS
 
 ### Thermal
 
 **Ratified target**: 92 mW continuous worst case (Vin 3.63 V at 50 mA); ≤ 346 mW into a Vout = 0 short at the untrimmed 95 mA limit ceiling (note 9); specified to Tj ≤ 125 °C — θJA and sustained-short survivability delegated to the package/integration spec
 
-**Verdict**: PASS  **Fresh**: STALE
+**Verdict**: PASS  **Fresh**: fresh
 
-- `current-limit` — only substantiates the '<=290 mW into a short' clause; the '92 mW continuous worst case' clause has no dedicated testbench of its own: `sim/current-limit/records/20260923-141325-33035d79.md` — **PASS**, stale
-  - Overall (thermal, ratified ≤ 346 mW into a short): PASS
+- `current-limit` — only substantiates the '<=290 mW into a short' clause; the '92 mW continuous worst case' clause has no dedicated testbench of its own: `sim/current-limit/records/20261020-pdk-f6eeac7-ilim.md` — **PASS**, fresh (matches current `ldo_core`)
+  - Overall (thermal, ratified <= 346 mW into a short): PASS
 
 ### Output noise
 
@@ -183,9 +183,9 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 ## Tally
 
-16 ratified rows: 12 testable (6 PASS, 5 FAIL, 1 MIXED, 0 UNKNOWN), 4 N/A.
+16 ratified rows: 12 testable (5 PASS, 5 FAIL, 2 MIXED, 0 UNKNOWN), 4 N/A.
 
-Freshness among the 12 testable rows: 4 fresh, 8 stale, 0 unknown.
+Freshness among the 12 testable rows: 8 fresh, 4 stale, 0 unknown.
 
 A row is only a true current PASS if its Verdict column reads PASS **and** its Fresh column reads fresh — a stale PASS reflects a design state this repo has since moved past, not a claim about `design/netlist/ldo_core.spice` as committed today.
 
