@@ -23,7 +23,7 @@ from pathlib import Path
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
-from harness import cli, corners, paths, report, runner, testbench  # noqa: E402
+from harness import cli, corners, klt_grid, paths, report, runner, testbench  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
     parse_meas_lines,
@@ -2786,6 +2786,74 @@ class ExclusiveRecordWriteTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             report.write_record({"record_id": self.ID}, experiment)
         self.assertEqual(list((experiment / report.RECORDS_DIR).glob("*")), [])
+
+
+class KltGridTests(unittest.TestCase):
+    """Retry policy shared by the loop-sweep klt drivers (issue #492)."""
+
+    MISS = "no DC branch"
+
+    def drive(self, outcomes, retry_outcomes, bad=(), void_on_miss=False):
+        events, retried = [], []
+
+        def parse(key, results, suffix):
+            table = retry_outcomes if suffix else outcomes
+            err = table[key]
+            return ([] if err else [f"row-{key}{suffix}"]), err
+
+        def run_retry(key):
+            retried.append(key)
+            return None, ["boom"] if key in retry_problem_keys else []
+
+        retry_problem_keys = {k for k, v in retry_outcomes.items() if v == "PROB"}
+        out = klt_grid.run_retry_grid(
+            list(outcomes), None, set(bad), parse=parse, run_retry=run_retry,
+            miss_marker=self.MISS, name=str, bad_key=lambda k: k, bad_message="bad",
+            retry_problem=lambda err, probs: err or "; ".join(probs),
+            say=lambda k, ev, d: events.append((k, ev, d)),
+            report=lambda k, rows, note: events.append((k, "ok", note)),
+            void_on_miss=void_on_miss)
+        return out, events, retried
+
+    def test_clean_miss_error_bad_and_seeded_paths(self):
+        (rows, failures, seeded, voided), events, retried = self.drive(
+            {"a": None, "b": self.MISS, "c": "other", "d": None},
+            {"b": None}, bad={"d"})
+        self.assertEqual(rows, ["row-a", "row-b_dcseed"])
+        self.assertEqual(failures, ["c: other", "d: bad"])
+        self.assertEqual(seeded, ["b"])
+        self.assertEqual(voided, [])
+        self.assertEqual(retried, ["b"])
+        self.assertEqual(events, [
+            ("a", "ok", ""), ("b", "retry", ""), ("c", "error", "other"),
+            ("d", "error", "bad"), ("b", "ok", "  [DC seed]")])
+
+    def test_bad_unit_is_never_retried_even_on_a_miss_message(self):
+        (_, failures, _, _), _, retried = self.drive({"a": self.MISS}, {}, bad={"a"})
+        self.assertEqual(failures, ["a: bad"])
+        self.assertEqual(retried, [])
+
+    def test_seeded_miss_is_voided_only_when_enabled(self):
+        outs, retry = {"a": self.MISS}, {"a": self.MISS}
+        (_, failures, _, voided), _, _ = self.drive(outs, retry, void_on_miss=True)
+        self.assertEqual((failures, voided), ([], [f"a: {self.MISS}"]))
+        (_, failures, _, voided), _, _ = self.drive(outs, retry)
+        self.assertEqual((failures, voided), ([f"a (with DC seed): {self.MISS}"], []))
+
+    def test_retry_problem_overrides_a_clean_parse(self):
+        (rows, failures, seeded, _), _, _ = self.drive(
+            {"a": self.MISS}, {"a": "PROB"})
+        self.assertEqual((rows, seeded), ([], []))
+        self.assertEqual(failures, ["a (with DC seed): PROB"])
+
+    def test_select_backend(self):
+        self.assertEqual(klt_grid.select_backend(None, 1), ("local", False))
+        self.assertEqual(klt_grid.select_backend(None, 4), ("batch", True))
+        self.assertEqual(klt_grid.select_backend("klt-local", 1), ("klt-local", True))
+        self.assertEqual(klt_grid.select_backend("local", 4), ("local", False))
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertIsNone(klt_grid.select_backend("klt-local", 4))
+        self.assertIn("FATAL: --backend klt-local", err.getvalue())
 
 
 if __name__ == "__main__":

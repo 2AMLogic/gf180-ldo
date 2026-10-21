@@ -77,6 +77,7 @@ LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 sys.path.insert(0, str(HERE))  # sibling klt_run: sweep.py is also loaded by path
+from harness import klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
@@ -773,9 +774,6 @@ def run_grid_klt(grid, corners, args, iloads, ceffs, esrs, logdir: Path, workdir
     configs = [(il, ce, es) for il in iloads for ce in ceffs for es in esrs]
     axes = {"process": tuple(c.name for c in corners), "temps": tuple(args.temps),
             "supplies": tuple(sorted({p.vdd for p in grid}))}
-    rows: list[Row] = []
-    failures: list[str] = []
-    seeded: list[str] = []
     klt_backend_arg = klt_backend  # "batch" or "local", passed to `klt sim --backend`
     print(f"klt sim   : {len(configs)} requests x {len(grid)} corners, backend {klt_backend}")
     results, problems, bad = klt_run.run_configs(
@@ -790,43 +788,30 @@ def run_grid_klt(grid, corners, args, iloads, ceffs, esrs, logdir: Path, workdir
         log.write_text(text)
         return rows_from_log(pvt, text, len(configs), log)
 
-    retries = []
-    for pvt in grid:
-        pt_rows, err = parse(pvt, results)
-        if pvt.corner_id in bad:
-            # klt itself reported a problem (failed batch job, errored pass,
-            # unattributable measurement): that is not a DC-branch miss and a
-            # seeded retry would not change it.
-            err = "klt reported a problem for this corner (see warnings above)"
-        if err:
-            if "regulating DC solution" in err:
-                retries.append(pvt)
-                print(f"  {pvt.corner_id:<22} DC branch miss, retrying with the regulating-branch seed")
-                continue
-            failures.append(f"{pvt.corner_id}: {err}")
-            print(f"  {pvt.corner_id:<22} SIM ERROR  {err}")
-            continue
-        rows.extend(pt_rows)
-        w = worst_of(pt_rows)
-        print(f"  {pvt.corner_id:<22} worst PM {pm_str(w):>7} deg  GM {gm_str(w):>7} dB  at {w.config_id}")
-
-    for pvt in retries:
+    def run_retry(pvt):
         one = {"process": (pvt.corner.name,), "temps": (pvt.temp_c,), "supplies": (pvt.vdd,)}
         res, probs, _ = klt_run.run_configs(
             configs, LDO_NETLIST, args.ac_dec, F_START, F_STOP, one, workdir, logdir,
             klt_backend_arg, args.in_flight, dc_seed=dc_seed_lines(pvt))
-        for p in probs:
-            print(f"  WARNING {p}", file=sys.stderr)
-        pt_rows, err = parse(pvt, res, "_dcseed")
-        if err or probs:
-            failures.append(f"{pvt.corner_id} (with DC seed): {err or '; '.join(probs)}")
-            print(f"  {pvt.corner_id:<22} SIM ERROR  {err or probs[0]}")
-            continue
-        seeded.append(pvt.corner_id)
-        rows.extend(pt_rows)
+        return res, probs
+
+    def say(pvt, event, detail):
+        if event == "retry":
+            print(f"  {pvt.corner_id:<22} DC branch miss, retrying with the regulating-branch seed")
+        else:
+            print(f"  {pvt.corner_id:<22} SIM ERROR  {detail}")
+
+    def report(pvt, pt_rows, note):
         w = worst_of(pt_rows)
         print(f"  {pvt.corner_id:<22} worst PM {pm_str(w):>7} deg  GM {gm_str(w):>7} dB  "
-              f"at {w.config_id}  [regulating-branch DC seed]")
+              f"at {w.config_id}" + (note and "  [regulating-branch DC seed]"))
+
+    rows, failures, seeded, _ = klt_grid.run_retry_grid(
+        grid, results, bad, parse=parse, run_retry=run_retry,
+        miss_marker="regulating DC solution", name=lambda pvt: pvt.corner_id,
+        bad_key=lambda pvt: pvt.corner_id,
+        bad_message="klt reported a problem for this corner (see warnings above)",
+        retry_problem=lambda err, probs: err or "; ".join(probs), say=say, report=report)
     info = {"backend": klt_backend, "requests": len(configs), "klt": klt_run.klt_version()}
     return rows, failures, seeded, info
 
@@ -892,12 +877,10 @@ def main() -> int:
 
     n_pvt = len(resolve_corners(args.corners)) * len(args.temps) * len(
         supply_points(NOMINAL_SUPPLY_V, args.supply_tol))
-    backend = args.backend or ("local" if n_pvt == 1 else "batch")
-    use_klt = backend in ("batch", "klt-local")
-    if backend == "klt-local" and n_pvt > 1:
-        print(f"FATAL: --backend klt-local is a single-PVT-point check; this grid is "
-              f"{n_pvt} PVT points. Use --backend batch.", file=sys.stderr)
+    selected = klt_grid.select_backend(args.backend, n_pvt)
+    if selected is None:
         return 3
+    backend, use_klt = selected
     if shutil.which("ngspice") is None:
         print("FATAL: ngspice not on PATH", file=sys.stderr)
         return 3
