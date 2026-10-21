@@ -17,7 +17,7 @@ import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "sim"))
-from harness.pvt_log import read_measurements, report_minmax  # noqa: E402
+from harness.pvt_log import grid_rollup, report_minmax, write_corner_csv  # noqa: E402
 
 SCALARS = ["m_vout_0ma", "m_vout_25ma", "m_vout_50ma", "m_ivin_0ma_ua",
            "m_iload_25ma", "m_iload_50ma",
@@ -26,47 +26,26 @@ SCALARS = ["m_vout_0ma", "m_vout_25ma", "m_vout_50ma", "m_ivin_0ma_ua",
            "m_ilim_0300_ma", "m_ilim_0000_ma", "m_pshort_mw"]
 
 
-def read(log):
-    return read_measurements(log, SCALARS)
+def derive(vals: dict) -> None:
+    # Brickwall test: a constant-current clamp holds the same current
+    # as the output collapses. Positive = short-circuit current is
+    # HIGHER than at Vout = 1.5 V (inverse foldback, the bad direction
+    # for short-circuit power); negative = it folds back.
+    vals["m_flat_0_vs_1500_pct"] = (
+        (vals["m_ilim_0000_ma"] - vals["m_ilim_1500_ma"])
+        / vals["m_ilim_1500_ma"] * 100)
 
 
 def rollup(log_dir: pathlib.Path, corners: str, temps: str, supplies: str) -> list[tuple]:
-    """Read ``<log_dir>/<corner>_<temp>c_<vin>v.log`` for every point of the
-    full-factorial grid and return ``(cid, corner, temp, vin, vals)`` rows,
-    with the derived flatness column added. Pure: no printing, no writing.
-
-    Fails loud on a missing log (``FileNotFoundError``) and on a log with a
-    missing or unparsable measurement (``SystemExit``, via
-    ``read_measurements``) -- every grid point is required.
-    """
-    rows = []
-    for c in corners.split():
-        for t in temps.split():
-            for v in supplies.split():
-                cid = "%s_%sc_%.2fv" % (c, t, float(v))
-                vals = read(pathlib.Path(log_dir) / f"{cid}.log")
-                # Brickwall test: a constant-current clamp holds the same current
-                # as the output collapses. Positive = short-circuit current is
-                # HIGHER than at Vout = 1.5 V (inverse foldback, the bad direction
-                # for short-circuit power); negative = it folds back.
-                vals["m_flat_0_vs_1500_pct"] = (
-                    (vals["m_ilim_0000_ma"] - vals["m_ilim_1500_ma"])
-                    / vals["m_ilim_1500_ma"] * 100)
-                rows.append((cid, c, t, v, vals))
-    if not rows:
-        raise SystemExit("FATAL: empty corner grid")
-    return rows
+    """Full-factorial grid rows, with the derived flatness column added."""
+    return grid_rollup(log_dir, corners, temps, supplies, SCALARS, derive)
 
 
 CSV_COLS = SCALARS + ["m_flat_0_vs_1500_pct"]
 
 
 def write_csv(rows, csv_path) -> None:
-    with open(csv_path, "w") as fh:
-        fh.write("corner_id,corner,temp_c,vin_v,"
-                 + ",".join(c[2:] for c in CSV_COLS) + "\n")
-        for cid, c, t, v, vals in rows:
-            fh.write(f"{cid},{c},{t},{v}," + ",".join(f"{vals[k]:.6g}" for k in CSV_COLS) + "\n")
+    write_corner_csv(rows, csv_path, CSV_COLS)
 
 
 def checks(rows) -> dict:

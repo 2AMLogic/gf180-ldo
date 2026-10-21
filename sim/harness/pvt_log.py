@@ -67,6 +67,49 @@ def read_measurements(log: pathlib.Path, scalars: Sequence[str]) -> dict[str, fl
     return vals
 
 
+def grid_rollup(
+    log_dir: pathlib.Path,
+    corners: str,
+    temps: str,
+    supplies: str,
+    scalars: Sequence[str],
+    derive: Callable[[dict], None],
+) -> list[tuple]:
+    """Read ``<log_dir>/<corner>_<temp>c_<vin>v.log`` for every point of the
+    full-factorial ``corners x temps x supplies`` grid and return
+    ``(cid, corner, temp, vin, vals)`` rows. ``derive(vals)`` adds the
+    testbench's derived columns to each point's ``vals`` in place.
+    Pure: no printing, no writing.
+
+    Fails loud on a missing log (``FileNotFoundError``), on a log with a
+    missing or unparsable measurement (``SystemExit``, via
+    ``read_measurements``), and on an empty grid -- every grid point is
+    required.
+    """
+    rows = []
+    for c in corners.split():
+        for t in temps.split():
+            for v in supplies.split():
+                cid = "%s_%sc_%.2fv" % (c, t, float(v))
+                vals = read_measurements(pathlib.Path(log_dir) / f"{cid}.log", scalars)
+                derive(vals)
+                vals["_vin"] = float(v)
+                rows.append((cid, c, t, v, vals))
+    if not rows:
+        raise SystemExit("FATAL: empty corner grid")
+    return rows
+
+
+def write_corner_csv(rows: Sequence[tuple], csv_path, csv_cols: Sequence[str]) -> None:
+    """Write ``rows`` (as returned by ``grid_rollup``) to ``csv_path`` with one
+    ``corner_id,corner,temp_c,vin_v`` prefix plus ``csv_cols`` per point
+    (header drops each column's ``m_`` prefix)."""
+    with open(csv_path, "w") as fh:
+        fh.write("corner_id,corner,temp_c,vin_v," + ",".join(c[2:] for c in csv_cols) + "\n")
+        for cid, c, t, v, vals in rows:
+            fh.write(f"{cid},{c},{t},{v}," + ",".join(f"{vals[k]:.6g}" for k in csv_cols) + "\n")
+
+
 def report_minmax(
     rows: Sequence[tuple],
     name: str,
