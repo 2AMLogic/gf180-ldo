@@ -4,6 +4,19 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-10-21
 
+- **PR #480**: sim: gate the psrr-vs-freq-50ma sink on the supply so ss/-40C/2.97V reaches 50 mA physically
+- **PR #479**: fix(sim): reach DC bench operating points by continuation so the sweeps stay off the pass-device-off root
+- **PR #477**: sim: re-qualify amp-openloop and the PSRR benches at open_pdks f6eeac7 on the batch fleet
+- **PR #475**: spec: DR-0039 attributes the ff/125C line-regulation failure to the soft-start injection residual
+- **PR #474**: sim: shared tb.json klt adapter and fleet re-qualification of three DC-sweep benches at open_pdks f6eeac7
+- **PR #471**: refactor: share one ngspice measurement-line parser across harness consumers
+- **PR #466**: sim: re-qualify iq, current-limit, enable-shutdown at open_pdks f6eeac7 via staged models
+- **Issue #478** (closed): sim: psrr-vs-freq-50ma ss_-40c_2.97v converges to the pass-device-off state (Vout 0.145 V, 5.0 mA)
+- **Issue #473** (closed): line-regulation: ff_125c_3.30v reads ~8.2 mV/V against the ratified 5 mV/V bound (design or spec decision; split from #472)
+- **Issue #472** (closed): sim: three DC-sweep benches regress on the DR-0037 DUT (dropout knee guard x5, ss/-40C false convergence x2)
+- **Issue #470** (closed): Consolidate three drifting ngspice measurement parsers into one
+- **Issue #468** (closed): sim: re-qualify AC benches amp-openloop, psrr-dc, psrr-vs-freq, psrr-vs-freq-50ma at f6eeac7 via klt sim (part of #464)
+- **Issue #467** (closed): sim: shared tb.json klt adapter + re-qualify dropout-vs-load, line-regulation, load-regulation at f6eeac7 (part of #464)
 - **PR #462**: refactor: hoist grid rollup and CSV writer into harness.pvt_log
 - **Issue #461** (closed): Dedup rollup/write_csv between enable-shutdown and current-limit summarize.py
 
