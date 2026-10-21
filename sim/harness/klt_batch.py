@@ -132,6 +132,10 @@ class Job:
     #: ``.param`` the fragment's expressions read, on a backend whose worker
     #: predates ``corners.params`` (it answers ``params_unsupported_worker``).
     supply_in_body: bool = False
+    #: ``request.monte_carlo`` (``{"n", "seed", "vary"}``): every corner point is
+    #: re-run ``n`` times with a seed derived from ``seed``. Sample ``k`` of a
+    #: corner comes back as its own unit, ``<corner_id>`` + ``sample_index``.
+    monte_carlo: dict | None = None
 
     def request(self) -> dict:
         return {
@@ -147,6 +151,7 @@ class Job:
                 "temperature_c": list(self.temps),
             },
             "analysis": self.analysis,
+            **({"monte_carlo": self.monte_carlo} if self.monte_carlo else {}),
             "measurements": self.measurements,
             "options": {"timeout_s": self.timeout_s, "keep_artifacts": True,
                         **({"stage_model_inputs": True} if self.stage_model_inputs else {}),
