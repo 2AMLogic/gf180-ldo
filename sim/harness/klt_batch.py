@@ -130,7 +130,12 @@ class Job:
             },
             "analysis": self.analysis,
             "measurements": self.measurements,
-            "options": {"timeout_s": self.timeout_s, "keep_artifacts": True},
+            # stage_model_inputs ships *this* host's PDK model closure with the
+            # job. Without it the fleet worker simulates against whatever
+            # open_pdks its /opt/pdk holds, which can lag the revision this repo
+            # pins (PINNED_OPEN_PDKS_REVISION) -- see sim/README.md.
+            "options": {"timeout_s": self.timeout_s, "keep_artifacts": True,
+                        "stage_model_inputs": True},
         }
 
 

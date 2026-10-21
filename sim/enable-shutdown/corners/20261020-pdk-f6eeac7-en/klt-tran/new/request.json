@@ -1,0 +1,157 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "fs",
+        "sections": [
+          "fs",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "sf",
+        "sections": [
+          "sf",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ff",
+        "sections": [
+          "typical",
+          "res_ff",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ss",
+        "sections": [
+          "typical",
+          "res_ss",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vin": [
+        2.97,
+        3.3,
+        3.63
+      ]
+    },
+    "temperature_c": [
+      -40,
+      27,
+      125
+    ]
+  },
+  "analysis": {
+    "kind": "tran",
+    "args": "1u 9m"
+  },
+  "measurements": [
+    {
+      "name": "t_startup",
+      "spice": ".meas tran t_startup TRIG v(en) VAL=1.4 RISE=1 TARG v(vout) VAL=1.764 RISE=1"
+    },
+    {
+      "name": "vout_settled",
+      "spice": ".meas tran vout_settled FIND v(vout) AT=7.9m"
+    },
+    {
+      "name": "vout_max_en",
+      "spice": ".meas tran vout_max_en MAX v(vout) FROM=101u TO=8m"
+    },
+    {
+      "name": "vout_min_reg",
+      "spice": ".meas tran vout_min_reg MIN v(vout) FROM=7m TO=8m"
+    },
+    {
+      "name": "isup_peak_ma",
+      "spice": ".meas tran isup_peak_ma MAX v(ivin) FROM=100u TO=8m"
+    },
+    {
+      "name": "clg_min_reg",
+      "spice": ".meas tran clg_min_reg MIN v(xdut.xilimit.clg) FROM=7m TO=8m"
+    },
+    {
+      "name": "isup_peak_reg_ma",
+      "spice": ".meas tran isup_peak_reg_ma MAX v(ivin) FROM=7m TO=8m"
+    },
+    {
+      "name": "vout_pp_late",
+      "spice": ".meas tran vout_pp_late PP v(vout) FROM=7.5m TO=7.9m"
+    },
+    {
+      "name": "vout_off_tran",
+      "spice": ".meas tran vout_off_tran FIND v(vout) AT=8.9m"
+    },
+    {
+      "name": "vout_max_off",
+      "spice": ".meas tran vout_max_off MAX v(vout) FROM=8.5m TO=9m"
+    },
+    {
+      "name": "pg_off_tran",
+      "spice": ".meas tran pg_off_tran FIND v(pg) AT=8.9m"
+    }
+  ],
+  "options": {
+    "timeout_s": 1800,
+    "keep_artifacts": true,
+    "stage_model_inputs": true
+  }
+}

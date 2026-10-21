@@ -1,0 +1,44 @@
+.param sw_stat_global=0 sw_stat_mismatch=0 mc_skew=3 res_mc_skew=3 cap_mc_skew=3 fnoicor=0
+.options wnflag=1
+* enable-shutdown -- klt sim circuit body template (issue #366).
+*
+* tb_enable_shutdown.spice.in's circuit, in the shape `klt sim` accepts (no
+* .control block, ONE analysis per corner -- see sim/harness/klt_batch.py).
+* The deck chains four analyses (op / alter+op / alter+op / alter+tran) in one
+* .control block, so klt_run.py submits this body four times, one per
+* analysis state, substituting the three tokens below:
+*
+*   state     DC 0 PWL(0 0 100u 0 101u 1 8m 1 8.001m 0)   36   1G   analysis
+*   enabled   1         36        1G         op
+*   disabled  0         1G        1G         op
+*   leakage   0         1G        1m         op     (Vin->Vout, output held at 0 V)
+*   tran      PWL       36        1G         tran 1u 9m
+*
+* EN follows VIN through an ideal behavioural source gated by ENCTL, so the
+* request's supply axis can `alter vin` alone (the deck's Ven carries VIN_V).
+* The tran state's ENCTL is the deck's exact edges (low to 100 us, high 101 us
+* .. 8 ms, low after 8.001 ms), scaled by VIN. Solver options are the deck's.
+
+.include "dut.spice"
+.options reltol=1e-3 vntol=1e-5 abstol=1e-11 chgtol=1e-14
+
+Vin VIN 0 DC 3.3
+Venctl ENCTL 0 DC 0 PWL(0 0 100u 0 101u 1 8m 1 8.001m 0)
+Ben EN 0 V = 'v(vin) * v(enctl)'
+Vref VREF 0 DC 1.2
+
+Xdut VIN VOUT EN 0 EOUT PG VREF ldo_core
+Vloop PG EOUT DC 0
+
+Resr VOUT n_esr 0.1
+Cout n_esr 0 1u
+
+Rload VOUT LN 36
+Vlmeas LN 0 DC 0
+
+Vforce VF 0 DC 0
+Rforce VOUT VF 1G
+
+* Supply current in mA as a node voltage, so a top-level .meas can take its
+* MAX (the deck's `let ivin_ma = -i(vin)*1e3`).
+Bivin IVIN 0 V = '-i(vin)*1e3'

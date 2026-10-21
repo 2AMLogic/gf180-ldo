@@ -343,6 +343,47 @@ part of what the bash driver's ladder-exhaustion *gate* needed to port —
 corner outright the same way, they just do not also classify/census the
 rung for corners that pass.
 
+## Records measured under open_pdks `c6d73a3` are superseded as PDK evidence (#428 / #430)
+
+`sim/harness/pdk.py` pins `PINNED_OPEN_PDKS_REVISION =
+f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7`. Every record minted before that
+re-pin was measured at the previous pin, open_pdks
+`c6d73a35f524070e85faff4a6a9eef49553ebc2b` (local `~/.ciel` trees, and the
+batch fleet's `/opt/pdk`). Those records are **not edited**; the convention
+below is how a reader tells which revision a record speaks for.
+
+- **A record that states no `f6eeac7…` revision speaks for `c6d73a3…`.**
+  Records minted by `klt sim` carry the worker's PDK stamp in their klt
+  report (`environment.remote.worker_environment.pdk.stamp_text`).
+- **A re-qualified bench gets a new record** whose `Supersedes` field names the
+  prior head record(s) and whose PDK-revision field states `f6eeac7…`, with a
+  same-DUT old-vs-new comparison when a same-DUT baseline exists. The older
+  record stays valid evidence for `c6d73a3…` and is superseded only as
+  evidence for the pinned revision. `sim/CHARACTERIZATION.md` picks the new
+  record up automatically (newest record whose snapshot matches the current
+  DUT).
+- **The fleet's PDK can lag the repo's pin.** The batch fleet's worker image
+  carries its own `/opt/pdk`; a request that does not say otherwise is
+  simulated against that tree. `sim/harness/klt_batch.py` therefore submits
+  `options.stage_model_inputs: true`, which ships the submitting host's model
+  files (its `~/.ciel` tree, checked against the pin by
+  `sim/run_corners.py --check-env`) with the job. Confirm per run: the klt
+  report's `worker_environment.models_staged` is `true` and its `model_inputs`
+  list the staged files. The report's `pdk.stamp_text` keeps naming the
+  worker's own tree and is not what the job used.
+
+Re-qualification status (issue #430). "Moved" means a measurement or a
+pass/fail verdict differs from the same-DUT record at `c6d73a3…`:
+
+| bench | new record | same-DUT old record | moved? |
+|---|---|---|---|
+| `quiescent-current` | `20261020-pdk-f6eeac7-iq` | `20261015-iq-320-pvt` | no (81/81 points identical) |
+| `current-limit` | `20261020-pdk-f6eeac7-ilim` | `20261015-ilim-320-pvt` | no (63/63 points identical) |
+| `enable-shutdown` | `20261020-pdk-f6eeac7-en` | none (older DUT only) | not separable; all checks pass |
+
+The remaining reference benches are not yet re-qualified and still speak for
+`c6d73a3…` only; they are tracked in #464 (the `tb.json` benches, which first need a `klt sim` front end) and #465 (`loop-stability`, `soft-start`).
+
 ## Interim evidence note (for #4, device characterization)
 
 #4 (characterizing gf180mcu devices for the LDO — pass FETs, resistors,
