@@ -2,6 +2,11 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-22
+
+- **PR #499**: docs: record pass-array generator stays its own vs gate-driver power_array_folded (DR-0040)
+- **Issue #498** (closed): Adopt or record: pass-device array generator vs gf180-gate-driver's folded power array (REUSE.md)
+
 ### 2026-10-21
 
 - **PR #494**: refactor(sim): share klt grid retry driver between loop sweeps
