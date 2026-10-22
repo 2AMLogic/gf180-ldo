@@ -32,18 +32,19 @@ Issues currently being built (`loom:building`).
 
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
+- **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
-_None._
+- **#502**: spec: propose limiting load-transient test condition to ESR >= 200 mOhm (DR-0041, ratification)
 
 ## Approved (Awaiting Merge)
 
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
-- **#490**: sim: attribute load-transient excursions to the DR-0034 pass width and the out-of-envelope output network
+_None._
 
 ## Proposed
 
@@ -83,9 +84,9 @@ _None._
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`) | 1 |
-| In Progress (`loom:building`) | 2 |
-| PRs awaiting review | 0 |
-| Approved PRs awaiting merge | 1 |
+| In Progress (`loom:building`) | 3 |
+| PRs awaiting review | 1 |
+| Approved PRs awaiting merge | 0 |
 | Curated | 15 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
