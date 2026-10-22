@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "kind": "t1-attestation-inventory",
+  "t1_item": 10,
+  "description": "README, spec, licence and CI exist, and the PDK-free CI gates still pass. The checks mirror the harness-selftest job in .github/workflows/ci.yml.",
+  "hygiene": [
+    "README.md",
+    "LICENSE",
+    ".github/workflows/ci.yml",
+    "spec/spec-table-lock.json",
+    "docs/environment-setup.md"
+  ],
+  "checks": [
+    {
+      "name": "lint",
+      "argv": [
+        "uvx",
+        "ruff==0.16.10",
+        "check",
+        "."
+      ]
+    },
+    {
+      "name": "harness-unit-tests",
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "sim/tests",
+        "-t",
+        "sim/tests"
+      ]
+    },
+    {
+      "name": "layout-unit-tests",
+      "argv": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "layout/tests",
+        "-t",
+        "layout/tests"
+      ]
+    },
+    {
+      "name": "characterization-current",
+      "argv": [
+        "bash",
+        "-c",
+        "python3 sim/build_characterization_report.py | diff -q sim/CHARACTERIZATION.md -"
+      ]
+    },
+    {
+      "name": "spec-table-lock",
+      "argv": [
+        "python3",
+        "spec/check_spec_table.py",
+        "--check"
+      ]
+    }
+  ]
+}

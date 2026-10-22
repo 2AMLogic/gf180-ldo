@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "kind": "generic",
+  "status": "pass",
+  "t1_item": 10,
+  "summary": "T1 item 10 (Repo hygiene): 10/10 attestation checks passed (klt signoff --attest)",
+  "source": "signoff/inventory-item10.json",
+  "attestation": {
+    "producer": "klt signoff --attest",
+    "inventory_schema_version": 1,
+    "hash_algorithm": "sha256-raw-bytes",
+    "check_count": 10,
+    "passed_count": 10,
+    "checks": [
+      {
+        "check": "present",
+        "role": "hygiene",
+        "path": ".github/workflows/ci.yml",
+        "passed": true,
+        "content_hash": "sha256:fcbb995ee01d60dc43c3bb526269ce5bb7787c1ed2b01bbb1e491b167a7ce950"
+      },
+      {
+        "check": "present",
+        "role": "hygiene",
+        "path": "LICENSE",
+        "passed": true,
+        "content_hash": "sha256:5116614516b9bcb7c7af2dbeb1fbde210225339edd378fc13326f3342ffaf777"
+      },
+      {
+        "check": "present",
+        "role": "hygiene",
+        "path": "README.md",
+        "passed": true,
+        "content_hash": "sha256:26597a83c1a844405f2a3515cb0131c9ea521f933bd5e40cc77a9ebacce28bd6"
+      },
+      {
+        "check": "present",
+        "role": "hygiene",
+        "path": "docs/environment-setup.md",
+        "passed": true,
+        "content_hash": "sha256:42efd4846f1049bbb9bb7c79337a607a4b0d54025dfea726b842a8658895f15b"
+      },
+      {
+        "check": "present",
+        "role": "hygiene",
+        "path": "spec/spec-table-lock.json",
+        "passed": true,
+        "content_hash": "sha256:f26c1a6fb6c5b0c4869027a0a1678634787cb77c65b3b2f4f2d81e378d2e71d0"
+      },
+      {
+        "check": "command",
+        "role": "audit",
+        "name": "lint",
+        "argv": [
+          "uvx",
+          "ruff==0.16.10",
+          "check",
+          "."
+        ],
+        "cwd": ".",
+        "exit_status": 0,
+        "passed": true
+      },
+      {
+        "check": "command",
+        "role": "audit",
+        "name": "harness-unit-tests",
+        "argv": [
+          "python3",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "sim/tests",
+          "-t",
+          "sim/tests"
+        ],
+        "cwd": ".",
+        "exit_status": 0,
+        "passed": true
+      },
+      {
+        "check": "command",
+        "role": "audit",
+        "name": "layout-unit-tests",
+        "argv": [
+          "python3",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "layout/tests",
+          "-t",
+          "layout/tests"
+        ],
+        "cwd": ".",
+        "exit_status": 0,
+        "passed": true
+      },
+      {
+        "check": "command",
+        "role": "audit",
+        "name": "characterization-current",
+        "argv": [
+          "bash",
+          "-c",
+          "python3 sim/build_characterization_report.py | diff -q sim/CHARACTERIZATION.md -"
+        ],
+        "cwd": ".",
+        "exit_status": 0,
+        "passed": true
+      },
+      {
+        "check": "command",
+        "role": "audit",
+        "name": "spec-table-lock",
+        "argv": [
+          "python3",
+          "spec/check_spec_table.py",
+          "--check"
+        ],
+        "cwd": ".",
+        "exit_status": 0,
+        "passed": true
+      }
+    ]
+  },
+  "provenance": {
+    "klt_version": "0.7.1.dev2457+gdc136150a49e",
+    "klayout_version": null,
+    "pdk": null,
+    "deck": null,
+    "input": {
+      "path": {
+        "path": "signoff/inventory-item10.json",
+        "scope": "repo"
+      },
+      "content_hash": "sha256:2fb6c869bb5402755856a4069b4adb385202549285609685961ead9b1bb2070d"
+    }
+  }
+}

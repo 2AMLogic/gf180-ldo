@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "kind": "t1-attestation-inventory",
+  "t1_item": 1,
+  "description": "Design sources (xschem schematics and symbols) and the ngspice netlists derived from them. Freshness is design/netlist.py --check, which needs the pinned xschem 3.4.7 and so is local_only (CI does not re-run it; see signoff/README.md).",
+  "sources": [
+    "design/error_amp.sch",
+    "design/error_amp.sym",
+    "design/ldo_core.sch",
+    "design/ldo_core.sym",
+    "design/ldo_ilimit.sch",
+    "design/ldo_ilimit.sym",
+    "design/ldo_softstart.sch",
+    "design/ldo_softstart.sym",
+    "design/xschemrc"
+  ],
+  "derived": [
+    {
+      "path": "design/netlist/error_amp.spice",
+      "generator": "design/netlist.py (xschem 3.4.7)",
+      "check": {
+        "argv": [
+          "python3",
+          "design/netlist.py",
+          "--check"
+        ],
+        "local_only": true
+      }
+    },
+    {
+      "path": "design/netlist/ldo_core.spice",
+      "generator": "design/netlist.py (xschem 3.4.7)",
+      "check": {
+        "argv": [
+          "python3",
+          "design/netlist.py",
+          "--check"
+        ],
+        "local_only": true
+      }
+    },
+    {
+      "path": "design/netlist/ldo_ilimit.spice",
+      "generator": "design/netlist.py (xschem 3.4.7)",
+      "check": {
+        "argv": [
+          "python3",
+          "design/netlist.py",
+          "--check"
+        ],
+        "local_only": true
+      }
+    },
+    {
+      "path": "design/netlist/ldo_softstart.spice",
+      "generator": "design/netlist.py (xschem 3.4.7)",
+      "check": {
+        "argv": [
+          "python3",
+          "design/netlist.py",
+          "--check"
+        ],
+        "local_only": true
+      }
+    }
+  ]
+}

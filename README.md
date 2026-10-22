@@ -23,7 +23,7 @@ recorded alongside it.
 [`signoff/records/t1-tier-report.json`](signoff/records/t1-tier-report.json)
 is the verdict of record — `klt signoff --manifest`'s mechanical grading of
 this block against klayout-tools' design-evidence ladder, re-run by CI on
-every push. Today it reads **`tier: null`, T1 1 of 11 items met**. See
+every push. Today it reads **`tier: null`, T1 4 of 11 items met**. See
 [`signoff/README.md`](signoff/README.md) for the per-item reading and the
 disclosures the grader structurally cannot make on this repo's behalf.
 
