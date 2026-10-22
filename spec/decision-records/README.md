@@ -5,7 +5,7 @@
 
 Only **ratified** records are in force. Everything else is a proposal or a held/negative-result write-up awaiting the operator. Status is read from each record's `Status` line (see `TEMPLATE.md`); CI fails if this file is stale or a record's status cannot be classified.
 
-38 records: 12 ratified, 25 proposed, 1 held, 0 superseded.
+39 records: 12 ratified, 26 proposed, 1 held, 0 superseded.
 
 | DR | Title | Status | Superseded by |
 |---|---|---|---|
@@ -47,6 +47,7 @@ Only **ratified** records are in force. Everything else is a proposal or a held/
 | [DR-0037](DR-0037-vref-forcing-servo-replaces-the-idealized-bias-cccs.md) | a VREF-forcing V-to-I servo replaces the idealized `Fbias` / `Fss_ramp` CCCS in `ldo_ilimit` and `ldo_softstart` | proposed | - |
 | [DR-0038](DR-0038-error-amp-stays-in-tree-against-gf180-opamp.md) | `error_amp` stays in tree -- `gf180-opamp`'s published amplifier is not comparable evidence, and what it does show is not a viable base | proposed | - |
 | [DR-0039](DR-0039-line-reg-ff-125c-is-the-softstart-injection-residual.md) | the `ff_125c_3.30v` line-regulation failure is the soft-start injection element's settled residual, not loop gain — the 5 mV/V bound stays and DR-0035's VIN-referenced ceiling has to be re-landed over DR-0037 | proposed | - |
+| [DR-0040](DR-0040-pass-array-generator-stays-own-against-gate-driver-power-array-folded.md) | the pass-array generator stays its own -- `gf180-gate-driver`'s `power_array_folded` solves a different problem (a row fold this array does not need), and neither generator subsumes the other | proposed | - |
 
 ## Design citations of unratified records
 
