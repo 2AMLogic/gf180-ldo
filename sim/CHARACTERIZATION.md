@@ -91,7 +91,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 ### Load transient
 
-**Ratified target**: 1 ↔ 50 mA step, 1 µs edges, at C_eff = 0.33 µF and ESR 0–500 mΩ: peak excursion ≤ 150 mV, recovery to within ±1% (18 mV) of the settled value in ≤ 20 µs
+**Ratified target**: 1 ↔ 50 mA step, 1 µs edges, at C_eff = 0.33 µF and ESR ≥ 200 mΩ (the DR-0018 Stability envelope): peak excursion ≤ 150 mV, recovery to within ±1% (18 mV) of the settled value in ≤ 20 µs. **A bare ceramic (low-ESR, < 200 mΩ) output capacitor is not supported yet** — the loop oscillates at 50 mA there; an MLCC with ~0.2–0.47 Ω of series resistance is the interim way to meet the condition (DR-0041; follow-up #501)
 
 **Verdict**: FAIL  **Fresh**: fresh
 
