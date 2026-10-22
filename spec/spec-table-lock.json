@@ -1,5 +1,12 @@
 {
-  "amendments": [],
+  "amendments": [
+    {
+      "after": "870b759bf2836a3cf760ddd3d2ff038942391ffb2aea133f2b0726cfd7900d62",
+      "before": "0b5d617ef0eaf98ff3df80a11b8b2c977d416d9a8290b5d0c41931f0fe0deaef",
+      "dr": "DR-0041",
+      "row": "Load transient"
+    }
+  ],
   "notes": {
     "1": {
       "hash": "521f0048be5f3aadeb01837cc04fedcccf29ddd899ab27ad37a2849d2c10f42a",
@@ -89,9 +96,9 @@
       "target": "< 1% (18 mV), counted inside the ±2% accuracy window rather than in addition to it"
     },
     "Load transient": {
-      "hash": "0b5d617ef0eaf98ff3df80a11b8b2c977d416d9a8290b5d0c41931f0fe0deaef",
+      "hash": "870b759bf2836a3cf760ddd3d2ff038942391ffb2aea133f2b0726cfd7900d62",
       "stretch": "peak excursion ≤ 100 mV",
-      "target": "1 ↔ 50 mA step, 1 µs edges, at C_eff = 0.33 µF and ESR 0–500 mΩ: peak excursion ≤ 150 mV, recovery to within ±1% (18 mV) of the settled value in ≤ 20 µs"
+      "target": "1 ↔ 50 mA step, 1 µs edges, at C_eff = 0.33 µF and ESR ≥ 200 mΩ (the DR-0018 Stability envelope): peak excursion ≤ 150 mV, recovery to within ±1% (18 mV) of the settled value in ≤ 20 µs. **A bare ceramic (low-ESR, < 200 mΩ) output capacitor is not supported yet** — the loop oscillates at 50 mA there; an MLCC with ~0.2–0.47 Ω of series resistance is the interim way to meet the condition (DR-0041; follow-up #501)"
     },
     "Output": {
       "hash": "e8c8ab85f01c841843b4dd7e45c2ff66c1cca440e0b4e793829a9e5d49199809",
