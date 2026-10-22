@@ -5,7 +5,7 @@
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
 
-_None._
+- **#502**: spec: propose limiting load-transient test condition to ESR >= 200 mOhm (DR-0041, ratification)
 
 ## Very Important
 
@@ -38,13 +38,13 @@ Issues currently being built (`loom:building`).
 
 PRs waiting on Judge (`loom:review-requested`).
 
-- **#502**: spec: propose limiting load-transient test condition to ESR >= 200 mOhm (DR-0041, ratification)
+_None._
 
 ## Approved (Awaiting Merge)
 
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
-_None._
+- **#502**: spec: propose limiting load-transient test condition to ESR >= 200 mOhm (DR-0041, ratification)
 
 ## Proposed
 
@@ -65,6 +65,7 @@ Issues carrying `loom:curated`.
 - **#465**: sim: re-qualify loop-stability and soft-start reference records at open_pdks f6eeac7 (part of #430) *(curated)*
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)*
+- **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -80,14 +81,14 @@ _None._
 
 | Bucket | Count |
 |------|-------|
-| Operator merge-risk holds | 0 |
+| Operator merge-risk holds | 1 |
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`) | 1 |
 | In Progress (`loom:building`) | 3 |
-| PRs awaiting review | 1 |
-| Approved PRs awaiting merge | 0 |
-| Curated | 15 |
+| PRs awaiting review | 0 |
+| Approved PRs awaiting merge | 1 |
+| Curated | 16 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
