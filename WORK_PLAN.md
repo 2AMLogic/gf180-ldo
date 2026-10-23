@@ -35,13 +35,12 @@ Issues currently being built (`loom:building`).
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
 - **#508**: Hoist repeated PCell-instantiate and merged-layer-region helpers into gen_gds_common.py
-- **#511**: Adopt the common artifact store for sim evidence (manifests in git, bytes via klt artifact)
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
-- **#512**: feat: store new sim evidence via the artifact store, commit manifests only
+_None._
 
 ## Approved (Awaiting Merge)
 
@@ -69,7 +68,6 @@ Issues carrying `loom:curated`.
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)*
 - **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)*
-- **#511**: Adopt the common artifact store for sim evidence (manifests in git, bytes via klt artifact) *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -89,10 +87,10 @@ _None._
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`) | 1 |
-| In Progress (`loom:building`) | 5 |
-| PRs awaiting review | 1 |
+| In Progress (`loom:building`) | 4 |
+| PRs awaiting review | 0 |
 | Approved PRs awaiting merge | 2 |
-| Curated | 16 |
+| Curated | 15 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
