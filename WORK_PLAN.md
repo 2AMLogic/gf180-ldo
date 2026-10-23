@@ -6,6 +6,7 @@
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
 
 - **#502**: spec: propose limiting load-transient test condition to ESR >= 200 mOhm (DR-0041, ratification)
+- **#509**: refactor: hoist PCell-instantiate and merged-region helpers into gen_gds_common
 
 ## Very Important
 
@@ -33,18 +34,21 @@ Issues currently being built (`loom:building`).
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
+- **#508**: Hoist repeated PCell-instantiate and merged-layer-region helpers into gen_gds_common.py
+- **#511**: Adopt the common artifact store for sim evidence (manifests in git, bytes via klt artifact)
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
-_None._
+- **#512**: feat: store new sim evidence via the artifact store, commit manifests only
 
 ## Approved (Awaiting Merge)
 
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
 - **#502**: spec: propose limiting load-transient test condition to ESR >= 200 mOhm (DR-0041, ratification)
+- **#509**: refactor: hoist PCell-instantiate and merged-region helpers into gen_gds_common
 
 ## Proposed
 
@@ -65,6 +69,7 @@ Issues carrying `loom:curated`.
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)*
 - **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)*
+- **#511**: Adopt the common artifact store for sim evidence (manifests in git, bytes via klt artifact) *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -80,14 +85,14 @@ _None._
 
 | Bucket | Count |
 |------|-------|
-| Operator merge-risk holds | 1 |
+| Operator merge-risk holds | 2 |
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`) | 1 |
-| In Progress (`loom:building`) | 3 |
-| PRs awaiting review | 0 |
-| Approved PRs awaiting merge | 1 |
-| Curated | 15 |
+| In Progress (`loom:building`) | 5 |
+| PRs awaiting review | 1 |
+| Approved PRs awaiting merge | 2 |
+| Curated | 16 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
