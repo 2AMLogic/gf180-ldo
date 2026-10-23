@@ -105,7 +105,14 @@ import pya  # noqa: F401  (provided by the KLayout interpreter)
 # generator draws rather than a second transcription of floorplan.md §4.1.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from gen_gds_common import _fail, _label, _load_pdk_pcells, _rd  # noqa: E402
+from gen_gds_common import (  # noqa: E402
+    _create_pcell,
+    _fail,
+    _label,
+    _load_pdk_pcells,
+    _merged_region,
+    _rd,
+)
 from plan import (  # noqa: E402
     ACTIVE_POSITIONS,
     BOT_ORDER,
@@ -306,7 +313,7 @@ def _head_boxes(layout, cell):
     at hardcoded coordinates, so a PCell whose head metal moves is caught by
     the assertions here instead of by a silently mis-placed link.
     """
-    metal1 = pya.Region(cell.begin_shapes_rec(layout.layer(*L_METAL1))).merged()
+    metal1 = _merged_region(cell, layout, L_METAL1)
     boxes = [p.bbox().to_dtype(layout.dbu) for p in metal1.each()]
     if len(boxes) != 2 * N_POSITIONS:
         _fail(
@@ -442,9 +449,10 @@ def build(out_path, pdk_path):
     # opposite of the device's extracted L and W. Passing them the wrong way
     # round would draw a 31.8 um-wide, 2 um-long resistor and LVS would say
     # so -- but name the mapping here so nobody has to rediscover it.
-    unit = layout.create_cell(
-        "ppolyf_u_high_Rs_resistor",
+    unit = _create_pcell(
+        layout,
         library,
+        "ppolyf_u_high_Rs_resistor",
         {
             "l": UNIT_W_UM,  # -> the extracted device's W
             "w": UNIT_L_UM,  # -> the extracted device's L
@@ -452,15 +460,8 @@ def build(out_path, pdk_path):
             "deepnwell": False,
             "pcmpgr": False,
         },
+        "klayout_api_cells/res.py",
     )
-    if unit is None:
-        _fail(
-            "the PDK's 'ppolyf_u_high_Rs_resistor' PCell rejected "
-            "its parameters. KLayout silently ignores unknown parameter names, "
-            "so a PDK version whose resistor PCell takes different ones would "
-            "produce a default-sized device instead of an error -- check the "
-            "installed PDK's klayout_api_cells/res.py before changing these."
-        )
     for position in range(N_POSITIONS):
         top.insert(
             pya.CellInstArray(

@@ -88,7 +88,14 @@ import sys
 import pya  # noqa: F401  (provided by the KLayout interpreter)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from gen_gds_common import _fail, _label, _load_pdk_pcells, _rd  # noqa: E402
+from gen_gds_common import (  # noqa: E402
+    _create_pcell,
+    _fail,
+    _label,
+    _load_pdk_pcells,
+    _merged_region,
+    _rd,
+)
 
 TOP_CELL = "DRCLVS_PASSIVES"
 
@@ -163,15 +170,9 @@ def _device(layout, library, pcell, params, wrapper_name):
     system: a PCell proxy cell is regenerated from its parameters, so shapes
     written straight into one are not reliably kept.
     """
-    device = layout.create_cell(pcell, library, dict(params))
-    if device is None:
-        _fail(
-            f"the PDK's {pcell!r} PCell rejected {params!r}. KLayout silently "
-            "ignores unknown parameter names, so a PDK version whose PCell "
-            "takes different parameter names would produce a default-sized "
-            "device instead of an error -- check the installed PDK's "
-            "pymacros/klayout_api_cells/ before changing these."
-        )
+    device = _create_pcell(
+        layout, library, pcell, params, "pymacros/klayout_api_cells/"
+    )
     wrapper = layout.create_cell(wrapper_name)
     wrapper.insert(pya.CellInstArray(device.cell_index(), pya.Trans()))
     wrapper.flatten(-1, True)
@@ -180,7 +181,7 @@ def _device(layout, library, pcell, params, wrapper_name):
 
 def _shapes(cell, layout, layer):
     """Merged polygons on ``layer``, largest-bbox last."""
-    region = pya.Region(cell.begin_shapes_rec(layout.layer(*layer))).merged()
+    region = _merged_region(cell, layout, layer)
     return sorted(region.each(), key=lambda p: p.bbox().area())
 
 
@@ -211,7 +212,7 @@ def build_resistor(layout, library):
     cell = _device(
         layout, library, "ppolyf_u_high_Rs_resistor", RES_PARAMS, "RES_UNIT"
     )
-    poly = pya.Region(cell.begin_shapes_rec(layout.layer(*L_POLY2))).merged()
+    poly = _merged_region(cell, layout, L_POLY2)
     straps = [
         s for s in _shapes(cell, layout, L_METAL1)
         if not pya.Region(s).and_(poly).is_empty()

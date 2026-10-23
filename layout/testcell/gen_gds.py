@@ -48,7 +48,14 @@ import sys
 import pya  # noqa: F401  (provided by the KLayout interpreter)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from gen_gds_common import _fail, _label, _load_pdk_pcells, _rd  # noqa: E402
+from gen_gds_common import (  # noqa: E402
+    _create_pcell,
+    _fail,
+    _label,
+    _load_pdk_pcells,
+    _merged_region,
+    _rd,
+)
 
 # Device under test. Keep in sync with layout/testcell/drclvs_testcell.sch --
 # the LVS compare in layout/drclvs.py is what catches a drift between them.
@@ -84,22 +91,14 @@ def build(out_path, pdk_path):
     layout = pya.Layout()
     layout.dbu = DBU_UM
     top = layout.create_cell(TOP_CELL)
-    device = layout.create_cell("nfet", library, dict(PCELL_PARAMS))
-    if device is None:
-        _fail(
-            "the PDK's 'nfet' PCell rejected "
-            f"{PCELL_PARAMS!r}. KLayout silently ignores unknown parameter "
-            "names, so a PDK version whose nfet takes different parameter "
-            "names would produce a default-sized device instead of an error "
-            "-- check the installed PDK's cells/fet.py before changing these."
-        )
+    device = _create_pcell(layout, library, "nfet", PCELL_PARAMS, "cells/fet.py")
     top.insert(pya.CellInstArray(device.cell_index(), pya.Trans()))
     # Flatten so the top cell is what DRC/LVS see directly: this is a
     # single-device vehicle, and hierarchy would only add a variable that has
     # nothing to do with what is being tested.
     top.flatten(-1, True)
 
-    metal1 = pya.Region(top.begin_shapes_rec(layout.layer(*L_METAL1))).merged()
+    metal1 = _merged_region(top, layout, L_METAL1)
     shapes = sorted(metal1.each(), key=lambda p: p.bbox().area())
     if len(shapes) != 3:
         _fail(
@@ -113,7 +112,7 @@ def build(out_path, pdk_path):
         for s in sorted(shapes[:-1], key=lambda p: p.bbox().left)
     )
 
-    poly = pya.Region(top.begin_shapes_rec(layout.layer(*L_POLY2))).merged()
+    poly = _merged_region(top, layout, L_POLY2)
     poly_shapes = list(poly.each())
     if len(poly_shapes) != 1:
         _fail(
