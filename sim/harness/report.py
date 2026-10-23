@@ -598,7 +598,8 @@ def _publish_exclusive(path: Path, text: str) -> None:
         fh.write(text)
 
 
-def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str) -> Path:
+def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str,
+                           repo_root: Path | None = None) -> Path:
     """Freeze the DUT netlist for this record.
 
     ``sim/README.md``: ``netlist-snapshots/<record-id>.spice`` is "the frozen
@@ -617,7 +618,10 @@ def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str) 
     Testbenches with no design netlist at all (e.g. smoke-bias) snapshot just
     the fragment, as before.
     """
-    repo_root = experiment_dir.parent.parent
+    # ``repo_root`` is passed when ``experiment_dir`` is a staging copy outside
+    # ``sim/<slug>/`` (issue #511), so recorded source paths stay repo-relative.
+    if repo_root is None:
+        repo_root = experiment_dir.parent.parent
     out_dir = experiment_dir / SNAPSHOT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{record_id}.spice"
