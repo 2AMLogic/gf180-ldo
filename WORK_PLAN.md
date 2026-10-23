@@ -61,7 +61,6 @@ Issues carrying `loom:curated`.
 - **#320**: ldo_ilimit's Fbias / ldo_softstart's Fss_ramp: replace the idealized VREF-derived bias-current mirror with a real device (blocks #290, #291) *(curated)*
 - **#351**: Explain the 2x lower peak Icap / dV/dt at soft-start with the DR-0037 bias servo (142 vs 282 mA at tt/27C) *(curated)*
 - **#366**: sim: route the remaining ratified-row PVT grid drivers (loop-stability, current-limit, enable-shutdown, soft-start) through klt_batch instead of local fan-out *(curated)*
-- **#448**: signoff: attest T1 items 1, 9 and 10 with klt signoff --attest envelopes *(curated)*
 - **#465**: sim: re-qualify loop-stability and soft-start reference records at open_pdks f6eeac7 (part of #430) *(curated)*
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)*
@@ -88,7 +87,7 @@ _None._
 | In Progress (`loom:building`) | 3 |
 | PRs awaiting review | 0 |
 | Approved PRs awaiting merge | 1 |
-| Curated | 16 |
+| Curated | 15 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
