@@ -49,6 +49,12 @@ class ClassifyTests(unittest.TestCase):
 
     def test_layout_records_protected(self):
         self.assertEqual(len(self.v("M\tlayout/records/x.md\n")), 1)
+        # Stored-evidence manifests (issue #511) are append-only; the README
+        # beside them is documentation and stays editable.
+        self.assertEqual(len(self.v("M\tmanifests/artifacts/a-1.manifest.json\n")), 1)
+        self.assertEqual(len(self.v("D\tmanifests/artifacts/a-1.manifest.json\n")), 1)
+        self.assertEqual(self.v("A\tmanifests/artifacts/a-1.manifest.json\n"), [])
+        self.assertEqual(self.v("M\tmanifests/artifacts/README.md\n"), [])
 
     def test_snapshot_added_ok(self):
         self.assertEqual(self.v(f"A\t{SNAP}\n"), [])
