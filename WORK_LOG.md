@@ -4,6 +4,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-10-24
 
+- **PR #517**: refactor: restore helper names and wrap long line in gen_gds
+- **Issue #510** (closed): pass_array/gen_gds.py: revert over-broad renames from #509 (_insert_merged_region, _contacts_per_merged_region)
 - **PR #509**: refactor: hoist PCell-instantiate and merged-region helpers into gen_gds_common
 - **Issue #508** (closed): Hoist repeated PCell-instantiate and merged-layer-region helpers into gen_gds_common.py
 
