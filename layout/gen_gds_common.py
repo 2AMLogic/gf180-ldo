@@ -7,6 +7,10 @@ and ``_label`` (issue #333). Consolidated here, following the same
 callers and ``layout/drclvs.py`` (``sys.path.insert(0, str(LAYOUT_DIR))``)
 already use for exactly this kind of module.
 
+Issue #508 added ``_create_pcell`` and ``_merged_region``, the PCell
+instantiate-or-fail block and the merged-layer ``Region`` expression that
+each generator had been spelling out for itself.
+
 Issue #370 routed ``layout/divider/gen_gds.py`` and
 ``layout/testcell/gen_gds.py`` through here as well, so all four generators
 share one copy. The latter two had used
@@ -70,3 +74,25 @@ def _load_pdk_pcells(pdk_path, pdk_option):
 def _label(cell, layout, layer, name, x_um, y_um):
     point = pya.Point(int(round(x_um / layout.dbu)), int(round(y_um / layout.dbu)))
     cell.shapes(layout.layer(*layer)).insert(pya.Text(name, pya.Trans(point)))
+
+
+def _create_pcell(layout, library, name, params, hint):
+    """Instantiate PDK PCell ``name`` with ``params``; ``_fail`` if it is None.
+
+    ``hint`` is where under the PDK to look when the parameter names change.
+    """
+    cell = layout.create_cell(name, library, dict(params))
+    if cell is None:
+        _fail(
+            f"the PDK's {name!r} PCell rejected {params!r}. KLayout silently "
+            "ignores unknown parameter names, so a PDK version whose PCell "
+            "takes different parameter names would produce a default-sized "
+            f"device instead of an error -- check the installed PDK's {hint} "
+            "before changing these."
+        )
+    return cell
+
+
+def _merged_region(cell, layout, layer):
+    """Merged ``Region`` of ``layer`` (a ``(layer, datatype)`` pair) in ``cell``."""
+    return pya.Region(cell.begin_shapes_rec(layout.layer(*layer))).merged()
