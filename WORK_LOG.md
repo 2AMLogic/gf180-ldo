@@ -2,6 +2,11 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-24
+
+- **PR #509**: refactor: hoist PCell-instantiate and merged-region helpers into gen_gds_common
+- **Issue #508** (closed): Hoist repeated PCell-instantiate and merged-layer-region helpers into gen_gds_common.py
+
 ### 2026-10-23
 
 - **PR #512**: feat: store new sim evidence via the artifact store, commit manifests only
