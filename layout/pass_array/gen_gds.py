@@ -234,7 +234,7 @@ def _insert(cell, layout, layer, dbox):
     cell.shapes(layout.layer(*layer)).insert(dbox)
 
 
-def _insert_merged_region(cell, layout, layer, region):
+def _insert_region(cell, layout, layer, region):
     cell.shapes(layout.layer(*layer)).insert(region)
 
 
@@ -318,7 +318,8 @@ def _assert_abutment_matches_pcell(layout, library, pitch, count):
     reference.flatten(-1, True)
 
     for layer in (L_COMP, L_POLY2, L_PPLUS, L_NWELL, L_CONTACT, L_METAL1):
-        difference = _merged_region(abutted, layout, layer) ^ _merged_region(reference, layout, layer)
+        difference = (_merged_region(abutted, layout, layer)
+                      ^ _merged_region(reference, layout, layer))
         if not difference.is_empty():
             _fail(
                 f"{count} abutted unit cells at a {pitch} um pitch do NOT "
@@ -422,9 +423,9 @@ def _guard_ring(top, layout, comp, buses):
     )
     outer = inner.enlarged(GR_ARM_UM, GR_ARM_UM)
     ring = _ring(layout, outer, inner)
-    _insert_merged_region(top, layout, L_COMP, ring)
-    _insert_merged_region(top, layout, L_METAL1, ring)
-    _insert_merged_region(top, layout, L_NPLUS, _ring(
+    _insert_region(top, layout, L_COMP, ring)
+    _insert_region(top, layout, L_METAL1, ring)
+    _insert_region(top, layout, L_NPLUS, _ring(
         layout,
         outer.enlarged(NP_ENC_CMP_UM, NP_ENC_CMP_UM),
         inner.enlarged(-NP_ENC_CMP_UM, -NP_ENC_CMP_UM),
@@ -591,7 +592,7 @@ def build(out_path, pdk_path):
     scratch = _scratch_layout()
     pitch = _finger_pitch_um(scratch, library)
     # Measured now, because top.flatten() below prunes the PCell proxy away.
-    contacts_per_region = _contacts_per_merged_region(unit, layout)
+    contacts_per_region = _contacts_per_region(unit, layout)
     _assert_abutment_matches_pcell(scratch, library, pitch, N_UNITS // 2)
 
     region_counts = _place_units(layout, top, unit, pitch, unit_comp[0].width())
@@ -682,7 +683,7 @@ def build(out_path, pdk_path):
         )
 
 
-def _contacts_per_merged_region(unit, layout):
+def _contacts_per_region(unit, layout):
     """CON cuts on one source/drain region of the unit cell."""
     contacts = _boxes(unit, layout, L_CONTACT)
     regions = _boxes(unit, layout, L_METAL1)
