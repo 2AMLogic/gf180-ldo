@@ -102,7 +102,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import em_budget  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from gen_gds_common import _fail, _label, _load_pdk_pcells, _rd  # noqa: E402
+from gen_gds_common import (  # noqa: E402
+    _create_pcell,
+    _fail,
+    _label,
+    _load_pdk_pcells,
+    _merged_region,
+    _rd,
+)
 
 TOP_CELL = "PASS_ARRAY"
 
@@ -211,25 +218,14 @@ def _pfet(layout, library, **overrides):
     """One pfet PCell instance's cell, with UNIT_PARAMS plus ``overrides``."""
     params = dict(UNIT_PARAMS)
     params.update(overrides)
-    cell = layout.create_cell("pfet", library, params)
-    if cell is None:
-        _fail(
-            f"the PDK's 'pfet' PCell rejected {params!r}. KLayout silently "
-            "ignores unknown parameter names, so a PDK version whose pfet "
-            "takes different parameter names would produce a default-sized "
-            "device instead of an error -- check the installed PDK's "
-            "pymacros/klayout_api_cells/fet.py before changing these."
-        )
-    return cell
-
-
-def _region(cell, layout, layer):
-    return pya.Region(cell.begin_shapes_rec(layout.layer(*layer))).merged()
+    return _create_pcell(
+        layout, library, "pfet", params, "pymacros/klayout_api_cells/fet.py"
+    )
 
 
 def _boxes(cell, layout, layer):
     """Merged shapes on ``layer`` as micron boxes, ordered left to right."""
-    region = _region(cell, layout, layer)
+    region = _merged_region(cell, layout, layer)
     boxes = [p.bbox().to_dtype(layout.dbu) for p in region.each()]
     return sorted(boxes, key=lambda b: (b.left, b.bottom))
 
@@ -322,7 +318,8 @@ def _assert_abutment_matches_pcell(layout, library, pitch, count):
     reference.flatten(-1, True)
 
     for layer in (L_COMP, L_POLY2, L_PPLUS, L_NWELL, L_CONTACT, L_METAL1):
-        difference = _region(abutted, layout, layer) ^ _region(reference, layout, layer)
+        difference = (_merged_region(abutted, layout, layer)
+                      ^ _merged_region(reference, layout, layer))
         if not difference.is_empty():
             _fail(
                 f"{count} abutted unit cells at a {pitch} um pitch do NOT "
@@ -614,7 +611,7 @@ def build(out_path, pdk_path):
     gates = _boxes(top, layout, L_POLY2)
     if len(gates) != N_UNITS + M_SENSE:
         _fail(f"found {len(gates)} gate fingers, expected {N_UNITS + M_SENSE}")
-    comp = _region(top, layout, L_COMP).bbox().to_dtype(layout.dbu)
+    comp = _merged_region(top, layout, L_COMP).bbox().to_dtype(layout.dbu)
 
     # One pplus over the whole array. The per-unit pplus boxes overhang their
     # own COMP by np_enc_cmp in x and np_enc_gate in y, so the diffusion breaks
@@ -622,7 +619,7 @@ def build(out_path, pdk_path):
     # wants 0.4. Taking the bounding box of what the PCells drew keeps the
     # implant one rectangle without inventing an extent of our own.
     _insert(top, layout, L_PPLUS,
-            _region(top, layout, L_PPLUS).bbox().to_dtype(layout.dbu))
+            _merged_region(top, layout, L_PPLUS).bbox().to_dtype(layout.dbu))
 
     buses = _gate_buses(top, layout, gates, comp)
     ring_inner, ring_outer = _guard_ring(top, layout, comp, buses)

@@ -33,7 +33,10 @@
 # row at all. `klt signoff` parses the item list out of
 # klayout-tools' own docs/design-evidence-tiers.md, so the tool version decides
 # which checklist this block is graded against, and an unpinned install would
-# make the committed record irreproducible. KLT_REV below is that pin. Bumping
+# make the committed record irreproducible. KLT_REV below is that pin. It is
+# also the first revision with `klt signoff --attest/--inventory` (issue #2844,
+# not in the 0.7.0 PyPI release), which produces the item 1/9/10 envelopes
+# (issue #448) and which CI re-runs with --check. Bumping
 # it is a real change to the yardstick: expect signoff/records/t1-tier-report.json
 # to move in the same commit, and re-read signoff/README.md's item notes
 # against any item the bump adds or rewords.
@@ -44,7 +47,7 @@ cd "$REPO_ROOT"
 
 # klayout-tools revision this block is graded against. See the header above
 # before changing it.
-KLT_REV="d5893304afc2bfa6228609740e83292c44b854f3"
+KLT_REV="dc136150a49e9f539a1050bf31e2117ce53441d0"
 KLT_SPEC="git+https://github.com/2AMLogic/klayout-tools@${KLT_REV}"
 
 MANIFEST="signoff/block-manifest.json"

@@ -20,6 +20,9 @@ name: CI
 #                                       spec/decision-records/README.md; parser
 #                                       tests in sim/tests/test_decision_record_index.py,
 #                                       issue #362)
+#   - scripts/check_artifact_manifests.py (stored-evidence manifests: schema,
+#                                       artifact: URIs only, no committed
+#                                       duplicate bytes; offline, issue #511)
 #   - sim/check_append_only.py        (PR-only: fails if a PR modifies/deletes/
 #                                       renames committed evidence under
 #                                       sim/*/records, sim/*/corners,
@@ -209,6 +212,17 @@ jobs:
         # layout/records/ (only additions pass). Exceptions need a DR + sim/append-only-allowlist.txt entry.
         # Classifier tests: sim/tests/test_check_append_only.py (issue #371).
 
+      # Issue #511: new evidence bytes live in the fleet artifact store; git
+      # keeps manifests under manifests/artifacts/. Reads the target tree via
+      # git: schema, only artifact: URIs, and that no stored object's bytes are
+      # also committed (no blob fallback). CI cannot reach the broker, so the
+      # bytes are NOT hash-verified here and the step says so; `verify` is the
+      # out-of-band step (sim/README.md, "Stored evidence").
+      - name: Check stored-evidence manifests (schema + no committed blobs)
+        env:
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 scripts/check_artifact_manifests.py check --tree "$TARGET_SHA"
+
   signoff-tier-report:
     name: T1 tier report (klt signoff --manifest, no PDK required)
     runs-on: ubuntu-latest
@@ -225,6 +239,20 @@ jobs:
 
       - name: Re-grade this block's T1 state
         run: bash signoff/check.sh
+
+      # Items 1, 9, 10: re-attest the committed envelopes and fail on drift. The
+      # xschem netlist freshness (item 1) and the ngspice cold start (item 9)
+      # are local_only in the inventories, so --check skips them and says so;
+      # file-presence and content-hash drift is still caught here. Do not
+      # install xschem to make those run -- see signoff/README.md.
+      - name: Re-attest T1 items 1, 9 and 10 (--check)
+        run: |
+          KLT_REV="$(sed -n 's/^KLT_REV="\(.*\)"/\1/p' signoff/check.sh)"
+          for n in 1 9 10; do
+            uvx --from "git+https://github.com/2AMLogic/klayout-tools@${KLT_REV}" \
+              klt signoff --attest "$n" --inventory "signoff/inventory-item${n}.json" \
+              --check "signoff/evidence/item${n}.generic.json"
+          done
         # signoff/records/t1-tier-report.json is the verdict of record that
         # issue #79 (the gap-to-T1 tracker) cites instead of keeping its own
         # hand-maintained checkbox list. It is only worth citing if it cannot

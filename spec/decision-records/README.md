@@ -5,7 +5,7 @@
 
 Only **ratified** records are in force. Everything else is a proposal or a held/negative-result write-up awaiting the operator. Status is read from each record's `Status` line (see `TEMPLATE.md`); CI fails if this file is stale or a record's status cannot be classified.
 
-40 records: 12 ratified, 27 proposed, 1 held, 0 superseded.
+41 records: 12 ratified, 28 proposed, 1 held, 0 superseded.
 
 | DR | Title | Status | Superseded by |
 |---|---|---|---|
@@ -48,7 +48,8 @@ Only **ratified** records are in force. Everything else is a proposal or a held/
 | [DR-0038](DR-0038-error-amp-stays-in-tree-against-gf180-opamp.md) | `error_amp` stays in tree -- `gf180-opamp`'s published amplifier is not comparable evidence, and what it does show is not a viable base | proposed | - |
 | [DR-0039](DR-0039-line-reg-ff-125c-is-the-softstart-injection-residual.md) | the `ff_125c_3.30v` line-regulation failure is the soft-start injection element's settled residual, not loop gain — the 5 mV/V bound stays and DR-0035's VIN-referenced ceiling has to be re-landed over DR-0037 | proposed | - |
 | [DR-0040](DR-0040-pass-array-generator-stays-own-against-gate-driver-power-array-folded.md) | the pass-array generator stays its own -- `gf180-gate-driver`'s `power_array_folded` solves a different problem (a row fold this array does not need), and neither generator subsumes the other | proposed | - |
-| [DR-0041](DR-0041-load-transient-test-condition-limited-to-the-dr-0018-esr-floor.md) | limit the Load-transient row's test condition to the DR-0018 Stability envelope (ESR >= 200 mOhm); a bare ceramic output capacitor is not supported yet | proposed | - |
+| [DR-0041](DR-0041-new-evidence-bytes-go-to-the-artifact-store-git-keeps-manifests.md) | new evidence bytes go to the fleet artifact store; git keeps a manifest and the Markdown record | proposed | - |
+| [DR-0042](DR-0042-load-transient-test-condition-limited-to-the-dr-0018-stability-envelope.md) | limit the Load-transient row's test condition to the DR-0018 Stability envelope (C_eff = 1 uF, ESR 200-500 mOhm); a bare ceramic output capacitor is not supported yet | proposed | - |
 
 ## Design citations of unratified records
 

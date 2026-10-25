@@ -23,7 +23,7 @@ recorded alongside it.
 [`signoff/records/t1-tier-report.json`](signoff/records/t1-tier-report.json)
 is the verdict of record — `klt signoff --manifest`'s mechanical grading of
 this block against klayout-tools' design-evidence ladder, re-run by CI on
-every push. Today it reads **`tier: null`, T1 1 of 11 items met**. See
+every push. Today it reads **`tier: null`, T1 4 of 11 items met**. See
 [`signoff/README.md`](signoff/README.md) for the per-item reading and the
 disclosures the grader structurally cannot make on this repo's behalf.
 
@@ -102,7 +102,7 @@ regression (see notes 5a, 8).
 | Dropout @ 50 mA | < 300 mV — binds ss / 125 °C / Vin = 2.10 V (measured, note 4) | < 200 mV |
 | Line reg | < 5 mV/V over Vin 2.97–3.63 V, at 1 mA and at 50 mA | — |
 | Load reg (0–50 mA) | < 1% (18 mV), counted inside the ±2% accuracy window rather than in addition to it | — |
-| Load transient | 1 ↔ 50 mA step, 1 µs edges, at C_eff = 0.33 µF and ESR ≥ 200 mΩ (the DR-0018 Stability envelope): peak excursion ≤ 150 mV, recovery to within ±1% (18 mV) of the settled value in ≤ 20 µs. **A bare ceramic (low-ESR, < 200 mΩ) output capacitor is not supported yet** — the loop oscillates at 50 mA there; an MLCC with ~0.2–0.47 Ω of series resistance is the interim way to meet the condition (DR-0041; follow-up #501) | peak excursion ≤ 100 mV |
+| Load transient | 1 ↔ 50 mA step, 1 µs edges, at C_eff = 1 µF and ESR 200–500 mΩ (the DR-0018 Stability envelope): peak excursion ≤ 150 mV, recovery to within ±1% (18 mV) of the settled value in ≤ 20 µs. **A bare ceramic (low-ESR, < 200 mΩ) output capacitor, and C_eff = 0.33 µF, are not supported yet** — the 50 mA loop has no phase margin there; 1 µF with ~0.2–0.5 Ω of series resistance is the interim way to meet the condition (DR-0042; follow-up #501) | peak excursion ≤ 100 mV |
 | PSRR | > 50 dB @ 1 kHz and > 20 dB @ 100 kHz, at I_load = 1 mA (binding — light load) and at 50 mA, C_eff = 1 µF nominal, verified across the stability window | > 60 dB @ 1 kHz, > 30 dB @ 100 kHz, 1 MHz point characterized |
 | Iq (excluding load current) | < 30 µA at no load **and** at full load — binds ff / 125 °C / 3.63 V | < 10 µA — subordinate to DR-0001's ESR window; not to be bought back by reintroducing a minimum ESR |
 | Current limit | 62–95 mA over PVT untrimmed, constant-current (brickwall) clamp; never engages for I_load ≤ 50 mA at any corner (binds ff / −40 °C, strongest pass drive); survives a continuous Vout = 0 short at Vin_max (note 5, note 9) | — |

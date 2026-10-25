@@ -2,8 +2,23 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-24
+
+- **PR #517**: refactor: restore helper names and wrap long line in gen_gds
+- **Issue #510** (closed): pass_array/gen_gds.py: revert over-broad renames from #509 (_insert_merged_region, _contacts_per_merged_region)
+- **PR #509**: refactor: hoist PCell-instantiate and merged-region helpers into gen_gds_common
+- **Issue #508** (closed): Hoist repeated PCell-instantiate and merged-layer-region helpers into gen_gds_common.py
+
+### 2026-10-23
+
+- **PR #512**: feat: store new sim evidence via the artifact store, commit manifests only
+- **Issue #511** (closed): Adopt the common artifact store for sim evidence (manifests in git, bytes via klt artifact)
+
 ### 2026-10-22
 
+- **PR #505**: feat(signoff): attest T1 items 1, 9 and 10 via klt signoff --attest
+- **Issue #448** (closed): signoff: attest T1 items 1, 9 and 10 with klt signoff --attest envelopes
+- **PR #490**: sim: attribute load-transient excursions to the DR-0034 pass width and the out-of-envelope output network
 - **PR #499**: docs: record pass-array generator stays its own vs gate-driver power_array_folded (DR-0040)
 - **Issue #498** (closed): Adopt or record: pass-device array generator vs gf180-gate-driver's folded power array (REUSE.md)
 

@@ -72,6 +72,12 @@ sim/
 
 ### Raw corner logs are committed, not ignored
 
+> **Superseded for new runs (issue #511, DR-0041).** The rest of this section
+> describes how every record up to now was written, and those files stay
+> exactly where they are. A run minted after DR-0041 stores its logs and
+> netlist snapshot in the artifact store instead and commits only a manifest
+> and the Markdown record; see "Stored evidence" below.
+
 The repo root `.gitignore` ignores `*.log` (scratch output), so it carries an
 explicit negation to re-include evidence logs:
 
@@ -195,10 +201,52 @@ verdict. Illustrate the format in prose; only real runs write files.
 the rule on every pull request: `sim/check_append_only.py` diffs
 `origin/<base>...HEAD` and fails if any path under `sim/*/records/`,
 `sim/*/corners/`, `sim/*/netlist-snapshots/` (the frozen DUT netlists that a
-record's fresh/stale attribution depends on), or `layout/records/` is modified, deleted, or renamed (only
+record's fresh/stale attribution depends on), `layout/records/`, or
+`manifests/artifacts/*.manifest.json` is modified, deleted, or renamed (only
 additions pass). The "no exceptions" stance stands; if a decision record ever
 ratifies one, it must be listed with its DR number in
 `sim/append-only-allowlist.txt` so it stays visible in review (empty today).
+
+## Stored evidence
+
+New evidence bytes go to the fleet artifact store; git keeps a manifest and a
+Markdown record (issue #511, [DR-0041](../spec/decision-records/DR-0041-new-evidence-bytes-go-to-the-artifact-store-git-keeps-manifests.md)).
+Evidence bytes are private and manifests are public, so a manifest is safe in
+this public repo. Evidence already committed is not rewritten or migrated.
+
+- **Corner-runner records.** `python3 sim/run_corners.py <bench>` stages the
+  netlist snapshot and per-corner logs under `sim/.work/.stage/` (git-ignored),
+  stores them with `klt artifact put`, then commits
+  `manifests/artifacts/<bench>-<record-id>.manifest.json` and
+  `sim/<bench>/records/<record-id>.md`. The record ends with a "Stored
+  evidence" table (name, size, sha256 per object). Zero-byte files cannot be
+  stored and are listed there as empty. The record's `netlist-snapshots/` and
+  `corners/` paths are the manifest `name`s, not files in the repo.
+- **Other outputs.** Write them to scratch (`sim/.work/...` or outside the
+  repo), then
+  `python3 sim/run_store_evidence.py <bench> <run-id> <dir> --summary <summary.md>`.
+  It commits the manifest and `sim/<bench>/campaigns/<run-id>.md`.
+  The `klt`-batch adapters (`klt_record.py`, `tb_adapter.py`) still write the
+  old layout; moving them is tracked separately.
+- **Configuration** is the environment only, read by `klt`:
+  `KLT_ARTIFACT_BROKER` and optionally `KLT_ARTIFACT_REPO`. Nothing is
+  defaulted and no broker URL, bucket or account identifier is written in this
+  repo. A manifest `uri` is the logical `artifact:<key>`; any other scheme is
+  refused. `klt` must be klayout-tools `7e3561f` or later. `klt` reports no
+  commit, so the writer probes its behaviour offline. To try another version
+  use a throwaway environment (`uvx --from ... klt`), not a host install.
+- **Fail closed.** If the broker is unset or unreachable, or `klt` lacks
+  `artifact put` or is too old, `run_corners.py` refuses before simulating
+  (exit 10). A put that fails after the grid also exits 10. Either way nothing
+  goes under `manifests/` or `sim/`, the staged bytes stay in
+  `sim/.work/.stage/`, and there is no option to commit the bytes instead.
+  `--no-write` exploration needs no store.
+- **Verify by hash.** `klt artifact verify <manifest>` (or
+  `python3 scripts/check_artifact_manifests.py verify <manifest>`) re-hashes
+  every entry through the broker. CI runs
+  `scripts/check_artifact_manifests.py check --tree <sha>`: schema, `artifact:`
+  URIs only, and no stored object's bytes also committed. CI never contacts the
+  broker, so it does not hash-verify and says so.
 
 ## Reproducibility caveat: a version string is not a content fingerprint (#182)
 

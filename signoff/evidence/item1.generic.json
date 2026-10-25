@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "kind": "generic",
+  "status": "pass",
+  "t1_item": 1,
+  "summary": "T1 item 1 (Design sources): 17/17 attestation checks passed (klt signoff --attest)",
+  "source": "signoff/inventory-item1.json",
+  "attestation": {
+    "producer": "klt signoff --attest",
+    "inventory_schema_version": 1,
+    "hash_algorithm": "sha256-raw-bytes",
+    "check_count": 17,
+    "passed_count": 17,
+    "checks": [
+      {
+        "check": "present",
+        "role": "source",
+        "path": "design/error_amp.sch",
+        "passed": true,
+        "content_hash": "sha256:06f82f005dfd458b4e30decda351b2de354e51cda84e8dc09ac1c17c37653bea"
+      },
+      {
+        "check": "present",
+        "role": "source",
+        "path": "design/error_amp.sym",
+        "passed": true,
+        "content_hash": "sha256:ea7589d012172c0efe7477aa7fe160797bd99b226cbd55274daecb3809922adb"
+      },
+      {
+        "check": "present",
+        "role": "source",
+        "path": "design/ldo_core.sch",
+        "passed": true,
+        "content_hash": "sha256:57f745d5751937e13c34bdfd04951f9302f0ec9ea0626e81e1bc810e314a0997"
+      },
+      {
+        "check": "present",
+        "role": "source",
+        "path": "design/ldo_core.sym",
+        "passed": true,
+        "content_hash": "sha256:8039bf8f1de0899e4ce9d178735881168e895cbf4705f10014eacb5a3f31c3d3"
+      },
+      {
+        "check": "present",
+        "role": "source",
+        "path": "design/ldo_ilimit.sch",
+        "passed": true,
+        "content_hash": "sha256:b1b6b4bc62b120ca31563016593f6a79ad85039be4bd340f0a21a6e3674aef26"
+      },
+      {
+        "check": "present",
+        "role": "source",
+        "path": "design/ldo_ilimit.sym",
+        "passed": true,
+        "content_hash": "sha256:9270cade43b43defceb1e6c493c496765af7f6bd745f604b0c1571fd86a635a7"
+      },
+      {
+        "check": "present",
+        "role": "source",
+        "path": "design/ldo_softstart.sch",
+        "passed": true,
+        "content_hash": "sha256:463e2d620461d29bfdc3ff7809e04983865836a3d242a7b6bfdea35b9761bbd9"
+      },
+      {
+        "check": "present",
+        "role": "source",
+        "path": "design/ldo_softstart.sym",
+        "passed": true,
+        "content_hash": "sha256:d6af00123274fcaa35e38c0c301cb87b76c735d2ea15b63143e41ebe0cbcb9ea"
+      },
+      {
+        "check": "present",
+        "role": "source",
+        "path": "design/xschemrc",
+        "passed": true,
+        "content_hash": "sha256:ab3e58057022aadc602d1e36b9e9d5aed479e3c154968e4cffa9f3fd5769e9eb"
+      },
+      {
+        "check": "present",
+        "role": "derived",
+        "path": "design/netlist/error_amp.spice",
+        "passed": true,
+        "content_hash": "sha256:76841b846788afb832a627d942baeda532b89249767136f1467bd6c80eff736a"
+      },
+      {
+        "check": "present",
+        "role": "derived",
+        "path": "design/netlist/ldo_core.spice",
+        "passed": true,
+        "content_hash": "sha256:4f99a1a9dcf681be3b470b7f11c8cff1a7a3bc63b276f0aa909fe88dfef5e4e1"
+      },
+      {
+        "check": "present",
+        "role": "derived",
+        "path": "design/netlist/ldo_ilimit.spice",
+        "passed": true,
+        "content_hash": "sha256:e212a0cf3fc3c85d2c0e92eb5032bc82f4ada3cfa58b84b4d457007dfe927857"
+      },
+      {
+        "check": "present",
+        "role": "derived",
+        "path": "design/netlist/ldo_softstart.spice",
+        "passed": true,
+        "content_hash": "sha256:1505d4ef0c588d9b4a41c342735e362d11eab78b8a17446d7456ef4d49f06492"
+      },
+      {
+        "check": "command",
+        "role": "freshness",
+        "target": "design/netlist/error_amp.spice",
+        "generator": "design/netlist.py (xschem 3.4.7)",
+        "argv": [
+          "python3",
+          "design/netlist.py",
+          "--check"
+        ],
+        "cwd": ".",
+        "exit_status": 0,
+        "passed": true,
+        "local_only": true
+      },
+      {
+        "check": "command",
+        "role": "freshness",
+        "target": "design/netlist/ldo_core.spice",
+        "generator": "design/netlist.py (xschem 3.4.7)",
+        "argv": [
+          "python3",
+          "design/netlist.py",
+          "--check"
+        ],
+        "cwd": ".",
+        "exit_status": 0,
+        "passed": true,
+        "local_only": true
+      },
+      {
+        "check": "command",
+        "role": "freshness",
+        "target": "design/netlist/ldo_ilimit.spice",
+        "generator": "design/netlist.py (xschem 3.4.7)",
+        "argv": [
+          "python3",
+          "design/netlist.py",
+          "--check"
+        ],
+        "cwd": ".",
+        "exit_status": 0,
+        "passed": true,
+        "local_only": true
+      },
+      {
+        "check": "command",
+        "role": "freshness",
+        "target": "design/netlist/ldo_softstart.spice",
+        "generator": "design/netlist.py (xschem 3.4.7)",
+        "argv": [
+          "python3",
+          "design/netlist.py",
+          "--check"
+        ],
+        "cwd": ".",
+        "exit_status": 0,
+        "passed": true,
+        "local_only": true
+      }
+    ]
+  },
+  "provenance": {
+    "klt_version": "0.7.1.dev2457+gdc136150a49e",
+    "klayout_version": null,
+    "pdk": null,
+    "deck": null,
+    "input": {
+      "path": {
+        "path": "signoff/inventory-item1.json",
+        "scope": "repo"
+      },
+      "content_hash": "sha256:6d7ed26cecc181380ce16901a5332b2d632055c3f33d183b95a7489d4a05cde3"
+    }
+  }
+}
