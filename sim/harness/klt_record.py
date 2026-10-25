@@ -29,6 +29,7 @@ from types import SimpleNamespace
 
 from . import pdk, report
 from . import testbench as tbmod
+from .klt_ab import driver_args, parse_params
 
 REPO = Path(__file__).resolve().parents[2]
 _ROW = re.compile(r"^\s*\|\s*`([^`]+)`\s*\|(.*)\|\s*$")
@@ -224,16 +225,21 @@ def main(argv=None) -> int:
     ap.add_argument("slug")
     ap.add_argument("--record-id", required=True)
     ap.add_argument("--dut", help="repo-relative DUT netlist (default: the manifest's)")
+    ap.add_argument("--param", action="append", default=[], metavar="NAME=VALUE",
+                    help="the --param overrides the klt_run.py run used (recorded on the Driver line)")
     args = ap.parse_args(argv)
     exp = REPO / "sim" / args.slug
     tb = tbmod.load(exp / "testbench")
+    overrides = parse_params(args.param)
+    if set(overrides) - set(tb.params):
+        raise SystemExit(f"--param {sorted(set(overrides) - set(tb.params))}: not in tb.json params")
     corner_dir = exp / "corners" / args.record_id
     dut = tb.design_netlists[0]
     dut_rel = tb.dut_netlist_rel or str(dut.relative_to(REPO))
     dut_sha = tb.include_provenance(REPO)[0]["sha256"]
     priors = sorted(p for p in (exp / "records").glob("*.md") if p.stem != args.record_id)
     text = render(tb, args.record_id, load_grid(corner_dir, tb), jobs(corner_dir), priors[-1] if priors else None,
-                  dut_rel, dut_sha, f"python3 sim/{args.slug}/testbench/klt_run.py --record-id {args.record_id}")
+                  dut_rel, dut_sha, f"python3 sim/{args.slug}/testbench/klt_run.py --record-id {args.record_id}{driver_args(overrides)}")
     report.write_netlist_snapshot(tb, exp, args.record_id)
     report.write_markdown_record(args.record_id, text, exp / "records")
     print(f"wrote sim/{args.slug}/records/{args.record_id}.md")

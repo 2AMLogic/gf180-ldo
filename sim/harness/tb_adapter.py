@@ -403,7 +403,7 @@ def main(testbench_dir: Path, doc: str, argv=None, **job_opts) -> int:
     import os
 
     from . import pdk
-    from .klt_ab import add_ab_args, run_ab, write_summary_csv
+    from .klt_ab import add_ab_args, parse_params, run_ab, write_summary_csv
 
     repo = Path(__file__).resolve().parents[2]
     tb = tbmod.load(testbench_dir)
@@ -418,6 +418,11 @@ def main(testbench_dir: Path, doc: str, argv=None, **job_opts) -> int:
     dut_rel = tb.dut_netlist_rel or str(default_dut.relative_to(repo))
     ap.set_defaults(dut=str(default_dut))
     args = ap.parse_args(argv)
+    overrides = parse_params(args.param)
+    unknown = sorted(set(overrides) - set(tb.params))
+    if unknown:
+        raise SystemExit(f"--param {', '.join(unknown)}: not in {tb.name}'s tb.json params {sorted(tb.params)}")
+    tb = replace(tb, params={**tb.params, **overrides})
     # Pin klt's PDK search to the harness-resolved, pin-checked tree: with two
     # installs of the variant on the host klt otherwise takes the first match,
     # and the client-side stamp it compares the worker's against is unavailable.
