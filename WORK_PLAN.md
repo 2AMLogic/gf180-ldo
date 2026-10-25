@@ -24,6 +24,7 @@ Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a h
 
 Human-approved issues ready for implementation (`loom:issue`).
 
+- **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 - **#366**: sim: route the remaining ratified-row PVT grid drivers (loop-stability, current-limit, enable-shutdown, soft-start) through klt_batch instead of local fan-out
 
 ## In Progress
@@ -33,6 +34,7 @@ Issues currently being built (`loom:building`).
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
+- **#519**: load-transient: 81-point run at C_eff = 1 uF, ESR 200 and 500 mOhm, with a measured recovery time (evidence for DR-0042)
 
 ## PRs Awaiting Review
 
@@ -65,6 +67,7 @@ Issues carrying `loom:curated`.
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)*
 - **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)*
+- **#519**: load-transient: 81-point run at C_eff = 1 uF, ESR 200 and 500 mOhm, with a measured recovery time (evidence for DR-0042) *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -83,11 +86,11 @@ _None._
 | Operator merge-risk holds | 1 |
 | Very important | 1 |
 | Important | 2 |
-| Ready (`loom:issue`) | 1 |
-| In Progress (`loom:building`) | 3 |
+| Ready (`loom:issue`) | 2 |
+| In Progress (`loom:building`) | 4 |
 | PRs awaiting review | 0 |
 | Approved PRs awaiting merge | 1 |
-| Curated | 15 |
+| Curated | 16 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
