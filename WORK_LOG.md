@@ -2,6 +2,10 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-25
+
+- **PR #520**: sim: parameterise load-transient output network, add --param override and recovery measures
+
 ### 2026-10-24
 
 - **PR #517**: refactor: restore helper names and wrap long line in gen_gds
