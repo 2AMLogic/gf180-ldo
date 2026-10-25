@@ -98,5 +98,8 @@ Vilc ILC 0 PWL(0 1m 50u 1m 51u 50m 150u 50m 151u 1m 400u 1m)
 Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
 Vlmeas NLOAD 0 DC 0
 
-Resr VOUT n_esr 0.1
-Cout n_esr 0 0.33u
+* Output network. esr_val / cout_val default (tb.json "params") to the
+* 0.1 ohm / 0.33 uF this bench was ratified at; a run overrides them with
+* the harness's --param NAME=VALUE (#519).
+Resr VOUT n_esr {esr_val}
+Cout n_esr 0 {cout_val}

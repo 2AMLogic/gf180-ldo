@@ -30,6 +30,24 @@ def add_ab_args(ap, repo: Path) -> None:
     ap.add_argument("--baseline-ref", default=None)
     ap.add_argument("--backend", default=None)
     ap.add_argument("--only", default=None, help="one point, e.g. tt,27,3.30 (debug; runs locally)")
+    ap.add_argument("--param", action="append", default=[], metavar="NAME=VALUE",
+                    help="override a tb.json `params` entry for this run (repeatable), e.g. --param esr_val=0.2")
+
+
+def parse_params(pairs: list[str]) -> dict[str, str]:
+    """``["esr_val=0.2", ...]`` -> ``{"esr_val": "0.2"}``; a malformed pair is an error."""
+    out = {}
+    for pair in pairs:
+        name, sep, value = pair.partition("=")
+        if not sep or not name.strip().isidentifier() or not value.strip():
+            raise SystemExit(f"--param {pair!r}: expected NAME=VALUE")
+        out[name.strip()] = value.strip()
+    return out
+
+
+def driver_args(params: dict[str, str]) -> str:
+    """The `` --param`` flags that reproduce ``params``, for a record's Driver line."""
+    return "".join(f" --param {k}={v}" for k, v in params.items())
 
 
 def write_summary_csv(rows: list[dict], path: Path, keys: list[str] | None = None) -> None:

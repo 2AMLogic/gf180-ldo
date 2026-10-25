@@ -55,6 +55,44 @@ class SupplyWaveform(unittest.TestCase):
         self.assertEqual(req["batch"], {"max_units_per_job": 2})
 
 
+class ParamOverride(unittest.TestCase):
+    """``--param NAME=VALUE`` replaces a tb.json ``params`` entry for one run (#519)."""
+
+    def test_defaults_are_the_ratified_output_network(self):
+        tb = _tb("load-transient")
+        self.assertEqual(tb.params, {"esr_val": 0.1, "cout_val": "0.33u"})
+        body = ta.body(tb)
+        self.assertIn(".param esr_val=0.1", body)
+        self.assertIn(".param cout_val=0.33u", body)
+        self.assertIn("Resr VOUT n_esr {esr_val}", body)
+
+    def test_override_reaches_the_request_body_and_leaves_other_params(self):
+        from harness.klt_ab import parse_params
+
+        tb = _tb("load-transient")
+        tb = dataclasses.replace(tb, params={**tb.params, **parse_params(["esr_val=0.5", "cout_val=1u"])})
+        job = next(iter(ta.supply_jobs(tb, "new", DUT).values()))
+        self.assertIn(".param esr_val=0.5", job.body)
+        self.assertIn(".param cout_val=1u", job.body)
+        self.assertNotIn("esr_val=0.1", job.body)
+
+    def test_malformed_pairs_are_refused(self):
+        from harness.klt_ab import driver_args, parse_params
+
+        for bad in ("esr_val", "=1", "esr_val=", "1x=2"):
+            with self.assertRaises(SystemExit):
+                parse_params([bad])
+        self.assertEqual(driver_args(parse_params(["a=1", "b=2u"])), " --param a=1 --param b=2u")
+
+    def test_recovery_measures_are_requested_and_graded(self):
+        tb = _tb("load-transient")
+        _, specs = ta.measurements(tb)
+        names = {s["name"] for s in specs}
+        self.assertLessEqual({"recovery_us", "recovery18_us"}, names)
+        self.assertEqual(tb.checks["recovery_us"]["max"], 20.0)
+        self.assertEqual(tb.checks["recovery18_us"]["max"], 20.0)
+
+
 class SplitAnalyses(unittest.TestCase):
     def test_single_supply_sweep_and_meas_cards(self):
         analysis, cards = ta.split_analyses(
