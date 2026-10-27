@@ -2,6 +2,11 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-27
+
+- **PR #527**: chore(signoff): pin klayout-tools to PyPI 0.8.0 and regenerate T1 record
+- **Issue #526** (closed): Bump klayout-tools pin dc136150a49e → 0.8.0
+
 ### 2026-10-25
 
 - **PR #520**: sim: parameterise load-transient output network, add --param override and recovery measures
