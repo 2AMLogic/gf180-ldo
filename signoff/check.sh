@@ -25,30 +25,29 @@
 #    no longer matches what the tool says today, it is stale prose again and the
 #    whole point of the manifest is lost.
 #
-# Why klt is pinned to a git revision here
+# Why klt is pinned to a PyPI release here
 # ----------------------------------------
-# T1 item 11 ("Power delivery (structural)", klayout-tools#2025) landed
-# 2026-09-19, *after* the klayout-tools v0.5.0 PyPI release -- a `pip install
-# klayout-tools` today parses a ten-item checklist and would render no item-11
-# row at all. `klt signoff` parses the item list out of
-# klayout-tools' own docs/design-evidence-tiers.md, so the tool version decides
-# which checklist this block is graded against, and an unpinned install would
-# make the committed record irreproducible. KLT_REV below is that pin. It is
-# also the first revision with `klt signoff --attest/--inventory` (issue #2844,
-# not in the 0.7.0 PyPI release), which produces the item 1/9/10 envelopes
-# (issue #448) and which CI re-runs with --check. Bumping
-# it is a real change to the yardstick: expect signoff/records/t1-tier-report.json
-# to move in the same commit, and re-read signoff/README.md's item notes
-# against any item the bump adds or rewords.
+# `klt signoff` parses the item list out of klayout-tools' own
+# docs/design-evidence-tiers.md, so the tool version decides which checklist
+# this block is graded against, and an unpinned install would make the
+# committed record irreproducible. KLT_VERSION below is that pin. 0.8.0 is the
+# first PyPI release carrying both T1 item 11 ("Power delivery (structural)",
+# klayout-tools#2025) and `klt signoff --attest/--inventory` (klayout-tools
+# #2844), which produces the item 1/9/10 envelopes (issue #448) and which CI
+# re-runs with --check. It is pinned as `==` on PyPI rather than a git
+# revision: a git build reports a dev version and fails `==` checks
+# (klayout-tools#2823). Bumping it is a real change to the yardstick: expect
+# signoff/records/t1-tier-report.json to move in the same commit, and re-read
+# signoff/README.md's item notes against any item the bump adds or rewords.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# klayout-tools revision this block is graded against. See the header above
+# klayout-tools release this block is graded against. See the header above
 # before changing it.
-KLT_REV="dc136150a49e9f539a1050bf31e2117ce53441d0"
-KLT_SPEC="git+https://github.com/2AMLogic/klayout-tools@${KLT_REV}"
+KLT_VERSION="0.8.0"
+KLT_SPEC="klayout-tools==${KLT_VERSION}"
 
 MANIFEST="signoff/block-manifest.json"
 RECORD="signoff/records/t1-tier-report.json"

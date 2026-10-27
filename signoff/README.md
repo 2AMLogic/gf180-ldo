@@ -163,12 +163,12 @@ schematic, netlist or bench file is drift and fails CI. What CI cannot do is
 prove a netlist still regenerates from its schematic (item 1) or that the cold
 start still runs (item 9): item 1 needs xschem 3.4.7, which this repo does not
 install in CI, and item 9 needs ngspice and the PDK. Re-verify both locally,
-with the klt revision `check.sh` pins:
+with the klt release `check.sh` pins:
 
 ```bash
-KLT_REV="$(sed -n 's/^KLT_REV="\(.*\)"/\1/p' signoff/check.sh)"
+KLT_VERSION="$(sed -n 's/^KLT_VERSION="\(.*\)"/\1/p' signoff/check.sh)"
 for n in 1 9 10; do
-  uvx --from "git+https://github.com/2AMLogic/klayout-tools@${KLT_REV}" \
+  uvx --from "klayout-tools==${KLT_VERSION}" \
     klt signoff --attest $n --inventory signoff/inventory-item$n.json \
     --check signoff/evidence/item$n.generic.json
 done
