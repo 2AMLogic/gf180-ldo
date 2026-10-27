@@ -438,7 +438,7 @@ required to run anything under `sim/`, so install them only when you touch
 | Tool | Version validated | Source |
 |---|---|---|
 | KLayout | **0.28.16** | `apt-get install klayout` (Debian/Ubuntu); [klayout.de](https://www.klayout.de) elsewhere. Needs to be the **standalone binary**, not just the `klayout` pip module -- the PDK's decks are run as `klayout -b -r <deck>`. |
-| klayout-tools (`klt`) | **0.1.0** | `uv tool install klayout-tools`, or `pipx install klayout-tools` |
+| klayout-tools (`klt`) | **0.8.0** | `uv tool install klayout-tools==0.8.0`, or `pipx install klayout-tools==0.8.0` |
 
 **The xschem version in §1 is load bearing for LVS specifically.** The LVS
 reference netlist is produced by xschem's `lvs_format` mechanism, which does

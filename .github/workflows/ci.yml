@@ -247,9 +247,9 @@ jobs:
       # install xschem to make those run -- see signoff/README.md.
       - name: Re-attest T1 items 1, 9 and 10 (--check)
         run: |
-          KLT_REV="$(sed -n 's/^KLT_REV="\(.*\)"/\1/p' signoff/check.sh)"
+          KLT_VERSION="$(sed -n 's/^KLT_VERSION="\(.*\)"/\1/p' signoff/check.sh)"
           for n in 1 9 10; do
-            uvx --from "git+https://github.com/2AMLogic/klayout-tools@${KLT_REV}" \
+            uvx --from "klayout-tools==${KLT_VERSION}" \
               klt signoff --attest "$n" --inventory "signoff/inventory-item${n}.json" \
               --check "signoff/evidence/item${n}.generic.json"
           done
