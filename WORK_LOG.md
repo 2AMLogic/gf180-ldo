@@ -2,6 +2,10 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-10-31
+
+- **PR #534**: Bump Repo Skills 0.24.7 -> 0.25.1
+
 ### 2026-10-27
 
 - **PR #527**: chore(signoff): pin klayout-tools to PyPI 0.8.0 and regenerate T1 record
