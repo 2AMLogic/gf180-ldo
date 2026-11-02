@@ -5,7 +5,7 @@
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
 
-- **#502**: spec: propose limiting load-transient test condition to ESR >= 200 mOhm (DR-0041, ratification)
+_None._
 
 ## Very Important
 
@@ -45,7 +45,7 @@ _None._
 
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
-- **#502**: spec: propose limiting load-transient test condition to ESR >= 200 mOhm (DR-0041, ratification)
+_None._
 
 ## Proposed
 
@@ -83,13 +83,13 @@ _None._
 
 | Bucket | Count |
 |------|-------|
-| Operator merge-risk holds | 1 |
+| Operator merge-risk holds | 0 |
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`) | 2 |
 | In Progress (`loom:building`) | 3 |
 | PRs awaiting review | 0 |
-| Approved PRs awaiting merge | 1 |
+| Approved PRs awaiting merge | 0 |
 | Curated | 17 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
