@@ -2,6 +2,10 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-11-02
+
+- **Issue #366** (closed): sim: route the remaining ratified-row PVT grid drivers (loop-stability, current-limit, enable-shutdown, soft-start) through klt_batch instead of local fan-out
+
 ### 2026-10-31
 
 - **PR #534**: Bump Repo Skills 0.24.7 -> 0.25.1
