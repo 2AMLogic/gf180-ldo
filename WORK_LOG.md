@@ -4,6 +4,7 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-04
 
+- **PR #541**: feat(sim): declare ratified limits and spec_row in klt envelopes
 - **PR #539**: signoff: declare all ratified item-5 rows as gaps and grade against a klt git rev
 - **Issue #523** (closed): T1 item 5 (corner verification): declare the ratified row set and cite klt sim corner envelopes per row in the block manifest
 
