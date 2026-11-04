@@ -30,7 +30,11 @@ IDX = {"1764": 147, "1500": 125, "0900": 75, "0300": 25, "0000": 0}
 
 MEASUREMENTS = (
     [{"name": "vf_1764", "expr": "v(vf)[147]", "unit": "V"}]
-    + [{"name": f"ilim_{k}_ma", "expr": f"i(vforce)[{i}]*1e3", "unit": "mA"} for k, i in IDX.items()]
+    + [{"name": f"ilim_{k}_ma", "expr": f"i(vforce)[{i}]*1e3", "unit": "mA",
+        # Ratified Current limit row: 62-95 mA over PVT (DR-0005); the 1.764 V
+        # read point is the on-limit value summarize/grade() windows too.
+        **({"limits": {"min": 62.0, "max": 95.0}, "spec_row": "Current limit"} if k == "1764" else {})}
+       for k, i in IDX.items()]
     + [
         {"name": "vout_50ma", "expr": "v(vout_r)[0]", "unit": "V"},
         {"name": "iload_50ma", "expr": "i(vlmeas_r)[0]*1e3", "unit": "mA"},

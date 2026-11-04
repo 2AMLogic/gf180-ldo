@@ -144,6 +144,19 @@ class Measurements(unittest.TestCase):
         # a later param may read an earlier one
         self.assertIn("vin_knee_last_v", by["knee_uniqueness_mv"]["spice"])
 
+    def test_spec_row_measurements_declare_ratified_limits(self):
+        for slug, name, row, lim in (
+            ("dropout-vs-load", "vdrop_mv", "Dropout @ 50 mA", {"max": 300.0}),
+            ("load-regulation", "load_reg_mv", "Load reg (0\u201350 mA)", {"max": 18.0}),
+        ):
+            _, specs = ta.measurements(_tb(slug))
+            by = {s["name"]: s for s in specs}
+            self.assertEqual(by[name]["spec_row"], row)
+            self.assertEqual(by[name]["limits"], lim)
+        # harness-integrity checks are not spec rows: no tag, no limits
+        self.assertNotIn("spec_row", by["vout_1ma"])
+        self.assertNotIn("limits", by["vout_1ma"])
+
     def test_vector_measure_stays_an_expr(self):
         _, specs = ta.measurements(_tb("line-regulation"))
         by = {s["name"]: s for s in specs}

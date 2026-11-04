@@ -46,8 +46,10 @@ TRAN_ENCTL = "DC 0 PWL(0 0 100u 0 101u 1 8m 1 8.001m 0)"
 IQ_SUM = "-i(vin)*1e6 - i(vref)*1e6"  # supply + reference delivery, uA
 
 
-def expr(name, e):
-    return {"name": name, "expr": e}
+def expr(name, e, limits=None):
+    """``limits`` are ratified Enable / shutdown row bounds; declaring them tags the row."""
+    return {"name": name, "expr": e,
+            **({"limits": limits, "spec_row": "Enable / shutdown"} if limits else {})}
 
 
 def meas(name, spec):
@@ -72,10 +74,10 @@ STATES = {
         expr("pg_off", "v(pg)"),
         expr("clg_off", "v(xdut.xilimit.clg)"),
         expr("nbias_off", "v(xdut.xerramp.nbias)"),
-        expr("iq_off_ua", IQ_SUM),
+        expr("iq_off_ua", IQ_SUM, {"max": 3.0}),   # shutdown Iq < 3 uA
     ], 900),
     "leakage": ("DC 0", "1G", "1m", {"kind": "op", "args": ""}, [
-        expr("ileak_vin_vout_ua", "i(vforce)*1e6"),
+        expr("ileak_vin_vout_ua", "i(vforce)*1e6", {"min": -1.0, "max": 1.0}),   # |Vin->Vout leakage| <= 1 uA
     ], 900),
     "tran": (TRAN_ENCTL, "36", "1G", {"kind": "tran", "args": "1u 9m"}, [
         meas("t_startup", "TRIG v(en) VAL=1.4 RISE=1 TARG v(vout) VAL=1.764 RISE=1"),
