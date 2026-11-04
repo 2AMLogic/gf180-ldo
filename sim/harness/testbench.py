@@ -92,6 +92,10 @@ class Testbench:
     measure: dict[str, str] = field(default_factory=dict)
     params: dict[str, str | float] = field(default_factory=dict)
     checks: dict[str, dict] = field(default_factory=dict)
+    #: Optional ``measurement -> ratified spec-table row`` map. A ``klt sim``
+    #: request declares ``limits`` (from ``checks``) and ``spec_row`` only for
+    #: these measurements, so ``klt signoff`` item 5 can grade the envelope.
+    spec_rows: dict[str, str] = field(default_factory=dict)
     options: tuple[str, ...] = ()
     #: Optional ``.nodeset`` bias hints, e.g. ``{"vout": "1.8", "loop": "1.0"}``
     #: -> rendered as ``.nodeset v(vout)=1.8 v(loop)=1.0``. A closed-loop LDO
@@ -309,6 +313,9 @@ def load(directory: str | Path) -> Testbench:
             )
 
     validate_checks(manifest.get("checks", {}), measure, manifest_path)
+    for key in manifest.get("spec_rows", {}):
+        if key not in manifest.get("checks", {}):
+            raise ValueError(f"{manifest_path}: spec_rows entry {key!r} has no 'checks' bound to declare as limits")
 
     includes = []
     for entry in manifest.get("includes", []):
@@ -336,6 +343,7 @@ def load(directory: str | Path) -> Testbench:
         measure=measure,
         params={k: v for k, v in manifest.get("params", {}).items()},
         checks=dict(manifest.get("checks", {})),
+        spec_rows={str(k): str(v) for k, v in manifest.get("spec_rows", {}).items()},
         options=tuple(manifest.get("options", ())),
         nodeset={str(k): manifest["nodeset"][k] for k in manifest.get("nodeset", {})},
         operating_conditions={

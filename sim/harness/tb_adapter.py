@@ -175,7 +175,20 @@ def measurements(tb: tbmod.Testbench) -> tuple[dict, list[dict]]:
             scalars.add(name)
         else:
             specs.append({"name": name, "expr": mapped})
-    return analysis, specs
+    return analysis, with_spec_rows(tb, specs)
+
+
+def with_spec_rows(tb: tbmod.Testbench, specs: list[dict]) -> list[dict]:
+    """Declare ``limits`` (the bench's ``checks`` bound) and ``spec_row`` on the
+    measurements ``tb.spec_rows`` names; every other measurement is untouched."""
+    out = []
+    for spec in specs:
+        row = tb.spec_rows.get(spec["name"])
+        if row:
+            lim = {k: v for k, v in tb.checks[spec["name"]].items() if k in ("min", "max")}
+            spec = {**spec, "limits": lim, "spec_row": row}
+        out.append(spec)
+    return out
 
 
 @dataclass
@@ -377,7 +390,7 @@ def jobs(tb: tbmod.Testbench, tag: str, dut: Path,
         **{k: v for k, v in kb.only_axes(only).items() if k != "supplies"},
     }
     return {(s.name, v): kb.Job(name=f"{s.name}-{v:.2f}v-{tag}", body=body(tb, v), dut_netlist=dut,
-                                analysis=s.analysis, measurements=s.specs, supply_key="vdd_val",
+                                analysis=s.analysis, measurements=with_spec_rows(tb, s.specs), supply_key="vdd_val",
                                 supplies=(v,), supply_in_body=True, stage_model_inputs=True,
                                 ngspice_init=(*init, f"set numdgt={DIGITS}", f"set measureprec={DIGITS}"),
                                 **axes)
