@@ -18,5 +18,73 @@
       "file": "signoff/evidence/item10.generic.json",
       "content_hash": "sha256:2fb6c869bb5402755856a4069b4adb385202549285609685961ead9b1bb2070d"
     }
+  },
+  "spec_rows": {
+    "5": [
+      {
+        "id": "Input",
+        "gap": "not corner-simulable: a supply-range operating condition, exercised by every other row's corner grid rather than a measured quantity with its own bound"
+      },
+      {
+        "id": "Output",
+        "gap": "no passing corner envelope: Output FAIL in sim/CHARACTERIZATION.md (counts Line reg inside its ±2% window); owned by #484, with the Line reg residual tracked under #302"
+      },
+      {
+        "id": "Load",
+        "gap": "not corner-simulable: the 0-50 mA range is an operating condition exercised by the Dropout, Line reg, Load reg, Load transient, Current limit and PSRR grids (sim/CHARACTERIZATION.md N/A note)"
+      },
+      {
+        "id": "Dropout @ 50 mA",
+        "gap": "no limit-checked klt sim envelope yet (committed klt-report.json files carry 0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
+      },
+      {
+        "id": "Line reg",
+        "gap": "no passing corner envelope: Line reg FAIL in sim/CHARACTERIZATION.md (ff/125C/3.30 V 8.2345 mV/V vs < 5 mV/V, DR-0031 soft-start injection residual); owned by #302"
+      },
+      {
+        "id": "Load reg (0-50 mA)",
+        "gap": "no limit-checked klt sim envelope yet (0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
+      },
+      {
+        "id": "Load transient",
+        "gap": "no passing corner envelope: Load transient FAIL in sim/CHARACTERIZATION.md; owned by #483, #501 and #519"
+      },
+      {
+        "id": "PSRR",
+        "gap": "no passing corner envelope: PSRR FAIL in sim/CHARACTERIZATION.md (DR-0031 supply-dependent soft-start injection residual); owned by #302"
+      },
+      {
+        "id": "Iq (excluding load current)",
+        "gap": "no passing corner envelope: Iq MIXED in sim/CHARACTERIZATION.md; owned by #346"
+      },
+      {
+        "id": "Current limit",
+        "gap": "no limit-checked klt sim envelope yet (0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
+      },
+      {
+        "id": "Startup",
+        "gap": "no passing corner envelope: Startup MIXED and stale in sim/CHARACTERIZATION.md; owned by #43 and #345"
+      },
+      {
+        "id": "Enable / shutdown",
+        "gap": "no limit-checked klt sim envelope yet (0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
+      },
+      {
+        "id": "Thermal",
+        "gap": "no limit-checked klt sim envelope yet; Thermal has no bench of its own and is evidenced by the current-limit grid (sim/CHARACTERIZATION.md); declare limits/spec_row and re-mint under #538"
+      },
+      {
+        "id": "Output noise",
+        "gap": "not corner-simulable: explicitly waived by the ratified spec (README note 7); no bound exists to check"
+      },
+      {
+        "id": "Area",
+        "gap": "not corner-simulable: a layout figure (< 0.1 mm2 core area), not a circuit corner result; belongs to the layout epic #173"
+      },
+      {
+        "id": "Stability",
+        "gap": "no passing corner envelope: Stability PASS but STALE in sim/CHARACTERIZATION.md; re-run owned by #327"
+      }
+    ]
   }
 }
