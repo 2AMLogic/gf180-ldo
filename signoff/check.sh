@@ -25,7 +25,7 @@
 #    no longer matches what the tool says today, it is stale prose again and the
 #    whole point of the manifest is lost.
 #
-# Why klt is pinned to a PyPI release here
+# Why klt is pinned (grade: git revision KLT_REV; attest: PyPI KLT_VERSION)
 # ----------------------------------------
 # `klt signoff` parses the item list out of klayout-tools' own
 # docs/design-evidence-tiers.md, so the tool version decides which checklist
@@ -46,8 +46,18 @@ cd "$REPO_ROOT"
 
 # klayout-tools release this block is graded against. See the header above
 # before changing it.
+# KLT_VERSION stays the release the CI attest/inventory steps and signoff/README.md
+# use (`uvx --from klayout-tools==$KLT_VERSION`); only the --manifest grade below
+# uses KLT_SPEC.
 KLT_VERSION="0.8.0"
-KLT_SPEC="klayout-tools==${KLT_VERSION}"
+# Item 5 `spec_rows` gap declarations (klayout-tools#4190) are on klayout-tools
+# main only; no PyPI release newer than 0.8.0 exists (checked 2026-11-04). Until
+# one does, grade against this git revision (>= ee64e606, the #4190 fix). A git
+# build reports a dev version and fails `==` checks (klayout-tools#2823), but
+# `klt signoff --manifest` does not make one. Swap back to
+# "klayout-tools==<release>" as soon as a release carries the fix.
+KLT_REV="a2804ab992639612e5fceb84cee6bad5fb917b1f"
+KLT_SPEC="git+https://github.com/2AMLogic/klayout-tools@${KLT_REV}"
 
 MANIFEST="signoff/block-manifest.json"
 RECORD="signoff/records/t1-tier-report.json"
@@ -119,6 +129,25 @@ for item, entry in sorted((manifest.get("evidence") or {}).items()):
                 f"manifest item {item}: pins {pinned} for {file_!r}, but that "
                 f"envelope's own provenance.input.content_hash is {own}"
             )
+
+# Item 5 `spec_rows`: every cited envelope file must exist on disk, and every
+# row a citation names must be a declared, non-gap row. A manifest that cites
+# nothing (all rows declared gaps) passes this loop trivially.
+for item, rows in sorted((manifest.get("spec_rows") or {}).items()):
+    declared = {r.get("id"): r for r in rows if isinstance(r, dict)}
+    entry = (manifest.get("evidence") or {}).get(item)
+    for part in (entry if isinstance(entry, list) else [entry] if entry else []):
+        if not isinstance(part, dict):
+            continue
+        file_ = part.get("file")
+        if file_ and not (root / file_).is_file():
+            failures.append(f"manifest item {item}: cited envelope {file_!r} does not exist")
+        for row in part.get("rows") or []:
+            if row not in declared or declared[row].get("gap"):
+                failures.append(
+                    f"manifest item {item}: {file_!r} cites row {row!r}, which is "
+                    f"undeclared or declared a gap"
+                )
 
 if failures:
     print("signoff/check.sh: pinned-hash verification FAILED", file=sys.stderr)
