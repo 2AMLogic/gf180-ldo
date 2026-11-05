@@ -1,0 +1,188 @@
+{
+  "netlist": "body.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "res_ff",
+        "sections": [
+          "typical",
+          "res_ff",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "res_ss",
+        "sections": [
+          "typical",
+          "res_ss",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vin": [
+        2.97,
+        3.63
+      ]
+    },
+    "temperature_c": [
+      -40,
+      125
+    ]
+  },
+  "analysis": {
+    "kind": "tran",
+    "args": "5n 400u"
+  },
+  "measurements": [
+    {
+      "name": "icap_peak_a_1",
+      "spice": ".meas tran icap_peak_a_1 MAX i(vcmeas1) FROM=100u TO=400u"
+    },
+    {
+      "name": "t_icap_peak_1",
+      "spice": ".meas tran t_icap_peak_1 MAX_AT i(vcmeas1) FROM=100u TO=400u"
+    },
+    {
+      "name": "isup_peak_a_1",
+      "spice": ".meas tran isup_peak_a_1 MAX i(vamm1) FROM=100u TO=400u"
+    },
+    {
+      "name": "vout_at_end_1",
+      "spice": ".meas tran vout_at_end_1 FIND v(vout1) AT=400u"
+    },
+    {
+      "name": "dvout_max_vpms_1",
+      "expr": "vecmax(deriv(v(vout1)))*1e-3"
+    },
+    {
+      "name": "icap_peak_a_2",
+      "spice": ".meas tran icap_peak_a_2 MAX i(vcmeas2) FROM=100u TO=400u"
+    },
+    {
+      "name": "t_icap_peak_2",
+      "spice": ".meas tran t_icap_peak_2 MAX_AT i(vcmeas2) FROM=100u TO=400u"
+    },
+    {
+      "name": "isup_peak_a_2",
+      "spice": ".meas tran isup_peak_a_2 MAX i(vamm2) FROM=100u TO=400u"
+    },
+    {
+      "name": "vout_at_end_2",
+      "spice": ".meas tran vout_at_end_2 FIND v(vout2) AT=400u"
+    },
+    {
+      "name": "dvout_max_vpms_2",
+      "expr": "vecmax(deriv(v(vout2)))*1e-3"
+    },
+    {
+      "name": "icap_peak_a_3",
+      "spice": ".meas tran icap_peak_a_3 MAX i(vcmeas3) FROM=100u TO=400u"
+    },
+    {
+      "name": "t_icap_peak_3",
+      "spice": ".meas tran t_icap_peak_3 MAX_AT i(vcmeas3) FROM=100u TO=400u"
+    },
+    {
+      "name": "isup_peak_a_3",
+      "spice": ".meas tran isup_peak_a_3 MAX i(vamm3) FROM=100u TO=400u"
+    },
+    {
+      "name": "vout_at_end_3",
+      "spice": ".meas tran vout_at_end_3 FIND v(vout3) AT=400u"
+    },
+    {
+      "name": "dvout_max_vpms_3",
+      "expr": "vecmax(deriv(v(vout3)))*1e-3"
+    },
+    {
+      "name": "icap_peak_a_4",
+      "spice": ".meas tran icap_peak_a_4 MAX i(vcmeas4) FROM=100u TO=400u"
+    },
+    {
+      "name": "t_icap_peak_4",
+      "spice": ".meas tran t_icap_peak_4 MAX_AT i(vcmeas4) FROM=100u TO=400u"
+    },
+    {
+      "name": "isup_peak_a_4",
+      "spice": ".meas tran isup_peak_a_4 MAX i(vamm4) FROM=100u TO=400u"
+    },
+    {
+      "name": "vout_at_end_4",
+      "spice": ".meas tran vout_at_end_4 FIND v(vout4) AT=400u"
+    },
+    {
+      "name": "dvout_max_vpms_4",
+      "expr": "vecmax(deriv(v(vout4)))*1e-3"
+    },
+    {
+      "name": "icap_peak_a_5",
+      "spice": ".meas tran icap_peak_a_5 MAX i(vcmeas5) FROM=100u TO=400u"
+    },
+    {
+      "name": "t_icap_peak_5",
+      "spice": ".meas tran t_icap_peak_5 MAX_AT i(vcmeas5) FROM=100u TO=400u"
+    },
+    {
+      "name": "isup_peak_a_5",
+      "spice": ".meas tran isup_peak_a_5 MAX i(vamm5) FROM=100u TO=400u"
+    },
+    {
+      "name": "vout_at_end_5",
+      "spice": ".meas tran vout_at_end_5 FIND v(vout5) AT=400u"
+    },
+    {
+      "name": "dvout_max_vpms_5",
+      "expr": "vecmax(deriv(v(vout5)))*1e-3"
+    }
+  ],
+  "options": {
+    "timeout_s": 7200,
+    "keep_artifacts": true
+  }
+}
