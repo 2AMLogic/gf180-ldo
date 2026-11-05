@@ -113,35 +113,104 @@ class RunNetlistTests(unittest.TestCase):
                 )
         self.assertEqual(m.call_count, 1)  # the probe only
 
-    def test_accepted_probe_uses_probed_executable(self):
+    def klt_gate(self, out, body, rc=0, stdout="", stderr=""):
+        """Fake subprocess.run: version probe passes; `klt netlist` writes body."""
+
+        def fake(cmd, **kw):
+            if cmd[1] == "--version":
+                return cp("XSCHEM V3.4.7")
+            if body is not None:
+                Path(cmd[cmd.index("-o") + 1]).write_text(body)
+            return cp(stdout, stderr, rc)
+
+        which = unittest.mock.patch.object(
+            xe.shutil, "which",
+            side_effect=lambda n, path=None: f"/fake/bin/{n}",
+        )
+        run = unittest.mock.patch.object(xe.subprocess, "run", side_effect=fake)
+        return which, run
+
+    def test_accepted_probe_uses_klt_with_probed_xschem(self):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d)
-
-            def fake(cmd, **kw):
-                if cmd[1] == "--version":
-                    return cp("XSCHEM V3.4.7")
-                (out / "c.spice").write_text(".subckt c a  \n.ends\n")
-                return cp()
-
-            which, run = gate(side_effect=fake)
+            which, run = self.klt_gate(out, ".subckt c a  \n.ends\n")
             with which, run as m:
                 text = xe.run_xschem_netlist(out / "c.sch", out, ENV, out / "rc")
             self.assertEqual(text, ".subckt c a\n.ends\n")
-            self.assertEqual(m.call_args.args[0][0], EXE)
+            cmd = m.call_args.args[0]
+            self.assertEqual(cmd[:3], ["/fake/bin/klt", "netlist", "--erc"])
+            self.assertEqual(cmd[cmd.index("--xschem-binary") + 1], EXE)
+            self.assertEqual(cmd[cmd.index("--rcfile") + 1], str(out / "rc"))
+            self.assertEqual(cmd[cmd.index("-o") + 1], str(out / "c.spice"))
+            # a hung klt cannot block the caller either
+            self.assertIn("timeout", m.call_args.kwargs)
+            self.assertEqual(
+                cmd[cmd.index("--timeout-s") + 1], str(xe.KLT_NETLIST_TIMEOUT_S)
+            )
 
-    def test_erc_still_enforced_after_gate(self):
+    def test_klt_provenance_header_stripped(self):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d)
-            (out / "c.spice").write_text(".subckt c\n.ends\n")
+            body = (
+                '** klt-netlist-inputs: {"xschem_version": "3.4.7"}\n'
+                "** sch_path: c.sch\n.subckt c a\n.ends\n"
+            )
+            which, run = self.klt_gate(out, body)
+            with which, run:
+                text = xe.run_xschem_netlist(out / "c.sch", out, ENV, out / "rc")
+            self.assertEqual(text, "** sch_path: c.sch\n.subckt c a\n.ends\n")
+
+    def test_erc_failure_from_klt_is_surfaced(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            which, run = self.klt_gate(
+                out, None, rc=1, stderr="klt netlist: ERC findings: undriven node foo"
+            )
+            with which, run, self.assertRaisesRegex(
+                xe.XschemExportError, r"(?s)klt netlist failed.*undriven node foo"
+            ):
+                xe.run_xschem_netlist(out / "c.sch", out, ENV, out / "rc")
+
+    def test_missing_output_is_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            which, run = self.klt_gate(out, None)
+            with which, run, self.assertRaisesRegex(
+                xe.XschemExportError, "klt netlist failed"
+            ):
+                xe.run_xschem_netlist(out / "c.sch", out, ENV, out / "rc")
+
+    def test_klt_hang_is_bounded(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
 
             def fake(cmd, **kw):
                 if cmd[1] == "--version":
                     return cp("XSCHEM V3.4.7")
-                return cp("undriven node foo")
+                raise subprocess.TimeoutExpired(cmd, kw["timeout"])
 
-            which, run = gate(side_effect=fake)
+            which = unittest.mock.patch.object(
+                xe.shutil, "which",
+                side_effect=lambda n, path=None: f"/fake/bin/{n}",
+            )
+            run = unittest.mock.patch.object(xe.subprocess, "run", side_effect=fake)
             with which, run, self.assertRaisesRegex(
-                xe.XschemExportError, "xschem failed"
+                xe.XschemExportError, "timed out"
+            ):
+                xe.run_xschem_netlist(out / "c.sch", out, ENV, out / "rc")
+
+    def test_missing_klt(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            which = unittest.mock.patch.object(
+                xe.shutil, "which",
+                side_effect=lambda n, path=None: EXE if n == "xschem" else None,
+            )
+            run = unittest.mock.patch.object(
+                xe.subprocess, "run", return_value=cp("XSCHEM V3.4.7")
+            )
+            with which, run, self.assertRaisesRegex(
+                xe.XschemExportError, "klt not found"
             ):
                 xe.run_xschem_netlist(out / "c.sch", out, ENV, out / "rc")
 

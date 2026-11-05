@@ -24,19 +24,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# xschem exits 0 even when its own ERC/connectivity checks fail (they are
-# printed, not turned into a nonzero exit code), so grep stdout+stderr for
-# the failure classes it emits during netlisting: undriven/floating nodes,
-# shorted nodes/pins, and missing symbols (a silently-unresolved reference
-# nets everything under an auto-generated name instead of erroring -- see
-# gf180-pll/design/xschemrc's warning about this failure mode).
-ERC_FAILURE_RE = re.compile(
-    r"(undriven node|open net|shorted output node|instance pin shorted|"
-    r"symbol not found|IS MISSING)",
-    re.IGNORECASE,
-)
-
-
 # The one xschem release this repo's netlists (and LVS exports) are generated
 # with. Keep in sync with docs/environment-setup.md (a unit test checks it).
 # This is version enforcement, not a claim that every build bearing this
@@ -44,6 +31,11 @@ ERC_FAILURE_RE = re.compile(
 XSCHEM_PINNED_VERSION = "3.4.7"
 
 XSCHEM_VERSION_TIMEOUT_S = 30
+
+# Bound on one `klt netlist` export (real runs take well under a second).
+KLT_NETLIST_TIMEOUT_S = 120
+KLT_NETLIST_GRACE_S = 30
+KLT_PROVENANCE_PREFIX = "** klt-netlist-inputs:"
 
 _XSCHEM_VERSION_RE = re.compile(r"XSCHEM\s+V(\d+(?:\.\d+)+)", re.IGNORECASE)
 
@@ -114,31 +106,60 @@ def normalize(text: str) -> str:
 def run_xschem_netlist(
     sch: Path, outdir: Path, env: dict[str, str], rcfile: Path
 ) -> str:
-    """Run xschem headless (batch, ERC on) on ``sch`` and return the
-    normalized text of the netlist it writes to ``outdir/<sch.stem>.spice``.
+    """Netlist ``sch`` headless (ERC on) via ``klt netlist`` and return the
+    normalized text of ``outdir/<sch.stem>.spice``.
+
+    ``klt netlist`` owns the xschem invocation: it forces the headless flags,
+    bounds the run with ``--timeout-s`` (killing the whole process group on
+    expiry, so a hung xschem cannot block the caller), and fails on ERC
+    findings and unresolved symbols (``--erc``).
 
     Raises :class:`XschemExportError` if xschem is not the pinned version
-    (checked before anything is netlisted), exits nonzero, produces no
-    output file, or its own ERC/connectivity checks report a problem.
+    (checked before anything is netlisted), ``klt`` is missing, or the export
+    fails, times out, or reports an ERC/connectivity problem.
     """
     xschem = check_xschem_version(env)
-    cmd = [
-        xschem,
-        "-x",  # no X11: batch
-        "-q",  # quit when done
-        "-r",  # no tclreadline (stdin/stdout may be redirected)
-        "--rcfile", str(rcfile),
-        "-o", str(outdir),
-        str(sch),
-        "--command", "xschem netlist -erc",
-    ]
-    proc = subprocess.run(cmd, env=env, capture_output=True, text=True)
-    produced = outdir / f"{sch.stem}.spice"
-    noisy = proc.stdout + proc.stderr
-    erc_problem = ERC_FAILURE_RE.search(noisy)
-    if proc.returncode != 0 or not produced.is_file() or erc_problem:
+    klt = shutil.which("klt", path=env.get("PATH", os.defpath))
+    if klt is None:
         raise XschemExportError(
-            f"xschem failed for {sch.stem} (exit {proc.returncode})\n"
+            "klt not found on PATH; `klt netlist` performs the xschem export "
+            "(see docs/environment-setup.md)"
+        )
+    produced = outdir / f"{sch.stem}.spice"
+    cmd = [
+        klt, "netlist", "--erc",
+        "--timeout-s", str(KLT_NETLIST_TIMEOUT_S),
+        "--xschem-binary", xschem,
+        "--rcfile", str(rcfile),
+        "-o", str(produced),
+        str(sch),
+    ]
+    try:
+        # klt enforces its own bound; this outer one only guards klt itself.
+        proc = subprocess.run(
+            cmd, env=env, capture_output=True, text=True,
+            timeout=KLT_NETLIST_TIMEOUT_S + KLT_NETLIST_GRACE_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise XschemExportError(
+            f"klt netlist timed out for {sch.stem} after "
+            f"{KLT_NETLIST_TIMEOUT_S + KLT_NETLIST_GRACE_S}s"
+        ) from exc
+    except OSError as exc:
+        raise XschemExportError(
+            f"could not run `{klt} netlist` for {sch.stem}: {exc}"
+        ) from exc
+    if proc.returncode != 0 or not produced.is_file():
+        raise XschemExportError(
+            f"klt netlist failed for {sch.stem} (exit {proc.returncode})\n"
             f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
         )
-    return normalize(produced.read_text())
+    # klt stamps a provenance comment into every export; drop it so the text
+    # stays identical to what xschem itself writes (committed netlists and
+    # the LVS pipeline were generated without it).
+    body = "".join(
+        line
+        for line in produced.read_text().splitlines(keepends=True)
+        if not line.startswith(KLT_PROVENANCE_PREFIX)
+    )
+    return normalize(body)
