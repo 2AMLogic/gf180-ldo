@@ -2,6 +2,11 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-11-05
+
+- **PR #546**: sim: soft-start startup peak is equal in both DUTs across the full PVT and EXTRA_CAPS matrix
+- **Issue #351** (closed): Explain the 2x lower peak Icap / dV/dt at soft-start with the DR-0037 bias servo (142 vs 282 mA at tt/27C)
+
 ### 2026-11-04
 
 - **PR #543**: sim(enable-shutdown): add 63-corner batch envelope with ratified limits
