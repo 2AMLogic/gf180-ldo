@@ -24,6 +24,7 @@ _None._
 
 Human-approved issues ready for implementation (`loom:issue`).
 
+- **#43**: Soft-start: two per-startup transients (loop acquisition and hand-over) still break the inrush and overshoot clauses
 - **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 
 ## In Progress
@@ -83,7 +84,7 @@ _None._
 | Operator merge-risk holds | 0 |
 | Very important | 1 |
 | Important | 2 |
-| Ready (`loom:issue`) | 1 |
+| Ready (`loom:issue`) | 2 |
 | In Progress (`loom:building`) | 3 |
 | PRs awaiting review | 0 |
 | Approved PRs awaiting merge | 0 |
