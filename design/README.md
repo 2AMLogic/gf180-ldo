@@ -529,11 +529,15 @@ version gate and that `design/netlist.py`'s docs name no cell that is not in
 Under the hood, per cell, with xschem's electrical rule check enabled:
 
 ```bash
-xschem -x -q -r --rcfile design/xschemrc -o <outdir> design/<cell>.sch \
-  --command "xschem netlist -erc"
+klt netlist --erc --timeout-s 120 --rcfile design/xschemrc \
+  -o <outdir>/<cell>.spice design/<cell>.sch
 ```
 
-`-x` batch (no X11), `-q` quit when done, `-r` no tclreadline. `design/xschemrc`
+`klt netlist` owns the headless xschem invocation (batch, no X11), kills a hung
+run after `--timeout-s`, and `--erc` fails on ERC findings and unresolved
+symbols. The 3.4.7 version gate runs first, and klt's `** klt-netlist-inputs:`
+provenance line is stripped so the text matches xschem's own export.
+`design/xschemrc`
 sets the library path (xschem devices -> PDK symbols -> `design/`) and,
 critically, `top_is_subckt 1`: **every** cell -- including the top -- netlists
 as a `.subckt`, never as a flat simulation deck. Cells here are blocks that
