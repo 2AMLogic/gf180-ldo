@@ -45,21 +45,29 @@ signoff/
   declare a boundary for. So the Analog column of items 1, 2, 5, 7 and 11
   applies, and `mixed-signal`'s partition-boundary declaration does not arise.
 
-### Item 5: declared gaps, no citations
+### Item 5: four rows cited, the rest declared gaps
 
 `block-manifest.json` declares the full ratified row set under
-`spec_rows."5"`, every row a `gap` whose reason names the owner issue (or says
-why no corner can express it: Input, Load, Output noise (waived, note 7) and
-Area). `klt signoff` therefore reports item 5 `unmet` / `partial_coverage` with
-`declared_gaps` populated, rather than `no_evidence`. No `klt-report.json` is
-cited: every committed one has `coverage.measurements_with_limits` of 0 (null for
-`mc-output-accuracy`), so it records that a sim ran, not that a bound was
-checked, and citing it would assert coverage it does not contain. Re-minting
-limit-checked envelopes for Current limit / Thermal, Enable / shutdown, Dropout
-and Load reg is #538. `check.sh` grades `--manifest` against a klayout-tools
-git revision (`KLT_REV`) because the declared-gap fix (klayout-tools#4190) is in
-no PyPI release yet (newest 0.8.0, checked 2026-11-04); the attest steps stay on
-the `KLT_VERSION` release.
+`spec_rows."5"`. Four rows carry no `gap` and are cited from the limit-checked
+`klt sim` envelopes minted under #538, each tagged with its ratified `spec_row`
+and reading `status: pass`, `failed: 0`, `measurements_with_limits > 0`:
+
+- Current limit: `sim/current-limit/corners/20261104-limits-538-04eaa9a/new/klt-report.json`
+- Dropout @ 50 mA: `sim/dropout-vs-load/corners/20261104-limits-538-04eaa9a/new/klt-report.json`
+- Load reg (0–50 mA): `sim/load-regulation/corners/20261104-limits-538-04eaa9a/new/klt-report.json`
+- Enable / shutdown: the `klt-disabled` and `klt-leakage` reports under
+  `sim/enable-shutdown/corners/20261104-limits-538-b36f321/`
+
+Row ids match the ratified table and the envelope tags byte for byte (the Load
+reg id uses an en dash). `klt signoff` grades each citation `met`; item 5 stays
+`unmet` / `partial_coverage` because the other rows remain declared gaps, each
+naming its owner issue (or why no corner can express it: Input, Load, Output
+noise (waived, note 7) and Area). Thermal has no tagged envelope: the
+current-limit envelope tags only `Current limit`, so Thermal needs a
+limit-checked measurement tagged `Thermal`. `check.sh` grades `--manifest`
+against a klayout-tools git revision (`KLT_REV`) because the declared-gap fix
+(klayout-tools#4190) is in no PyPI release yet (newest 0.8.0, checked
+2026-11-04); the attest steps stay on the `KLT_VERSION` release.
 
 ## Running it
 
