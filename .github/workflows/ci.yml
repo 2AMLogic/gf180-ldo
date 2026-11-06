@@ -212,6 +212,14 @@ jobs:
         # layout/records/ (only additions pass). Exceptions need a DR + sim/append-only-allowlist.txt entry.
         # Classifier tests: sim/tests/test_check_append_only.py (issue #371).
 
+      - name: Report evidence growth under sim/ (PR only, non-blocking)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: python3 sim/report_evidence_growth.py --base "origin/${{ github.base_ref }}"
+        # Reporting only (issue #388): files/bytes added per sim/<slug> in the
+        # job summary. Always exits 0; no ceiling or override.
+        # Tests: sim/tests/test_report_evidence_growth.py.
+
       # Issue #511: new evidence bytes live in the fleet artifact store; git
       # keeps manifests under manifests/artifacts/. Reads the target tree via
       # git: schema, only artifact: URIs, and that no stored object's bytes are
