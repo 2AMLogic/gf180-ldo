@@ -2,6 +2,13 @@
 
 Merged PRs and closed issues from the initial 30-day Guide review window.
 
+### 2026-11-06
+
+- **PR #556**: feat: cite limit-checked sim envelopes as T1 item 5 evidence
+- **Issue #552** (closed): T1 item 5: cite #538's limit-checked envelopes for Current limit, Dropout, Load reg, Enable/shutdown
+- **PR #553**: refactor: collapse quiescent-current klt_run onto tb_adapter
+- **Issue #476** (closed): Collapse quiescent-current klt_run.py onto tb_adapter (duplicate grade/main/PDK pin gap)
+
 ### 2026-11-05
 
 - **PR #550**: refactor: run xschem netlist export through klt netlist with a bounded timeout
