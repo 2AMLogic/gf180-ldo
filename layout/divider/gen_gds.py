@@ -112,6 +112,8 @@ from gen_gds_common import (  # noqa: E402
     _load_pdk_pcells,
     _merged_region,
     _rd,
+    guard_ring,
+    ring_region,
 )
 from plan import (  # noqa: E402
     ACTIVE_POSITIONS,
@@ -382,58 +384,23 @@ def _guard_ring(layout, cell, draw, heads, tracks):
     and is the layout's only VSS conductor: the string's bottom end, both
     dummy strips and the substrate all land on it.
     """
-    dbu = layout.dbu
     x_left = tracks[("channel", "L")][0] - GR_MARGIN_X
     x_right = tracks[("channel", "R")][1] + GR_MARGIN_X
     y_bottom = heads[(0, "L")].bottom - GR_MARGIN_Y
     y_top = heads[(N_POSITIONS - 1, "L")].top + GR_MARGIN_Y
 
-    inner = pya.DBox(x_left, y_bottom, x_right, y_top)
-    outer = inner.enlarged(GR_W, GR_W)
-    ring = pya.Region(outer.to_itype(dbu)) - pya.Region(inner.to_itype(dbu))
-
-    cell.shapes(layout.layer(*L_COMP)).insert(ring)
-    draw.region("VSS", ring.dup())
-
-    implant_outer = outer.enlarged(GR_IMPLANT_ENC, GR_IMPLANT_ENC)
-    implant_inner = inner.enlarged(-GR_IMPLANT_ENC, -GR_IMPLANT_ENC)
-    cell.shapes(layout.layer(*L_PPLUS)).insert(
-        pya.Region(implant_outer.to_itype(dbu))
-        - pya.Region(implant_inner.to_itype(dbu))
+    inner, outer = guard_ring(
+        layout, cell, pya.DBox(x_left, y_bottom, x_right, y_top), arm_w=GR_W,
+        comp_layer=L_COMP, implant_layer=L_PPLUS, implant_enc=GR_IMPLANT_ENC,
+        cont_layer=L_CONTACT, cont_pitch=CONT_PITCH, cont_size=CONT_SIZE,
+        cont_enc=CONT_ENC,
+        # Left-anchored cuts, and horizontal arms that start CONT_PITCH -
+        # CONT_SIZE - CONT_ENC (0.15 um) in from the inner edge: the placement
+        # the recorded DRC/LVS results were taken on.
+        align="start",
+        corner_inset=CONT_PITCH - CONT_SIZE - 2 * CONT_ENC,
     )
-
-    # Contacts down the middle of each arm, on a CO.2b-legal pitch.
-    contact = layout.layer(*L_CONTACT)
-    def fill(x0, y0, x1, y1):
-        count = 0
-        y = y0
-        while y + CONT_SIZE <= y1 + 1e-9:
-            x = x0
-            while x + CONT_SIZE <= x1 + 1e-9:
-                cell.shapes(contact).insert(
-                    pya.DBox(x, y, x + CONT_SIZE, y + CONT_SIZE).to_itype(dbu)
-                )
-                count += 1
-                x += CONT_PITCH
-            y += CONT_PITCH
-        return count
-
-    arm_lo_x = outer.left + CONT_ENC
-    arm_hi_x = outer.right - CONT_ENC
-    arm_lo_y = outer.bottom + CONT_ENC
-    arm_hi_y = outer.top - CONT_ENC
-    # The two vertical arms run the full height; the horizontal ones stop
-    # short of the corners, by enough that a corner contact keeps its
-    # CO.2b spacing from the vertical arm's own column.
-    corner = CONT_PITCH - CONT_SIZE - CONT_ENC  # 0.15 um
-    placed = fill(arm_lo_x, arm_lo_y, arm_lo_x + CONT_SIZE, arm_hi_y)
-    placed += fill(arm_hi_x - CONT_SIZE, arm_lo_y, arm_hi_x, arm_hi_y)
-    placed += fill(inner.left + corner, arm_lo_y,
-                   inner.right - corner, arm_lo_y + CONT_SIZE)
-    placed += fill(inner.left + corner, arm_hi_y - CONT_SIZE,
-                   inner.right - corner, arm_hi_y)
-    if placed < 4:
-        _fail("guard ring got no contacts")
+    draw.region("VSS", ring_region(layout, outer, inner))
     return inner, outer
 
 
