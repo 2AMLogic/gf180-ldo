@@ -316,6 +316,27 @@ class MultiStateJobs(unittest.TestCase):
             self.assertEqual(len(j.process) * len(j.temps), 1)
 
 
+class BodyHooks(unittest.TestCase):
+    def test_default_is_unchanged(self):
+        tb = _tb("load-regulation")
+        plain = ta.job(tb, "t", DUT)
+        hooked = ta.job(tb, "t", DUT, body_override=None, extra_measurements=None)
+        self.assertEqual(plain, hooked)
+        self.assertEqual(plain.body, ta.body(tb))
+
+    def test_body_override_replaces_generated_body(self):
+        tb = _tb("quiescent-current")
+        j = ta.job(tb, "t", DUT, body_override="* custom body\n")
+        self.assertEqual(j.body, "* custom body\n")
+
+    def test_extra_measurements_are_appended(self):
+        tb = _tb("quiescent-current")
+        extra = [{"name": "iref_en_na", "expr": "-i(vref_en)*1e9"}]
+        base = ta.job(tb, "t", DUT).measurements
+        j = ta.job(tb, "t", DUT, extra_measurements=extra)
+        self.assertEqual(list(j.measurements), [*base, *extra])
+
+
 class Grade(unittest.TestCase):
     def test_bounds_and_missing_values(self):
         tb = _tb("load-regulation")

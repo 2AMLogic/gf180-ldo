@@ -104,7 +104,48 @@
       "reason": "partial_coverage",
       "graded_by_build": true,
       "citation": null,
-      "citations_graded": [],
+      "citations_graded": [
+        {
+          "citation": "sim/current-limit/corners/20261104-limits-538-04eaa9a/new/klt-report.json",
+          "rows": [
+            "Current limit"
+          ],
+          "status": "met",
+          "reason": null
+        },
+        {
+          "citation": "sim/dropout-vs-load/corners/20261104-limits-538-04eaa9a/new/klt-report.json",
+          "rows": [
+            "Dropout @ 50 mA"
+          ],
+          "status": "met",
+          "reason": null
+        },
+        {
+          "citation": "sim/load-regulation/corners/20261104-limits-538-04eaa9a/new/klt-report.json",
+          "rows": [
+            "Load reg (0\u201350 mA)"
+          ],
+          "status": "met",
+          "reason": null
+        },
+        {
+          "citation": "sim/enable-shutdown/corners/20261104-limits-538-b36f321/klt-disabled/new/klt-report.json",
+          "rows": [
+            "Enable / shutdown"
+          ],
+          "status": "met",
+          "reason": null
+        },
+        {
+          "citation": "sim/enable-shutdown/corners/20261104-limits-538-b36f321/klt-leakage/new/klt-report.json",
+          "rows": [
+            "Enable / shutdown"
+          ],
+          "status": "met",
+          "reason": null
+        }
+      ],
       "detail": {
         "failed_rows": [],
         "uncovered_rows": [],
@@ -122,16 +163,8 @@
             "gap": "not corner-simulable: the 0-50 mA range is an operating condition exercised by the Dropout, Line reg, Load reg, Load transient, Current limit and PSRR grids (sim/CHARACTERIZATION.md N/A note)"
           },
           {
-            "id": "Dropout @ 50 mA",
-            "gap": "no limit-checked klt sim envelope yet (committed klt-report.json files carry 0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
-          },
-          {
             "id": "Line reg",
             "gap": "no passing corner envelope: Line reg FAIL in sim/CHARACTERIZATION.md (ff/125C/3.30 V 8.2345 mV/V vs < 5 mV/V, DR-0031 soft-start injection residual); owned by #302"
-          },
-          {
-            "id": "Load reg (0-50 mA)",
-            "gap": "no limit-checked klt sim envelope yet (0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
           },
           {
             "id": "Load transient",
@@ -146,20 +179,12 @@
             "gap": "no passing corner envelope: Iq MIXED in sim/CHARACTERIZATION.md; owned by #346"
           },
           {
-            "id": "Current limit",
-            "gap": "no limit-checked klt sim envelope yet (0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
-          },
-          {
             "id": "Startup",
             "gap": "no passing corner envelope: Startup MIXED and stale in sim/CHARACTERIZATION.md; owned by #43 and #345"
           },
           {
-            "id": "Enable / shutdown",
-            "gap": "no limit-checked klt sim envelope yet (0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
-          },
-          {
             "id": "Thermal",
-            "gap": "no limit-checked klt sim envelope yet; Thermal has no bench of its own and is evidenced by the current-limit grid (sim/CHARACTERIZATION.md); declare limits/spec_row and re-mint under #538"
+            "gap": "no tagged envelope: Thermal has no bench of its own and the current-limit envelope tags only the Current limit row, so no committed klt-report.json carries a Thermal spec_row; needs a limit-checked thermal measurement tagged spec_row Thermal"
           },
           {
             "id": "Output noise",
@@ -175,7 +200,12 @@
           }
         ],
         "unratified_rows": [],
-        "row_sources": {}
+        "row_sources": {
+          "Current limit": "derived",
+          "Dropout @ 50 mA": "derived",
+          "Enable / shutdown": "derived",
+          "Load reg (0\u201350 mA)": "derived"
+        }
       }
     },
     {

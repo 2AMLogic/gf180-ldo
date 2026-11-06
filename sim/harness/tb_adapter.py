@@ -323,19 +323,27 @@ def body(tb: tbmod.Testbench, vdd: float | None = None) -> str:
 
 
 def job(tb: tbmod.Testbench, name: str, dut: Path, only: str | None = None,
-        process=FULL_PROCESS, supply_key: str = "vsup") -> kb.Job:
-    """The :class:`klt_batch.Job` that runs ``tb`` on ``dut`` over its PVT grid."""
+        process=FULL_PROCESS, supply_key: str = "vsup", body_override: str | None = None,
+        extra_measurements: list[dict] | None = None) -> kb.Job:
+    """The :class:`klt_batch.Job` that runs ``tb`` on ``dut`` over its PVT grid.
+
+    ``body_override`` replaces the generated circuit body (a bench whose deck
+    differs from ``tb.netlist``, e.g. one with extra metering sources);
+    ``extra_measurements`` are appended to ``measurements(tb)``. ``None`` for
+    both leaves the request unchanged.
+    """
     from .corners import supply_points
 
     analysis, specs = measurements(tb)
+    specs = [*specs, *(extra_measurements or [])]
     axes = {
         "process": tuple(process),
         "temps": tuple(tb.temperatures_c),
         "supplies": tuple(supply_points(tb.nominal_supply_v, tb.supply_tolerance)),
         **kb.only_axes(only),
     }
-    return kb.Job(name=name, body=body(tb), dut_netlist=dut, analysis=analysis,
-                  measurements=specs, supply_key=supply_key, stage_model_inputs=True,
+    return kb.Job(name=name, body=body(tb) if body_override is None else body_override, dut_netlist=dut,
+                  analysis=analysis, measurements=specs, supply_key=supply_key, stage_model_inputs=True,
                   ngspice_init=(f"set numdgt={DIGITS}", f"set measureprec={DIGITS}"), **axes)
 
 
@@ -406,9 +414,12 @@ def grade(tb: tbmod.Testbench, values: dict) -> bool:
     return True
 
 
-def main(testbench_dir: Path, doc: str, argv=None, **job_opts) -> int:
+def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None = None,
+         extra_measurements: list[dict] | None = None, **job_opts) -> int:
     """The whole ``klt_run.py`` for a bench: grid -> fleet -> ``corners/<id>/``.
 
+    ``body_override`` / ``extra_measurements`` are :func:`job`'s; only a
+    single-analysis bench with a swept supply supports them.
     ``job_opts`` are :class:`klt_batch.Job` fields every request of the bench
     sets (``timeout_s``, ``batch``).
     """
@@ -441,10 +452,13 @@ def main(testbench_dir: Path, doc: str, argv=None, **job_opts) -> int:
     # and the client-side stamp it compares the worker's against is unavailable.
     os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
     dest = tb.experiment_dir / "corners" / args.record_id
+    hooks = {"body_override": body_override, "extra_measurements": extra_measurements}
+    if (body_override is not None or extra_measurements) and (chained or supply_in_waveform(tb)):
+        raise UnsupportedTb(f"{tb.name}: body_override/extra_measurements need a single-analysis bench with a swept supply")
     if not chained and supply_in_waveform(tb):
         results = _run_supplies(tb, args, dest, repo, dut_rel, job_opts)
     elif not chained:
-        results = run_ab(lambda n, d: replace(job(tb, n, d, args.only), **job_opts), Path(args.dut), args.baseline_ref,
+        results = run_ab(lambda n, d: replace(job(tb, n, d, args.only, **hooks), **job_opts), Path(args.dut), args.baseline_ref,
                          dest, repo, backend=args.backend)
     else:
         results = _run_states(tb, args, dest, repo, dut_rel, job_opts)
