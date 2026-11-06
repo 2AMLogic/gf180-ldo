@@ -207,6 +207,11 @@ additions pass). The "no exceptions" stance stands; if a decision record ever
 ratifies one, it must be listed with its DR number in
 `sim/append-only-allowlist.txt` so it stays visible in review (empty today).
 
+**Growth report.** Because `sim/` can only grow, CI also runs
+`sim/report_evidence_growth.py` on every pull request. It writes files and
+bytes added per `sim/<slug>` to the job summary. It is reporting only: it
+never fails and enforces no ceiling.
+
 ## Stored evidence
 
 New evidence bytes go to the fleet artifact store; git keeps a manifest and a
