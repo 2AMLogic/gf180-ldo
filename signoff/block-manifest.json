@@ -6,6 +6,43 @@
       "file": "signoff/evidence/item1.generic.json",
       "content_hash": "sha256:6d7ed26cecc181380ce16901a5332b2d632055c3f33d183b95a7489d4a05cde3"
     },
+    "5": [
+      {
+        "file": "sim/current-limit/corners/20261104-limits-538-04eaa9a/new/klt-report.json",
+        "content_hash": "sha256:befad9fb05d651a39493b621d928b9845af9b5eb543f73e9d911c4d7cd780d31",
+        "rows": [
+          "Current limit"
+        ]
+      },
+      {
+        "file": "sim/dropout-vs-load/corners/20261104-limits-538-04eaa9a/new/klt-report.json",
+        "content_hash": "sha256:c24833629be7074aa862455fd7fbade5ae9cfe9a6389f6b342c55204661ddf54",
+        "rows": [
+          "Dropout @ 50 mA"
+        ]
+      },
+      {
+        "file": "sim/load-regulation/corners/20261104-limits-538-04eaa9a/new/klt-report.json",
+        "content_hash": "sha256:0eb75040792655ccfe78a644296e8d47bc16cf8e594d9308a0790adb8a9e586e",
+        "rows": [
+          "Load reg (0–50 mA)"
+        ]
+      },
+      {
+        "file": "sim/enable-shutdown/corners/20261104-limits-538-b36f321/klt-disabled/new/klt-report.json",
+        "content_hash": "sha256:f8c280ff4083df80f8e30d14bf50b6a4f25e8f7c4677297c5e515d62716c6f89",
+        "rows": [
+          "Enable / shutdown"
+        ]
+      },
+      {
+        "file": "sim/enable-shutdown/corners/20261104-limits-538-b36f321/klt-leakage/new/klt-report.json",
+        "content_hash": "sha256:c83391f3282b18081caf7c6766ad0c73ff8bb0bd522804f64bbefa32738bfb6a",
+        "rows": [
+          "Enable / shutdown"
+        ]
+      }
+    ],
     "8": {
       "file": "signoff/evidence/characterization.generic.json",
       "content_hash": "sha256:fd1d6a77d7bc8b7af9e22fd1b44b5692db0e6eeaa802e61f521c6f402f34c2e8"
@@ -34,16 +71,14 @@
         "gap": "not corner-simulable: the 0-50 mA range is an operating condition exercised by the Dropout, Line reg, Load reg, Load transient, Current limit and PSRR grids (sim/CHARACTERIZATION.md N/A note)"
       },
       {
-        "id": "Dropout @ 50 mA",
-        "gap": "no limit-checked klt sim envelope yet (committed klt-report.json files carry 0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
+        "id": "Dropout @ 50 mA"
       },
       {
         "id": "Line reg",
         "gap": "no passing corner envelope: Line reg FAIL in sim/CHARACTERIZATION.md (ff/125C/3.30 V 8.2345 mV/V vs < 5 mV/V, DR-0031 soft-start injection residual); owned by #302"
       },
       {
-        "id": "Load reg (0-50 mA)",
-        "gap": "no limit-checked klt sim envelope yet (0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
+        "id": "Load reg (0–50 mA)"
       },
       {
         "id": "Load transient",
@@ -58,20 +93,18 @@
         "gap": "no passing corner envelope: Iq MIXED in sim/CHARACTERIZATION.md; owned by #346"
       },
       {
-        "id": "Current limit",
-        "gap": "no limit-checked klt sim envelope yet (0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
+        "id": "Current limit"
       },
       {
         "id": "Startup",
         "gap": "no passing corner envelope: Startup MIXED and stale in sim/CHARACTERIZATION.md; owned by #43 and #345"
       },
       {
-        "id": "Enable / shutdown",
-        "gap": "no limit-checked klt sim envelope yet (0 measurements_with_limits); declare limits/spec_row and re-mint under #538"
+        "id": "Enable / shutdown"
       },
       {
         "id": "Thermal",
-        "gap": "no limit-checked klt sim envelope yet; Thermal has no bench of its own and is evidenced by the current-limit grid (sim/CHARACTERIZATION.md); declare limits/spec_row and re-mint under #538"
+        "gap": "no tagged envelope: Thermal has no bench of its own and the current-limit envelope tags only the Current limit row, so no committed klt-report.json carries a Thermal spec_row; needs a limit-checked thermal measurement tagged spec_row Thermal"
       },
       {
         "id": "Output noise",
