@@ -11,6 +11,9 @@ Issue #508 added ``_create_pcell`` and ``_merged_region``, the PCell
 instantiate-or-fail block and the merged-layer ``Region`` expression that
 each generator had been spelling out for itself.
 
+Issue #555 moved the substrate/well-tap guard ring (``guard_ring``) and the
+contact-grid fill it rests on here from the divider and pass-array generators.
+
 Issue #370 routed ``layout/divider/gen_gds.py`` and
 ``layout/testcell/gen_gds.py`` through here as well, so all four generators
 share one copy. The latter two had used
@@ -96,3 +99,87 @@ def _create_pcell(layout, library, name, params, hint):
 def _merged_region(cell, layout, layer):
     """Merged ``Region`` of ``layer`` (a ``(layer, datatype)`` pair) in ``cell``."""
     return pya.Region(cell.begin_shapes_rec(layout.layer(*layer))).merged()
+
+
+def ring_region(layout, outer, inner):
+    """Annulus between two micron ``DBox``es, as a ``Region``."""
+    return pya.Region(outer.to_itype(layout.dbu)) - pya.Region(inner.to_itype(layout.dbu))
+
+
+def _grid(lo, hi, size, pitch, enclosure, align="center"):
+    """Centres of a row of ``size``-wide cuts inside [lo, hi], ``pitch`` apart.
+
+    Returns [] when not even one cut fits with ``enclosure`` on each side.
+    ``align="start"`` packs the row against ``lo + enclosure`` instead of
+    centring it (same cut count, different positions).
+    """
+    usable = (hi - enclosure) - (lo + enclosure)
+    if usable < size - 1e-9:
+        return []
+    count = int((usable - size) / pitch + 1e-9) + 1
+    span = (count - 1) * pitch + size
+    if align == "start":
+        start = lo + enclosure + size / 2.0
+    else:
+        start = (lo + hi - span) / 2.0 + size / 2.0
+    return [start + i * pitch for i in range(count)]
+
+
+def cut_grid(cell, layout, layer, box, pitch, enclosure, size, align="center"):
+    """Fill micron ``box`` with a grid of ``size`` cuts; returns the count."""
+    xs = _grid(box.left, box.right, size, pitch, enclosure, align)
+    ys = _grid(box.bottom, box.top, size, pitch, enclosure, align)
+    half = size / 2.0
+    for x in xs:
+        for y in ys:
+            cell.shapes(layout.layer(*layer)).insert(
+                pya.DBox(x - half, y - half, x + half, y + half).to_itype(layout.dbu)
+            )
+    return len(xs) * len(ys)
+
+
+def guard_ring(layout, cell, inner, *, arm_w, comp_layer, implant_layer,
+               implant_enc, cont_layer, cont_pitch, cont_size, cont_enc,
+               extra_layers=(), well=None, align="center", corner_inset=None):
+    """Annular tap ring around micron box ``inner``, with contacts on each arm.
+
+    Draws COMP (plus every layer in ``extra_layers``) on the ring, the implant
+    ``implant_enc`` outside and inside it, and optionally ``well=(layer, enc)``
+    as a filled box enclosing the ring. Each arm gets a centred grid of
+    contacts (``align`` as in ``_grid``); the horizontal arms are pulled
+    ``corner_inset`` (default a whole ``cont_pitch``) clear of the vertical
+    ones at each end, because two independently placed grids otherwise put
+    their corner cuts closer than CO.2b allows.
+
+    ``_fail``s if any arm has no room for a contact. Returns ``(inner, outer)``.
+    """
+    outer = inner.enlarged(arm_w, arm_w)
+    ring = ring_region(layout, outer, inner)
+    for layer in (comp_layer, *extra_layers):
+        cell.shapes(layout.layer(*layer)).insert(ring.dup())
+    cell.shapes(layout.layer(*implant_layer)).insert(ring_region(
+        layout,
+        outer.enlarged(implant_enc, implant_enc),
+        inner.enlarged(-implant_enc, -implant_enc),
+    ))
+    if well is not None:
+        well_layer, well_enc = well
+        cell.shapes(layout.layer(*well_layer)).insert(
+            outer.enlarged(well_enc, well_enc).to_itype(layout.dbu)
+        )
+
+    if corner_inset is None:
+        corner_inset = cont_pitch
+    arms = (
+        pya.DBox(outer.left, outer.bottom, inner.left, outer.top),
+        pya.DBox(inner.right, outer.bottom, outer.right, outer.top),
+        pya.DBox(inner.left + corner_inset, inner.top,
+                 inner.right - corner_inset, outer.top),
+        pya.DBox(inner.left + corner_inset, outer.bottom,
+                 inner.right - corner_inset, inner.bottom),
+    )
+    for arm in arms:
+        if not cut_grid(cell, layout, cont_layer, arm, cont_pitch, cont_enc,
+                         cont_size, align):
+            _fail("no contacts fitted in one of the guard-ring arms")
+    return inner, outer

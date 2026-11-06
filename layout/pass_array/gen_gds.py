@@ -109,6 +109,8 @@ from gen_gds_common import (  # noqa: E402
     _load_pdk_pcells,
     _merged_region,
     _rd,
+    cut_grid,
+    guard_ring,
 )
 
 TOP_CELL = "PASS_ARRAY"
@@ -234,39 +236,9 @@ def _insert(cell, layout, layer, dbox):
     cell.shapes(layout.layer(*layer)).insert(dbox)
 
 
-def _insert_region(cell, layout, layer, region):
-    cell.shapes(layout.layer(*layer)).insert(region)
-
-
-def _ring(layout, outer, inner):
-    """Annulus between two micron boxes, as a Region."""
-    return pya.Region(outer.to_itype(layout.dbu)) - pya.Region(inner.to_itype(layout.dbu))
-
-
-def _grid(lo, hi, size, pitch, enclosure):
-    """Centres of a row of ``size``-wide cuts inside [lo, hi], ``pitch`` apart.
-
-    Returns [] when not even one cut fits with ``enclosure`` on each side.
-    """
-    usable = (hi - enclosure) - (lo + enclosure)
-    if usable < size - 1e-9:
-        return []
-    count = int((usable - size) / pitch + 1e-9) + 1
-    span = (count - 1) * pitch + size
-    start = (lo + hi - span) / 2.0 + size / 2.0
-    return [start + i * pitch for i in range(count)]
-
-
 def _cuts(cell, layout, layer, box, pitch, enclosure=VIA_ENC_UM, size=VIA_UM):
     """Fill ``box`` with a grid of ``size`` cuts; returns how many were drawn."""
-    xs = _grid(box.left, box.right, size, pitch, enclosure)
-    ys = _grid(box.bottom, box.top, size, pitch, enclosure)
-    half = size / 2.0
-    for x in xs:
-        for y in ys:
-            _insert(cell, layout, layer,
-                    pya.DBox(x - half, y - half, x + half, y + half))
-    return len(xs) * len(ys)
+    return cut_grid(cell, layout, layer, box, pitch, enclosure, size)
 
 
 # ---------------------------------------------------------------------------
@@ -421,35 +393,14 @@ def _guard_ring(top, layout, comp, buses):
         comp.right + GR_GAP_X_UM,
         max(bus.top for bus in buses) + GR_GAP_Y_UM,
     )
-    outer = inner.enlarged(GR_ARM_UM, GR_ARM_UM)
-    ring = _ring(layout, outer, inner)
-    _insert_region(top, layout, L_COMP, ring)
-    _insert_region(top, layout, L_METAL1, ring)
-    _insert_region(top, layout, L_NPLUS, _ring(
-        layout,
-        outer.enlarged(NP_ENC_CMP_UM, NP_ENC_CMP_UM),
-        inner.enlarged(-NP_ENC_CMP_UM, -NP_ENC_CMP_UM),
-    ))
-    _insert(top, layout, L_NWELL, outer.enlarged(NW_ENC_NCMP_UM, NW_ENC_NCMP_UM))
-
-    # The vertical arms run the ring's full height; the horizontal ones are
-    # pulled a whole contact pitch clear of them at each end. Without that the
-    # two grids are independently centred and their corner cuts land 0.22 um
-    # apart -- CO.2b wants 0.28 -- which is four violations in exactly the four
-    # corners.
-    arms = (
-        pya.DBox(outer.left, outer.bottom, inner.left, outer.top),
-        pya.DBox(inner.right, outer.bottom, outer.right, outer.top),
-        pya.DBox(inner.left + CONT_PITCH_UM, inner.top,
-                 inner.right - CONT_PITCH_UM, outer.top),
-        pya.DBox(inner.left + CONT_PITCH_UM, outer.bottom,
-                 inner.right - CONT_PITCH_UM, inner.bottom),
+    return guard_ring(
+        layout, top, inner, arm_w=GR_ARM_UM,
+        comp_layer=L_COMP, extra_layers=(L_METAL1,),
+        implant_layer=L_NPLUS, implant_enc=NP_ENC_CMP_UM,
+        well=(L_NWELL, NW_ENC_NCMP_UM),
+        cont_layer=L_CONTACT, cont_pitch=CONT_PITCH_UM,
+        cont_size=CONT_UM, cont_enc=CMP2CONT_UM,
     )
-    for arm in arms:
-        if not _cuts(top, layout, L_CONTACT, arm, CONT_PITCH_UM,
-                     enclosure=CMP2CONT_UM, size=CONT_UM):
-            _fail("no contacts fitted in one of the guard-ring arms")
-    return inner, outer
 
 
 def _m2_and_via1(top, layout, straps, nets, ring_inner, ring_outer):
