@@ -8,6 +8,10 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-06
 
+- **PR #557**: feat: report files and bytes added per sim slug on PRs (non-blocking)
+- **Issue #388** (closed): ci: report sim/ evidence growth per PR and cap runaway additions (append-only evidence can only grow)
+- **PR #558**: refactor(layout): share one guard_ring in gen_gds_common
+- **Issue #555** (closed): Deduplicate the two _guard_ring implementations into gen_gds_common
 - **PR #553**: refactor: collapse quiescent-current klt_run onto tb_adapter
 - **Issue #476** (closed): Collapse quiescent-current klt_run.py onto tb_adapter (duplicate grade/main/PDK pin gap)
 - **PR #556**: feat: cite limit-checked sim envelopes as T1 item 5 evidence
