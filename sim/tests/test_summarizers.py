@@ -67,8 +67,8 @@ cl = _load("cl_summarize", "current-limit/testbench/summarize.py")
 es = _load("es_summarize", "enable-shutdown/testbench/summarize.py")
 ss_klt = _load("ss_klt_run", "soft-start/testbench/klt_run.py")
 cl_klt = _load("cl_klt_run", "current-limit/testbench/klt_run.py")
-iq_klt = _load("iq_klt_run", "quiescent-current/testbench/klt_run.py")
 from harness import klt_batch as kb  # noqa: E402
+from harness import tb_adapter, testbench  # noqa: E402
 
 
 # --- record-text helpers ------------------------------------------------------
@@ -630,9 +630,10 @@ class KltRunWrappers(GoldenCase):
     def test_quiescent_current_grade(self):
         base = SIM_DIR / "quiescent-current" / "corners" / "20261007-iq-320-tt27-probe"
         summary = _summary(base / "summary.csv")
+        tb = testbench.load(SIM_DIR / "quiescent-current" / "testbench")
         for dut in ("new", "baseline"):
             for cid, v in _klt_values(base / dut / "klt-report.json", "vsup").items():
-                self.assertEqual(str(iq_klt.grade(v)), summary[(dut, cid)]["pass"], f"{dut} {cid}")
+                self.assertEqual(str(tb_adapter.grade(tb, v)), summary[(dut, cid)]["pass"], f"{dut} {cid}")
 
 
 if __name__ == "__main__":
