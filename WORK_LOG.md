@@ -6,6 +6,10 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-07
+
+- **PR #562**: Bump Repo Skills 0.25.1 -> 0.25.10
+
 ### 2026-11-06
 
 - **PR #557**: feat: report files and bytes added per sim slug on PRs (non-blocking)
