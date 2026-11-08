@@ -16,4 +16,4 @@ sys.path.insert(0, str(HERE.parents[1]))
 from harness import tb_adapter  # noqa: E402
 
 if __name__ == "__main__":
-    sys.exit(tb_adapter.main(HERE, __doc__))
+    sys.exit(tb_adapter.main(HERE, __doc__, batch={"capacity_wait_s": 600}))
