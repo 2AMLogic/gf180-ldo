@@ -22,7 +22,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 | Dropout @ 50 mA | PASS | fresh | `sim/dropout-vs-load/records/20261021-031411-06b3540.md` |
 | Line reg | FAIL | fresh | `sim/line-regulation/records/20261021-032652-06b3540.md` |
 | Load reg (0–50 mA) | PASS | fresh | `sim/load-regulation/records/20261021-031815-06b3540.md` |
-| Load transient | FAIL | fresh | `sim/load-transient/records/20261021-pdk-f6eeac7-tran.md` |
+| Load transient | FAIL | fresh | `sim/load-transient/records/20261108-a9d5594-tran-c1u-esr500m.md` |
 | PSRR | FAIL | fresh | `sim/psrr-dc/records/20261021-023703-7d3b2a0.md` (+ 2 more, see detail) |
 | Iq (excluding load current) | MIXED | fresh | `sim/quiescent-current/records/20261020-pdk-f6eeac7-iq.md` (+ 1 more, see detail) |
 | Current limit | PASS | fresh | `sim/current-limit/records/20261020-pdk-f6eeac7-ilim.md` |
@@ -95,7 +95,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 **Verdict**: FAIL  **Fresh**: fresh
 
-- `load-transient`: `sim/load-transient/records/20261021-pdk-f6eeac7-tran.md` — **FAIL**, fresh (matches current `ldo_core`)
+- `load-transient`: `sim/load-transient/records/20261108-a9d5594-tran-c1u-esr500m.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 
 ### PSRR
