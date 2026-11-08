@@ -8,6 +8,7 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-08
 
+- **Issue #519** (closed): load-transient: 81-point run at C_eff = 1 uF, ESR 200 and 500 mOhm, with a measured recovery time (evidence for DR-0042)
 - **PR #564**: feat: add 1 uF load-transient PVT records with recovery time
 
 ### 2026-11-07
