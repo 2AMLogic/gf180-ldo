@@ -20,7 +20,7 @@ package manager for the Homebrew dependency installs.
 | Tool | Version | Source |
 |---|---|---|
 | xschem | **3.4.7** (tag `3.4.7`) | built from source, see §2 |
-| ngspice | **46_1** (banner `ngspice-46`) | Homebrew — see "Keeping the ngspice pin from drifting" below; `brew install ngspice` is **not** by itself a pin |
+| ngspice | **at least `ngspice-46`** (floor, no ceiling; [`DR-0043`](../spec/decision-records/DR-0043-ngspice-pin-is-a-major-version-floor-not-an-exact-version.md); 46_1 is what existing records were built on) | Homebrew — see "Keeping the ngspice pin from drifting" below; `brew install ngspice` is **not** by itself a pin |
 | ciel | **2.6.1** | pip (`ciel==2.6.1`); CI installs the version in `PINNED_CIEL_VERSION` (`sim/harness/pdk.py`) |
 | gf180mcu PDK | open_pdks commit **`f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7`** (`PINNED_OPEN_PDKS_REVISION` in `sim/harness/pdk.py`) | `ciel enable` |
 | Build deps | `cairo` 1.18.4, `tcl-tk@8` 8.6.18, `xorgproto` 2025.1, XQuartz (cask), `bison`/`flex` (system, not Homebrew) | Homebrew / macOS system tools |
@@ -33,25 +33,19 @@ re-validating the harness self-test in §6).
 
 ### Keeping the ngspice pin from drifting (#247)
 
-**`brew install ngspice` installs the pinned version only until Homebrew
+**`brew install ngspice` installs 46_1 only until Homebrew
 upgrades it.** homebrew-core's *unversioned* `ngspice` formula tracks
-upstream: on 2026-09-18 it moved to **ngspice-47**, so on every host that had
-run `brew upgrade` since, `brew --prefix ngspice` stopped pointing at the
-46_1 this table pins. That is not a cosmetic drift -- ngspice-47 is a major
-version whose numerical evidence trail this repo has never adopted, even
-though
-[`DR-0025`](../spec/decision-records/DR-0025-model-bin-selection-binds-on-per-finger-width.md)'s
-`.options wnflag=1` model-bin pin's three underlying facts are now confirmed
-to reproduce on it (and on ngspice-42) --
-[`DR-0027`](../spec/decision-records/DR-0027-wnflag-facts-reproduce-across-ngspice-majors.md),
-issue #254, closed issue #221's un-performed scope. That confirmation is the
-documented *prerequisite* for moving this pin, not the decision to move it:
-DR-0027 explicitly does not move it, since doing so would additionally have
-to rule on every one of the ~132 existing `sim/` records this pin's ratified
-evidence trail carries.
+upstream: on 2026-09-18 it moved to **ngspice-47**, so `brew --prefix ngspice`
+stopped pointing at the 46_1 the existing `sim/` records were built on. Under
+the floor rule ([`DR-0043`](../spec/decision-records/DR-0043-ngspice-pin-is-a-major-version-floor-not-an-exact-version.md))
+that host is now acceptable, since
+[`DR-0027`](../spec/decision-records/DR-0027-wnflag-facts-reproduce-across-ngspice-majors.md)
+confirms DR-0025's `wnflag` facts on ngspice-47. The mechanisms below remain
+for hosts that want to reproduce the historical 46_1 records exactly, or that
+need the expected root not to move under them.
 
-So the pin needs a mechanism that survives `brew upgrade`. **Either of these
-two is a fully supported provisioning of this doc** -- pick one:
+To hold 46_1 across `brew upgrade`, **either of these two is a fully
+supported provisioning of this doc** -- pick one:
 
 **Option A — a Homebrew install that cannot be moved by an upgrade.** Two
 shapes, depending on where the host already is:
@@ -106,16 +100,14 @@ shell-profile snippet as the `PDK_ROOT`/`PDK` exports in §4 so it survives a
 fresh shell. `python3 sim/run_corners.py --check-env` prints `provenance OK
 (under <root>, via GF180_LDO_NGSPICE_ROOT)` once it is set correctly.
 
-**What is *not* an option:** silently adopting whatever version `brew
---prefix ngspice` provides today. Moving this repo's evidence onto a new
-ngspice major version is a spec-adjacent decision -- DR-0025's `wnflag` facts
-are now confirmed to reproduce on ngspice-42 and ngspice-47
-([`DR-0027`](../spec/decision-records/DR-0027-wnflag-facts-reproduce-across-ngspice-majors.md),
-issue #254), but that confirmation is only the prerequisite; the move itself
-would still need a ruling on every existing record -- not a `PATH` edit. The
-identity check enforces this: it fails if
-the resolved `ngspice` is not `ngspice-46`, **even when that binary really is
-the one `brew --prefix ngspice` points at.**
+**The version rule is a floor, not an exact pin
+([`DR-0043`](../spec/decision-records/DR-0043-ngspice-pin-is-a-major-version-floor-not-an-exact-version.md)).**
+The identity check accepts any `ngspice-<major>` with major >= 46 and refuses a
+known lower one, **and** still requires the resolved binary to live under the
+expected toolchain root (the #182/#184 shadowing guard). Newer majors are
+accepted but not unqualified: DR-0027 confirms the `wnflag` facts on 47 only;
+existing records remain ngspice-46 builds and are not re-baselined, so the
+versioned `ngspice@46` keg above stays the way to reproduce them exactly.
 
 #### The ngspice-46 builds already in `sim/*/records/` are an accepted, historical split
 

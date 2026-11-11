@@ -252,11 +252,11 @@ def cmd_check_env() -> int:
             # enforced, but do NOT fail on it -- this is the branch a
             # Linux/apt host (and CI's own ngspice-42 portability job) takes,
             # and those are deliberately-different builds, not drift.
-            if resolved_major and resolved_major != runner.PINNED_NGSPICE_VERSION:
+            if runner.below_ngspice_floor(resolved_major):
                 print(
                     f"          note: this is {resolved_major}; "
-                    f"docs/environment-setup.md #1 pins "
-                    f"{runner.PINNED_NGSPICE_VERSION} (not enforced here -- "
+                    f"docs/environment-setup.md #1 requires at least "
+                    f"{runner.NGSPICE_FLOOR_TOKEN} (not enforced here -- "
                     "there is no pinned root on this host to check against)"
                 )
     except NgspiceMissing as exc:
