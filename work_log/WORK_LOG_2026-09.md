@@ -2,6 +2,11 @@
 
 Sections moved byte-for-byte from [WORK_LOG.md](../WORK_LOG.md) by `loom-daemon work-docs archive`.
 
+### 2026-09-10
+
+- **PR #197**: sim: soft-start hand-over loop-gain characterization, and the compensation recommendation for #191
+- **Issue #196** (closed): sim: small-signal loop-gain / phase-margin characterization of the soft-start hand-over state with the device-level FB-injection element in the loop — the compensation analysis #191's Builder asked for and nobody filed
+
 ### 2026-09-06
 
 - **PR #195**: soft-start(#191): device-level FB transconductor replaces Binj_ss, but destabilizes the hold-release transient at most of the PVT matrix

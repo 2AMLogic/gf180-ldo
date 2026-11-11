@@ -6,6 +6,11 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-11
+
+- **PR #569**: feat(sim): treat the ngspice pin as a major-version floor
+- **Issue #568** (closed): runner: accept ngspice >= floor instead of exact ngspice-46 identity
+
 ### 2026-11-08
 
 - **Issue #519** (closed): load-transient: 81-point run at C_eff = 1 uF, ESR 200 and 500 mOhm, with a measured recovery time (evidence for DR-0042)
@@ -402,9 +407,4 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - **PR #201**: Remove unused import: re in soft-start-loop-gain selftest
 - **Issue #200** (closed): Remove unused import: re in sim/soft-start-loop-gain/testbench/selftest.py
-
-### 2026-09-10
-
-- **PR #197**: sim: soft-start hand-over loop-gain characterization, and the compensation recommendation for #191
-- **Issue #196** (closed): sim: small-signal loop-gain / phase-margin characterization of the soft-start hand-over state with the device-level FB-injection element in the loop — the compensation analysis #191's Builder asked for and nobody filed
 
