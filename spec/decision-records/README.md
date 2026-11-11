@@ -49,6 +49,7 @@ Only **ratified** records are in force. Everything else is a proposal or a held/
 | [DR-0039](DR-0039-line-reg-ff-125c-is-the-softstart-injection-residual.md) | the `ff_125c_3.30v` line-regulation failure is the soft-start injection element's settled residual, not loop gain — the 5 mV/V bound stays and DR-0035's VIN-referenced ceiling has to be re-landed over DR-0037 | proposed | - |
 | [DR-0040](DR-0040-pass-array-generator-stays-own-against-gate-driver-power-array-folded.md) | the pass-array generator stays its own -- `gf180-gate-driver`'s `power_array_folded` solves a different problem (a row fold this array does not need), and neither generator subsumes the other | proposed | - |
 | [DR-0041](DR-0041-new-evidence-bytes-go-to-the-artifact-store-git-keeps-manifests.md) | new evidence bytes go to the fleet artifact store; git keeps a manifest and the Markdown record | proposed | - |
+| [DR-0043](DR-0043-ngspice-pin-is-a-major-version-floor-not-an-exact-version.md) | the ngspice pin is a major-version floor (at least ngspice-46), not an exact version; containment check unchanged | proposed | DR-0027 (pin stance) |
 
 ## Design citations of unratified records
 

@@ -551,11 +551,38 @@ class NgspiceIdentityMismatch(RuntimeError):
 
 NGSPICE_ROOT_ENV = "GF180_LDO_NGSPICE_ROOT"
 
-# The ngspice major version `docs/environment-setup.md` #1 pins (46_1 via
-# Homebrew). Kept here, next to the identity check that enforces it, so the
-# check can tell "the binary drifted" apart from "the *pin probe* drifted"
-# -- issue #247.
-PINNED_NGSPICE_VERSION = "ngspice-46"
+# The ngspice major-version FLOOR (DR-0043, operator ruling 2026-10-29): the
+# one place the minimum is stated. Any ``ngspice-<major>`` at or above it
+# passes the identity check; there is no ceiling. Kept next to the check that
+# enforces it so the check can tell "the binary is below the floor" apart from
+# "the *probe* root is below the floor" -- issue #247.
+NGSPICE_MIN_MAJOR = 46
+# Display token derived from the floor, for messages only (never compared).
+NGSPICE_FLOOR_TOKEN = f"ngspice-{NGSPICE_MIN_MAJOR}"
+
+
+def ngspice_major_int(version: str | None) -> int | None:
+    """Integer major out of an ``ngspice-<major>`` token, else ``None``.
+
+    ``None`` means *unknown*, which callers must never treat as below the
+    floor. Compared as an int so ``ngspice-100`` is above ``ngspice-46``.
+    """
+    if not version:
+        return None
+    match = _NGSPICE_MAJOR_RE.search(version)
+    return int(match.group(1)) if match else None
+
+
+def meets_ngspice_floor(version: str | None) -> bool:
+    """True when ``version`` is a known major at or above the floor."""
+    major = ngspice_major_int(version)
+    return major is not None and major >= NGSPICE_MIN_MAJOR
+
+
+def below_ngspice_floor(version: str | None) -> bool:
+    """True only for a *known* major strictly below the floor."""
+    major = ngspice_major_int(version)
+    return major is not None and major < NGSPICE_MIN_MAJOR
 
 # Homebrew formula names probed for the expected toolchain root, in order.
 #
@@ -589,12 +616,12 @@ class NgspiceRoot:
 
     @property
     def matches_pin(self) -> bool:
-        return self.version == PINNED_NGSPICE_VERSION
+        return meets_ngspice_floor(self.version)
 
     @property
     def drifted(self) -> bool:
-        """This root exists but provides a version the docs do not pin."""
-        return self.version is not None and self.version != PINNED_NGSPICE_VERSION
+        """This root exists but provides a version below the floor."""
+        return below_ngspice_floor(self.version)
 
 
 def homebrew_prefix(formula: str) -> str | None:
@@ -681,20 +708,14 @@ def _wrong_version_message(
 ) -> str:
     return (
         f"ngspice resolved on PATH ({resolved_exe} -> {resolved_real}) reports "
-        f"{resolved_version}, but docs/environment-setup.md #1 pins "
-        f"{PINNED_NGSPICE_VERSION}.\n"
+        f"{resolved_version}, but docs/environment-setup.md #1 requires "
+        f"at least {NGSPICE_FLOOR_TOKEN} (DR-0043).\n"
         f"  Expected toolchain root ({expected_root.source}): "
         f"{expected_root.path} ({expected_root.version or 'version unknown'}).\n"
-        "  Fix: install the pinned version and make it resolve first on PATH.\n"
-        "  Do NOT adopt whichever version Homebrew's unversioned `ngspice` "
-        "formula happens to provide today: moving this repo's evidence onto a "
-        "new ngspice major version is a spec-adjacent decision, not a PATH "
-        "change. DR-0025's `wnflag` model-bin pin is confirmed to reproduce "
-        "on ngspice-42 and ngspice-47 (DR-0027, issue #254), but that is only "
-        "the prerequisite -- moving the pin itself still needs a ruling on "
-        "every existing record.\n"
+        f"  Fix: install ngspice at least {NGSPICE_FLOOR_TOKEN} and make it "
+        "resolve first on PATH.\n"
         f"  If this host intentionally runs an already-validated "
-        f"{PINNED_NGSPICE_VERSION} install at some other prefix, set "
+        f"{NGSPICE_FLOOR_TOKEN}-or-newer install at some other prefix, set "
         f"{NGSPICE_ROOT_ENV}=<prefix> to bless it.\n"
         "  See docs/environment-setup.md #1 and its \"Keeping the ngspice pin "
         "from drifting\" section."
@@ -717,18 +738,15 @@ def _drifted_root_message(
         f"-> {expected_real} ({expected_root.version})\n"
         f"  resolved ngspice: {resolved_real} "
         f"({resolved_version or 'version unknown'})\n"
-        f"  docs/environment-setup.md #1 pins {PINNED_NGSPICE_VERSION}; the "
-        f"root above provides {expected_root.version}, which this repo has "
-        "not adopted (DR-0025's `wnflag` model-bin pin was established on "
-        "ngspice-46 only; DR-0027 / issue #254 confirms it also holds on "
-        "ngspice-42 and ngspice-47, but confirming the facts is not itself a "
-        "decision to move the pin).\n"
+        f"  docs/environment-setup.md #1 requires at least "
+        f"{NGSPICE_FLOOR_TOKEN} (DR-0043); the root above provides "
+        f"{expected_root.version}, which is below that floor.\n"
         "  Do NOT 'fix' this by putting that root first on PATH.\n"
         "  Corrective action, either of:\n"
         f"    1. Install a non-drifting pinned root -- a versioned, keg-only "
         f"`{PINNED_HOMEBREW_FORMULA}` formula -- so this probe stops falling "
         f"back to `brew --prefix {DRIFTING_HOMEBREW_FORMULA}`; or\n"
-        f"    2. Bless the {PINNED_NGSPICE_VERSION} install this host already "
+        f"    2. Bless the {NGSPICE_FLOOR_TOKEN}-or-newer install this host already "
         "uses:\n"
         f"         export {NGSPICE_ROOT_ENV}={suggested}\n"
         "  See docs/environment-setup.md #1 -> \"Keeping the ngspice pin from "
@@ -749,7 +767,7 @@ def _shadowed_binary_message(
         f"{expected_root.path} -> {expected_real}).\n"
         f"  resolved ngspice: {resolved_version or 'version unknown'}; "
         f"pinned root: {expected_root.version or 'version unknown'}; "
-        f"docs pin: {PINNED_NGSPICE_VERSION}.\n"
+        f"docs floor: at least {NGSPICE_FLOOR_TOKEN}.\n"
         "  This is the #182 failure mode: a different ngspice build is "
         "shadowing the documented one on PATH (two builds can print the same "
         "version banner and still differ byte-for-byte).\n"
@@ -774,7 +792,7 @@ def verify_ngspice_provenance(
     second one can invert the diagnosis:
 
     1. **Version.** ``resolved_exe`` must report
-       :data:`PINNED_NGSPICE_VERSION`. Without this, a host whose Homebrew
+       :data:`NGSPICE_MIN_MAJOR` or newer. Without this, a host whose Homebrew
        ``ngspice`` formula silently upgraded would pass the containment check
        (the binary really is under ``brew --prefix ngspice``) while producing
        evidence on an unvalidated major version.
@@ -797,7 +815,7 @@ def verify_ngspice_provenance(
     if resolved_version is None:
         resolved_version = ngspice_major_version(ngspice_version_at(resolved_exe))
 
-    if resolved_version is not None and resolved_version != PINNED_NGSPICE_VERSION:
+    if below_ngspice_floor(resolved_version):
         raise NgspiceIdentityMismatch(
             _wrong_version_message(
                 resolved_exe, resolved_real, resolved_version, expected_root
