@@ -6,6 +6,12 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-12
+
+- **PR #573**: chore: regenerate DR index and T1 tier report
+- **PR #571**: Bump Repo Skills 0.25.10 -> 0.26.1
+- **Issue #572** (closed): main CI red: decision README and T1 verdict of record are stale
+
 ### 2026-11-11
 
 - **PR #569**: feat(sim): treat the ngspice pin as a major-version floor
