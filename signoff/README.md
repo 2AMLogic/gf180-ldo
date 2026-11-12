@@ -12,7 +12,7 @@ re-run by CI on every push, so it cannot quietly go stale the way a
 hand-maintained checkbox list does. Issue #79 — this repo's gap-to-T1 tracker
 — cites it and no longer keeps a parallel checklist of its own.
 
-**Today: `tier: null`, T1 3/11 items met** (items 1, 8 and 9). That is the honest
+**Today: `tier: null`, T1 4/11 items met** (items 1, 8, 9 and 10). That is the honest
 state of the block, not a placeholder. There is no top-level LDO layout yet
 (only the pass-device array and feedback-divider cells are drawn, under #173),
 so no block-level DRC,
