@@ -261,7 +261,7 @@ SS_DIR = SIM_DIR / "soft-start"
 # column the "worst point here" cell quotes, max/min, bound-at-1uF-only).
 SS_CLAUSES = {
     "steady ramp rate": ("steady ramp rate above", "m_slope_vpms", max, False),
-    "settling ≤ 1.8 ms": ("within the proposed", "m_t_startup_ms", max, False),
+    "settling ≤ 1.8 ms": ("failed to reach 1.764 V within", "m_t_startup_ms", max, False),
     "settled accuracy": ("settled output outside", None, None, False),
     "overshoot": ("startup overshoot", "m_vout_max_en", max, False),
     "inrush": ("inrush above", "m_icap_peak_ma", max, True),
