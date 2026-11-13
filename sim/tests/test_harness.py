@@ -566,7 +566,8 @@ class ParseTests(unittest.TestCase):
             ]
         )
         self.assertEqual(
-            runner.parse_measurements(text), {"vout": 1.2003456789, "iq": -4.5e-05}
+            runner.parse_measurements_checked(text)[0],
+            {"vout": 1.2003456789, "iq": -4.5e-05},
         )
 
 
@@ -1429,7 +1430,6 @@ class NonFiniteFailClosedTests(unittest.TestCase):
         found, bad = runner.parse_measurements_checked("m_x = 1e999\nm_y = 2.5\n")
         self.assertEqual({"y": 2.5}, found)
         self.assertEqual(["x"], bad)
-        self.assertEqual({"y": 2.5}, runner.parse_measurements("m_x = 1e999\nm_y = 2.5"))
 
     def test_shared_parser_tolerates_trailing_context_and_reports_failed(self):
         """#470: one definition of a measurement line for all three consumers."""

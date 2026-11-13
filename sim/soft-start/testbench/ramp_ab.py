@@ -97,8 +97,6 @@ DEFAULT_RLOAD = "36"
 FIT_SSR_LO_V = 0.2
 FIT_SSR_HI_V = 1.0
 
-ARMS = ("internal", "ideal")
-
 @dataclass
 class Point:
     corner_id: str
