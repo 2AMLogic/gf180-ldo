@@ -349,6 +349,29 @@ SPICEINIT = "set wnflag=1\nset num_threads=1\n"
 # ---------------------------------------------------------------------------
 # one measured point
 # ---------------------------------------------------------------------------
+def _iinj_a(fb_v: float, vout_v: float) -> float:
+    """KCL at FB: the DC current the injection element delivers into it.
+
+    Derived, not measured, and exact: at DC the only branches on the
+    feedback node are the two divider resistors (`Rtop` 300k from VOUT,
+    `Rbot` 600k to VSS -- `XCff` across `Rtop` carries no DC current), the
+    error amp's gate (no DC current), the injection element's drain and
+    `Mpre_b_ss`'s drain (off while enabled). So KCL at FB gives
+
+        I_inj = V(FB)/Rbot - (V(VOUT) - V(FB))/Rtop
+
+    which is the same quantity for both DUT variants without either deck
+    having to know which element is in it. This is the number the hand-over
+    is actually about.
+
+    It lives here, at module level, because `Row` (the swept AC points) and
+    `HovPoint` (the pinned DC hand-over points) both need it and it is one
+    statement about the node's branches, not two: a divider change must not
+    be able to reach one of them and not the other.
+    """
+    return fb_v / 600e3 - (vout_v - fb_v) / 300e3
+
+
 @dataclass
 class Row(ls.Row):
     """One (PVT, variant, phase, SSR, C_eff, ESR) loop-gain point.
@@ -370,19 +393,10 @@ class Row(ls.Row):
     def iinj_a(self) -> float:
         """The DC current the injection element delivers into FB.
 
-        Derived, not measured, and exact: at DC the only branches on the
-        feedback node are the two divider resistors (`Rtop` 300k from VOUT,
-        `Rbot` 600k to VSS -- `XCff` across `Rtop` carries no DC current), the
-        error amp's gate (no DC current), the injection element's drain and
-        `Mpre_b_ss`'s drain (off while enabled). So KCL at FB gives
-
-            I_inj = V(FB)/Rbot - (V(VOUT) - V(FB))/Rtop
-
-        which is the same quantity for both DUT variants without either
-        deck having to know which element is in it. This is the number the
-        hand-over is actually about.
+        `_iinj_a()`, which states the derivation; `HovPoint.iinj_a` is the
+        same call, so the two cannot drift apart.
         """
-        return self.fb_v / 600e3 - (self.vout_v - self.fb_v) / 300e3
+        return _iinj_a(self.fb_v, self.vout_v)
 
     @property
     def state_id(self) -> str:
@@ -653,24 +667,13 @@ def parse_hov_fields(line: str) -> dict[str, str]:
     """``HOV k=v k=v ...`` -> dict, with the margin parser's strictness.
 
     Every field is required and an unknown one is an error rather than
-    something to ignore.
+    something to ignore. Like `parse_row_fields()` above, the parsing and
+    that strictness are ``harness.report.parse_row_fields()`` itself rather
+    than a second statement of them, so a hardening of the shared parser
+    reaches the hand-over deck's lines too; this wrapper only binds it to
+    this line kind's field list and name.
     """
-    fields: dict[str, str] = {}
-    for tok in line.split()[1:]:
-        key, sep, val = tok.partition("=")
-        if not sep:
-            raise ValueError(f"HOV field {tok!r} is not key=value: {line!r}")
-        if key in fields:
-            raise ValueError(f"HOV field {key!r} repeated: {line!r}")
-        fields[key] = val
-    missing = [k for k in HOV_FIELDS if k not in fields]
-    unknown = [k for k in fields if k not in HOV_FIELDS]
-    if missing or unknown:
-        raise ValueError(
-            f"HOV line does not match the deck's field list "
-            f"(missing {missing}, unknown {unknown}): {line!r}"
-        )
-    return fields
+    return _harness_parse_row_fields(line, HOV_FIELDS, tag="HOV")
 
 
 @dataclass
@@ -689,12 +692,12 @@ class HovPoint:
     def iinj_a(self) -> float:
         """The current the injection element delivers into FB.
 
-        Exactly `Row.iinj_a` -- KCL at the feedback node, whose only other DC
-        branches are the two divider resistors. It stays exact when the loop
-        is out of regulation, because it is a statement about the node's
-        branches and not about the loop being closed.
+        Exactly `Row.iinj_a` -- the same `_iinj_a()` call, not a restatement
+        of it. It stays exact when the loop is out of regulation, because it
+        is a statement about the node's branches and not about the loop
+        being closed.
         """
-        return self.fb_v / 600e3 - (self.vout_v - self.fb_v) / 300e3
+        return _iinj_a(self.fb_v, self.vout_v)
 
     @property
     def in_regulation(self) -> bool:

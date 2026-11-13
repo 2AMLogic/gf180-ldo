@@ -194,6 +194,19 @@ class TestRowParsing(unittest.TestCase):
                 "ROW 0.0001 3.3e-07 0.5 1.7994 147.821 300220 -92.307"
             )
 
+    def test_every_rejection_still_names_the_ROW_line(self):
+        """`harness.report.parse_row_fields()` takes a `tag` naming the line
+        kind (the soft-start deck's hand-over lines are `HOV`). This deck does
+        not pass one, so every message it raises must still read `ROW`."""
+        for bad in ("ROW 0.0001 3.3e-07 0.5",                    # positional
+                    self.FULL.replace(" resurgence_db=24.4", ""),  # missing
+                    self.FULL + " nonsense=1",                   # unknown
+                    self.FULL + " f0_hz=1"):                     # repeated
+            with self.subTest(line=bad):
+                with self.assertRaises(ValueError) as cm:
+                    sweep.parse_row_fields(bad)
+                self.assertIn("ROW", str(cm.exception))
+
     def test_a_zero_vout_or_dcgain_is_kept_not_turned_into_nan(self):
         # `_f(tok) or nan` treated a legitimate 0.0 as missing.
         line = self.FULL.replace("vout_v=1.7994", "vout_v=0").replace(

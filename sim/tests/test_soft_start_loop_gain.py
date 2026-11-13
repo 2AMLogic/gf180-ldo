@@ -884,6 +884,22 @@ class TestHovParsing(unittest.TestCase):
         with self.assertRaises(ValueError):
             sweep.parse_hov_fields(self.GOOD + " 1.234")
 
+    def test_every_rejection_still_names_the_HOV_line_not_a_ROW_line(self):
+        """The strictness is `harness.report.parse_row_fields()`, shared with
+        the margin decks' `ROW` lines, so the one thing delegation could lose
+        is which line kind the operator is being told about. Each failure mode
+        must still say `HOV`, because that is the word in the log line they
+        will go read."""
+        for bad in (self.GOOD + " 1.234",            # positional
+                    self.GOOD.replace(" pg_v=2", ""),  # missing
+                    self.GOOD + " nonsense=1",       # unknown
+                    self.GOOD + " pg_v=3"):          # repeated
+            with self.subTest(line=bad):
+                with self.assertRaises(ValueError) as cm:
+                    sweep.parse_hov_fields(bad)
+                self.assertIn("HOV", str(cm.exception))
+                self.assertNotIn("ROW", str(cm.exception))
+
 
 class TestHandoverConsistencyCheck(unittest.TestCase):
     def test_it_compares_only_states_the_two_decks_actually_share(self):
