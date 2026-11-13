@@ -10,7 +10,9 @@ Submits ``klt_body.spice`` over the 63-point matrix run.sh sweeps (7 process x
 backend, so the comparison is same-binary by construction. Logs, the klt
 reports, a frozen copy of each DUT netlist and ``summary.csv`` land under
 ``sim/current-limit/corners/<record-id>/``. The record markdown is written by
-hand, as for run.sh. Grading mirrors summarize.py's bounds (DR-0005).
+hand, as for run.sh. Grading imports summarize.py's ratified DR-0005 bounds
+(``ILIM_WINDOW_MA`` / ``PSHORT_MAX_MW``) rather than restating them, so the two
+graders for the same spec rows cannot disagree.
 """
 
 from __future__ import annotations
@@ -22,8 +24,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
+sys.path.insert(0, str(HERE))  # sibling summarize: klt_run.py also runs as a script
 from harness import klt_batch as kb  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab, write_summary_csv  # noqa: E402
+from summarize import ILIM_WINDOW_MA, PSHORT_MAX_MW  # noqa: E402
+
+ILIM_MIN_MA, ILIM_MAX_MA = ILIM_WINDOW_MA
 
 # index of each read point in `dc Vforce 0 1.764 0.012`
 IDX = {"1764": 147, "1500": 125, "0900": 75, "0300": 25, "0000": 0}
@@ -31,9 +37,10 @@ IDX = {"1764": 147, "1500": 125, "0900": 75, "0300": 25, "0000": 0}
 MEASUREMENTS = (
     [{"name": "vf_1764", "expr": "v(vf)[147]", "unit": "V"}]
     + [{"name": f"ilim_{k}_ma", "expr": f"i(vforce)[{i}]*1e3", "unit": "mA",
-        # Ratified Current limit row: 62-95 mA over PVT (DR-0005); the 1.764 V
+        # Ratified Current limit row (DR-0005), from summarize.py; the 1.764 V
         # read point is the on-limit value summarize/grade() windows too.
-        **({"limits": {"min": 62.0, "max": 95.0}, "spec_row": "Current limit"} if k == "1764" else {})}
+        **({"limits": {"min": ILIM_MIN_MA, "max": ILIM_MAX_MA},
+            "spec_row": "Current limit"} if k == "1764" else {})}
        for k, i in IDX.items()]
     + [
         {"name": "vout_50ma", "expr": "v(vout_r)[0]", "unit": "V"},
@@ -59,8 +66,8 @@ def grade(v: dict, vin: float) -> dict:
     on = v.get("ilim_1764_ma")
     short = v.get("ilim_0000_ma")
     out["p_short_mw"] = None if short is None else short * vin
-    out["in_window"] = on is not None and 62.0 <= on <= 95.0
-    out["thermal_ok"] = out["p_short_mw"] is not None and out["p_short_mw"] <= 346.0
+    out["in_window"] = on is not None and ILIM_MIN_MA <= on <= ILIM_MAX_MA
+    out["thermal_ok"] = out["p_short_mw"] is not None and out["p_short_mw"] <= PSHORT_MAX_MW
     vo = v.get("vout_50ma")
     out["reg_ok"] = vo is not None and 1.764 <= vo <= 1.836
     if v.get("ilim_1500_ma") and short is not None:
