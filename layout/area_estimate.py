@@ -35,6 +35,17 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# The feedback divider's geometry and interdigitation -- floorplan.md §4.1's
+# unit resistor, its 6-up / 12-down string, the row pitch and the dummy strips
+# -- live in `layout/divider/plan.py`: the same constants the GDS generator
+# draws and `layout/tests/test_divider_layout.py` checks against §4.1. They are
+# read from there rather than transcribed a second time here, so the mismatch
+# `divider_field()` computes can never be the mismatch of a geometry the
+# drawing does not have. `plan.py` imports nothing, so it loads both under
+# plain Python and under `drclvs._load_module`.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "divider"))
+import plan  # noqa: E402
+
 # --------------------------------------------------------------------------
 # gf180mcu geometric constants (gf180mcuD KLayout DRC deck, 3.3 V devices)
 # --------------------------------------------------------------------------
@@ -63,11 +74,6 @@ RES_SEG_MAX = 100.0  # floorplan choice: longest drawn resistor segment
 # plate is capped at MIM.8b (10000 um^2).
 MIM_KEEPOUT = 1.2
 MIM_MAX_PLATE = 10_000.0
-
-# Sheet resistances, magic tech file (`libs.tech/magic/gf180mcuD.tech`,
-# `resist` section, milliohm per square -> ohm per square here).
-RSH_M1_M4 = 0.090
-RSH_M5 = 0.060
 
 # MIM capacitor density, measured (`sim/devchar/CONCLUSIONS.md` §3).
 MIM_FF_PER_UM2 = 1.990
@@ -114,16 +120,6 @@ MIM_STACK_FRACTION = 0.60
 # the `.subckt` name in the netlist; `ldo_core` devices that are really the
 # feedback divider are split out by instance name below.
 DIVIDER_INSTANCES = {"Rtop", "Rbot", "XCff"}
-
-# Feedback divider, as planned in `layout/floorplan.md` §4.1: a series string
-# of identical unit resistors (DR-0003 requires the string so a metal-mask
-# derivative can re-tap it), drawn 2 um wide rather than the 1 um the
-# accuracy budget assumed, inside a full dummy ring.
-DIV_UNIT_KOHM = 50.0
-DIV_UNIT_W = 2.0
-DIV_UNITS_TOP = 6  # 6 x 50k = 300k
-DIV_UNITS_BOT = 12  # 12 x 50k = 600k
-DIV_DUMMIES = 2  # one dummy strip at each end of the interdigitated row
 
 
 @dataclass
@@ -205,16 +201,17 @@ def divider_field() -> tuple[float, float]:
     against these models -- which is exactly why the layout discipline below
     is the only mitigation available.
     """
-    length_per_kohm = AREA_PER_KOHM["ppolyf_u_3k"] * DIV_UNIT_W  # at DIV_UNIT_W
-    unit_len = length_per_kohm * DIV_UNIT_KOHM
-    positions = DIV_UNITS_TOP + DIV_UNITS_BOT + DIV_DUMMIES
-    footprint = positions * (unit_len + 2 * RES_HEAD) * (DIV_UNIT_W + RES_SPACE)
+    n_top = len(plan.TOP_POSITIONS)
+    n_bot = len(plan.BOT_POSITIONS)
+    # One row of `N_POSITIONS` strips at the plan's pitch; a strip costs its
+    # drawn length plus a contact head at each end.
+    footprint = plan.N_POSITIONS * (plan.UNIT_L_UM + 2 * RES_HEAD) * plan.PITCH_UM
 
-    unit_area = unit_len * DIV_UNIT_W
+    unit_area = plan.UNIT_L_UM * plan.UNIT_W_UM
     sigma_unit = 0.7071 * 0.021 / (unit_area**0.5)  # fractional, 1 sigma
-    sigma_top = sigma_unit / DIV_UNITS_TOP**0.5
-    sigma_bot = sigma_unit / DIV_UNITS_BOT**0.5
-    beta_c = DIV_UNITS_TOP / (DIV_UNITS_TOP + DIV_UNITS_BOT)  # 1 - beta = 1/3
+    sigma_top = sigma_unit / n_top**0.5
+    sigma_bot = sigma_unit / n_bot**0.5
+    beta_c = n_top / (n_top + n_bot)  # 1 - beta = 1/3
     sigma_vout = beta_c * (sigma_top**2 + sigma_bot**2) ** 0.5 * 1800.0  # mV
     return footprint, 3 * sigma_vout
 
@@ -340,8 +337,9 @@ def collect(pass_width_um: float | None = None) -> list[Device]:
             "ppolyf_u_3k unit array",
             "divider",
             field,
-            f"{DIV_UNITS_TOP}+{DIV_UNITS_BOT} x {DIV_UNIT_KOHM:g}k at w="
-            f"{DIV_UNIT_W:g}u + {DIV_DUMMIES} dummies; "
+            f"{len(plan.TOP_POSITIONS)}+{len(plan.BOT_POSITIONS)} x "
+            f"{plan.UNIT_KOHM:g}k at w={plan.UNIT_W_UM:g}u + "
+            f"{len(plan.DUMMY_POSITIONS)} dummies; "
             f"mismatch {sigma3:.2f} mV (3 sigma)",
         )
     )
