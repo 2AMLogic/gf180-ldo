@@ -21,12 +21,67 @@ share one copy. The latter two had used
 its variant ("D") explicitly and ``_load_pdk_pcells`` assigns it
 unconditionally, so an ambient ``GF_PDK_OPTION`` cannot silently change the
 metal stack or MIM option a cell is drawn with.
+
+Issue #588 moved the PDK *facts* the four generators had each restated for
+themselves -- the variant (``PDK_OPTION``), the database unit (``DBU_UM``) and
+the ``(layer, datatype)`` table -- here beside those helpers, so the cells
+agree with each other by construction and a single definition is what has to
+agree with ``layout/drclvs.py`` and the PDK's layer file.
 """
 
 import os
 import sys
 
 import pya  # noqa: F401  (provided by the KLayout interpreter)
+
+
+# ---------------------------------------------------------------------------
+# gf180mcu PDK facts (issue #588). All four generators draw for the same
+# variant, on the same database unit, from the same layer table, so each is
+# defined once here and imported rather than restated per generator -- a cell
+# cannot drift onto a different metal stack or a mistyped layer on its own.
+# ---------------------------------------------------------------------------
+
+# Which metal stack the PCells are asked to draw for. gf180mcu variant D is
+# 5LM, 11K top metal, MIM option B. Must agree with layout/drclvs.py's
+# VARIANT_SWITCHES, which says the same thing to the DRC and LVS decks: the
+# two have to agree or the MIM cap extracts as nothing at all. Each generator
+# still passes this explicitly to _load_pdk_pcells(), as issue #370 requires,
+# so an ambient GF_PDK_OPTION cannot change the stack a cell is drawn with.
+PDK_OPTION = "D"
+
+# gf180mcu database unit, as declared by the PDK's own KLayout tech file
+# (libs.tech/klayout/tech/gf180mcu.lyt: <dbu>0.001</dbu>). Load bearing beyond
+# precision -- see layout/README.md, "The database-unit trap in klt drc":
+# klt drc's rule thresholds are raw database-unit integers and are not scaled
+# by the layout's own dbu, so the same geometry gets a different verdict at a
+# different database unit.
+DBU_UM = 0.001
+
+# (layer, datatype) pairs, from the PDK's rule_decks/layers_definitions.lvs.
+# One transcription of a PDK file, reviewed once: a mistyped pair here would
+# draw on the wrong layer, and in a per-generator copy it would do so in that
+# one cell only.
+L_NWELL = (21, 0)
+L_COMP = (22, 0)
+L_POLY2 = (30, 0)
+L_POLY2_LABEL = (30, 10)
+L_PPLUS = (31, 0)
+L_NPLUS = (32, 0)
+L_CONTACT = (33, 0)
+L_METAL1 = (34, 0)
+L_METAL1_LABEL = (34, 10)
+L_VIA1 = (35, 0)
+L_METAL2 = (36, 0)
+L_VIA2 = (38, 0)
+L_VIA3 = (40, 0)
+L_VIA4 = (41, 0)
+L_METAL3 = (42, 0)
+L_METAL4 = (46, 0)
+L_METAL4_LABEL = (46, 10)
+L_FUSETOP = (75, 0)
+L_METAL5 = (81, 0)
+L_METAL5_LABEL = (81, 10)
 
 
 def _fail(message):
