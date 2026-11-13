@@ -12,7 +12,10 @@ of ngspice, so each request is split into fleet jobs of 2 units with a 1700 s pe
 job comes back ``batch_job_timeout``; the 81-point grid at one job per request, then at 3
 units x 1100 s, lost units to both). The fleet's instance cap is shared with other sweeps, so
 each request keeps at most 2 jobs in flight and waits up to 2 h for capacity instead of
-returning a refused shard as ``lost_shard``. Output: sim/startup/corners/<record-id>/.
+returning a refused shard as ``lost_shard``. Output: the git-ignored staging tree
+``sim/.work/.stage/startup/sim/startup/corners/<record-id>/``; it becomes evidence only
+when ``PYTHONPATH=sim python3 -m harness.klt_record startup --record-id <id>``
+stores the bytes and mints the record (DR-0044).
 """
 
 import sys

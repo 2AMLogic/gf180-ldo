@@ -66,6 +66,28 @@ DIGITS = 10
 #: Requests a multi-state bench keeps in flight on the fleet at once.
 MAX_IN_FLIGHT = 6
 
+#: ``main`` could not store this run's evidence; nothing was committed. Same
+#: code ``sim/run_corners.py`` exits with (``cli.EXIT_NOT_STORED``).
+EXIT_NOT_STORED = 10
+
+
+def stage_experiment_dir(repo: Path, slug: str) -> Path:
+    """The git-ignored staging tree a batch run writes into (DR-0044, #594).
+
+    ``sim/.work/.stage/<slug>/sim/<slug>/`` -- the same layout
+    ``sim/harness/cli.py`` stages into, repeating the repo-relative path under
+    the stage root so a staged file's path below it *is* its manifest ``name``.
+    A run under ``sim/.work/`` is ignored by git, so an unminted run leaves
+    nothing in the tree: it becomes evidence only when ``harness.klt_record``
+    stores it.
+    """
+    return repo / "sim" / ".work" / ".stage" / slug / "sim" / slug
+
+
+def stage_corner_dir(repo: Path, slug: str, record_id: str) -> Path:
+    """Where one staged run's raw bytes land, before they are stored."""
+    return stage_experiment_dir(repo, slug) / "corners" / record_id
+
 _ANALYSIS_KINDS = ("op", "dc", "ac", "tran", "noise", "tf", "sens", "pz", "disto")
 _M_REF = re.compile(r"\bm_([A-Za-z0-9_]+)")
 _PLOT_REF = re.compile(r"\b(op|dc|ac|tran|noise|tf|sens|pz|disto)(\d+)\.", re.IGNORECASE)
@@ -415,17 +437,30 @@ def grade(tb: tbmod.Testbench, values: dict) -> bool:
 
 
 def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None = None,
-         extra_measurements: list[dict] | None = None, **job_opts) -> int:
-    """The whole ``klt_run.py`` for a bench: grid -> fleet -> ``corners/<id>/``.
+         extra_measurements: list[dict] | None = None, preflight=None, **job_opts) -> int:
+    """The whole ``klt_run.py`` for a bench: grid -> fleet -> staging tree.
+
+    The run lands in :func:`stage_corner_dir`, under git-ignored
+    ``sim/.work/``, not in ``sim/<slug>/corners/``. It becomes evidence only
+    when ``python3 -m harness.klt_record <slug> --record-id <id>`` stores its
+    bytes and mints the record (DR-0044, issue #594); a run that is never
+    minted leaves nothing in git.
+
+    Fail closed: unless this is an ``--only`` debug point, the evidence store
+    is probed before any fleet time is spent, and an unstorable run exits
+    :data:`EXIT_NOT_STORED` having written nothing.
 
     ``body_override`` / ``extra_measurements`` are :func:`job`'s; only a
     single-analysis bench with a swept supply supports them.
     ``job_opts`` are :class:`klt_batch.Job` fields every request of the bench
-    sets (``timeout_s``, ``batch``).
+    sets (``timeout_s``, ``batch``). ``preflight`` is the store probe, injected
+    by the tests.
     """
     import argparse
     import os
+    import sys
 
+    from . import evidence_store as store
     from . import pdk
     from .klt_ab import add_ab_args, parse_params, run_ab, write_summary_csv
 
@@ -451,7 +486,23 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
     # installs of the variant on the host klt otherwise takes the first match,
     # and the client-side stamp it compares the worker's against is unavailable.
     os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
-    dest = tb.experiment_dir / "corners" / args.record_id
+    dest = stage_corner_dir(repo, tb.experiment, args.record_id)
+    if (tb.experiment_dir / "corners" / args.record_id).exists():
+        raise SystemExit(f"sim/{tb.experiment}/corners/{args.record_id}/ already exists; "
+                         "append-only evidence is never rewritten -- choose another --record-id")
+    # Issue #511 / DR-0044: an evidence run must be storable before any fleet
+    # time is spent. No broker, no `klt artifact` verb, or a broker that is
+    # unreachable or refuses: refuse now. There is no commit-the-bytes
+    # fallback. An `--only` debug point is not evidence and needs no store.
+    if args.only is None:
+        try:
+            (preflight or store.preflight)(repo)
+        except store.StoreError as exc:
+            print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+                  "Evidence bytes go to the artifact store only (sim/README.md, "
+                  '"Stored evidence"); an --only debug point needs no store.',
+                  file=sys.stderr)
+            return EXIT_NOT_STORED
     hooks = {"body_override": body_override, "extra_measurements": extra_measurements}
     if (body_override is not None or extra_measurements) and (chained or supply_in_waveform(tb)):
         raise UnsupportedTb(f"{tb.name}: body_override/extra_measurements need a single-analysis bench with a swept supply")
@@ -469,6 +520,9 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
                          "status": v.get("_status"), "diagnostics": v.get("_diagnostics"),
                          "pass": grade(tb, v)})
     write_summary_csv(rows, dest / "summary.csv")
+    print(f"staged  : {dest} (not evidence yet)")
+    print(f"mint it : PYTHONPATH=sim python3 -m harness.klt_record {tb.experiment} "
+          f"--record-id {args.record_id}")
     return 0
 
 

@@ -337,6 +337,83 @@ class BodyHooks(unittest.TestCase):
         self.assertEqual(list(j.measurements), [*base, *extra])
 
 
+class StagedOutput(unittest.TestCase):
+    """DR-0044 (#594): a batch run lands in git-ignored staging, and refuses to
+    start at all when its evidence could not be stored."""
+
+    def setUp(self):
+        import tempfile
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        self.root = Path(td.name).resolve()
+
+    def test_stage_dir_is_under_the_gitignored_work_tree(self):
+        d = ta.stage_corner_dir(self.root, "line-regulation", "r1")
+        self.assertEqual(d.relative_to(self.root).as_posix(),
+                         "sim/.work/.stage/line-regulation/sim/line-regulation/corners/r1")
+        # The path below the stage root repeats the repo-relative layout, so a
+        # staged file's path under it is exactly its manifest `name`.
+        stage_root = self.root / "sim/.work/.stage/line-regulation"
+        self.assertEqual((d / "tt_27c_3.30v.log").relative_to(stage_root).as_posix(),
+                         "sim/line-regulation/corners/r1/tt_27c_3.30v.log")
+
+    def _run(self, argv, preflight):
+        """``main`` for a flat bench with the fleet call stubbed out."""
+        from harness import klt_ab
+        calls = {}
+
+        def fake_run_ab(job_factory, dut, baseline_ref, dest, repo, **kw):
+            calls["dest"] = dest
+            Path(dest).mkdir(parents=True, exist_ok=True)
+            return {"new": {"tt_27c_3.30v": {"vout_v": 1.8, "_status": "pass", "_diagnostics": ""}}}
+
+        real = klt_ab.run_ab
+        klt_ab.run_ab = fake_run_ab
+        self.addCleanup(lambda: setattr(klt_ab, "run_ab", real))
+        rc = ta.main(SIM_DIR / "line-regulation" / "testbench", "doc", argv, preflight=preflight)
+        return rc, calls
+
+    def test_a_run_writes_into_staging_not_into_sim(self):
+        seen = []
+        rc, calls = self._run(["--record-id", "zz-stage-test"], lambda repo: seen.append(repo))
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(seen), 1, "the store is probed once, before any fleet time")
+        dest = Path(calls["dest"])
+        self.assertIn("/sim/.work/.stage/", dest.as_posix())
+        self.assertEqual(dest, ta.stage_corner_dir(SIM_DIR.parent, "line-regulation", "zz-stage-test"))
+        self.assertFalse((SIM_DIR / "line-regulation" / "corners" / "zz-stage-test").exists())
+        import shutil
+        shutil.rmtree(SIM_DIR.parent / "sim/.work/.stage/line-regulation", ignore_errors=True)
+
+    def test_an_unstorable_run_exits_10_before_simulating(self):
+        from harness import evidence_store as es
+
+        def refuse(repo):
+            raise es.StoreError("no artifact broker configured ($KLT_ARTIFACT_BROKER is unset)")
+
+        rc, calls = self._run(["--record-id", "zz-refused"], refuse)
+        self.assertEqual(rc, ta.EXIT_NOT_STORED)
+        self.assertNotIn("dest", calls, "the fleet was never asked to run anything")
+        self.assertFalse((SIM_DIR / "line-regulation" / "corners" / "zz-refused").exists())
+        self.assertFalse(ta.stage_corner_dir(SIM_DIR.parent, "line-regulation", "zz-refused").exists())
+
+    def test_an_only_debug_point_needs_no_store(self):
+        def explode(repo):
+            raise AssertionError("--only must not probe the store")
+
+        rc, calls = self._run(["--record-id", "zz-only", "--only", "tt,27,3.30"], explode)
+        self.assertEqual(rc, 0)
+        self.assertIn("/sim/.work/.stage/", Path(calls["dest"]).as_posix())
+        import shutil
+        shutil.rmtree(SIM_DIR.parent / "sim/.work/.stage/line-regulation", ignore_errors=True)
+
+    def test_a_record_id_already_committed_is_refused(self):
+        existing = sorted((SIM_DIR / "line-regulation" / "corners").iterdir())[0].name
+        with self.assertRaises(SystemExit) as cm:
+            self._run(["--record-id", existing], lambda repo: None)
+        self.assertIn("append-only", str(cm.exception))
+
+
 class Grade(unittest.TestCase):
     def test_bounds_and_missing_values(self):
         tb = _tb("load-regulation")
