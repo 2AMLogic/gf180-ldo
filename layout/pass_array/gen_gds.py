@@ -103,6 +103,25 @@ import em_budget  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gen_gds_common import (  # noqa: E402
+    DBU_UM,
+    L_COMP,
+    L_CONTACT,
+    L_METAL1,
+    L_METAL2,
+    L_METAL3,
+    L_METAL4,
+    L_METAL5,
+    L_METAL5_LABEL,
+    L_NPLUS,
+    L_NWELL,
+    L_POLY2,
+    L_POLY2_LABEL,
+    L_PPLUS,
+    L_VIA1,
+    L_VIA2,
+    L_VIA3,
+    L_VIA4,
+    PDK_OPTION,
     _create_pcell,
     _fail,
     _label,
@@ -114,13 +133,6 @@ from gen_gds_common import (  # noqa: E402
 )
 
 TOP_CELL = "PASS_ARRAY"
-
-# gf180mcu database unit, as declared by the PDK's own KLayout tech file
-# (libs.tech/klayout/tech/gf180mcu.lyt: <dbu>0.001</dbu>).
-DBU_UM = 0.001
-
-# 5LM, MIM option B. Must agree with layout/drclvs.py's VARIANT_SWITCHES.
-PDK_OPTION = "D"
 
 # ---------------------------------------------------------------------------
 # the array, parameterised on the unit COUNT (issue #285) rather than on a
@@ -189,25 +201,6 @@ ISNS_ROW_PHASE = 3
 # How many cell edges the M3/M4/M5 rows are landed on by the top-level
 # assembly. The rows reach both; the EM margins are quoted for that.
 EXIT_EDGES = 2
-
-# (layer, datatype) pairs, from rule_decks/layers_definitions.lvs.
-L_NWELL = (21, 0)
-L_COMP = (22, 0)
-L_POLY2 = (30, 0)
-L_POLY2_LABEL = (30, 10)
-L_PPLUS = (31, 0)
-L_NPLUS = (32, 0)
-L_CONTACT = (33, 0)
-L_METAL1 = (34, 0)
-L_VIA1 = (35, 0)
-L_METAL2 = (36, 0)
-L_VIA2 = (38, 0)
-L_VIA3 = (40, 0)
-L_VIA4 = (41, 0)
-L_METAL3 = (42, 0)
-L_METAL4 = (46, 0)
-L_METAL5 = (81, 0)
-L_METAL5_LABEL = (81, 10)
 
 VIN, VOUT, ISNS, GATE = "VIN", "VOUT", "ISNS", "PASS_GATE"
 

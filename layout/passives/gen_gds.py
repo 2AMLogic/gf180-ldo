@@ -89,6 +89,17 @@ import pya  # noqa: F401  (provided by the KLayout interpreter)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gen_gds_common import (  # noqa: E402
+    DBU_UM,
+    L_FUSETOP,
+    L_METAL1,
+    L_METAL1_LABEL,
+    L_METAL4,
+    L_METAL4_LABEL,
+    L_METAL5,
+    L_METAL5_LABEL,
+    L_POLY2,
+    L_POLY2_LABEL,
+    PDK_OPTION,
     _create_pcell,
     _fail,
     _label,
@@ -98,18 +109,6 @@ from gen_gds_common import (  # noqa: E402
 )
 
 TOP_CELL = "DRCLVS_PASSIVES"
-
-# gf180mcu database unit, as declared by the PDK's own KLayout tech file
-# (libs.tech/klayout/tech/gf180mcu.lyt: <dbu>0.001</dbu>). Written explicitly
-# because it is load bearing for more than precision -- see layout/README.md,
-# "klt drc and the database unit".
-DBU_UM = 0.001
-
-# Which metal stack the PCells are asked to draw for. gf180mcuD is 5LM with
-# MIM option B; layout/drclvs.py's VARIANT_SWITCHES says the same thing to the
-# DRC and LVS decks, and the two have to agree or the MIM cap extracts as
-# nothing at all.
-PDK_OPTION = "D"
 
 # --- device parameters. Keep in sync with drclvs_passives.sch; the LVS compare
 # --- in layout/drclvs.py is what catches a drift between them.
@@ -150,17 +149,6 @@ FET_PARAMS = {
 # nothing here is trying to be area-efficient, so no inter-device spacing rule
 # should ever be the reason this cell fails DRC.
 DEVICE_GAP_UM = 20.0
-
-# (layer, datatype) pairs, from rule_decks/layers_definitions.lvs.
-L_POLY2 = (30, 0)
-L_POLY2_LABEL = (30, 10)
-L_METAL1 = (34, 0)
-L_METAL1_LABEL = (34, 10)
-L_METAL4 = (46, 0)
-L_METAL4_LABEL = (46, 10)
-L_METAL5 = (81, 0)
-L_METAL5_LABEL = (81, 10)
-L_FUSETOP = (75, 0)
 
 
 def _device(layout, library, pcell, params, wrapper_name):

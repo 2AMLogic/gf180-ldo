@@ -106,6 +106,13 @@ import pya  # noqa: F401  (provided by the KLayout interpreter)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gen_gds_common import (  # noqa: E402
+    DBU_UM,
+    L_COMP,
+    L_CONTACT,
+    L_METAL1,
+    L_METAL1_LABEL,
+    L_PPLUS,
+    PDK_OPTION,
     _create_pcell,
     _fail,
     _label,
@@ -129,21 +136,6 @@ from plan import (  # noqa: E402
 )
 
 TOP_CELL = "FB_DIVIDER"
-
-# gf180mcu variant: D = 5LM, 11K top metal, MIM option B.
-PDK_OPTION = "D"
-
-# gf180mcu database unit, as declared by the PDK's own KLayout tech file.
-# Load bearing beyond precision -- see layout/README.md, "The database-unit
-# trap in klt drc".
-DBU_UM = 0.001
-
-# (layer, datatype) pairs, from rule_decks/layers_definitions.lvs.
-L_COMP = (22, 0)
-L_PPLUS = (31, 0)
-L_CONTACT = (33, 0)
-L_METAL1 = (34, 0)
-L_METAL1_LABEL = (34, 10)
 
 # ---------------------------------------------------------------------------
 # Geometry this file adds. Every clearance below is checked by the DRC decks
