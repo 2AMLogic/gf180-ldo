@@ -33,25 +33,22 @@ SCALARS = [
 # Bounds (README.md "Startup" row) plus the two measured references the row
 # is written against.
 #
-# issue #212 / DR-0024 (proposed, not yet ratified): restates the ramp,
-# inrush and current-limit-clearance clauses as a startup-current BUDGET AT
-# C_eff = 1 uF, not at DR-0001's 4.7 uF ceiling -- the same move DR-0022
-# already made for the clearance sub-clause alone. RAMP_MAX_VPMS moves
-# 1.0 -> 5.0 V/ms and SETTLE_MAX_S moves 3 ms -> DR-0024's measured-envelope
-# figure (see the record this constant is committed alongside). INRUSH_MAX_MA
-# and the current-limit-clearance flag below are now checked ONLY at the
-# C_eff = 1 uF corners -- above 1 uF both are characterized, not bound, per
-# DR-0022/DR-0024's shared "characterized, not bound" posture. Until DR-0024
-# is ratified (human merge, per CLAUDE.md's spec-change policy) these
-# constants describe the PROPOSED budget, not the ratified one; the ratified
-# README.md Startup row is still the ≤ 1 V/ms / 3 ms row until that PR lands.
+# issue #212 / DR-0024 (ratified 2026-09-15) restates the ramp, inrush and
+# current-limit-clearance clauses as a startup-current BUDGET AT C_eff =
+# 1 uF, not at DR-0001's 4.7 uF ceiling -- the same move DR-0022 already
+# made for the clearance sub-clause alone. INRUSH_MAX_MA and the
+# current-limit-clearance flag below are therefore checked ONLY at the
+# C_eff = 1 uF corners; above 1 uF both are characterized, not bound, per
+# DR-0022/DR-0024's shared "characterized, not bound" posture. Records
+# written before 2026-09-15 were graded against DR-0006's row instead
+# (ramp ≤ 1 V/ms, inrush at C_eff = 4.7 uF, ±2% within 3 ms).
 VOUT_LO = 1.764          # -2%
 VOUT_HI = 1.836          # +2%
-RAMP_MAX_VPMS = 5.0      # DR-0024 proposed controlled-ramp bound (was 1.0)
-INRUSH_MAX_MA = 5.0      # DR-0024 proposed inrush bound, at C_eff = 1 uF only
+RAMP_MAX_VPMS = 5.0      # DR-0024 controlled-ramp bound (was 1.0)
+INRUSH_MAX_MA = 5.0      # DR-0024 inrush bound, at C_eff = 1 uF only
                          # (was 4.7 uF; see COUT_BOUND_UF below)
 ILIMIT_MIN_MA = 62.0     # worst-corner measured limit, sim/current-limit/records/
-SETTLE_MAX_S = 1.8e-3    # DR-0024 proposed settling bound (was 3e-3, then
+SETTLE_MAX_S = 1.8e-3    # DR-0024 settling bound (was 3e-3, then
                          # DR-0006's 6e-3; 1.8 ms is the record's own
                          # measured-worst-point (1.72525 ms) plus ~4%
                          # headroom -- NOT the 1.2 ms issue #212 guessed
@@ -143,7 +140,7 @@ MINMAX = ("m_slope_vpms", "m_dvout_max", "m_dvout_min",
 # predicate holds. Module-level so the clause set can be re-derived and
 # counted without parsing the printed report.
 FLAGS = [
-    (f"steady ramp rate above the proposed {RAMP_MAX_VPMS} V/ms (DR-0024):",
+    (f"steady ramp rate above the {RAMP_MAX_VPMS} V/ms bound (DR-0024):",
      lambda v: v["m_slope_vpms"] > RAMP_MAX_VPMS),
     ("peak dVout/dt above the same bound (incl. transients):",
      lambda v: v["m_dvout_max"] > RAMP_MAX_VPMS),
@@ -157,7 +154,7 @@ FLAGS = [
      lambda v: v["m_cout_is_bound"] and v["m_isup_peak_ma"] > ILIMIT_MIN_MA - 10.0),
     (f"startup overshoot above +2% ({VOUT_HI} V):",
      lambda v: v["m_vout_max_en"] > VOUT_HI),
-    (f"failed to reach {VOUT_LO} V within the proposed {SETTLE_MAX_S * 1e3:g} ms "
+    (f"failed to reach {VOUT_LO} V within {SETTLE_MAX_S * 1e3:g} ms "
      "(DR-0024):",
      lambda v: not (0 < v["m_t_startup"] < SETTLE_MAX_S)),
     ("failed to reach 1.764 V at all inside the enable window:",

@@ -4,9 +4,16 @@ This experiment owns the **Startup** row of `README.md`'s ratified target
 specification, and nothing else:
 
 > monotonic into any load 0–50 mA and any C_eff in the stability window;
-> controlled ramp ≤ 1 V/ms, so inrush ≤ 5 mA at C_eff = 4.7 µF and startup at
-> full rated load stays ≥ 10 mA below the current limit; inside ±2% within
-> 3 ms of enable; overshoot ≤ +2% of the final value
+> controlled ramp ≤ 5 V/ms, so inrush ≤ 5 mA and startup at full rated load
+> stays ≥ 10 mA below the current limit, both at C_eff = 1 µF (nominal) —
+> above 1 µF both clauses are characterized, not bound, up to DR-0001's
+> 4.7 µF ceiling (note 5a); inside ±2% within 1.8 ms of enable (note 8);
+> overshoot ≤ +2% of the final value
+
+That is the row as amended by `spec/decision-records/DR-0024`, ratified
+2026-09-15. Records written before that date were graded against DR-0006's
+row instead (ramp ≤ 1 V/ms, inrush at C_eff = 4.7 µF, ±2% within 3 ms) and
+say so in their own clause tables.
 
 It exists because issue #38 found that row failing on two of its clauses at
 almost every corner (`sim/enable-shutdown/records/20260801-013308-164ab42.md`:
@@ -28,10 +35,10 @@ NO_RECORD=1 CORNERS=tt TEMPS=27 SUPPLIES=3.30 \
 | Measurement | Clause it substantiates |
 | --- | --- |
 | `slope_vpms` | The **steady ramp rate**, taken as 1.0 V / (t(V_out = 1.4 V) − t(V_out = 0.4 V)). Two fixed output voltages well inside the ramp, so the number is the ramp itself and not either end transient. |
-| `dvout_max` / `dvout_min` | The largest and smallest **instantaneous** dV_out/dt anywhere in the enable window. `dvout_max` is deliberately a harsher reading of "controlled ramp ≤ 1 V/ms" than `slope_vpms`: it also catches the loop acquiring at the bottom of the ramp and the hand-over to the main loop at the top. `dvout_min` going negative is a **non-monotonic** startup. |
+| `dvout_max` / `dvout_min` | The largest and smallest **instantaneous** dV_out/dt anywhere in the enable window. `dvout_max` is deliberately a harsher reading of "controlled ramp ≤ 5 V/ms" than `slope_vpms`: it also catches the loop acquiring at the bottom of the ramp and the hand-over to the main loop at the top. `dvout_min` going negative is a **non-monotonic** startup. |
 | `icap_peak_ma` | **Inrush**, measured with a 0 V ammeter *in series with C_out*. |
 | `isup_peak_ma` | Peak **supply** current, for the "stays ≥ 10 mA below the current limit" clause, against the 62.0 mA worst-corner limit measured in `sim/current-limit/records/`. |
-| `t_startup_ms` | Enable edge → V_out = 1.764 V, i.e. the **±2% within 3 ms** clause. |
+| `t_startup_ms` | Enable edge → V_out = 1.764 V, i.e. the **±2% within 1.8 ms** clause. |
 | `vout_max_en` | **Overshoot**, against the ratified +2% = 1.836 V. |
 | `ssr_end` / `hg_end` | Hand-over sanity: the soft-start ramp node must finish **above** V_REF and the block's hold gate must finish at V_IN, or the soft-start block is still fighting the main loop after startup. Both halves are adjudicated in `summarize.py` — `ssr_end < 1.2 V`, and `hg_end` more than 0.2 V below V_IN. The 0.2 V is a *reporting* threshold, not a ratified bound (no spec line names this node); it sits well under the \|V_tp\| range in `sim/devchar/CONCLUSIONS.md` so that any point where the hold PMOS `Mhold_ss` is meaningfully out of cutoff gets named. The probe was `clg_end` (`Mclamp_ss`'s gate) up to and including record `20260906-125202-f1096c9`; issue #189 replaced the clamp comparator with FB injection, so the node is now `hg_end` (`Mhold_ss`/`Mhold_bg_ss`'s gate). Same invariant, same threshold, renamed node. |
 | `ssr_off_tran` | The ramp capacitor must be **reset** by disable, or the next enable does not ramp. |
@@ -55,8 +62,9 @@ same corner set as `sim/enable-shutdown` and `sim/current-limit`, `bjt_ff` /
 nominal 1 µF / 100 mΩ output into the full rated 50 mA load.
 
 DR-0001's **capacitor window** is then swept separately, because inrush and
-overshoot are both capacitor-conditioned and the ratified inrush number is
-quoted *at the top of that window*:
+overshoot are both capacitor-conditioned: the ratified inrush and clearance
+clauses *bind* at C_eff = 1 µF and are characterized, not bound, over the
+rest of the window (DR-0022/DR-0024):
 
 | C_eff | ESR | Load |
 | --- | --- | --- |
@@ -157,13 +165,18 @@ per-clause Startup measurements and the capacitor-window axis live here.
 ## The known gap
 
 The measured records under `records/` state, per corner, which clauses pass and
-which do not. The short version, and the reason
-`spec/decision-records/DR-0006` exists: the **steady ramp rate**, **inrush at
-the top of the capacitor window**, **monotonicity** and the **current-limit
-clearance** clauses are met; the **3 ms settling window** is not, at the slow
-end of the ramp's own PVT spread, and **peak** dV_out/dt (as opposed to the
-steady ramp rate) exceeds 1 V/ms in two short transients per startup. DR-0006
-records what changes and what does not, with these measurements as its basis.
+which do not. The short version against the ratified DR-0024 row, from the
+most recent full grading (`records/20260918-190207-8a59d23.md`): the **steady
+ramp rate** (163/163) and the **1.8 ms settling window** (163/163) are met,
+and **settled accuracy** and **overshoot** are met at all but a handful of
+corners; **inrush** and **current-limit clearance** at C_eff = 1 µF are not
+(0/83 and 2/83), and neither is **monotonicity** or **peak** dV_out/dt (as
+opposed to the steady ramp rate), which exceeds the bound in two short
+transients per startup.
+
+`spec/decision-records/DR-0006` is the earlier record of this gap, written
+when the row still read ≤ 1 V/ms / 3 ms; DR-0024 then re-centred the ramp and
+settling clauses on the measured envelope, which is why those two now pass.
 
 ## One `corners/` directory here is a control arm, not a characterization
 
