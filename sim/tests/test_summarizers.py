@@ -475,6 +475,20 @@ class CurrentLimitGolden(GoldenCase):
         self.assertEqual(sum(1 for x in self.col_values("m_ilim_1764_ma") if not lo <= x <= hi),
                          outside)
         ck = cl.checks(self.rows)
+        # This record is graded against DR-0005's ratified window, so the
+        # constant summarize.py prints and klt_run.grade() imports must be that
+        # window, and its own check must reproduce the count stated above. (A
+        # pre-DR-0005 record states the superseded 65-80 mA window in its own
+        # text and is checked against that window only, by the lines above.)
+        self.assertEqual(cl.ILIM_WINDOW_MA, (lo, hi))
+        self.assertEqual(len(ck["outside_ratified_window"]), outside)
+        ceiling = float(re.search(r"ratified ≤ (\d+(?:\.\d+)?) mW",
+                                  md_row(self.body, "corners exceeding the ratified")[0]).group(1))
+        over, total_mw = map(int, numbers(self.cell("corners exceeding the ratified")))
+        self.assertEqual(total_mw, len(self.rows))
+        self.assertEqual(cl.PSHORT_MAX_MW, ceiling)
+        self.assertEqual(sum(1 for x in self.col_values("m_pshort_mw") if x > ceiling), over)
+        self.assertEqual(len(ck["above_thermal_ceiling"]), over)
         self.assertEqual(_clean(self.cell("corners where the limit engages")), "none")
         self.assertEqual(ck["engages_at_or_below_50ma"], [])
         self.assertEqual(_clean(self.cell("corners outside the ±2 % window")), "none")
