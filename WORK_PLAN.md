@@ -33,12 +33,13 @@ Issues currently being built (`loom:building`).
 
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
+- **#577**: Remove three dead module constants and a test-only parse_measurements() wrapper
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
-_None._
+- **#578**: refactor: drop three unread module constants and the parse_measurements wrapper
 
 ## Approved (Awaiting Merge)
 
@@ -81,8 +82,8 @@ _None._
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`) | 2 |
-| In Progress (`loom:building`) | 2 |
-| PRs awaiting review | 0 |
+| In Progress (`loom:building`) | 3 |
+| PRs awaiting review | 1 |
 | Approved PRs awaiting merge | 0 |
 | Curated | 14 |
 | Architect / Hermit proposals | 1 |
