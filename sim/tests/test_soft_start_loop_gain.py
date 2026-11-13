@@ -31,6 +31,7 @@ sys.path.insert(0, str(SIM_DIR))
 _TB = SIM_DIR / "soft-start-loop-gain" / "testbench"
 sys.path.insert(0, str(_TB))
 import netlist_variants as nv  # noqa: E402
+from harness.deck import TOKEN_RE  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("ss_loop_gain_sweep", _TB / "sweep.py")
 sweep = importlib.util.module_from_spec(_spec)
@@ -451,7 +452,7 @@ class TestDeckTemplate(unittest.TestCase):
         self.assertIn(".options wnflag=1", self.TEXT)
 
     def test_every_placeholder_is_substituted_by_the_driver(self):
-        tokens = set(sweep.TOKEN_RE.findall(self.TEXT))
+        tokens = set(TOKEN_RE.findall(self.TEXT))
         # Mirror render_deck()'s substitution dict without running ngspice.
         provided = {
             "DESIGN_INCLUDE", "MODEL_LIB", "LDO_NETLIST", "MOS_CORNER",
@@ -779,7 +780,7 @@ class TestHandoverDeck(unittest.TestCase):
         for variant in nv.DUT_VARIANTS:
             with self.subTest(variant=variant):
                 self.assertEqual(
-                    sweep.TOKEN_RE.findall(self.render(variant)), [])
+                    TOKEN_RE.findall(self.render(variant)), [])
 
     def test_it_is_the_same_circuit_and_the_same_break_as_the_margin_deck(self):
         margin = (_TB / "tb_ss_loop_gain.spice.in").read_text()

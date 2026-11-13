@@ -76,7 +76,7 @@ TEMPLATE = HERE / "tb_ss_loop_gain.spice.in"
 HANDOVER_TEMPLATE = HERE / "tb_ss_handover.spice.in"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
-from harness import klt_grid  # noqa: E402
+from harness import deck, klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
@@ -324,8 +324,6 @@ XCHECK_PM_TOL_DEG = 2.0
 XCHECK_GM_TOL_DB = 1.0
 XCHECK_F0_TOL_FRAC = 0.02
 
-TOKEN_RE = re.compile(r"@([A-Z0-9_]+)@")
-
 # --- ngspice startup file ---------------------------------------------------
 # Written into the run's work directory, which every ngspice invocation this
 # driver makes (including the cross-check's) uses as its cwd. ngspice reads
@@ -487,7 +485,6 @@ def render_deck(pvt, pdk, *, phase: str, variant: str, netlist: Path,
     spec = dict(PHASES[phase])
     if ssr_values is not None and spec["ssr"] is not None:
         spec["ssr"] = tuple(float(v) for v in ssr_values)
-    mos, res, bjt, diode, moscap, mimcap = pvt.corner.sections
     if spec["ssr"] is None:
         ssr_source = ("* SSR is NOT pinned in this phase: the port is left "
                       "unconnected, which\n* makes this deck electrically "
@@ -498,14 +495,8 @@ def render_deck(pvt, pdk, *, phase: str, variant: str, netlist: Path,
         ssr_source = f"Vssr SSRPIN 0 DC {spec['ssr'][0]:g}"
         ssr_alter = "alter Vssr = $ss"
         ssr_list = " ".join(f"{v:g}" for v in spec["ssr"])
-    subs = {
-        "DESIGN_INCLUDE": str(pdk.design_include),
-        "MODEL_LIB": str(pdk.model_lib),
-        "LDO_NETLIST": str(netlist),
-        "MOS_CORNER": mos, "RES_CORNER": res, "BJT_CORNER": bjt,
-        "DIODE_CORNER": diode, "MOSCAP_CORNER": moscap, "MIMCAP_CORNER": mimcap,
-        "TEMP_C": f"{pvt.temp_c:g}",
-        "VIN_V": f"{pvt.vdd:g}",
+    return deck.render_file(TEMPLATE, {
+        **deck.pvt_subs(pdk, pvt.corner, pvt.temp_c, pvt.vdd, netlist),
         "CORNER_ID": pvt.corner_id,
         "CORNER_NAME": pvt.corner.name,
         "AC_DEC": str(ac_dec),
@@ -521,12 +512,7 @@ def render_deck(pvt, pdk, *, phase: str, variant: str, netlist: Path,
         "SSR_ALTER": ssr_alter,
         "SSR_LIST": ssr_list,
         "DC_SEED": dc_seed,
-    }
-    text = TEMPLATE.read_text()
-    missing = {m for m in TOKEN_RE.findall(text) if m not in subs}
-    if missing:
-        raise SystemExit(f"template has unsubstituted tokens: {sorted(missing)}")
-    return TOKEN_RE.sub(lambda m: subs[m.group(1)], text)
+    })
 
 
 def run_point(pvt, pdk, *, phase: str, variant: str, netlist: Path, ceffs, esrs,
@@ -857,26 +843,13 @@ class HovCurve:
 
 def render_handover_deck(pvt, pdk, *, variant: str, netlist: Path,
                          ssr_values=HANDOVER_SSR_V) -> str:
-    mos, res, bjt, diode, moscap, mimcap = pvt.corner.sections
-    subs = {
-        "DESIGN_INCLUDE": str(pdk.design_include),
-        "MODEL_LIB": str(pdk.model_lib),
-        "LDO_NETLIST": str(netlist),
-        "MOS_CORNER": mos, "RES_CORNER": res, "BJT_CORNER": bjt,
-        "DIODE_CORNER": diode, "MOSCAP_CORNER": moscap, "MIMCAP_CORNER": mimcap,
-        "TEMP_C": f"{pvt.temp_c:g}",
-        "VIN_V": f"{pvt.vdd:g}",
+    return deck.render_file(HANDOVER_TEMPLATE, {
+        **deck.pvt_subs(pdk, pvt.corner, pvt.temp_c, pvt.vdd, netlist),
         "CORNER_ID": pvt.corner_id,
         "CORNER_NAME": pvt.corner.name,
         "VARIANT": variant,
         "SSR_LIST": " ".join(f"{v:g}" for v in ssr_values),
-    }
-    text = HANDOVER_TEMPLATE.read_text()
-    missing = {m for m in TOKEN_RE.findall(text) if m not in subs}
-    if missing:
-        raise SystemExit(
-            f"hand-over template has unsubstituted tokens: {sorted(missing)}")
-    return TOKEN_RE.sub(lambda m: subs[m.group(1)], text)
+    }, source="hand-over template")
 
 
 def run_handover(pvt, pdk, *, variant: str, netlist: Path, workdir: Path,
@@ -1594,14 +1567,9 @@ def main() -> int:
     except Exception as exc:  # pragma: no cover - environment problem
         print(f"FATAL: {exc}", file=sys.stderr)
         return 3
-    check = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "design" / "netlist.py"), "--check"],
-        capture_output=True, text=True,
-    )
-    if check.returncode != 0:
-        print("FATAL: design/netlist/*.spice is stale vs the schematics:",
-              file=sys.stderr)
-        print(check.stdout + check.stderr, file=sys.stderr)
+    stale = deck.require_fresh_netlists()
+    if stale:
+        print(stale, file=sys.stderr)
         return 3
 
     corners = resolve_corners(args.corners)

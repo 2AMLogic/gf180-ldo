@@ -61,7 +61,6 @@ import csv
 import datetime as _dt
 import math
 import os
-import re
 import shutil
 import socket
 import subprocess
@@ -77,7 +76,7 @@ LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 sys.path.insert(0, str(HERE))  # sibling klt_run: sweep.py is also loaded by path
-from harness import klt_grid  # noqa: E402
+from harness import deck, klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
@@ -213,8 +212,6 @@ F_STOP = "1e9"
 #      setup around them, not by the AC points. See "Sweep resolution" in
 #      sim/loop-stability/README.md.
 AC_DEC = "400"
-
-TOKEN_RE = re.compile(r"@([A-Z0-9_]+)@")
 
 
 # ---------------------------------------------------------------------------
@@ -392,22 +389,10 @@ def dc_seed_lines(pvt) -> str:
 
 
 def render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec, dc_seed="") -> str:
-    corner = pvt.corner
-    mos, res, bjt, diode, moscap, mimcap = corner.sections
-    subs = {
-        "DESIGN_INCLUDE": str(pdk.design_include),
-        "MODEL_LIB": str(pdk.model_lib),
-        "LDO_NETLIST": str(LDO_NETLIST),
-        "MOS_CORNER": mos,
-        "RES_CORNER": res,
-        "BJT_CORNER": bjt,
-        "DIODE_CORNER": diode,
-        "MOSCAP_CORNER": moscap,
-        "MIMCAP_CORNER": mimcap,
-        "TEMP_C": f"{pvt.temp_c:g}",
-        "VIN_V": f"{pvt.vdd:g}",
+    return deck.render_file(TEMPLATE, {
+        **deck.pvt_subs(pdk, pvt.corner, pvt.temp_c, pvt.vdd, LDO_NETLIST),
         "CORNER_ID": pvt.corner_id,
-        "CORNER_NAME": corner.name,
+        "CORNER_NAME": pvt.corner.name,
         "AC_DEC": str(ac_dec),
         "F_START": F_START,
         "F_STOP": F_STOP,
@@ -415,12 +400,7 @@ def render_deck(pvt, pdk, iloads, ceffs, esrs, ac_dec, dc_seed="") -> str:
         "CEFF_LIST": " ".join(f"{v:g}" for v in ceffs),
         "ESR_LIST": " ".join(f"{v:g}" for v in esrs),
         "DC_SEED": dc_seed,
-    }
-    text = TEMPLATE.read_text()
-    missing = {m for m in TOKEN_RE.findall(text) if m not in subs}
-    if missing:
-        raise SystemExit(f"template has unsubstituted tokens: {sorted(missing)}")
-    return TOKEN_RE.sub(lambda m: subs[m.group(1)], text)
+    })
 
 
 def run_point(pvt, pdk, iloads, ceffs, esrs, ac_dec, workdir: Path, logdir: Path,
@@ -890,15 +870,10 @@ def main() -> int:
         print(f"FATAL: {exc}", file=sys.stderr)
         return 3
 
-    # The committed netlist must be current with the schematic.
-    check = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "design" / "netlist.py"), "--check"],
-        capture_output=True, text=True,
-    )
-    if check.returncode != 0:
-        print("FATAL: design/netlist/ldo_core.spice is stale vs design/ldo_core.sch:",
-              file=sys.stderr)
-        print(check.stdout + check.stderr, file=sys.stderr)
+    # The committed netlists must be current with the schematics.
+    stale = deck.require_fresh_netlists()
+    if stale:
+        print(stale, file=sys.stderr)
         return 3
 
     corners = resolve_corners(args.corners)

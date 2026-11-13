@@ -72,6 +72,7 @@ sys.path.insert(0, str(LG_TB))
 
 import netlist_variants as nv  # noqa: E402
 import sweep  # noqa: E402
+from harness import deck  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.runner import ngspice_binary_sha256, ngspice_version  # noqa: E402
 
@@ -206,13 +207,9 @@ def main() -> int:
     dut_label = "dut-override" if dut_override is not None else variant
 
     pdk = find_pdk()
-    check = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "design" / "netlist.py"), "--check"],
-        capture_output=True, text=True)
-    if check.returncode != 0:
-        print("FATAL: design/netlist/*.spice is stale vs the schematics:",
-              file=sys.stderr)
-        print(check.stdout + check.stderr, file=sys.stderr)
+    stale = deck.require_fresh_netlists()
+    if stale:
+        print(stale, file=sys.stderr)
         return 3
 
     short = subprocess.run(

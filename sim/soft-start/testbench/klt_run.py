@@ -24,13 +24,13 @@ same backend. Output: ``sim/soft-start/corners/<record-id>/``.
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
+from harness import deck  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab, write_summary_csv  # noqa: E402
 
@@ -46,11 +46,12 @@ def body(configs) -> str:
     inst, tail = rest.split("*END-INSTANCE\n")
     blocks = []
     for k, (cout, esr, rload) in enumerate(configs, 1):
-        blocks.append(inst.replace("@K@", str(k)).replace("@COUT@", cout)
-                      .replace("@ESR@", esr).replace("@RLOAD@", rload))
-    text = "\n".join([kb.DESIGN_PARAMS, kb.WNFLAG, head + "".join(blocks) + tail])
-    assert not re.search(r"@[A-Z]+@", text), "unsubstituted token"
-    return text
+        blocks.append(deck.render(inst, {
+            "K": str(k), "COUT": cout, "ESR": esr, "RLOAD": rload,
+        }, source="klt_body.spice.in instance block"))
+    return deck.require_substituted(
+        "\n".join([kb.DESIGN_PARAMS, kb.WNFLAG, head + "".join(blocks) + tail]),
+        source="klt_body.spice.in")
 
 
 def measurements(n: int) -> list:

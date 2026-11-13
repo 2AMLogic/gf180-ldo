@@ -23,7 +23,7 @@ from pathlib import Path
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
-from harness import cli, corners, klt_grid, paths, report, runner, testbench  # noqa: E402
+from harness import cli, corners, deck, klt_grid, paths, report, runner, testbench  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
     parse_meas_lines,
@@ -2920,3 +2920,115 @@ class HostPathRedactionTests(unittest.TestCase):
         wt = Path(self.FAKE_HOME) / "repo" / ".loom" / "worktrees" / "issue-1" / "sim" / "a.log"
         self.assertEqual(paths.display_path(wt), "sim/a.log")
         self.assertEqual(paths.display_path(self.FAKE_HOME + "/elsewhere/b.log"), "<abs>/b.log")
+
+
+class DeckTemplateTests(unittest.TestCase):
+    """`harness.deck` -- the one @TOKEN@ renderer and its guard (issue #592)."""
+
+    def test_every_token_is_substituted(self):
+        text = "Vin VIN 0 DC @VIN_V@\n.temp @TEMP_C@\n"
+        self.assertEqual(
+            deck.render(text, {"VIN_V": "2.97", "TEMP_C": "-40"}),
+            "Vin VIN 0 DC 2.97\n.temp -40\n",
+        )
+
+    def test_a_token_with_no_substitution_is_fatal(self):
+        """The guard this module exists for.
+
+        Eight hand-rolled copies had drifted to three strengths; the two
+        narrowest (`@[A-Z_]+@`, `@[A-Z]+@`) would have let `@X1@` -- and in
+        one case `@A_B@` -- through to ngspice as literal deck text. One
+        pattern, at the strictest strength, catches both.
+        """
+        with self.assertRaises(SystemExit) as ctx:
+            deck.render("Rload @A_B@ @X1@ @ESR@\n", {"ESR": "0.1"})
+        self.assertIn("['A_B', 'X1']", str(ctx.exception))
+        self.assertNotIn("ESR", str(ctx.exception))
+
+    def test_the_failure_names_the_template_it_came_from(self):
+        with self.assertRaisesRegex(SystemExit, "hand-over template has unsub"):
+            deck.render("@NOPE@", {}, source="hand-over template")
+
+    def test_it_raises_rather_than_asserts(self):
+        """`assert` vanishes under `python -O`; a silently unguarded deck is
+        exactly the evidence defect this guard is for."""
+        src = Path(deck.__file__).read_text()
+        self.assertNotIn("assert ", src)
+
+    def test_a_bare_at_sign_survives(self):
+        # ngspice's own syntax: `alter @Vinj[acmag] = 1` is not an @TOKEN@.
+        text = "      alter @Vinj[acmag] = 1\n      alter @Iinj[acmag] = 0\n"
+        self.assertEqual(deck.render(text, {}), text)
+        self.assertEqual(deck.require_substituted(text), text)
+
+    def test_substitution_is_single_pass(self):
+        """A substituted *value* is emitted verbatim, never re-scanned --
+        so a value cannot smuggle in a token the guard already cleared."""
+        self.assertEqual(deck.render("@A@", {"A": "@B@", "B": "x"}), "@B@")
+
+    def test_require_substituted_guards_text_the_driver_assembled(self):
+        self.assertEqual(deck.require_substituted("* done\n"), "* done\n")
+        with self.assertRaisesRegex(SystemExit, r"\['K'\]"):
+            deck.require_substituted("Xi@K@ VOUT 0\n")
+
+    def test_render_file_reads_the_template(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpl = Path(tmp) / "tb.spice.in"
+            tmpl.write_text(".temp @TEMP_C@\n")
+            self.assertEqual(deck.render_file(tmpl, {"TEMP_C": "125"}), ".temp 125\n")
+
+    def test_pvt_subs_is_the_block_every_template_shares(self):
+        class FakePdk:
+            design_include = "/pdk/design.ngspice"
+            model_lib = "/pdk/sm141064.ngspice"
+
+        subs = deck.pvt_subs(FakePdk(), corners.CORNERS["ss"], -40.0, 2.97,
+                             "design/netlist/ldo_core.spice")
+        self.assertEqual(subs, {
+            "DESIGN_INCLUDE": "/pdk/design.ngspice",
+            "MODEL_LIB": "/pdk/sm141064.ngspice",
+            "LDO_NETLIST": "design/netlist/ldo_core.spice",
+            "MOS_CORNER": "ss", "RES_CORNER": "res_ss", "BJT_CORNER": "bjt_ss",
+            "DIODE_CORNER": "diode_ss", "MOSCAP_CORNER": "moscap_ss",
+            "MIMCAP_CORNER": "mimcap_ss",
+            "TEMP_C": "-40", "VIN_V": "2.97",
+        })
+        # Section order is corners.Corner.sections' order, not alphabetical:
+        # mixing the six up would silently simulate the wrong corner.
+        self.assertEqual(
+            tuple(subs[k] for k in ("MOS_CORNER", "RES_CORNER", "BJT_CORNER",
+                                    "DIODE_CORNER", "MOSCAP_CORNER", "MIMCAP_CORNER")),
+            corners.CORNERS["ss"].sections,
+        )
+
+
+class NetlistFreshnessPreflightTests(unittest.TestCase):
+    """`deck.require_fresh_netlists` -- one preflight for four drivers (#592)."""
+
+    def _run(self, returncode, stdout="", stderr=""):
+        proc = unittest.mock.Mock(returncode=returncode, stdout=stdout, stderr=stderr)
+        with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+            return deck.require_fresh_netlists(), run
+
+    def test_current_netlists_pass_silently(self):
+        result, run = self._run(0)
+        self.assertIsNone(result)
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[0], sys.executable)
+        self.assertTrue(argv[1].endswith("design/netlist.py"))
+        self.assertEqual(argv[2], "--check")
+
+    def test_a_stale_netlist_returns_the_whole_diagnostic(self):
+        result, _ = self._run(1, stdout="error_amp.spice differs\n", stderr="erc\n")
+        self.assertIn("design/netlist.py --check failed", result)
+        self.assertIn("error_amp.spice differs", result)
+        self.assertIn("erc", result)
+
+    def test_the_message_is_not_scoped_to_one_cell(self):
+        """`design/netlist.py --check` verifies every `design/*.sch` cell, so
+        naming `ldo_core` alone reported a stale sub-cell under the wrong
+        file (the drift this consolidation fixes)."""
+        result, _ = self._run(1, stdout="error_amp.spice differs\n")
+        self.assertIn("design/netlist/*.spice", result)
+        self.assertIn("design/*.sch", result)
+        self.assertNotIn("design/ldo_core.sch", result)

@@ -50,7 +50,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import re
 import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -60,6 +59,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
+from harness import deck  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
 
 # loop-stability's klt_run is a sibling bench's module of the same file name, so
@@ -122,10 +122,7 @@ class SSJob(kb.Job):
 
 
 def _fill(template: str, subs: dict) -> str:
-    text = (HERE / template).read_text()
-    for tok, val in subs.items():
-        text = text.replace(f"@{tok}@", val)
-    assert not re.search(r"@[A-Z_]+@", text), "unsubstituted token"
+    text = deck.render_file(HERE / template, subs, source=template)
     return "\n".join([kb.DESIGN_PARAMS, kb.WNFLAG, text])
 
 
