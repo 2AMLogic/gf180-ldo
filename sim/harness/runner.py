@@ -998,10 +998,6 @@ def parse_measurements_checked(text: str) -> tuple[dict[str, float], list[str]]:
     return found, nonfinite
 
 
-def parse_measurements(text: str) -> dict[str, float]:
-    return parse_measurements_checked(text)[0]
-
-
 def _partial_output(*streams: str | bytes | None) -> str:
     """Join the (possibly bytes/None) partial streams of a killed subprocess."""
     parts = []
