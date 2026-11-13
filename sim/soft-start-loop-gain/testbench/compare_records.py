@@ -5,9 +5,11 @@ Same job, same semantics and -- where it matters -- the same code as
 ``sim/loop-stability/testbench/compare_records.py``: the numeric parsing
 (``inf`` in the gain-margin column is a *value*, "no -180 deg crossing in
 band", not a parse failure), the ``inf - inf == 0`` delta rule, and the
-``resurgence_db`` AC_DEC-comparability tolerance issue #69 established are all
-imported from it rather than restated, so the two experiments cannot disagree
-about what a delta means.
+``resurgence_db`` AC_DEC-comparability tolerance issue #69 established, the
+delta-CSV writer that is ``_num``'s inverse, and the median/p99 summary
+statistics are all imported from it rather than restated, so the two
+experiments cannot disagree about what a delta means or about how one is
+written to a committed record.
 
 What is different is the join key. A point of this experiment is not
 (corner, load, cap, ESR) but
@@ -31,9 +33,7 @@ no common matrix, 3 a usage/environment problem.
 from __future__ import annotations
 
 import argparse
-import csv
 import importlib.util
-import math
 import sys
 from pathlib import Path
 
@@ -120,28 +120,18 @@ def main() -> int:
         print(f"    ... and {len(flips) - 10} more")
     print()
 
-    def spread(field: str, label: str, unit: str, nd: int = 3) -> None:
-        vals = [(abs(r[field]), r) for r in rows if r[field] is not None]
-        n_none = len(rows) - len(vals)
-        if not vals:
-            print(f"  {label}: no comparable points")
-            return
-        vals.sort(key=lambda t: t[0])
-        worst = vals[-1][1]
-        print(f"  {label}: median {vals[len(vals) // 2][0]:.{nd}f} {unit}, "
-              f"p99 {vals[int(0.99 * (len(vals) - 1))][0]:.{nd}f} {unit}, "
-              f"max {vals[-1][0]:.{nd}f} {unit} at {worst['variant']}/"
-              f"{worst['phase']}/ssr={worst['ssr_cmd']} {worst['corner_id']} / "
-              f"{worst['ceff_uf']}uF / {worst['esr_ohm']}ohm"
-              + ("" if not n_none else f"  ({n_none} points not comparable)"))
+    def where(r: dict) -> str:
+        """Name a point of THIS experiment's matrix for the summary lines."""
+        return (f"{r['variant']}/{r['phase']}/ssr={r['ssr_cmd']} "
+                f"{r['corner_id']} / {r['ceff_uf']}uF / {r['esr_ohm']}ohm")
 
     print("Per-point movement (head - baseline), over the common matrix:")
-    spread("d_pm", "|delta phase margin| ", "deg")
-    spread("d_gm", "|delta gain margin|  ", "dB")
-    spread("d_f0_pct", "|delta crossover|    ", "%")
-    spread("d_res", "|delta resurgence|   ", "dB")
-    spread("d_vout", "|delta landed VOUT|  ", "V", nd=5)
-    spread("d_iinj", "|delta injection I|  ", "uA", nd=4)
+    lsc.spread(rows, "d_pm", "|delta phase margin| ", "deg", where)
+    lsc.spread(rows, "d_gm", "|delta gain margin|  ", "dB", where)
+    lsc.spread(rows, "d_f0_pct", "|delta crossover|    ", "%", where)
+    lsc.spread(rows, "d_res", "|delta resurgence|   ", "dB", where)
+    lsc.spread(rows, "d_vout", "|delta landed VOUT|  ", "V", where, nd=5)
+    lsc.spread(rows, "d_iinj", "|delta injection I|  ", "uA", where, nd=4)
 
     res_deltas = [abs(r["d_res"]) for r in rows if r["d_res"] is not None]
     if res_deltas:
@@ -169,17 +159,7 @@ def main() -> int:
 
     if args.write_delta:
         out = RECORDS / f"{args.write_delta}-delta.csv"
-        cols = list(rows[0].keys())
-        with out.open("w", newline="") as fh:
-            w = csv.writer(fh)
-            w.writerow(cols)
-            for r in rows:
-                w.writerow([
-                    "" if r[c] is None
-                    else ("inf" if isinstance(r[c], float) and math.isinf(r[c])
-                          else (f"{r[c]:.6g}" if isinstance(r[c], float) else r[c]))
-                    for c in cols
-                ])
+        lsc.write_delta_csv(rows, out)
         print(f"\ndelta csv : {out}")
     return 0
 

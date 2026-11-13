@@ -43,6 +43,7 @@ import argparse
 import csv
 import math
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -122,6 +123,59 @@ def fmt(v: float | None, nd: int = 2) -> str:
     if math.isinf(v):
         return "inf"
     return f"{v:.{nd}f}"
+
+
+def write_delta_csv(rows: list[dict], out: Path) -> None:
+    """Write the per-point delta rows to ``out`` as the committed delta CSV.
+
+    This is the inverse of :func:`_num` and is shared for the same reason
+    ``_num`` is: it is what decides that an infinite gain margin is written
+    ``inf``, an absent quantity an empty cell, and any other float ``%.6g``.
+    Its output is append-only evidence under ``records/``, so the experiments
+    that write it must not be able to drift apart on how a cell is spelled.
+    """
+    cols = list(rows[0].keys())
+    with out.open("w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(cols)
+        for r in rows:
+            w.writerow([
+                "" if r[c] is None
+                else ("inf" if isinstance(r[c], float) and math.isinf(r[c])
+                      else (f"{r[c]:.6g}" if isinstance(r[c], float) else r[c]))
+                for c in cols
+            ])
+
+
+def spread(
+    rows: list[dict],
+    field: str,
+    label: str,
+    unit: str,
+    where: Callable[[dict], str],
+    nd: int = 3,
+) -> None:
+    """Print median / p99 / max of ``|row[field]|`` over the comparable points.
+
+    Shared by every experiment that summarises a record-to-record comparison,
+    so "median" and "p99" cannot come to mean different indices in two scripts
+    whose summaries a reader expects to compare. ``where`` renders the worst
+    point in whatever coordinates the calling experiment uses. Points whose
+    delta is ``None`` are not comparable: they are excluded from the statistics
+    and counted in the line instead of being silently dropped.
+    """
+    vals = [(abs(r[field]), r) for r in rows if r[field] is not None]
+    n_none = len(rows) - len(vals)
+    if not vals:
+        print(f"  {label}: no comparable points")
+        return
+    vals.sort(key=lambda t: t[0])
+    worst = vals[-1][1]
+    med = vals[len(vals) // 2][0]
+    p99 = vals[int(0.99 * (len(vals) - 1))][0]
+    print(f"  {label}: median {med:.{nd}f} {unit}, p99 {p99:.{nd}f} {unit}, "
+          f"max {vals[-1][0]:.{nd}f} {unit} at {where(worst)}"
+          f"{'' if not n_none else f'  ({n_none} points not comparable)'}")
 
 
 def main() -> int:
@@ -209,26 +263,16 @@ def main() -> int:
     print(f"  FAIL -> PASS : {len(res_fail_to_pass)}")
     print()
 
-    def spread(field: str, label: str, unit: str, nd: int = 3) -> None:
-        vals = [(abs(r[field]), r) for r in rows if r[field] is not None]
-        n_none = len(rows) - len(vals)
-        if not vals:
-            print(f"  {label}: no comparable points")
-            return
-        vals.sort(key=lambda t: t[0])
-        worst = vals[-1][1]
-        med = vals[len(vals) // 2][0]
-        p99 = vals[int(0.99 * (len(vals) - 1))][0]
-        print(f"  {label}: median {med:.{nd}f} {unit}, p99 {p99:.{nd}f} {unit}, "
-              f"max {vals[-1][0]:.{nd}f} {unit} at {worst['corner_id']} / "
-              f"{worst['iload_ma']}mA / {worst['ceff_uf']}uF / {worst['esr_ohm']}ohm"
-              f"{'' if not n_none else f'  ({n_none} points not comparable)'}")
+    def where(r: dict) -> str:
+        """Name a point of THIS experiment's matrix for the summary lines."""
+        return (f"{r['corner_id']} / {r['iload_ma']}mA / "
+                f"{r['ceff_uf']}uF / {r['esr_ohm']}ohm")
 
     print("Per-point movement (head - baseline), over the common matrix:")
-    spread("d_pm", "|delta phase margin|", "deg")
-    spread("d_gm", "|delta gain margin| ", "dB")
-    spread("d_f0_pct", "|delta crossover|   ", "%")
-    spread("d_res", "|delta resurgence|  ", "dB")
+    spread(rows, "d_pm", "|delta phase margin|", "deg", where)
+    spread(rows, "d_gm", "|delta gain margin| ", "dB", where)
+    spread(rows, "d_f0_pct", "|delta crossover|   ", "%", where)
+    spread(rows, "d_res", "|delta resurgence|  ", "dB", where)
 
     res_deltas = [abs(r["d_res"]) for r in rows if r["d_res"] is not None]
     if res_deltas:
@@ -263,17 +307,7 @@ def main() -> int:
 
     if args.write_delta:
         out = RECORDS / f"{args.write_delta}-delta.csv"
-        cols = list(rows[0].keys())
-        with out.open("w", newline="") as fh:
-            w = csv.writer(fh)
-            w.writerow(cols)
-            for r in rows:
-                w.writerow([
-                    "" if r[c] is None
-                    else ("inf" if isinstance(r[c], float) and math.isinf(r[c])
-                          else (f"{r[c]:.6g}" if isinstance(r[c], float) else r[c]))
-                    for c in cols
-                ])
+        write_delta_csv(rows, out)
         print(f"\ndelta csv : {out}")
     return 0
 
