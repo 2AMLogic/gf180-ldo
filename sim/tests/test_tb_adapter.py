@@ -342,10 +342,16 @@ class StagedOutput(unittest.TestCase):
     start at all when its evidence could not be stored."""
 
     def setUp(self):
+        import shutil
         import tempfile
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         self.root = Path(td.name).resolve()
+        # `main` resolves its repo from __file__, so a staged run lands in this
+        # repo's own git-ignored sim/.work/. Clear it afterwards so the tests
+        # leave no scratch behind.
+        self.addCleanup(shutil.rmtree, SIM_DIR / ".work" / ".stage" / "line-regulation",
+                        ignore_errors=True)
 
     def test_stage_dir_is_under_the_gitignored_work_tree(self):
         d = ta.stage_corner_dir(self.root, "line-regulation", "r1")
@@ -370,7 +376,11 @@ class StagedOutput(unittest.TestCase):
         real = klt_ab.run_ab
         klt_ab.run_ab = fake_run_ab
         self.addCleanup(lambda: setattr(klt_ab, "run_ab", real))
-        rc = ta.main(SIM_DIR / "line-regulation" / "testbench", "doc", argv, preflight=preflight)
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = ta.main(SIM_DIR / "line-regulation" / "testbench", "doc", argv,
+                         preflight=preflight)
         return rc, calls
 
     def test_a_run_writes_into_staging_not_into_sim(self):
@@ -382,8 +392,6 @@ class StagedOutput(unittest.TestCase):
         self.assertIn("/sim/.work/.stage/", dest.as_posix())
         self.assertEqual(dest, ta.stage_corner_dir(SIM_DIR.parent, "line-regulation", "zz-stage-test"))
         self.assertFalse((SIM_DIR / "line-regulation" / "corners" / "zz-stage-test").exists())
-        import shutil
-        shutil.rmtree(SIM_DIR.parent / "sim/.work/.stage/line-regulation", ignore_errors=True)
 
     def test_an_unstorable_run_exits_10_before_simulating(self):
         from harness import evidence_store as es
@@ -404,8 +412,6 @@ class StagedOutput(unittest.TestCase):
         rc, calls = self._run(["--record-id", "zz-only", "--only", "tt,27,3.30"], explode)
         self.assertEqual(rc, 0)
         self.assertIn("/sim/.work/.stage/", Path(calls["dest"]).as_posix())
-        import shutil
-        shutil.rmtree(SIM_DIR.parent / "sim/.work/.stage/line-regulation", ignore_errors=True)
 
     def test_a_record_id_already_committed_is_refused(self):
         existing = sorted((SIM_DIR / "line-regulation" / "corners").iterdir())[0].name

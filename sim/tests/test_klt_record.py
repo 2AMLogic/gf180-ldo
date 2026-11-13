@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import shutil
 import sys
@@ -148,7 +150,8 @@ class StoreRun(unittest.TestCase):
         self._patch(es, "put_files",
                     lambda files, root, **_: self._put_files(
                         files, root, run=fake_klt(self.objects, **kw)))
-        return kr.main([SLUG, "--record-id", self.RID])
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return kr.main([SLUG, "--record-id", self.RID])
 
     def test_bytes_are_stored_and_only_the_kept_files_are_committed(self):
         self.assertEqual(self._mint(), 0)
