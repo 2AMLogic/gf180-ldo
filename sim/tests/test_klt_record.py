@@ -138,12 +138,16 @@ class StoreRun(unittest.TestCase):
         setattr(mod, name, value)
         self.addCleanup(lambda: setattr(mod, name, old))
 
+    #: the pristine writer, captured before any patch, so a retry in the same
+    #: test is not routed through the previous attempt's failing stub.
+    _put_files = staticmethod(es.put_files)
+
     def _mint(self, **kw):
         # `store_files` resolves `put_files` from the module at call time, so
         # patching it here routes every put through the shared `fake_klt` stub.
-        orig = es.put_files
         self._patch(es, "put_files",
-                    lambda files, root, **_: orig(files, root, run=fake_klt(self.objects, **kw)))
+                    lambda files, root, **_: self._put_files(
+                        files, root, run=fake_klt(self.objects, **kw)))
         return kr.main([SLUG, "--record-id", self.RID])
 
     def test_bytes_are_stored_and_only_the_kept_files_are_committed(self):
@@ -185,6 +189,16 @@ class StoreRun(unittest.TestCase):
         self.assertFalse((self.exp / "corners").exists())
         self.assertFalse((self.exp / "netlist-snapshots").exists())
         self.assertTrue((self.stage / "new" / "tt_27c_3.30v.log").is_file())
+
+    def test_a_retry_after_a_store_failure_succeeds(self):
+        # The first attempt leaves a staged netlist snapshot behind; the retry
+        # must not be refused by it (the committed tree is still untouched).
+        self.assertEqual(self._mint(fail="broker_unreachable"), kr.EXIT_NOT_STORED)
+        self.assertTrue((ta.stage_experiment_dir(self.repo, SLUG)
+                         / "netlist-snapshots" / f"{self.RID}.spice").is_file())
+        self.assertEqual(self._mint(), 0)
+        self.assertTrue((self.exp / "records" / f"{self.RID}.md").is_file())
+        self.assertTrue((self.exp / "netlist-snapshots" / f"{self.RID}.spice").is_file())
 
     def test_minting_the_same_record_id_twice_is_refused(self):
         self.assertEqual(self._mint(), 0)

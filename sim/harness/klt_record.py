@@ -310,6 +310,12 @@ def main(argv=None) -> int:
     # leaves sim/ and manifests/ exactly as they were and keeps the staged
     # bytes, so the run is never lost and never silently committed raw.
     files, kept = store.split_batch_run(corner_dir, f"sim/{slug}/corners/{rid}")
+    # The staged snapshot is scratch under sim/.work/, not evidence: clear a
+    # copy left by an earlier failed mint so a retry is not refused by
+    # `RecordExists` on it. The committed one is still never overwritten --
+    # `write_netlist_snapshot` guards `sim/<slug>/netlist-snapshots/`, and
+    # `install_kept` and `store_files` guard everything else under `sim/`.
+    (stage_exp / report.SNAPSHOT_DIR / f"{rid}.spice").unlink(missing_ok=True)
     try:
         snapshot = report.write_netlist_snapshot(tb, stage_exp, rid, repo_root=REPO)
         mpath = store.store_files(files, repo_root=REPO, bench=slug, rid=rid, summary_text=text,
