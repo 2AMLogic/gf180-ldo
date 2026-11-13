@@ -19,6 +19,22 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.pvt_log import grid_rollup, report_minmax, write_corner_csv  # noqa: E402
 
+# The ratified bounds for the two spec rows this bench grades, as amended by
+# DR-0005 (ratified 2026-09-15): README.md's "Current limit" row (62-95 mA
+# over PVT untrimmed) and its "Thermal" row (<= 346 mW into a Vout = 0 short
+# at the untrimmed ceiling). DR-0005 superseded the 65-80 mA / <= 290 mW
+# window these checks were originally written against.
+#
+# klt_run.py's grade() and its declared `limits` import these, so this bench's
+# two graders for the same row cannot drift apart again (they had: the script
+# kept printing the superseded window while grade() applied the ratified one).
+#
+# Committed records under sim/current-limit/records/ are append-only evidence:
+# a record written before DR-0005 states the window it was graded against in
+# its own text and keeps being read against that window, not against these.
+ILIM_WINDOW_MA = (62.0, 95.0)
+PSHORT_MAX_MW = 346.0
+
 SCALARS = ["m_vout_0ma", "m_vout_25ma", "m_vout_50ma", "m_ivin_0ma_ua",
            "m_iload_25ma", "m_iload_50ma",
            "m_isns_mv_50ma", "m_vth_mv_50ma", "m_sense_margin_pct",
@@ -52,6 +68,7 @@ def checks(rows) -> dict:
     """The summary lines' numbers: the onset range at Vout = 1.764 V and the
     corner lists each check names."""
     lim = [vals["m_ilim_1764_ma"] for *_, vals in rows]
+    lo, hi = ILIM_WINDOW_MA
     return {
         "lim_min": min(lim),
         "lim_max": max(lim),
@@ -59,8 +76,10 @@ def checks(rows) -> dict:
                                      if vals["m_ilim_1764_ma"] <= 50.0],
         "outside_window_at_50ma": [cid for cid, *_, vals in rows
                                    if not (1.764 <= vals["m_vout_50ma"] <= 1.836)],
-        "outside_65_80ma": [cid for cid, *_, vals in rows
-                            if not (65.0 <= vals["m_ilim_1764_ma"] <= 80.0)],
+        "outside_ratified_window": [cid for cid, *_, vals in rows
+                                    if not (lo <= vals["m_ilim_1764_ma"] <= hi)],
+        "above_thermal_ceiling": [cid for cid, *_, vals in rows
+                                  if vals["m_pshort_mw"] > PSHORT_MAX_MW],
     }
 
 
@@ -85,9 +104,13 @@ def main() -> None:
     print(f"  corners where the limit engages at or below 50 mA: {bad or 'none'}")
     oos = ck["outside_window_at_50ma"]
     print(f"  corners outside the +/-2% window at 50 mA load:     {oos or 'none'}")
-    ratified = ck["outside_65_80ma"]
-    print(f"  corners outside the ratified 65-80 mA window:       "
-          f"{len(ratified)}/{len(rows)}")
+    lo_w, hi_w = ILIM_WINDOW_MA
+    ratified = ck["outside_ratified_window"]
+    label = f"corners outside the ratified {lo_w:g}-{hi_w:g} mA window:"
+    print(f"  {label:<52}{len(ratified)}/{len(rows)}")
+    hot = ck["above_thermal_ceiling"]
+    label = f"corners above the ratified {PSHORT_MAX_MW:g} mW short ceiling:"
+    print(f"  {label:<52}{len(hot)}/{len(rows)}")
 
 
 if __name__ == "__main__":
