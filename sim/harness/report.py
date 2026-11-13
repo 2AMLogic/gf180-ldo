@@ -1038,8 +1038,10 @@ def write_record(record: dict, experiment_dir: Path) -> Path:
     return path
 
 
-def parse_row_fields(line: str, fields: tuple[str, ...]) -> dict[str, str]:
-    """Parse one ``ROW k=v k=v ...`` line into its fields.
+def parse_row_fields(
+    line: str, fields: tuple[str, ...], tag: str = "ROW"
+) -> dict[str, str]:
+    """Parse one ``<tag> k=v k=v ...`` line into its fields.
 
     The deck writes key=value rather than bare positional fields for a
     load-bearing reason: a failed ``meas`` (no such crossing in band) leaves
@@ -1054,20 +1056,25 @@ def parse_row_fields(line: str, fields: tuple[str, ...]) -> dict[str, str]:
     ``fields`` is the caller's own expected-field tuple (e.g. its module's
     ``ROW_FIELDS``) rather than something this module hardcodes, since
     different experiments' decks echo different field lists.
+
+    ``tag`` is the leading word of the line kind being parsed, used only to
+    name it in the error messages (the deck's hand-over lines are ``HOV``,
+    not ``ROW``). It defaults to ``ROW`` so every pre-existing message is
+    unchanged; the parsing and strictness do not depend on it.
     """
     result: dict[str, str] = {}
     for tok in line.split()[1:]:
         key, sep, val = tok.partition("=")
         if not sep:
-            raise ValueError(f"ROW field {tok!r} is not key=value: {line!r}")
+            raise ValueError(f"{tag} field {tok!r} is not key=value: {line!r}")
         if key in result:
-            raise ValueError(f"ROW field {key!r} repeated: {line!r}")
+            raise ValueError(f"{tag} field {key!r} repeated: {line!r}")
         result[key] = val
     missing = [k for k in fields if k not in result]
     unknown = [k for k in result if k not in fields]
     if missing or unknown:
         raise ValueError(
-            f"ROW line does not match the deck's field list "
+            f"{tag} line does not match the deck's field list "
             f"(missing {missing}, unknown {unknown}): {line!r}"
         )
     return result
