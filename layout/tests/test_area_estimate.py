@@ -106,28 +106,19 @@ class NetlistParseTests(unittest.TestCase):
 
 
 class DividerMatchingTests(unittest.TestCase):
-    """floorplan.md §4.1's divider plan, against #9's offset budget."""
+    """floorplan.md §4.1's divider plan, against #9's offset budget.
 
-    def test_unit_string_reproduces_the_ratified_divider_value(self):
-        total_k = (ae.DIV_UNITS_TOP + ae.DIV_UNITS_BOT) * ae.DIV_UNIT_KOHM
-        self.assertEqual(total_k, 900.0, "DR-0001's ~2 uA preload must not move")
-        self.assertEqual(ae.DIV_UNITS_TOP * ae.DIV_UNIT_KOHM, 300.0)
-        self.assertEqual(ae.DIV_UNITS_BOT * ae.DIV_UNIT_KOHM, 600.0)
+    The plan's own numbers -- the 900 k string, its 300 k / 600 k tap and the
+    common centroid both legs land on -- are checked against
+    `layout/divider/plan.py` in `test_divider_layout.py`, which is where the
+    arrangement lives. What is left here is the one thing this module adds:
+    that the mismatch computed from that arrangement clears #9's budget.
+    """
 
     def test_planned_geometry_beats_the_budgeted_divider_term(self):
         """#9 budgets 3.36 mV (3 sigma); the planned array must not be worse."""
         _, sigma3 = ae.divider_field()
         self.assertLess(sigma3, 3.36)
-
-    def test_unit_count_admits_an_exact_common_centroid(self):
-        """A 1:2 ratio over 18 units has to place both centroids at the middle."""
-        n = ae.DIV_UNITS_TOP + ae.DIV_UNITS_BOT
-        top = [3 * i + 2 for i in range(ae.DIV_UNITS_TOP)]  # B T B repeating
-        bot = [p for p in range(1, n + 1) if p not in top]
-        self.assertEqual(len(bot), ae.DIV_UNITS_BOT)
-        middle = (n + 1) / 2
-        self.assertAlmostEqual(sum(top) / len(top), middle)
-        self.assertAlmostEqual(sum(bot) / len(bot), middle)
 
 
 class InputPairCentroidTests(unittest.TestCase):
