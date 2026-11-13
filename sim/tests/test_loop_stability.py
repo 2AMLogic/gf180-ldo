@@ -197,7 +197,11 @@ class TestRowParsing(unittest.TestCase):
     def test_every_rejection_still_names_the_ROW_line(self):
         """`harness.report.parse_row_fields()` takes a `tag` naming the line
         kind (the soft-start deck's hand-over lines are `HOV`). This deck does
-        not pass one, so every message it raises must still read `ROW`."""
+        not pass one, so every message it raises must still *begin* with
+        `ROW`. Assert on the prefix, not containment: every message ends with
+        the echoed line, which itself starts with `ROW`, so `assertIn` would
+        hold for any tag at all and could not catch the default being
+        changed or dropped."""
         for bad in ("ROW 0.0001 3.3e-07 0.5",                    # positional
                     self.FULL.replace(" resurgence_db=24.4", ""),  # missing
                     self.FULL + " nonsense=1",                   # unknown
@@ -205,7 +209,8 @@ class TestRowParsing(unittest.TestCase):
             with self.subTest(line=bad):
                 with self.assertRaises(ValueError) as cm:
                     sweep.parse_row_fields(bad)
-                self.assertIn("ROW", str(cm.exception))
+                msg = str(cm.exception)
+                self.assertTrue(msg.startswith("ROW "), msg)
 
     def test_a_zero_vout_or_dcgain_is_kept_not_turned_into_nan(self):
         # `_f(tok) or nan` treated a legitimate 0.0 as missing.

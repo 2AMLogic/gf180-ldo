@@ -897,8 +897,11 @@ class TestHovParsing(unittest.TestCase):
             with self.subTest(line=bad):
                 with self.assertRaises(ValueError) as cm:
                     sweep.parse_hov_fields(bad)
-                self.assertIn("HOV", str(cm.exception))
-                self.assertNotIn("ROW", str(cm.exception))
+                msg = str(cm.exception)
+                # prefix, not containment: the echoed line is part of every
+                # message, so `assertIn("HOV", ...)` would hold for any tag
+                self.assertTrue(msg.startswith("HOV "), msg)
+                self.assertNotIn("ROW", msg)
 
 
 class TestHandoverConsistencyCheck(unittest.TestCase):
