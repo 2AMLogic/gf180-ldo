@@ -41,12 +41,6 @@ STATUS_OVERRIDES = {
 }
 
 STATUSES = ("ratified", "proposed", "held", "superseded")
-ORDER_NOTE = {
-    "ratified": "in force",
-    "proposed": "not yet ratified",
-    "held": "ratification deferred",
-    "superseded": "replaced",
-}
 
 
 class ClassifyError(ValueError):

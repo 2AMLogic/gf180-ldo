@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-_WORKTREE_MARK = ".loom/worktrees"
 
 
 def _repo_root_for(path: Path) -> Path | None:
