@@ -133,6 +133,14 @@ subclasses that experiment's `Row` so `pm_deg` / `gm_db` / `passes` /
 `selftest.py` delegates the known-answer validation of the extraction to
 `sim/loop-stability/testbench/selftest.py` rather than re-implementing one.
 
+`selftest.py` applies that same delegate-rather-than-re-implement rule to
+*both* its halves (issue #593): part 1 is `sim/loop-stability/`'s
+known-answer test, part 2 is `sim/tests/test_soft_start_loop_gain.py`. So
+every simulator-free property of this experiment is asserted in exactly one
+place, and enforced twice from it — in CI via `sim/selftest.sh`, and before
+any sweep via `run.sh`'s call to `selftest.py`. Add a check to the unit-test
+module and both gates pick it up; there is no second copy to keep in step.
+
 ### 2. The `anchor` phase measures its own instrumentation
 
 Reaching `SSR` at all requires bringing it out as a port. That transform is
@@ -228,7 +236,8 @@ substitution machinery and this table row are both removed.
 The `binj` variant is the known answer for all of it: `Binj_ss` computes
 `I = max(0, (V(VREF) − V(SSR)) · 5 µA/V)` in closed form, so its measured
 transconductance, start current and release point have analytic values that
-`selftest.py` checks the metric code against before any sweep runs.
+`sim/tests/test_soft_start_loop_gain.py` checks the metric code against — in
+CI, and again before any sweep through `selftest.py`'s part 2.
 
 ## The injection current is derived, not measured
 
@@ -365,7 +374,9 @@ sim/soft-start-loop-gain/
     tb_ss_handover.spice.in    the DC hand-over transfer deck template
     sweep.py                   the driver: grid, variants, landing rule, record
     netlist_variants.py        the DUT netlist transforms (SSR port, A/B, AC-only removals)
-    selftest.py                validates the method before any sweep runs
+    selftest.py                the pre-sweep gate: delegates part 1 to
+                               sim/loop-stability/testbench/selftest.py and
+                               part 2 to sim/tests/test_soft_start_loop_gain.py
     compare_records.py         point-for-point diff of two records of this experiment
     run.sh                     the one-command entry point
   netlist-snapshots/

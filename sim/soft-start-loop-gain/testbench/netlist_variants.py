@@ -41,12 +41,14 @@ Five kinds of transform, each deliberately as small as it can be:
      comparison again, **but it is confounded by the DR-0024 cap resize**,
      which ``binj`` (frozen at ``bfc4a0a``) predates. There is no commit
      that has the cascoded element without the resize, so the confound is
-     NAMED in every record rather than removed. ``selftest.py`` asserts both
-     halves of this so a record cannot silently describe the wrong one.
+     NAMED in every record rather than removed.
+     ``sim/tests/test_soft_start_loop_gain.py``'s ``TestDutVariantAB``
+     asserts both halves of this so a record cannot silently describe the
+     wrong one.
 
    ``binj`` is kept regardless of any of that, because it is also the ideal,
-   closed-form-transfer variant ``selftest.py`` and the hand-over deck check
-   the metric code against.
+   closed-form-transfer variant ``sim/tests/test_soft_start_loop_gain.py``
+   and the hand-over deck check the metric code against.
 
 3. **AC-open sensitivity**: a named device's drain is moved onto a private
    node and reconnected through a 1 GH inductor. At DC an inductor is a
@@ -76,8 +78,10 @@ Five kinds of transform, each deliberately as small as it can be:
 
 Every transform is a pure text operation on the netlist, asserts that it
 matched exactly what it expected to match, and raises rather than silently
-producing a netlist that is not what the caller asked for. ``selftest.py``
-and ``sim/tests/test_soft_start_loop_gain.py`` exercise all five.
+producing a netlist that is not what the caller asked for.
+``sim/tests/test_soft_start_loop_gain.py`` exercises all five -- in CI, and
+again before any sweep, since ``selftest.py`` delegates its part 2 to that
+module rather than restating it (issue #593).
 """
 
 from __future__ import annotations
