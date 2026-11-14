@@ -44,6 +44,7 @@ sys.path.insert(0, str(SIM_DIR))
 _TB = SIM_DIR / "soft-start-loop-gain" / "testbench"
 sys.path.insert(0, str(_TB))
 import netlist_variants as nv  # noqa: E402
+from harness import klt_grid  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("ss_loop_gain_sweep", _TB / "sweep.py")
@@ -1288,6 +1289,36 @@ class TestRecordIsAppendOnly(unittest.TestCase):
         src = (_TB / "sweep.py").read_text()
         self.assertIn("write_markdown_record(record_id, md, records_dir)", src)
         self.assertNotIn(".write_text(md)", src)
+
+
+class TestSharedLocalGridFlags(unittest.TestCase):
+    """The local-grid CLI block comes from ``harness.klt_grid`` (issue #621).
+
+    Static source checks live in ``test_harness.LocalGridCliTests``; this one
+    drives the sweep's *real* parser, so a flag the dedup dropped or renamed
+    fails here rather than at the top of someone's PVT run.
+    """
+
+    def test_every_grid_flag_the_sweep_listed_before_is_still_there(self):
+        args = sweep.build_arg_parser().parse_args([])
+        self.assertEqual(
+            (args.backend, args.in_flight, args.jobs, args.no_write,
+             args.subset_reason, args.supersedes),
+            (None, 6, klt_grid.DEFAULT_JOBS, False, "", ""))
+
+    def test_the_bench_specific_backend_clause_survived_the_move(self):
+        text = " ".join(sweep.build_arg_parser().format_help().split())
+        self.assertIn("each (variant, phase, C_eff, ESR) configuration is a "
+                      "`klt sim` request", text)
+        self.assertIn("the DC hand-over transfer is one `op` request per "
+                      "variant", text)
+
+    def test_the_bench_keeps_its_own_flags_out_of_the_shared_block(self):
+        text = sweep.build_arg_parser().format_help()
+        for flag in ("--variants", "--phases", "--skip-crosscheck",
+                     "--skip-handover", "--explore", "--ac-dec", "--author"):
+            self.assertIn(flag, text)
+
 
 
 if __name__ == "__main__":

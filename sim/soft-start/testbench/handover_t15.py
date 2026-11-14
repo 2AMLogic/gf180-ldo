@@ -72,7 +72,7 @@ sys.path.insert(0, str(LG_TB))
 
 import netlist_variants as nv  # noqa: E402
 import sweep  # noqa: E402
-from harness import deck  # noqa: E402
+from harness import deck, klt_grid  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.runner import ngspice_binary_sha256, ngspice_version  # noqa: E402
 
@@ -170,7 +170,10 @@ def main() -> int:
                           "LDO_NETLIST already allow. REQUIRES --no-write: an "
                           "overridden DUT is not a committed design state, so "
                           "it may not mint an evidence record")
-    ap.add_argument("-j", "--jobs", type=int, default=8)
+    ap.add_argument("-j", "--jobs", type=int, default=klt_grid.DEFAULT_JOBS,
+                    help=f"local worker threads (default: "
+                         f"{klt_grid.DEFAULT_JOBS}, deliberately not "
+                         "os.cpu_count(): dispatch workers are shared)")
     ap.add_argument("--record-id", default="")
     ap.add_argument("--no-write", action="store_true",
                     help="run but record no evidence: the per-corner logs and "

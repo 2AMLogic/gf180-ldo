@@ -139,11 +139,6 @@ PROCESS_CORNERS = ls.PROCESS_CORNERS       # tt ff ss fs sf res_ff res_ss
 TEMPS_C = ls.TEMPS_C
 NOMINAL_SUPPLY_V = ls.NOMINAL_SUPPLY_V
 
-#: Default local worker count, capped at 2 rather than ``os.cpu_count()``
-#: (issue #366): this driver runs on shared dispatch workers where a grid that
-#: defaults to every core starves other sweeps. Pass ``-j`` on a box you own.
-DEFAULT_JOBS = min(2, os.cpu_count() or 2)
-
 SUPPLY_TOL = ls.SUPPLY_TOL
 
 # Output-network configurations, all at the rated 50 mA load point. Two of
@@ -1394,32 +1389,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help=f"AC points per decade (default {AC_DEC}, "
                          "sim/loop-stability's own resolution policy, issue "
                          "#58 -- running below it needs --subset-reason)")
-    ap.add_argument("--backend", choices=("local", "batch", "klt-local"), default=None,
-                    help="where the grid runs (issues #366, #451). `batch`: "
-                         "each (variant, phase, C_eff, ESR) is a `klt sim` "
-                         "request over the PVT grid, submitted to the Spot "
-                         "batch fleet (klt_run.py), and the DC hand-over "
-                         "transfer is one `op` request per variant -- the "
-                         "default for any grid of more than one PVT point, as "
-                         "the dispatch-worker rule requires. `local` fans "
-                         "ngspice out on THIS host and must be passed "
-                         "explicitly for more than one PVT point. `klt-local` "
-                         "runs the same `klt sim` requests as `batch` but "
-                         "locally, one at a time, for a single-PVT-point "
-                         "batch-vs-local check only. A single-PVT run (e.g. "
-                         "--explore) is `local` without the flag. A failed "
-                         "batch submit is an error; it never falls back to a "
-                         "local grid.")
-    ap.add_argument("--in-flight", type=int, default=6,
-                    help="with --backend batch, how many requests are "
-                         "submitted at once (default: 6; the fleet's own "
-                         "concurrency cap re-queues the rest)")
-    ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS,
-                    help=f"local worker threads (default: {DEFAULT_JOBS}, "
-                         "deliberately not os.cpu_count(): dispatch workers "
-                         "are shared). Only meaningful with --backend local.")
-    ap.add_argument("--no-write", action="store_true",
-                    help="run and report, write no record (debugging)")
+    klt_grid.add_grid_args(
+        ap, batch_unit="(variant, phase, C_eff, ESR) configuration",
+        batch_extra=", and the DC hand-over transfer is one `op` request per "
+                    "variant")
     ap.add_argument("--explore", action="store_true",
                     help="tt/27C/3.3V only; implies --no-write")
     ap.add_argument("--skip-crosscheck", action="store_true",
@@ -1429,10 +1402,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="do not run the dense DC hand-over transfer sweep "
                          "(implies the record cannot report the injection "
                          "element's transfer, only its margins)")
-    ap.add_argument("--subset-reason", default="",
-                    help="required (and copied into the record) if the grid is "
-                         "narrower than the CLAUDE.md-mandated PVT matrix")
-    ap.add_argument("--supersedes", default="")
     ap.add_argument("--author",
                     default=os.environ.get("SS_LOOP_GAIN_AUTHOR",
                                            "agent-builder (issue #196)"))
