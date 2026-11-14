@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import dataclasses
 import datetime
@@ -2870,6 +2871,95 @@ class KltGridTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()) as err:
             self.assertIsNone(klt_grid.select_backend("klt-local", 4))
         self.assertIn("FATAL: --backend klt-local", err.getvalue())
+
+
+class LocalGridCliTests(unittest.TestCase):
+    """One definition of the local-grid CLI block and the #366 cap (issue #621).
+
+    ``--backend``/``--in-flight``/``-j``/``--no-write``/``--subset-reason``/
+    ``--supersedes`` were registered in both loop sweeps, and their help text
+    had drifted apart in four places; ``DEFAULT_JOBS`` was a per-file constant,
+    so #366's cap reached two of the five drivers that fan ngspice out locally
+    and left the other three at 4 and 8. These assertions are what keeps both
+    halves single-definition: a sixth driver (or a re-copied block) fails here
+    rather than quietly running wide on a shared dispatch worker.
+    """
+
+    #: Every driver that fans ngspice out on this host itself, or passes ``-j``
+    #: straight through to one that does.
+    LOCAL_DRIVERS = (
+        "loop-stability/testbench/sweep.py",
+        "soft-start-loop-gain/testbench/sweep.py",
+        "soft-start/testbench/handover_t15.py",
+        "soft-start/testbench/ramp_ab.py",
+        "toolchain-portability/testbench/ab_loop_stability.py",
+    )
+
+    JOBS_RE = re.compile(
+        r"""add_argument\(\s*["']-j["']\s*,\s*["']--jobs["'](.*?)\n\s*ap\.""",
+        re.S)
+
+    GRID_FLAGS = ("--backend", "--in-flight", "--jobs", "--no-write",
+                  "--subset-reason", "--supersedes")
+
+    def test_default_jobs_is_capped_for_shared_dispatch_workers(self):
+        self.assertEqual(klt_grid.DEFAULT_JOBS, min(2, os.cpu_count() or 2))
+        self.assertLessEqual(klt_grid.DEFAULT_JOBS, 2)
+
+    def test_add_grid_args_registers_the_whole_shared_block(self):
+        ap = argparse.ArgumentParser()
+        klt_grid.add_grid_args(ap, batch_unit="(load, C_eff, ESR) configuration")
+        args = ap.parse_args([])
+        self.assertEqual(
+            (args.backend, args.in_flight, args.jobs, args.no_write,
+             args.subset_reason, args.supersedes),
+            (None, 6, klt_grid.DEFAULT_JOBS, False, "", ""))
+        for flag in self.GRID_FLAGS:
+            self.assertIn(flag, ap.format_help())
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                ap.parse_args(["--backend", "nonesuch"])
+
+    def test_the_four_drifted_help_strings_have_one_wording(self):
+        ap = argparse.ArgumentParser()
+        klt_grid.add_grid_args(ap, batch_unit="(load, C_eff, ESR) configuration")
+        text = " ".join(ap.format_help().split())
+        # --backend keeps the superset attribution, not either file's half.
+        self.assertIn("where the grid runs (issues #366, #451)", text)
+        self.assertIn("how many configuration requests are submitted at once", text)
+        self.assertIn("if the PVT grid is narrower than the CLAUDE.md-mandated "
+                      "matrix", text)
+        # --supersedes was a bare `default=""` with no help in one copy.
+        self.assertIn("record-id this run supersedes", text)
+
+    def test_batch_unit_and_extra_are_the_only_per_bench_clauses(self):
+        ap = argparse.ArgumentParser()
+        klt_grid.add_grid_args(
+            ap, batch_unit="(variant, phase, C_eff, ESR) configuration",
+            batch_extra=", and the DC hand-over transfer is one `op` request "
+                        "per variant")
+        text = " ".join(ap.format_help().split())
+        self.assertIn("each (variant, phase, C_eff, ESR) configuration is a "
+                      "`klt sim` request", text)
+        self.assertIn("(klt_run.py), and the DC hand-over transfer is one `op` "
+                      "request per variant -- the default", text)
+
+    def test_the_loop_sweeps_register_the_block_through_the_harness(self):
+        for rel in self.LOCAL_DRIVERS[:2]:
+            with self.subTest(driver=rel):
+                src = (SIM_DIR / rel).read_text()
+                self.assertIn("klt_grid.add_grid_args(", src)
+                for flag in self.GRID_FLAGS:
+                    self.assertNotIn(f'ap.add_argument("{flag}"', src)
+
+    def test_every_local_driver_takes_its_jobs_default_from_klt_grid(self):
+        for rel in self.LOCAL_DRIVERS:
+            with self.subTest(driver=rel):
+                src = (SIM_DIR / rel).read_text()
+                self.assertNotRegex(src, r"(?m)^DEFAULT_JOBS\s*=")
+                for registration in self.JOBS_RE.findall(src):
+                    self.assertIn("default=klt_grid.DEFAULT_JOBS", registration)
+                    self.assertIn("type=int", registration)
 
 
 if __name__ == "__main__":

@@ -94,12 +94,6 @@ from harness.runner import (  # noqa: E402
     run_ngspice_deck,
 )
 
-#: Default local worker count. Capped at 2 rather than ``os.cpu_count()``
-#: (issue #366): this driver is run on shared dispatch workers where a grid
-#: that defaults to every core starves other sweeps. Pass ``-j`` to raise it
-#: on a box you own.
-DEFAULT_JOBS = min(2, os.cpu_count() or 2)
-
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
 DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
 ILOADS_A = (0.0, 0.1e-3, 1e-3, 10e-3, 25e-3, 50e-3)
@@ -930,38 +924,10 @@ def main() -> int:
                          "how the default is derived. Running BELOW the default "
                          "needs --subset-reason, exactly as a narrowed PVT grid "
                          "does.")
-    ap.add_argument("--backend", choices=("local", "batch", "klt-local"), default=None,
-                    help="where the grid runs (issue #366). `batch`: each "
-                         "(load, C_eff, ESR) configuration is a `klt sim` "
-                         "request over the PVT grid, submitted to the Spot "
-                         "batch fleet (klt_run.py) -- the default for any grid "
-                         "of more than one PVT point, as the dispatch-worker "
-                         "rule requires. `local` fans ngspice out on THIS host "
-                         "and must be passed explicitly for more than one PVT "
-                         "point. `klt-local` runs the same `klt sim` requests "
-                         "as `batch` but locally, one at a time, for a "
-                         "single-PVT-point batch-vs-local check only. A "
-                         "single-PVT run (e.g. --explore) is `local` without "
-                         "the flag. A failed batch submit is an error; it "
-                         "never falls back to a local grid.")
-    ap.add_argument("--in-flight", type=int, default=6,
-                    help="with --backend batch, how many configuration "
-                         "requests are submitted at once (default: 6; the "
-                         "fleet's own concurrency cap re-queues the rest)")
-    ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS,
-                    help=f"local worker threads (default: {DEFAULT_JOBS}, "
-                         "deliberately not os.cpu_count(): dispatch workers "
-                         "are shared). Only meaningful with --backend local.")
-    ap.add_argument("--no-write", action="store_true",
-                    help="run and report, write no record (debugging)")
+    klt_grid.add_grid_args(ap, batch_unit="(load, C_eff, ESR) configuration")
     ap.add_argument("--explore", action="store_true",
                     help="tt/27C/3.3V only across load x cap x ESR; implies --no-write "
                          "(DR-0001's recommended first pass to locate the worst triple)")
-    ap.add_argument("--subset-reason", default="",
-                    help="required (and copied into the record) if the PVT grid is "
-                         "narrower than the CLAUDE.md-mandated matrix")
-    ap.add_argument("--supersedes", default="",
-                    help="record-id this run supersedes")
     ap.add_argument("--author", default=os.environ.get("LOOP_STABILITY_AUTHOR", "agent-builder (issue #10)"))
     args = ap.parse_args()
 

@@ -48,6 +48,7 @@ SIM_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 
+from harness import klt_grid  # noqa: E402
 from harness.runner import (  # noqa: E402
     ngspice_major_version,
     ngspice_version_at,
@@ -172,7 +173,11 @@ def main() -> int:
     ap.add_argument("--loads-ma", nargs="+", default=None)
     ap.add_argument("--caps-uf", nargs="+", default=None)
     ap.add_argument("--esrs", nargs="+", default=None)
-    ap.add_argument("-j", "--jobs", default="8")
+    ap.add_argument("-j", "--jobs", type=int, default=klt_grid.DEFAULT_JOBS,
+                    help=f"local worker threads passed through to each arm's "
+                         f"sweep.py run (default: {klt_grid.DEFAULT_JOBS}, "
+                         "deliberately not os.cpu_count(): dispatch workers "
+                         "are shared)")
     ap.add_argument(
         "--out-dir",
         required=True,

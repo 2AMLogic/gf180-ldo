@@ -63,7 +63,7 @@ sys.path.insert(0, str(REPO_ROOT / "sim"))
 sys.path.insert(0, str(LG_TB))
 
 import netlist_variants as nv  # noqa: E402
-from harness import deck  # noqa: E402
+from harness import deck, klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.pvt_log import parse_meas_lines  # noqa: E402
@@ -217,7 +217,10 @@ def main() -> int:
     ap.add_argument("--cout", default=DEFAULT_COUT)
     ap.add_argument("--esr", default=DEFAULT_ESR)
     ap.add_argument("--rload", default=DEFAULT_RLOAD)
-    ap.add_argument("-j", "--jobs", type=int, default=4)
+    ap.add_argument("-j", "--jobs", type=int, default=klt_grid.DEFAULT_JOBS,
+                    help=f"local worker threads (default: "
+                         f"{klt_grid.DEFAULT_JOBS}, deliberately not "
+                         "os.cpu_count(): dispatch workers are shared)")
     ap.add_argument("--record-id", default="")
     args = ap.parse_args()
 
