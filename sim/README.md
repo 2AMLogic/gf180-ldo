@@ -424,6 +424,21 @@ below is how a reader tells which revision a record speaks for.
   report's `worker_environment.models_staged` is `true` and its `model_inputs`
   list the staged files. The report's `pdk.stamp_text` keeps naming the
   worker's own tree and is not what the job used.
+- **Staging alone does not pin the revision; `$PDK_ROOT` does** (#615). Staging
+  ships *the client's* model files, and `klt` resolves which local install to
+  read on its own -- first-match-wins across the install prefixes, and merely a
+  stderr warning when several provide the variant. On a host carrying both the
+  pinned `~/.ciel` tree and a stale `~/.volare` one, the models that ship with
+  the job are then decided by sort order rather than by the pin, silently and
+  with no error: the same request validates either way and only the staged file
+  list differs (`sm141064_mim.spice` at `f6eeac7` vs `sm141064_mim.ngspice` at
+  `c6d73a3`). `$PDK_ROOT` is the only client-side pin the `batch` backend
+  accepts, so a submitting driver must export it from the `Pdk` that
+  `harness/pdk.py`'s `find_pdk()` has already run `check_pin()` on --
+  `os.environ["PDK_ROOT"] = str(pdk.path.parent)` -- and not trust an ambient
+  value, which `find_pdk()` may itself have passed over in favour of
+  `$GF180_PDK_PATH`. Confirm per run: the klt warning names the install you
+  pinned, and `model_inputs` lists the pinned tree's files.
 
 Re-qualification status (issue #430). "Moved" means a measurement or a
 pass/fail verdict differs from the same-DUT record at `c6d73a3…`:
