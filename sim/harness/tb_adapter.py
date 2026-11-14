@@ -482,10 +482,6 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
     if unknown:
         raise SystemExit(f"--param {', '.join(unknown)}: not in {tb.name}'s tb.json params {sorted(tb.params)}")
     tb = replace(tb, params={**tb.params, **overrides})
-    # Pin klt's PDK search to the harness-resolved, pin-checked tree: with two
-    # installs of the variant on the host klt otherwise takes the first match,
-    # and the client-side stamp it compares the worker's against is unavailable.
-    os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
     dest = stage_corner_dir(repo, tb.experiment, args.record_id)
     if (tb.experiment_dir / "corners" / args.record_id).exists():
         raise SystemExit(f"sim/{tb.experiment}/corners/{args.record_id}/ already exists; "
@@ -506,6 +502,14 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
     hooks = {"body_override": body_override, "extra_measurements": extra_measurements}
     if (body_override is not None or extra_measurements) and (chained or supply_in_waveform(tb)):
         raise UnsupportedTb(f"{tb.name}: body_override/extra_measurements need a single-analysis bench with a swept supply")
+    # Resolved last, immediately before the first request: every refusal above
+    # is cheap and PDK-free, so the fail-closed gates hold on a host with no
+    # PDK install (the lane CI calls "no PDK required"). Only the fleet request
+    # needs it. Pin klt's PDK search to the harness-resolved, pin-checked tree:
+    # with two installs of the variant on the host klt otherwise takes the
+    # first match, and the client-side stamp it compares the worker's against
+    # is unavailable.
+    os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
     if not chained and supply_in_waveform(tb):
         results = _run_supplies(tb, args, dest, repo, dut_rel, job_opts)
     elif not chained:

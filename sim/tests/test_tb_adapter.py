@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+import types
 import unittest
 from pathlib import Path
 
@@ -27,6 +28,11 @@ def _tb(slug: str) -> testbench.Testbench:
 
 def _grid(job) -> int:
     return len(job.process) * len(job.temps) * len(job.supplies)
+
+
+def _no_pdk(variant=None):
+    """A `pdk.find_pdk` that fails the test if a cheap refusal consults it."""
+    raise AssertionError("a PDK-free refusal must not resolve the PDK")
 
 
 class SupplyWaveform(unittest.TestCase):
@@ -363,9 +369,18 @@ class StagedOutput(unittest.TestCase):
         self.assertEqual((d / "tt_27c_3.30v.log").relative_to(stage_root).as_posix(),
                          "sim/line-regulation/corners/r1/tt_27c_3.30v.log")
 
-    def _run(self, argv, preflight):
-        """``main`` for a flat bench with the fleet call stubbed out."""
+    def _run(self, argv, preflight, *, find_pdk=None):
+        """``main`` for a flat bench, with the fleet call and the PDK stubbed.
+
+        These tests run in the PDK-free lane, so ``pdk.find_pdk`` is always
+        stubbed: a real lookup would raise ``PdkNotFound`` on a host with no
+        install. ``find_pdk`` overrides the stub -- the refusal tests pass one
+        that raises, asserting the gate never needs a PDK at all.
+        """
+        import os
+
         from harness import klt_ab
+        from harness import pdk
         calls = {}
 
         def fake_run_ab(job_factory, dut, baseline_ref, dest, repo, **kw):
@@ -376,6 +391,26 @@ class StagedOutput(unittest.TestCase):
         real = klt_ab.run_ab
         klt_ab.run_ab = fake_run_ab
         self.addCleanup(lambda: setattr(klt_ab, "run_ab", real))
+
+        def fake_find_pdk(variant=None):
+            calls["pdk"] = True
+            return types.SimpleNamespace(path=Path("/nonexistent/pdk-root/gf180mcuD"))
+
+        real_find_pdk = pdk.find_pdk
+        pdk.find_pdk = find_pdk or fake_find_pdk
+        self.addCleanup(lambda: setattr(pdk, "find_pdk", real_find_pdk))
+        # `main` pins $PDK_ROOT via os.environ.setdefault; keep that out of the
+        # rest of the suite's environment.
+        prior_root = os.environ.get("PDK_ROOT")
+
+        def restore_root():
+            if prior_root is None:
+                os.environ.pop("PDK_ROOT", None)
+            else:
+                os.environ["PDK_ROOT"] = prior_root
+
+        self.addCleanup(restore_root)
+
         import contextlib
         import io
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -399,8 +434,9 @@ class StagedOutput(unittest.TestCase):
         def refuse(repo):
             raise es.StoreError("no artifact broker configured ($KLT_ARTIFACT_BROKER is unset)")
 
-        rc, calls = self._run(["--record-id", "zz-refused"], refuse)
+        rc, calls = self._run(["--record-id", "zz-refused"], refuse, find_pdk=_no_pdk)
         self.assertEqual(rc, ta.EXIT_NOT_STORED)
+        self.assertNotIn("pdk", calls, "refusing an unstorable run must not need a PDK")
         self.assertNotIn("dest", calls, "the fleet was never asked to run anything")
         self.assertFalse((SIM_DIR / "line-regulation" / "corners" / "zz-refused").exists())
         self.assertFalse(ta.stage_corner_dir(SIM_DIR.parent, "line-regulation", "zz-refused").exists())
@@ -416,7 +452,7 @@ class StagedOutput(unittest.TestCase):
     def test_a_record_id_already_committed_is_refused(self):
         existing = sorted((SIM_DIR / "line-regulation" / "corners").iterdir())[0].name
         with self.assertRaises(SystemExit) as cm:
-            self._run(["--record-id", existing], lambda repo: None)
+            self._run(["--record-id", existing], lambda repo: None, find_pdk=_no_pdk)
         self.assertIn("append-only", str(cm.exception))
 
 
