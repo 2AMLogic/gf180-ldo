@@ -231,8 +231,25 @@ this public repo. Evidence already committed is not rewritten or migrated.
   repo), then
   `python3 sim/run_store_evidence.py <bench> <run-id> <dir> --summary <summary.md>`.
   It commits the manifest and `sim/<bench>/campaigns/<run-id>.md`.
-  The `klt`-batch adapters (`klt_record.py`, `tb_adapter.py`) still write the
-  old layout; moving them is tracked separately.
+- **`klt`-batch adapter records.** `python3 sim/<bench>/testbench/klt_run.py
+  --record-id <id>` writes the whole run into git-ignored
+  `sim/.work/.stage/<bench>/sim/<bench>/corners/<id>/` and stops there: an
+  unminted run is not evidence and leaves nothing in the tree. `PYTHONPATH=sim
+  python3 -m harness.klt_record <bench> --record-id <id>` then stores the bytes
+  and commits the manifest, `records/<id>.md`, and — unlike a corner-runner
+  record — two kinds that stay in git
+  ([DR-0044](../spec/decision-records/DR-0044-batch-adapter-evidence-store-split.md)):
+  `corners/<id>/.../klt-report.json`, the redacted request envelope
+  `signoff/block-manifest.json` pins by hash and CI grades with no broker, and
+  `netlist-snapshots/<id>.spice`, which
+  `sim/build_characterization_report.py` reads to judge a row's freshness.
+  Every other path under `corners/<id>/` in such a record — `summary.csv`, the
+  per-corner `<corner>.log`, `dut.spice`, `body.spice`, `request.json` — is a
+  manifest `name`, not a file. This covers the ten benches whose `klt_run.py`
+  calls `tb_adapter.main`; the hand-rolled batch drivers (`enable-shutdown`,
+  `soft-start`, `current-limit`, `mc-output-accuracy`) still write the old
+  layout and are tracked in
+  [#596](https://github.com/2AMLogic/gf180-ldo/issues/596).
 - **Configuration** is the environment only, read by `klt`:
   `KLT_ARTIFACT_BROKER` and optionally `KLT_ARTIFACT_REPO`. Nothing is
   defaulted and no broker URL, bucket or account identifier is written in this
@@ -241,11 +258,12 @@ this public repo. Evidence already committed is not rewritten or migrated.
   commit, so the writer probes its behaviour offline. To try another version
   use a throwaway environment (`uvx --from ... klt`), not a host install.
 - **Fail closed.** If the broker is unset or unreachable, or `klt` lacks
-  `artifact put` or is too old, `run_corners.py` refuses before simulating
-  (exit 10). A put that fails after the grid also exits 10. Either way nothing
-  goes under `manifests/` or `sim/`, the staged bytes stay in
-  `sim/.work/.stage/`, and there is no option to commit the bytes instead.
-  `--no-write` exploration needs no store.
+  `artifact put` or is too old, `run_corners.py` and `klt_run.py` refuse before
+  simulating (exit 10). A put that fails afterwards — in `run_corners.py` or in
+  `klt_record` — also exits 10. Either way nothing goes under `manifests/` or
+  `sim/`, the staged bytes stay in `sim/.work/.stage/`, and there is no option
+  to commit the bytes instead. `run_corners.py --no-write` exploration and a
+  `klt_run.py --only` debug point need no store.
 - **Verify by hash.** `klt artifact verify <manifest>` (or
   `python3 scripts/check_artifact_manifests.py verify <manifest>`) re-hashes
   every entry through the broker. CI runs

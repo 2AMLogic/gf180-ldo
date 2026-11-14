@@ -2,10 +2,25 @@
 
     PYTHONPATH=sim python3 -m harness.klt_record <slug> --record-id <id>
 
-``tb_adapter.main`` leaves ``sim/<slug>/corners/<record-id>/summary.csv`` and
-the per-request ``klt-*/new/klt-report.json`` behind. This turns them into
-``records/<record-id>.md`` and ``netlist-snapshots/<record-id>.spice`` in the
-form of the #467 records: the grid graded against ``tb.json``'s own bounds
+``tb_adapter.main`` leaves a staged run under git-ignored
+``sim/.work/.stage/<slug>/sim/<slug>/corners/<record-id>/`` -- ``summary.csv``,
+the per-corner logs, the decks and the per-request ``klt-report.json``. This
+turns it into committed evidence (DR-0044, issue #594):
+
+* the bytes go to the fleet artifact store, and git keeps
+  ``manifests/artifacts/<slug>-<record-id>.manifest.json`` (DR-0041);
+* ``klt-report.json`` stays committed under ``corners/<record-id>/``, because
+  ``signoff/block-manifest.json`` pins those envelopes by hash and CI grades
+  them with no broker;
+* ``netlist-snapshots/<record-id>.spice`` stays committed, because
+  ``sim/build_characterization_report.py`` reads it to judge a row's freshness;
+* ``records/<record-id>.md`` is the record itself.
+
+It fails closed: if the store is unreachable nothing is committed, the staged
+bytes stay, and it exits 10. There is no option to commit the bytes instead.
+
+The record keeps the form of the #467 records: the grid graded against
+``tb.json``'s own bounds
 (``report.evaluate_checks`` / ``report.summarize``, the functions the local
 harness grades with), the fleet job ids and the PDK-staging flag read from the
 reports, and an old-vs-new section against the newest earlier record.
@@ -23,15 +38,20 @@ import argparse
 import csv
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from . import evidence_store as store
 from . import pdk, report
+from . import tb_adapter
 from . import testbench as tbmod
 from .klt_ab import driver_args, parse_params
 
 REPO = Path(__file__).resolve().parents[2]
+#: Evidence could not be stored; nothing was committed (``tb_adapter``'s code).
+EXIT_NOT_STORED = tb_adapter.EXIT_NOT_STORED
 _ROW = re.compile(r"^\s*\|\s*`([^`]+)`\s*\|(.*)\|\s*$")
 
 
@@ -64,15 +84,26 @@ def load_grid(corner_dir: Path, tb: tbmod.Testbench):
 
 
 def jobs(corner_dir: Path) -> list[dict]:
+    """The fleet facts of each request, from its ``klt-report.json``.
+
+    A bench split into several requests (one per analysis state and/or supply
+    point) writes ``klt-<tag>/new/klt-report.json``. A single-analysis bench
+    with a swept supply is **one** request and writes ``new/klt-report.json``
+    with no ``klt-*`` level; globbing only the first layout left such a
+    record claiming zero fleet jobs (#594), so both are read.
+    """
+    paths = (sorted(corner_dir.glob("klt-*/new/klt-report.json"))
+             or sorted(corner_dir.glob("new/klt-report.json")))
     out = []
-    for p in sorted(corner_dir.glob("klt-*/new/klt-report.json")):
+    for p in paths:
         rep = json.loads(p.read_text())
         env = rep.get("environment", {})
         rem = env.get("remote") or {}
         # a request split by ``batch.max_units_per_job`` reports ``remote.fleet``, one entry per job
         fleet = rem.get("fleet") or [rem]
         wpdks = [(f.get("worker_environment") or {}).get("pdk") or {} for f in fleet]
-        out.append({"request": p.parent.parent.name.removeprefix("klt-"),
+        parts = p.relative_to(corner_dir).parts
+        out.append({"request": parts[0].removeprefix("klt-") if len(parts) > 2 else "single",
                     "job": ", ".join(str(f.get("job_id")) for f in fleet),
                     "instance": ", ".join(sorted({str(f.get("instance_type")) for f in fleet})),
                     "state": ", ".join(sorted({str(f.get("state")) for f in fleet})),
@@ -165,11 +196,12 @@ def render(tb, rid, points, grid_jobs, prior, dut_rel, dut_sha, driver) -> str:
         f"- **Claim**: {tb.claim} Measurement definitions and bounds are `sim/{slug}/testbench/tb.json`'s, unchanged.",
         f"- **Netlist provenance**: schematic (`{dut_rel}`, sha256 `{dut_sha}`), driven by "
         f"`sim/{slug}/testbench/{tb.netlist.name}` through `sim/harness/tb_adapter.py` (circuit bodies and "
-        f"requests: `sim/{slug}/corners/{rid}/klt-*/new/`); taken on a clean tree at the adapter commit named by "
-        "the record ID suffix.",
+        f"requests: stored, manifest names `sim/{slug}/corners/{rid}/.../body.spice` and `request.json`); "
+        "taken on a clean tree at the adapter commit named by the record ID suffix.",
         f"- **Driver**: `{driver}`",
-        f"- **Backend**: `klt sim` batch fleet, {len(grid_jobs)} requests (one per analysis state and supply "
-        "point, see the driver docstring): "
+        f"- **Backend**: `klt sim` batch fleet, {len(grid_jobs)} "
+        + ("request" if len(grid_jobs) == 1 else "requests (one per analysis state and supply "
+           "point, see the driver docstring)") + ": "
         + "; ".join(f"`{j['request']}` job `{j['job']}` ({j['instance']}, {j['state']})" for j in grid_jobs)
         + ". `environment.remote` in each `klt-report.json`. No local `ngspice -b` grid.",
         f"- **PDK**: open_pdks `{pdk.PINNED_OPEN_PDKS_REVISION}` (`PINNED_OPEN_PDKS_REVISION`), model files "
@@ -177,9 +209,15 @@ def render(tb, rid, points, grid_jobs, prior, dut_rel, dut_sha, driver) -> str:
         f"{str(staged).lower()}`). The batch image's own PDK stamp reads {', '.join(f'`{s}`' for s in stamps)}, "
         "so the `pdk_stamp_comparison: mismatch` in each report is expected and is the reason for staging.",
         "- **Links**:",
-        f"  - `sim/{slug}/corners/{rid}/` (`summary.csv`; `klt-<state>-<vin>v/new/` = per-corner logs, "
-        "`body.spice`, `request.json`, `klt-report.json`)",
-        f"  - `sim/{slug}/netlist-snapshots/{rid}.spice`",
+        f"  - `sim/{slug}/corners/{rid}/.../klt-report.json` -- committed: the redacted `klt sim` request "
+        "envelope, which `signoff/block-manifest.json` pins by hash and CI grades offline (DR-0044).",
+        f"  - `sim/{slug}/corners/{rid}/` -- every other path under it (`summary.csv`, per-corner "
+        "`<corner>.log`, `dut.spice`, `body.spice`, `request.json`) is a **manifest `name`**, not a file in "
+        "this repo: the bytes are in the fleet artifact store (DR-0041). The \"Stored evidence\" table below "
+        "lists each one with its sha256; fetch one with `klt artifact get <manifest>#<name> -o <out>`.",
+        f"  - `sim/{slug}/netlist-snapshots/{rid}.spice` -- committed: "
+        "`sim/build_characterization_report.py` reads it to judge this row's freshness against the current "
+        "DUT (DR-0044).",
         "- **Corner matrix run**:",
         f"  - Process: {', '.join(procs)}",
         f"  - Temperature: {', '.join(t.removesuffix('c') + ' C' for t in sorted(temps, key=lambda t: float(t.removesuffix('c'))))}",
@@ -220,6 +258,23 @@ def render(tb, rid, points, grid_jobs, prior, dut_rel, dut_sha, driver) -> str:
     return "\n".join(out)
 
 
+def install_kept(kept: list[Path], stage_corner_dir: Path, corner_dir: Path) -> list[Path]:
+    """Copy the files that stay in git out of the staging tree, same layout.
+
+    Called only after :func:`evidence_store.store_files` has returned, so a
+    store failure leaves ``sim/`` untouched (fail closed). Never overwrites.
+    """
+    out = []
+    for src in kept:
+        dst = corner_dir / src.relative_to(stage_corner_dir)
+        if dst.exists():
+            raise store.StoreError(f"{dst} already exists; append-only evidence is never rewritten")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dst)
+        out.append(dst)
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("slug")
@@ -233,16 +288,51 @@ def main(argv=None) -> int:
     overrides = parse_params(args.param)
     if set(overrides) - set(tb.params):
         raise SystemExit(f"--param {sorted(set(overrides) - set(tb.params))}: not in tb.json params")
-    corner_dir = exp / "corners" / args.record_id
+    rid = args.record_id
+    slug = args.slug
+    stage_exp = tb_adapter.stage_experiment_dir(REPO, slug)
+    corner_dir = tb_adapter.stage_corner_dir(REPO, slug, rid)
+    if not (corner_dir / "summary.csv").is_file():
+        raise SystemExit(
+            f"no staged run at {corner_dir.relative_to(REPO)}/ (no summary.csv). Run "
+            f"`python3 sim/{slug}/testbench/klt_run.py --record-id {rid}` first; DR-0044 mints a "
+            "record from the staging tree, not from sim/<slug>/corners/.")
     dut = tb.design_netlists[0]
     dut_rel = tb.dut_netlist_rel or str(dut.relative_to(REPO))
     dut_sha = tb.include_provenance(REPO)[0]["sha256"]
-    priors = sorted(p for p in (exp / "records").glob("*.md") if p.stem != args.record_id)
-    text = render(tb, args.record_id, load_grid(corner_dir, tb), jobs(corner_dir), priors[-1] if priors else None,
-                  dut_rel, dut_sha, f"python3 sim/{args.slug}/testbench/klt_run.py --record-id {args.record_id}{driver_args(overrides)}")
-    report.write_netlist_snapshot(tb, exp, args.record_id)
-    report.write_markdown_record(args.record_id, text, exp / "records")
-    print(f"wrote sim/{args.slug}/records/{args.record_id}.md")
+    priors = sorted(p for p in (exp / "records").glob("*.md") if p.stem != rid)
+    text = render(tb, rid, load_grid(corner_dir, tb), jobs(corner_dir), priors[-1] if priors else None,
+                  dut_rel, dut_sha, f"python3 sim/{slug}/testbench/klt_run.py --record-id {rid}{driver_args(overrides)}")
+    # DR-0044: the bytes go to the artifact store and git keeps the manifest,
+    # the record, the netlist snapshot and the `klt-report.json` envelopes.
+    # Order is fail-closed: stage the snapshot outside sim/, store everything
+    # else, and only then copy the kept files in. A StoreError at any point
+    # leaves sim/ and manifests/ exactly as they were and keeps the staged
+    # bytes, so the run is never lost and never silently committed raw.
+    files, kept = store.split_batch_run(corner_dir, f"sim/{slug}/corners/{rid}")
+    # The staged snapshot is scratch under sim/.work/, not evidence: clear a
+    # copy left by an earlier failed mint so a retry is not refused by
+    # `RecordExists` on it. The committed one is still never overwritten --
+    # `write_netlist_snapshot` guards `sim/<slug>/netlist-snapshots/`, and
+    # `install_kept` and `store_files` guard everything else under `sim/`.
+    (stage_exp / report.SNAPSHOT_DIR / f"{rid}.spice").unlink(missing_ok=True)
+    try:
+        snapshot = report.write_netlist_snapshot(tb, stage_exp, rid, repo_root=REPO)
+        mpath = store.store_files(files, repo_root=REPO, bench=slug, rid=rid, summary_text=text,
+                                  summary_path=exp / report.RECORDS_DIR / f"{rid}.md")
+        installed = install_kept(kept, corner_dir, exp / report.CORNERS_DIR / rid)
+        final_snapshot = exp / report.SNAPSHOT_DIR / f"{rid}.spice"
+        final_snapshot.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(snapshot, final_snapshot)
+    except store.StoreError as exc:
+        print(f"EVIDENCE NOT STORED -- nothing committed (fail closed): {exc}. The staged run is "
+              f"kept, uncommitted, under {corner_dir.relative_to(REPO)}/.", file=sys.stderr)
+        return EXIT_NOT_STORED
+    shutil.rmtree(REPO / "sim" / ".work" / ".stage" / slug, ignore_errors=True)
+    print(f"record   : sim/{slug}/records/{rid}.md")
+    print(f"manifest : {mpath.relative_to(REPO)}  ({len(files)} objects stored)")
+    print(f"committed: {final_snapshot.relative_to(REPO)}"
+          + "".join(f"\n           {q.relative_to(REPO)}" for q in installed))
     return 0
 
 

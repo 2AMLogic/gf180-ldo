@@ -20,7 +20,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 | Output | FAIL | fresh | `sim/mc-output-accuracy/records/20261021-pdk-f6eeac7-mc.md` (+ 3 more, see detail) |
 | Load | N/A | N/A | see note below |
 | Dropout @ 50 mA | PASS | fresh | `sim/dropout-vs-load/records/20261021-031411-06b3540.md` |
-| Line reg | FAIL | fresh | `sim/line-regulation/records/20261021-032652-06b3540.md` |
+| Line reg | FAIL | fresh | `sim/line-regulation/records/20261113-223722-d02d36f.md` |
 | Load reg (0–50 mA) | PASS | fresh | `sim/load-regulation/records/20261021-031815-06b3540.md` |
 | Load transient | FAIL | fresh | `sim/load-transient/records/20261108-a9d5594-tran-c1u-esr500m.md` |
 | PSRR | FAIL | fresh | `sim/psrr-dc/records/20261021-023703-7d3b2a0.md` (+ 2 more, see detail) |
@@ -51,7 +51,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
   - Overall: FAIL
 - `amp-openloop` — deterministic systematic-offset term: `sim/amp-openloop/records/20261021-023703-7d3b2a0.md` — **PASS**, fresh (matches current `error_amp`)
   - Overall: PASS
-- `line-regulation` — counted inside the window, not added to it: `sim/line-regulation/records/20261021-032652-06b3540.md` — **FAIL**, fresh (matches current `ldo_core`)
+- `line-regulation` — counted inside the window, not added to it: `sim/line-regulation/records/20261113-223722-d02d36f.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 - `load-regulation` — counted inside the window, not added to it: `sim/load-regulation/records/20261021-031815-06b3540.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall: PASS
@@ -77,7 +77,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 **Verdict**: FAIL  **Fresh**: fresh
 
-- `line-regulation`: `sim/line-regulation/records/20261021-032652-06b3540.md` — **FAIL**, fresh (matches current `ldo_core`)
+- `line-regulation`: `sim/line-regulation/records/20261113-223722-d02d36f.md` — **FAIL**, fresh (matches current `ldo_core`)
   - Overall: FAIL
 
 ### Load reg (0–50 mA)

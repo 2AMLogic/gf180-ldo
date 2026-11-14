@@ -5,7 +5,10 @@
         [--dut design/netlist/ldo_core.spice] [--baseline-ref origin/main] [--only tt,27,3.30]
 
 The grid, measurements and bounds are tb.json's, mapped onto a ``klt sim``
-request by sim/harness/tb_adapter.py. Output: sim/load-transient/corners/<record-id>/.
+request by sim/harness/tb_adapter.py. Output: the git-ignored staging tree
+``sim/.work/.stage/load-transient/sim/load-transient/corners/<record-id>/``; it becomes evidence only
+when ``PYTHONPATH=sim python3 -m harness.klt_record load-transient --record-id <id>``
+stores the bytes and mints the record (DR-0044).
 """
 
 import sys
