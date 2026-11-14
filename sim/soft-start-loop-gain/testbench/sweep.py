@@ -86,6 +86,7 @@ from harness.report import (  # noqa: E402
     format_record_id,
     git_provenance,
     parse_row_fields as _harness_parse_row_fields,
+    print_provenance_banner,
     write_markdown_record,
 )
 from harness.runner import (  # noqa: E402
@@ -1624,12 +1625,9 @@ def main() -> int:
         print(f"FATAL: {exc}", file=sys.stderr)
         return 3
 
-    print(f"pdk           : {pdk.variant} @ {pdk.version}")
-    print(f"ngspice       : {ngspice_version()}")
-    print(f"ngspice sha256: {ngspice_binary_sha256()}")
-    print(f"host          : {socket.gethostname()}")
-    print(f"record id     : {record_id}"
-          f"{' (NOT WRITTEN: --no-write)' if args.no_write else ''}")
+    print_provenance_banner(
+        pdk, record_id, host=socket.gethostname(), dirty=prov["dirty"],
+        note=" (NOT WRITTEN: --no-write)" if args.no_write else "")
     n_states = sum(1 if PHASES[p]["ssr"] is None else len(PHASES[p]["ssr"])
                    for p in args.phases)
     print(f"grid          : {len(grid)} PVT x {len(args.variants)} variant x "
