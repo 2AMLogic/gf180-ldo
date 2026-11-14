@@ -32,6 +32,15 @@ name: CI
 #                                       under sim/*/records, signoff/records or
 #                                       layout/records embed /home/<user> paths;
 #                                       tests in sim/tests, issues #365/#413)
+#   - sim/check_record_reading.py    (PR-only, same pathspecs: fails if a
+#                                       record added/modified in the PR still
+#                                       carries klt_record's "(to be written)"
+#                                       placeholder, or has a `## Reading`
+#                                       heading with an empty body. A record
+#                                       with no `## Reading` section at all
+#                                       passes -- the heading is a convention
+#                                       only 18 of 190 committed records use;
+#                                       tests in sim/tests, issue #606)
 #   - signoff/check.sh                (re-grades this block's T1 state from
 #                                       signoff/block-manifest.json via `klt
 #                                       signoff --manifest` and fails if a
@@ -175,6 +184,24 @@ jobs:
         # Pathspecs live in sim/check_record_host_paths.py (incl. top-level
         # layout/records/, issue #413); tests: sim/tests/test_check_record_host_paths.py
         # (discovered by sim/selftest.sh).
+
+      - name: Verify new/modified records have a written Reading section
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 sim/check_record_reading.py \
+            --base "origin/${{ github.base_ref }}"
+        # sim/harness/klt_record.py mints every record with a literal
+        # "(to be written)" under `## Reading` for the agent to replace; until
+        # issue #606 nothing checked that it did, and PR #602 reached fully
+        # green CI with the placeholder still in place. Records are
+        # append-only, so correcting one after merge costs an
+        # sim/append-only-allowlist.txt entry plus a decision record.
+        # Deliberately asymmetric: the placeholder is always an error, an empty
+        # `## Reading` body is an error, but a record with no `## Reading`
+        # section is fine -- requiring the heading would reject 172 of the 190
+        # committed sim records, including complete hand-written ones.
+        # Tests: sim/tests/test_check_record_reading.py (discovered by
+        # sim/selftest.sh). No PDK, no broker, no network.
 
       - name: Verify spec/decision-records/README.md is up to date
         run: |
