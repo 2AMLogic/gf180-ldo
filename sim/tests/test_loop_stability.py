@@ -13,7 +13,6 @@ answer by ``sim/loop-stability/testbench/selftest.py``.
 
 from __future__ import annotations
 
-import importlib.util
 import math
 import re
 import sys
@@ -27,14 +26,12 @@ sys.path.insert(0, str(SIM_DIR))
 
 from harness import report  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
-_SWEEP_PATH = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
-_spec = importlib.util.spec_from_file_location("loop_stability_sweep", _SWEEP_PATH)
-sweep = importlib.util.module_from_spec(_spec)
 # sweep.py is a script under a hyphenated directory, so it is not importable
-# by name; register it before exec so its @dataclass can resolve its module.
-sys.modules["loop_stability_sweep"] = sweep
-_spec.loader.exec_module(sweep)
+# by name.
+_SWEEP_PATH = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
+sweep = load_script("loop_stability_sweep", _SWEEP_PATH)
 
 
 def row(**kw) -> "sweep.Row":

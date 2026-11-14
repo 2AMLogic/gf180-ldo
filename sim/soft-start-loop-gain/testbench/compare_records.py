@@ -33,7 +33,6 @@ no common matrix, 3 a usage/environment problem.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import sys
 from pathlib import Path
 
@@ -42,11 +41,11 @@ EXPDIR = HERE.parent
 REPO_ROOT = EXPDIR.parent.parent
 RECORDS = EXPDIR / "records"
 
+sys.path.insert(0, str(REPO_ROOT / "sim"))
+from harness.loader import load_script  # noqa: E402
+
 _LS = REPO_ROOT / "sim" / "loop-stability" / "testbench" / "compare_records.py"
-_spec = importlib.util.spec_from_file_location("loop_stability_compare", _LS)
-lsc = importlib.util.module_from_spec(_spec)
-sys.modules["loop_stability_compare"] = lsc
-_spec.loader.exec_module(lsc)
+lsc = load_script("loop_stability_compare", _LS)
 
 _num, delta, fmt = lsc._num, lsc.delta, lsc.fmt
 RESURGENCE_AC_DEC_TOLERANCE_DB = lsc.RESURGENCE_AC_DEC_TOLERANCE_DB

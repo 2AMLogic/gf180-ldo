@@ -42,7 +42,7 @@ from pathlib import Path
 # read from there rather than transcribed a second time here, so the mismatch
 # `divider_field()` computes can never be the mismatch of a geometry the
 # drawing does not have. `plan.py` imports nothing, so it loads both under
-# plain Python and under `drclvs._load_module`.
+# plain Python and under `sim/harness/loader.py`'s `load_script`.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "divider"))
 import plan  # noqa: E402
 

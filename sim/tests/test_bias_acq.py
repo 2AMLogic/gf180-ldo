@@ -13,7 +13,6 @@ never grade as ``ACQUIRED``.
 
 from __future__ import annotations
 
-import importlib.util
 import math
 import sys
 import unittest
@@ -23,10 +22,9 @@ SIM_DIR = Path(__file__).resolve().parents[1]
 REPO = SIM_DIR.parent
 DRIVER = SIM_DIR / "soft-start" / "testbench" / "bias_acq.py"
 sys.path.insert(0, str(SIM_DIR))
-_spec = importlib.util.spec_from_file_location("ss_bias_acq", DRIVER)
-ba = importlib.util.module_from_spec(_spec)
-sys.modules["ss_bias_acq"] = ba
-_spec.loader.exec_module(ba)
+from harness.loader import load_script  # noqa: E402
+
+ba = load_script("ss_bias_acq", DRIVER)
 
 CORE = (REPO / "design" / "netlist" / "ldo_core.spice").read_text()
 

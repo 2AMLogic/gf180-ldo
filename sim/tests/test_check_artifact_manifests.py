@@ -9,22 +9,23 @@ git repositories. Stdlib only.
 import contextlib
 import hashlib
 import http.server
-import importlib.util
 import io
 import json
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location(
+sys.path.insert(0, str(ROOT / "sim"))
+from harness.loader import load_script  # noqa: E402
+
+chk = load_script(
     "check_artifact_manifests", ROOT / "scripts" / "check_artifact_manifests.py")
-chk = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(chk)
 
 REPO = "owner/repo"
 ENV = {

@@ -59,7 +59,6 @@ import argparse
 import concurrent.futures
 import csv
 import datetime as _dt
-import importlib.util
 import math
 import os
 import re
@@ -79,6 +78,7 @@ HANDOVER_TEMPLATE = HERE / "tb_ss_handover.spice.in"
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness import deck, klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
@@ -109,18 +109,12 @@ import netlist_variants as nv  # noqa: E402
 # `passes` and `resurges` are inherited, not restated.
 # `sim/tests/test_soft_start_loop_gain.py` asserts the identity.
 _LS_PATH = REPO_ROOT / "sim" / "loop-stability" / "testbench" / "sweep.py"
-_spec = importlib.util.spec_from_file_location("loop_stability_sweep", _LS_PATH)
-ls = importlib.util.module_from_spec(_spec)
-sys.modules["loop_stability_sweep"] = ls
-_spec.loader.exec_module(ls)
+ls = load_script("loop_stability_sweep", _LS_PATH)
 
 # `klt_run` is also the name of loop-stability's module (which `ls` has just put
 # in sys.modules), so this bench's own front end for `--backend batch` is
 # loaded by path under a distinct name, like `ls` above (issue #451).
-_spec = importlib.util.spec_from_file_location("ss_loop_gain_klt_run", HERE / "klt_run.py")
-klt_run = importlib.util.module_from_spec(_spec)
-sys.modules["ss_loop_gain_klt_run"] = klt_run
-_spec.loader.exec_module(klt_run)
+klt_run = load_script("ss_loop_gain_klt_run", HERE / "klt_run.py")
 
 PM_MIN_DEG = ls.PM_MIN_DEG            # DR-0001, 45 deg
 GM_MIN_DB = ls.GM_MIN_DB              # DR-0001, 10 dB

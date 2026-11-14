@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import math
 import sys
 import unittest
@@ -14,10 +13,10 @@ from pathlib import Path
 
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
-_spec = importlib.util.spec_from_file_location(
+from harness.loader import load_script  # noqa: E402
+
+mc = load_script(
     "mc_klt_run", SIM_DIR / "mc-output-accuracy" / "testbench" / "klt_run.py")
-mc = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(mc)
 
 
 def _sample(offset: float, dfb: float | None = None) -> dict:

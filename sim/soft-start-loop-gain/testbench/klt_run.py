@@ -48,7 +48,6 @@ a time.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 import tempfile
@@ -61,15 +60,13 @@ REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import deck  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
 # loop-stability's klt_run is a sibling bench's module of the same file name, so
 # it is loaded by path under its own name rather than imported (sweep.py does
 # the same for loop-stability's sweep.py).
 _LSK_PATH = REPO / "sim" / "loop-stability" / "testbench" / "klt_run.py"
-_spec = importlib.util.spec_from_file_location("loop_stability_klt_run", _LSK_PATH)
-lsk = importlib.util.module_from_spec(_spec)
-sys.modules["loop_stability_klt_run"] = lsk
-_spec.loader.exec_module(lsk)
+lsk = load_script("loop_stability_klt_run", _LSK_PATH)
 
 SUPPLY_PARAM = lsk.SUPPLY_PARAM
 SSR_PARAM = "vssr"

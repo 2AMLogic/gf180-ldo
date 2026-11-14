@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from harness import evidence_store as es  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
 REPO = "owner/repo"
 
@@ -341,11 +342,8 @@ class CampaignCli(unittest.TestCase):
     """``sim/run_store_evidence.py``: the store path for campaign outputs."""
 
     def setUp(self):
-        import importlib.util
         path = Path(__file__).resolve().parents[1] / "run_store_evidence.py"
-        spec = importlib.util.spec_from_file_location("run_store_evidence", path)
-        self.mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.mod)
+        self.mod = load_script("run_store_evidence", path)
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         self.root = Path(td.name).resolve()

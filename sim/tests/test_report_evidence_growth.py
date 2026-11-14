@@ -4,18 +4,18 @@
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import os
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
 
 REPO = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location(
-    "report_evidence_growth", REPO / "sim" / "report_evidence_growth.py")
-reg = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(reg)
+sys.path.insert(0, str(REPO / "sim"))
+from harness.loader import load_script  # noqa: E402
+
+reg = load_script("report_evidence_growth", REPO / "sim" / "report_evidence_growth.py")
 
 Z = "0" * 40
 
