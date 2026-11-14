@@ -469,7 +469,7 @@ def classify_op(v: dict, k: str, status: str | None) -> dict:
 # Driver
 # --------------------------------------------------------------------------
 
-def _stage_and_run(j: kb.Job, dut_text: str, tmp: Path, backend: str | None):
+def _stage_and_run(j: kb.Job, tmp: Path, backend: str | None):
     wd = tmp / j.name
     req = kb.stage(j, wd)
     if getattr(j, "waveforms", False):
@@ -522,7 +522,7 @@ def main(argv=None) -> int:
             dpath.write_text(text)
             j = job(scen, dpath, axes, waveforms=args.waveforms)
             print(f"{scen}: instrumented DUT sha256 {sha256_text(text)}", flush=True)
-            req, report = _stage_and_run(j, text, tmp, args.backend)
+            req, report = _stage_and_run(j, tmp, args.backend)
             sub = dest / scen
             vals = kb.collect(report, j, sub)
             shutil.copyfile(req.parent / "body.spice", sub / "body.spice")

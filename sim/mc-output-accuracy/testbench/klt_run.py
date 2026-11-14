@@ -82,7 +82,7 @@ def sample_rows(report: dict, job_: kb.Job) -> dict[str, dict[int, dict]]:
     return out
 
 
-def statistics(samples: dict[int, dict], expected_corners: int | None = None) -> dict:
+def statistics(samples: dict[int, dict]) -> dict:
     """tb.json's ``measure`` definitions over one PVT point's per-sample values."""
     dv = [s[f"dv_{k}"] for _, s in sorted(samples.items()) for k in range(1, COPIES + 1)]
     n = len(dv)
