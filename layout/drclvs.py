@@ -108,7 +108,6 @@ import argparse
 import dataclasses
 import difflib
 import glob
-import importlib.util
 import json
 import os
 import re
@@ -276,6 +275,7 @@ from lvs_form import (  # noqa: E402
 )
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
+from harness.loader import load_script  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound, find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
     RecordExists,
@@ -893,24 +893,6 @@ def check_controls_apply(spec: CellSpec, text: str) -> dict[str, Control]:
 # the cell registry
 # --------------------------------------------------------------------------
 
-def _load_module(name: str, path: Path):
-    """Import a file by path, under a name of our choosing.
-
-    Used for ``layout/divider/plan.py``, which is also imported -- under
-    KLayout's interpreter, from its own directory -- by the divider's GDS
-    generator. Loading it by path rather than by ``sys.path`` insertion keeps
-    a bare module name like ``plan`` out of this process's import namespace.
-    """
-    module_spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(module_spec)
-    # Register before executing: `@dataclass` resolves its annotations
-    # through `sys.modules[cls.__module__]`, so a module that defines one
-    # raises AttributeError if it is not there yet.
-    sys.modules[name] = module
-    module_spec.loader.exec_module(module)
-    return module
-
-
 def _divider_record_note() -> str:
     """The divider's as-drawn matching, against floorplan.md's own targets.
 
@@ -919,8 +901,12 @@ def _divider_record_note() -> str:
     budget was closed with), so a record can never quote a centroid or a
     sigma the drawing does not have.
     """
-    plan = _load_module("divider_plan", DIVIDER_DIR / "plan.py")
-    area = _load_module("divider_area_estimate", LAYOUT_DIR / "area_estimate.py")
+    # Loaded by path rather than by `sys.path` insertion: `plan.py` is also
+    # imported -- under KLayout's interpreter, from its own directory -- by the
+    # divider's GDS generator, and a path load keeps a bare module name like
+    # `plan` out of this process's import namespace.
+    plan = load_script("divider_plan", DIVIDER_DIR / "plan.py")
+    area = load_script("divider_area_estimate", LAYOUT_DIR / "area_estimate.py")
     _footprint, sigma3 = area.divider_field()
     pattern = "".join(
         "T" if p in plan.TOP_POSITIONS else "B" for p in plan.ACTIVE_POSITIONS

@@ -3,15 +3,15 @@
 
 from __future__ import annotations
 
-import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location(
-    "readme_claims", REPO / "signoff" / "readme_claims.py")
-rc = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(rc)
+sys.path.insert(0, str(REPO / "sim"))
+from harness.loader import load_script  # noqa: E402
+
+rc = load_script("readme_claims", REPO / "signoff" / "readme_claims.py")
 
 REC = {"tier": None, "t1_met_count": 1, "t1_item_count": 11}
 ROOT = "Today it reads **`tier: null`, T1 1 of 11 items met**. See"

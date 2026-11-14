@@ -30,7 +30,6 @@ selftest, which needs ngspice. Nothing here does: no PDK, no simulator.
 from __future__ import annotations
 
 import difflib
-import importlib.util
 import math
 import re
 import sys
@@ -45,11 +44,9 @@ _TB = SIM_DIR / "soft-start-loop-gain" / "testbench"
 sys.path.insert(0, str(_TB))
 import netlist_variants as nv  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
-_spec = importlib.util.spec_from_file_location("ss_loop_gain_sweep", _TB / "sweep.py")
-sweep = importlib.util.module_from_spec(_spec)
-sys.modules["ss_loop_gain_sweep"] = sweep
-_spec.loader.exec_module(sweep)
+sweep = load_script("ss_loop_gain_sweep", _TB / "sweep.py")
 
 CORE = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
 

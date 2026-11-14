@@ -19,7 +19,6 @@ from __future__ import annotations
 import ast
 import csv
 import hashlib
-import importlib.util
 import json
 import re
 import shutil
@@ -30,13 +29,11 @@ import unittest
 from pathlib import Path
 
 SIM_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SIM_DIR))
+from harness.loader import load_script  # noqa: E402
+
 _REPORT_PATH = SIM_DIR / "build_characterization_report.py"
-_spec = importlib.util.spec_from_file_location(
-    "build_characterization_report", _REPORT_PATH
-)
-bcr = importlib.util.module_from_spec(_spec)
-sys.modules["build_characterization_report"] = bcr
-_spec.loader.exec_module(bcr)
+bcr = load_script("build_characterization_report", _REPORT_PATH)
 
 # The pre-#251 extractor: one bold run per `**Overall...**`, terminated by
 # the next `*`. Kept here as the regression oracle -- every verdict it finds

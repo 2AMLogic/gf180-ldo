@@ -9,16 +9,17 @@ classifies. No PDK, no ngspice, no network.
 
 from __future__ import annotations
 
-import importlib.util
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "sim"))
+from harness.loader import load_script  # noqa: E402
+
 _PATH = REPO / "spec" / "decision-records" / "build_index.py"
-_spec = importlib.util.spec_from_file_location("dr_build_index", _PATH)
-bi = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(bi)
+bi = load_script("dr_build_index", _PATH)
 
 
 class StatusBlockTests(unittest.TestCase):
