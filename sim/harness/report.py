@@ -49,6 +49,8 @@ from .runner import (
     RUNG_NAMES,
     RUNG_UNKNOWN,
     PointResult,
+    ngspice_binary_sha256,
+    ngspice_version,
 )
 from .testbench import Testbench
 
@@ -115,6 +117,50 @@ def allocate_record_id(
         if not (records_dir / f"{record_id}.md").exists():
             return record_id
         when += _dt.timedelta(seconds=1)
+
+
+#: Label column width of the provenance banner every driver prints before a
+#: run. Set by the widest label (``ngspice sha256``), so every line's colon
+#: lands in the same column.
+_BANNER_LABEL_W = 14
+
+
+def print_provenance_banner(
+    pdk: Pdk,
+    record_id: str,
+    *,
+    host: str = "",
+    dirty: bool = False,
+    note: str = "",
+) -> None:
+    """The provenance banner a ``sim/`` driver prints before it runs anything.
+
+    One definition, one padding width -- the four drivers that print this
+    banner had drifted to two different label widths while carrying the same
+    four facts. ``host`` adds the fleet-attribution line (issue #182) for the
+    drivers that report it; ``note`` is appended to the record-id line (e.g.
+    ``" (NOT WRITTEN: --no-write)"``).
+
+    ``dirty`` is not cosmetic. ``git_provenance`` reports whether the working
+    tree had uncommitted changes at run time, and a run taken from a dirty
+    tree is not citable as a clean-tree result: the commit sha in the record
+    id does not describe what was actually simulated. Drivers that render
+    their own record body already say so there; printing it here is what tells
+    an operator writing a record **by hand** that they must.
+    """
+    print(f"{'pdk':<{_BANNER_LABEL_W}}: {pdk.variant} @ {pdk.version}")
+    print(f"{'ngspice':<{_BANNER_LABEL_W}}: {ngspice_version()}")
+    # Issue #182: the version string alone was found to be insufficient --
+    # two differently-built binaries reported the identical banner a month
+    # apart. Print the resolved binary's content hash too, so a future
+    # comparison can tell a rebuild from a real change.
+    print(f"{'ngspice sha256':<{_BANNER_LABEL_W}}: {ngspice_binary_sha256()}")
+    if host:
+        print(f"{'host':<{_BANNER_LABEL_W}}: {host}")
+    print(f"{'record id':<{_BANNER_LABEL_W}}: {record_id}{note}")
+    if dirty:
+        print(f"{'working tree':<{_BANNER_LABEL_W}}: DIRTY at run time; "
+              "not citable as a clean-tree result")
 
 
 def _is_finite(value) -> bool:
