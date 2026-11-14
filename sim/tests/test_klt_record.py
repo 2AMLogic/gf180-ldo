@@ -117,9 +117,19 @@ class StoreRun(unittest.TestCase):
         shutil.copytree(SIM_DIR / SLUG / "testbench", self.repo / "sim" / SLUG / "testbench")
         self.exp = self.repo / "sim" / SLUG
         self.stage = ta.stage_corner_dir(self.repo, SLUG, self.RID)
-        self.stage.mkdir(parents=True)
-        # One request's worth of staged output, in run_ab/collect's own layout.
-        (self.stage / "new").mkdir()
+        self._stage()
+        self.objects = {}
+        self._patch(kr, "REPO", self.repo)
+
+    def _stage(self):
+        """Write one request's worth of staged output, in run_ab/collect's layout.
+
+        A successful mint consumes the staging tree (``main`` rmtree's it), so a
+        test that mints the same record id twice must restage in between --
+        otherwise the second attempt stops at the "no staged run" guard instead
+        of reaching the refusal it means to exercise.
+        """
+        (self.stage / "new").mkdir(parents=True, exist_ok=True)
         (self.stage / "new" / "klt-report.json").write_text(json.dumps(
             {"corner_count": 1, "environment": {"remote": {
                 "job_id": "klt-sim-1", "instance_type": "c7i.8xlarge", "state": "done",
@@ -132,8 +142,6 @@ class StoreRun(unittest.TestCase):
         (self.stage / "summary.csv").write_text(
             "dut,corner,line_reg_pct_per_v,status,diagnostics,pass\n"
             "new,tt_27c_3.30v,0.01,pass,,True\n")
-        self.objects = {}
-        self._patch(kr, "REPO", self.repo)
 
     def _patch(self, mod, name, value):
         old = getattr(mod, name)
@@ -150,8 +158,11 @@ class StoreRun(unittest.TestCase):
         self._patch(es, "put_files",
                     lambda files, root, **_: self._put_files(
                         files, root, run=fake_klt(self.objects, **kw)))
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return kr.main([SLUG, "--record-id", self.RID])
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = kr.main([SLUG, "--record-id", self.RID])
+        self.out, self.err = out.getvalue(), err.getvalue()
+        return rc
 
     def test_bytes_are_stored_and_only_the_kept_files_are_committed(self):
         self.assertEqual(self._mint(), 0)
@@ -205,9 +216,20 @@ class StoreRun(unittest.TestCase):
 
     def test_minting_the_same_record_id_twice_is_refused(self):
         self.assertEqual(self._mint(), 0)
-        self.stage.mkdir(parents=True, exist_ok=True)
-        with self.assertRaises(SystemExit):
-            kr.main([SLUG, "--record-id", self.RID])
+        manifest = self.repo / "manifests/artifacts" / f"{SLUG}-{self.RID}.manifest.json"
+        record = self.exp / "records" / f"{self.RID}.md"
+        committed = (manifest.read_text(), record.read_text())
+        # Restage, or the second attempt is refused by the staging guard that
+        # test_an_unstaged_record_id_is_refused_before_anything_is_written
+        # already covers, and `store_files`' overwrite refusal -- the one this
+        # test is named for -- is never reached.
+        self._stage()
+        self.assertEqual(self._mint(), kr.EXIT_NOT_STORED)
+        self.assertIn("refusing to overwrite evidence", self.err)
+        # Neither committed artifact was rewritten, and the second run's bytes
+        # are still staged rather than lost.
+        self.assertEqual((manifest.read_text(), record.read_text()), committed)
+        self.assertTrue((self.stage / "new" / "tt_27c_3.30v.log").is_file())
 
     def test_an_unstaged_record_id_is_refused_before_anything_is_written(self):
         with self.assertRaises(SystemExit) as cm:
