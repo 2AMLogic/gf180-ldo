@@ -49,6 +49,12 @@ import pya  # noqa: F401  (provided by the KLayout interpreter)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gen_gds_common import (  # noqa: E402
+    DBU_UM,
+    L_METAL1,
+    L_METAL1_LABEL,
+    L_POLY2,
+    L_POLY2_LABEL,
+    PDK_OPTION,
     _create_pcell,
     _fail,
     _label,
@@ -68,21 +74,6 @@ PCELL_PARAMS = {
 }
 
 TOP_CELL = "DRCLVS_TESTCELL"
-
-# gf180mcu variant: D = 5LM, 11K top metal, MIM option B.
-PDK_OPTION = "D"
-
-# gf180mcu database unit, as declared by the PDK's own KLayout tech file
-# (libs.tech/klayout/tech/gf180mcu.lyt: <dbu>0.001</dbu>). Written explicitly
-# because it is load bearing for more than precision -- see layout/README.md,
-# "klt drc and the database unit".
-DBU_UM = 0.001
-
-# (layer, datatype) pairs, from rule_decks/layers_definitions.lvs.
-L_POLY2 = (30, 0)
-L_POLY2_LABEL = (30, 10)
-L_METAL1 = (34, 0)
-L_METAL1_LABEL = (34, 10)
 
 
 def build(out_path, pdk_path):

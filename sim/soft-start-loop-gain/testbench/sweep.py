@@ -16,7 +16,8 @@ no injection-element content at all (issue #234) -- and is now, as of issue
 mirror. So the A/B is once more an injection-element comparison, confounded
 by the DR-0024 MIM-cap resize that `binj` (frozen at bfc4a0a) predates. See
 `netlist_variants.py`'s module docstring and `VARIANT_BLURB` for the full
-three-era account, which `selftest.py` asserts.
+three-era account, which `sim/tests/test_soft_start_loop_gain.py`'s
+`TestDutVariantAB` asserts.
 
 **`ATTRIBUTIONS` is re-expanded by #246, but only by one row.**
 `acopen-fb-inj` comes back, retargeted from `XMgmo_ss` to `XMgmc_ss` (the
@@ -3151,7 +3152,9 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
     `sim/soft-start-loop-gain/testbench/run.sh`
   - Testbench self-test: `sim/soft-start-loop-gain/testbench/selftest.py`
     (delegates the loop-gain extraction's known-answer checks to
-    `sim/loop-stability/testbench/selftest.py` and adds this experiment's own)
+    `sim/loop-stability/testbench/selftest.py` and this experiment's own
+    simulator-free checks to `sim/tests/test_soft_start_loop_gain.py`, the
+    same module CI runs via `sim/selftest.sh`)
   - Frozen DUT netlists (one per variant):
 {chr(10).join(f'    `sim/soft-start-loop-gain/netlist-snapshots/{record_id}-{v}.spice`' for v in variants)}
   - Raw logs (one per PVT point x variant x phase, plus the attribution and

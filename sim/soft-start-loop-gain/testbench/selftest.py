@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Prove this experiment's machinery before trusting anything it reports.
 
-Two halves, in this order:
+Two halves, in this order. **Neither is implemented here**: each is
+delegated, unmodified, to the suite that already owns the property.
 
-1. **The loop-gain extraction itself** -- delegated, unmodified, to
+1. **The loop-gain extraction itself** -- delegated to
    ``sim/loop-stability/testbench/selftest.py``. That is not laziness: this
    deck uses that deck's Tian dual-injection arithmetic, its
    ``meas``-based margin extraction and its DR-0008 resurgence idiom
@@ -14,23 +15,30 @@ Two halves, in this order:
    selftest fails, this one fails: a margin from an unvalidated extraction is
    worse than no margin.
 
-2. **This experiment's own additions**, which that selftest knows nothing
-   about and which are exactly where a wrong number here would come from:
+2. **This experiment's own additions** -- delegated to
+   ``sim/tests/test_soft_start_loop_gain.py``, which is the same
+   simulator-free suite ``sim/selftest.sh`` (and therefore CI) runs. Those
+   are the SSR port promotion, the injection-element A/B, the AC-only
+   sensitivity transforms, the landing rule, the derived injection current,
+   the hand-over metrics, the imported margin semantics and the ``klt sim``
+   batch front end -- exactly where a wrong number here would come from.
 
-   a. the SSR port promotion is a *rename*, not a circuit change -- checked
-      structurally (device lines byte-identical, one port name added to two
-      subckt lines and one instance line) and, in ``sweep.py``'s ``anchor``
-      phase, electrically against ``sim/loop-stability/`` itself;
-   b. the injection-element A/B swaps the injection element and nothing else
-      -- checked by diffing the two variants outside the ``ldo_softstart``
-      block;
-   c. the AC-only sensitivity transforms are DC-inert by construction --
-      checked structurally here, and by measurement in the record (each
-      case's landed VOUT / injection current is reported next to its margin);
-   d. the landing rule refuses the DC branches it is there to refuse, at
-      every point of the ramp and not only at the settled one -- the check
-      that keeps a margin from being reported about a bias point that is not
-      the one named.
+   Part 2 used to re-implement about 230 lines of those assertions as its
+   own ``check()`` calls, duplicating the unit-test module property for
+   property. That had already cost one fix in each copy (the "node absent
+   from the netlist" guard, when ``GMSUM`` came back in #246), and it also
+   hid the reverse gap: the two sections that existed ONLY here -- the
+   variant A/B and the ``klt sim`` front end -- never ran in CI, so a
+   regression in the batch front end surfaced only at the next sweep. Both
+   now live in the unit-test module (``TestDutVariantAB``,
+   ``TestKltFrontEnd``), which is what applying this file's own
+   delegate-rather-than-re-implement rule to part 2 buys: one copy of each
+   assertion, and every one of them under CI. Issue #593.
+
+**The pre-sweep gate is unchanged.** ``run.sh`` still runs this file before
+it sweeps, and it still fails on any of those properties -- it now fails
+because the unit-test module failed, rather than because a second copy of
+the same assertion failed.
 
 Needs ngspice for part 1 (no PDK, no design netlist); part 2 needs the
 design netlist but no simulator. Writes nothing.
@@ -42,8 +50,6 @@ Exit codes: 0 all checks pass, 1 a check failed, 3 environment problem.
 
 from __future__ import annotations
 
-import importlib.util
-import math
 import subprocess
 import sys
 from pathlib import Path
@@ -52,15 +58,7 @@ HERE = Path(__file__).resolve().parent
 EXPDIR = HERE.parent
 REPO_ROOT = EXPDIR.parent.parent
 LS_SELFTEST = REPO_ROOT / "sim" / "loop-stability" / "testbench" / "selftest.py"
-
-sys.path.insert(0, str(HERE))
-import netlist_variants as nv  # noqa: E402
-
-_spec = importlib.util.spec_from_file_location(
-    "ss_loop_gain_sweep", HERE / "sweep.py")
-sweep = importlib.util.module_from_spec(_spec)
-sys.modules["ss_loop_gain_sweep"] = sweep
-_spec.loader.exec_module(sweep)
+UNIT_TESTS = REPO_ROOT / "sim" / "tests" / "test_soft_start_loop_gain.py"
 
 OK = True
 
@@ -71,36 +69,24 @@ def check(label: str, passed: bool, detail: str) -> None:
     print(f"  [{'PASS' if passed else 'FAIL'}] {label}: {detail}")
 
 
-def _raises(exc_type, fn, *args, **kwargs) -> bool:
-    """Whether ``fn(*args, **kwargs)`` raises ``exc_type``."""
-    try:
-        fn(*args, **kwargs)
-        return False
-    except exc_type:
-        return True
+def delegate(script: Path) -> subprocess.CompletedProcess:
+    """Run ``script`` as its own process and echo its output, indented.
 
-
-def device_lines(text: str) -> list[str]:
-    """The netlist's element lines, with continuations folded in."""
-    out: list[str] = []
-    for ln in text.splitlines():
-        s = ln.strip()
-        if not s or s.startswith("*"):
-            continue
-        if s.startswith("+") and out:
-            out[-1] += " " + s[1:].strip()
-        else:
-            out.append(s)
-    return out
+    A subprocess rather than an import: each suite is run exactly as its
+    own entry point runs it, so this file cannot change the meaning of
+    somebody else's test by importing it into a different environment.
+    """
+    proc = subprocess.run([sys.executable, str(script)],
+                          capture_output=True, text=True)
+    for ln in (proc.stdout + proc.stderr).splitlines():
+        print("  | " + ln)
+    return proc
 
 
 def main() -> int:
     # ---- part 1: the extraction, via loop-stability's own known-answer test
     print("== 1/2 loop-gain extraction (sim/loop-stability/testbench/selftest.py)")
-    proc = subprocess.run([sys.executable, str(LS_SELFTEST)],
-                          capture_output=True, text=True)
-    for ln in (proc.stdout + proc.stderr).splitlines():
-        print("  | " + ln)
+    proc = delegate(LS_SELFTEST)
     if proc.returncode == 3:
         print("\nFATAL: the extraction selftest could not run (environment)",
               file=sys.stderr)
@@ -111,389 +97,23 @@ def main() -> int:
           "same meas-based margin extraction and the same DR-0008 resurgence "
           "idiom, so its validation is this deck's validation")
 
-    # ---- part 2: this experiment's own additions
-    print("\n== 2/2 this experiment's own machinery")
-    core = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
-    try:
-        dev = nv.instrument_core(core)
-    except nv.TransformError as exc:
-        check("SSR port promotion runs at all", False, str(exc))
-        print("\nSELFTEST FAIL")
-        return 1
-
-    # (a) the port promotion is a rename
-    base_lines = device_lines(core)
-    dev_lines = device_lines(dev)
-    changed = [(a, b) for a, b in zip(base_lines, dev_lines) if a != b]
-    expected = {
-        (nv.CORE_PORTS, nv.CORE_PORTS + " SSR"),
-        (nv.SS_PORTS, nv.SS_PORTS + " SSR"),
-        (nv.SS_INSTANCE, nv.SS_INSTANCE.replace(" ldo_softstart",
-                                                " SSR ldo_softstart")),
-    }
-    check("SSR port promotion changes exactly three lines, all of them port "
-          "lists or the instance line that has to match one",
-          len(base_lines) == len(dev_lines) and set(changed) == expected,
-          f"{len(changed)} line(s) differ out of {len(base_lines)}: "
-          + "; ".join(f"{a!r} -> {b!r}" for a, b in changed[:4]))
-    check("no device, model, resistor or capacitor line is touched by the "
-          "promotion",
-          all(not a[:1].upper() in ("X", "M", "R", "C", "L", "V", "I", "F", "B")
-              or (a, b) == (nv.SS_INSTANCE,
-                            nv.SS_INSTANCE.replace(" ldo_softstart",
-                                                   " SSR ldo_softstart"))
-              for a, b in changed),
-          "the only element line that changes is Xsoftstart, whose port list "
-          "must match the subckt's")
-
-    # (b) the two DUT variants, and what they actually differ in
-    #
-    # HISTORY, because this check's claim has now changed twice and a reader
-    # who only sees the current assertion will mis-date the records:
-    #   pre-#231  `device` was #195's device-level Mgm* chain and `binj` the
-    #             ideal `Binj_ss` source -- the A/B WAS an injection-element
-    #             comparison (record 20260910-015601-2387ece).
-    #   #231/#234 the chain was reverted, so BOTH variants carried `Binj_ss`
-    #             and the A/B degenerated into a DR-0024 cap-resize before/
-    #             after with no injection-element content at all.
-    #   #246      DR-0023's cascoded mirror lands, so `device` carries the
-    #             Mgm* chain again (now with Mgmrc_ss/Mgmc_ss) and `binj`
-    #             still carries `Binj_ss`. The A/B is an injection-element
-    #             comparison again -- but it is CONFOUNDED by the DR-0024
-    #             cap resize, which `binj` (frozen at bfc4a0a) predates. That
-    #             confound is named rather than removed, because removing it
-    #             would mean re-freezing `binj` at a commit that does not
-    #             exist. Any record minted from this bench must say so.
-    # See `netlist_variants.py`'s module docstring and `VARIANT_BLURB`.
-    try:
-        binj = nv.instrument_core(core, nv.fetch_pre195_softstart(REPO_ROOT))
-    except nv.TransformError as exc:
-        check("pre-#195 netlist is reachable", False, str(exc))
-        binj = None
-    if binj is not None:
-        def outside_softstart(text: str) -> list[str]:
-            body = nv.SS_BLOCK_RE.sub("", text)
-            return device_lines(body)
-        same = outside_softstart(dev) == outside_softstart(binj)
-        check("the two DUT variants are identical outside ldo_softstart",
-              same,
-              "pass device, 300k/600k divider, Cff, error_amp and ldo_ilimit "
-              "are byte-identical between the `device` and `binj` netlists")
-        dev_ss = nv.SS_BLOCK_RE.search(dev).group(0)
-        binj_ss = nv.SS_BLOCK_RE.search(binj).group(0)
-        dev_ss_lines = device_lines(dev_ss)
-        binj_ss_lines = device_lines(binj_ss)
-        cascode = ("XMgmr_ss", "XMgmrc_ss", "XMgmo_ss", "XMgmc_ss")
-        missing = [n for n in cascode if f"\n{n} " not in "\n" + dev_ss]
-        check("...and post-#246 `device` carries DR-0023's CASCODED mirror "
-              "while `binj` carries the ideal Binj_ss source",
-              (not missing
-               and "Binj_ss" not in dev_ss
-               and "Binj_ss" in binj_ss
-               and not any(n in binj_ss for n in cascode)),
-              "`device` must have all four mirror devices "
-              + ", ".join(cascode)
-              + " and no behavioural injection source; `binj` must have "
-              "Binj_ss and none of them"
-              + (f" -- MISSING from `device`: {missing}" if missing else ""))
-        check("...and the A/B's OTHER difference, the DR-0024 cap resize, is "
-              "still present and is a named confound, not a surprise",
-              all(any(ln.split()[0] == n for ln in dev_ss_lines)
-                  and any(ln.split()[0] == n for ln in binj_ss_lines)
-                  for n in ("XCss", "XCh_ss", "XCr_ss"))
-              and [ln for ln in dev_ss_lines if ln.split()[0] == "XCss"]
-              != [ln for ln in binj_ss_lines if ln.split()[0] == "XCss"],
-              "`binj` is frozen at bfc4a0a, which predates DR-0024's 5x "
-              "MIM-cap resize, so a device-vs-binj delta from this bench "
-              "carries BOTH the injection element and the ramp-speed resize. "
-              "There is no commit that has one without the other, so the "
-              "confound is named in every record rather than removed "
-              "(issues #234, #246)")
-
-    # (c) the AC-only transforms are DC-inert by construction
-    #
-    # XMpre_b_ss is the target here because it is the FB coupling that is
-    # stable across this cell's injection-element churn (the Mgm* chain has
-    # now been removed and re-added once each, #231 and #246): it touches FB
-    # exactly once and has a `+` continuation line, so this same call also
-    # exercises the continuation-skipping check below.
-    opened = nv.ac_open(dev, "XMpre_b_ss", "FB", "t")
-    ol = device_lines(opened)
-    ind = [l for l in ol if l.lower().startswith("lt ")]
-    rest = [l for l in ol if not l.lower().startswith("lt ")]
-    diff = [(a, b) for a, b in zip(dev_lines, rest) if a != b]
-    check("ac_open() adds exactly one inductor and moves exactly one terminal",
-          len(ind) == 1 and len(rest) == len(dev_lines) and len(diff) == 1
-          and diff[0][0].split()[0] == "XMpre_b_ss"
-          and diff[0][1].split()[1] == "FB_t",
-          f"inserted {ind[0] if ind else '(nothing)'}, and the only other "
-          f"changed line is XMpre_b_ss's drain node. An inductor is a short "
-          f"at DC, so the operating point cannot move; {nv.AC_OPEN_H} H is "
-          f"{1 / (2 * math.pi * float(nv.AC_OPEN_H) * 0.01):.3g} S at the "
-          f"sweep's 0.01 Hz floor, i.e. an open against the ~200 kohm the "
-          f"feedback node presents")
-    check("ac_open() does not split a device line from its `+` continuations",
-          len(diff) == 1
-          and diff[0][0].split()[2:] == diff[0][1].split()[2:]
-          and "sd=0" in diff[0][1],
-          "the moved instance keeps every parameter it had -- inserting the "
-          "inductor between an instance line and its continuation would "
-          "silently truncate the parameter list (ngspice: \"Undefined "
-          "parameter [nf]\"), which is a real bug this check caught")
-    check("ac_open() refuses a B-prefixed behavioural source (issue #234)",
-          _raises(nv.TransformError, nv.ac_open, dev, "Binj_ss", "FB", "t"),
-          "a series inductor is not an AC open for an ideal current source "
-          "-- KCL forces the inductor current to equal the source current "
-          "exactly, so the transform would apply without raising and "
-          "measure nothing; this is the exact `acopen-fb-inj` mistake #234 "
-          "exists to fix, now refused outright rather than silently applied")
-    # HG is a real internal node (the soft-start hold network), chosen
-    # because it is stable across this cell's injection-element churn:
-    # GMSUM, which this check used pre-#234, was deleted by #231 and
-    # re-instated by #246, which is exactly what makes it a bad fixture.
-    shorted = nv.ac_short(dev, "HG", "VIN", "t")
-    sl = device_lines(shorted)
-    caps = [l for l in sl if l.lower().startswith("ct ")]
-    check("ac_short() adds exactly one capacitor and changes nothing else",
-          len(caps) == 1
-          and [l for l in sl if not l.lower().startswith("ct ")] == dev_lines,
-          f"inserted {caps[0] if caps else '(nothing)'} and left every other "
-          f"line byte-identical -- a capacitor is an open at DC, so again the "
-          f"operating point cannot move")
-    check("add_cap()/ac_short() refuses a node absent from the netlist "
-          "(issue #234)",
-          _raises(nv.TransformError, nv.ac_short, dev,
-                  "NODE_THAT_IS_NOT_IN_THIS_NETLIST", "VIN", "t"),
-          "a capacitor onto a node nothing else touches is floating and "
-          "couples to nothing -- this is the exact `acshort-gmsum` mistake "
-          "#234 exists to fix. The absent node is named synthetically rather "
-          "than reusing GMSUM, because GMSUM came BACK in #246 (DR-0023's "
-          "cascoded mirror) and this check then inverted into asserting that "
-          "a node which EXISTS is refused, and failed")
-    for bad in (("XMhold_ss", "VIN"), ("XNoSuchDevice", "FB")):
-        try:
-            nv.ac_open(dev, bad[0], bad[1], "t")
-            raised = False
-        except nv.TransformError:
-            raised = True
-        check(f"ac_open() refuses an ambiguous/absent target {bad}",
-              raised,
-              "a transform that cannot say exactly which terminal it moved "
-              "must fail, not guess -- an attribution built on a guess is worse "
-              "than none")
-
-    # (d) the landing rule
-    def row(**kw):
-        base = dict(
-            corner_id="tt_27c_3.30v", corner="tt", temp_c=27.0, vin_v=3.3,
-            iload_a=0.0, ceff_f=1e-6, esr_ohm=0.1, vout_v=0.9,
-            dcgain_db=100.0, f0_hz=1e5, phase_at_f0_deg=-120.0, f180_hz=None,
-            gain_at_f180_db=None, f0_rising_hz=None, resurgence_db=None,
-            variant="device", phase="ramp", ssr_cmd="0.6", ssr_v=0.6,
-            fb_v=1.2, isup_a=1e-3, load_model="resistive-36ohm",
-            rload_ohm=36.0,
-        )
-        base.update(kw)
-        return sweep.Row(**base)
-
-    check("a mid-ramp point with FB at the reference is accepted",
-          row(vout_v=0.9, fb_v=1.2).landed == "",
-          "VOUT = 0.9 V is nowhere near the 1.8 V regulation target, and it is "
-          "still the intended branch: this is the case sim/loop-stability's "
-          "settled-only rule cannot express")
-    check("the clamp-latch branch is refused at the BOTTOM of the ramp, where "
-          "its VOUT is indistinguishable from the intended one",
-          row(ssr_cmd="0", ssr_v=0.0, vout_v=0.0002, fb_v=0.00013).landed != "",
-          "VOUT ~ 0 is what the ramp's own start looks like too; FB ~ 0 "
-          "instead of ~ VREF is what says the loop is not holding the feedback "
-          "node, i.e. it is a latch and not a ramp state")
-    check("the intended ramp start IS accepted",
-          row(ssr_cmd="0", ssr_v=0.0, vout_v=0.0002, fb_v=1.2).landed == "",
-          "same VOUT, FB at the reference -- accepted, and correctly so")
-    check("an unbounded-VOUT branch is refused",
-          row(vout_v=-29.0, fb_v=1.2).landed != "", "VOUT = -29 V")
-    check("an unparsable operating point is refused, not trusted",
-          row(vout_v=float('nan')).landed != "", "VOUT = nan")
-    check("the anchor phase additionally holds itself to "
-          "sim/loop-stability's own settled rule",
-          (row(phase="anchor", ssr_cmd="free", vout_v=1.5, fb_v=1.2).landed != ""
-           and row(phase="ramp", vout_v=1.5, fb_v=1.2).landed == ""),
-          f"VOUT = 1.5 V is a legitimate ramp state and NOT a legitimate "
-          f"settled one ({sweep.VOUT_TOL_FRAC:.0%} of "
-          f"{sweep.VOUT_NOM_V:g} V) -- the anchor has to land where "
-          f"sim/loop-stability lands or the cross-check it feeds is empty")
-
-    # (e) the injection current is derived correctly
-    r = row(vout_v=0.9, fb_v=1.2)
-    want = 1.2 / 600e3 - (0.9 - 1.2) / 300e3
-    check("the injection current is KCL at FB, not a fitted number",
-          abs(r.iinj_a - want) < 1e-18,
-          f"{r.iinj_a * 1e6:.4f} uA = V(FB)/600k - (V(VOUT)-V(FB))/300k, the "
-          f"same expression for both DUT variants")
-
-    # (e2) the hand-over transfer's metrics have a known answer
-    # The pre-#195 element is a closed-form transconductor,
-    #     I_inj = max(0, (VREF - V(SSR)) * 5 uA/V),
-    # so a synthetic curve carrying exactly that is a known-answer test of
-    # every metric the compensation recommendation cites -- and, because the
-    # curve is built by solving KCL at FB for VOUT and the metrics read it
-    # back out, it also tests that the derivation is inverted correctly.
-    def hov_curve(gm=5e-6, release=1.2, variant="binj"):
-        pts = []
-        for ssr in sweep.HANDOVER_SSR_V:
-            i = max(0.0, (release - ssr) * gm)
-            fb = sweep.VREF_V
-            pts.append(sweep.HovPoint(
-                ssr_cmd=ssr, ssr_v=ssr, fb_v=fb,
-                vout_v=fb - 300e3 * (i - fb / 600e3),
-                pg_v=2.0, erramp_v=2.0, isup_a=1e-3))
-        return sweep.HovCurve(corner_id="tt_27c_3.30v", corner="tt",
-                              temp_c=27.0, vin_v=3.3, variant=variant,
-                              points=pts)
-
-    ideal = hov_curve()
-    check("the hand-over metrics recover the ideal element's known transfer",
-          (abs(ideal.iinj_start_a * 1e6 - 6.0) < 1e-6
-           and abs(ideal.gm_a_per_v * 1e6 + 5.0) < 1e-6
-           and abs(ideal.release_ssr_v - sweep.VREF_V) < 1e-9
-           and abs(ideal.iinj_at_vref_a) < 1e-12
-           and ideal.saturated_to_ssr_v is None),
-          f"I_inj(0) = {ideal.iinj_start_a * 1e6:.4f} uA (analytic 6.0000), "
-          f"gm = {ideal.gm_a_per_v * 1e6:.4f} uA/V (analytic -5.0000), "
-          f"releases at V(SSR) = {ideal.release_ssr_v:.4f} V (analytic "
-          f"{sweep.VREF_V:g}), leaves {ideal.iinj_at_vref_a * 1e9:.3g} nA at "
-          f"VREF, never takes the loop out of regulation -- i.e. the "
-          f"measurement the record reports for the `binj` variant is the "
-          f"behavioural model's own arithmetic read back through the landed "
-          f"operating point")
-
-    never = hov_curve(release=99.0)
-    dipped = hov_curve()
-    _i = next(k for k, p in enumerate(dipped.points) if abs(p.ssr_v - 2.0) < 1e-9)
-    dipped.points[_i].vout_v = (dipped.points[_i].fb_v
-                                - 300e3 * (1e-6 - dipped.points[_i].fb_v / 600e3))
-    check("a soft tail that comes back is not reported as a release",
-          (never.release_ssr_v is None
-           and abs(dipped.release_ssr_v - dipped.points[_i + 1].ssr_v) < 1e-9),
-          "an element that still injects everywhere reports 'never' rather "
-          "than its last sample, and one that dips below the threshold and "
-          "comes back is only released after the LAST crossing -- the first "
-          "crossing would flatter it by the width of the dip")
-
-    sat = hov_curve()
-    for _p in sat.points[:8]:
-        _p.fb_v, _p.vout_v = 1.45, 0.0
-    check("an over-injecting element is reported as taking the loop out of "
-          "regulation, and does not contaminate the fitted transconductance",
-          (abs(sat.saturated_to_ssr_v - sat.points[7].ssr_v) < 1e-9
-           and abs(sat.gm_a_per_v * 1e6 + 5.0) < 1e-6),
-          f"out of regulation up to V(SSR) = {sat.saturated_to_ssr_v:.3f} V "
-          f"(FB pushed to {sat.fb_max_v:.3f} V, i.e. the error amp railed and "
-          f"the pass device off -- a state with no loop gain and therefore no "
-          f"phase margin, which is why it has to be found by a DC sweep and "
-          f"cannot be found by the margin deck), and the transconductance is "
-          f"still fitted over the live range only: "
-          f"{sat.gm_a_per_v * 1e6:.4f} uA/V")
-
-    check("the hand-over deck is the same circuit and the same loop break as "
-          "the margin deck",
-          all(ln in sweep.HANDOVER_TEMPLATE.read_text()
-              and ln in sweep.TEMPLATE.read_text()
-              for ln in ("Xdut VIN VOUT EN 0 AINJ BINJ VREF SSRPIN ldo_core",
-                         "Vinj AINJ BINJ DC 0 AC 0")),
-          "same DUT instantiation, same break at ERRAMP_OUT->PASS_GATE with "
-          "the injection source a DC short -- so a hand-over point and a "
-          "margin row at the same V(SSR) are the same operating point, which "
-          "the sweep then measures rather than assumes "
-          "(handover_consistency())")
-
-    # (f) the bars and the AC band are loop-stability's OBJECTS, not copies
-    check("the DR-0001 bars, the resurgence bar and the AC band are imported "
-          "from sim/loop-stability, not restated",
-          (sweep.PM_MIN_DEG is sweep.ls.PM_MIN_DEG
-           and sweep.GM_MIN_DB is sweep.ls.GM_MIN_DB
-           and sweep.RESURGENCE_MAX_DB is sweep.ls.RESURGENCE_MAX_DB
-           and sweep.AC_DEC is sweep.ls.AC_DEC
-           and sweep.F_START is sweep.ls.F_START
-           and sweep.F_STOP is sweep.ls.F_STOP
-           and issubclass(sweep.Row, sweep.ls.Row)),
-          f"PM >= {sweep.PM_MIN_DEG:g} deg, GM >= {sweep.GM_MIN_DB:g} dB, "
-          f"resurgence <= {sweep.RESURGENCE_MAX_DB:g} dB, "
-          f"dec {sweep.AC_DEC} {sweep.F_START}..{sweep.F_STOP} -- the same "
-          f"objects, so the two experiments cannot drift apart on what a "
-          f"margin means")
-
-    # (g) the `klt sim` front end (issue #451): request shape and report parsing
-    klt_run = sweep.klt_run
-    dut = HERE / "selftest.py"      # any file: only copied/named, never simulated
-    axes = {"process": ("tt",), "temps": (27.0,), "supplies": (2.97, 3.30)}
-    ramp, anchor = sweep.PHASES["ramp"], sweep.PHASES["anchor"]
-    req = klt_run.margin_job("t", ramp, 1e-6, 0.1, dut, 400, "0.01", "1e9", axes).request()
-    prm = req["corners"]["params"]
-    check("a pinned phase zips the supply with every ramp state as corners.params rows",
-          (len(prm["vsup"]) == len(prm["vssr"]) == 2 * len(ramp["ssr"])
-           and set(zip(prm["vsup"], prm["vssr"]))
-           == {(s_, v) for s_ in axes["supplies"] for v in ramp["ssr"]}
-           and "supply_v" not in req["corners"]),
-          f"{len(prm['vsup'])} rows; the supply and V(SSR) are .param axes, "
-          f"not `alter` of a source")
-    req = klt_run.margin_job("t", anchor, 1e-6, 0.1, dut, 400, "0.01", "1e9", axes).request()
-    check("the anchor phase has no ramp-state axis and leaves SSRPIN unconnected",
-          (list(req["corners"]["params"]) == ["vsup"]
-           and not any(ln.startswith("Vssr ")
-                       for ln in klt_run.margin_body(anchor, 1e-6, 0.1).splitlines())),
-          "supply axis only")
-    check("the margin request is a dual-injection AC with the landing quantities as expr",
-          ([p_["name"] for p_ in req["analysis"]["passes"]] == ["inj_v", "inj_i"]
-           and {m["name"] for m in req["measurements"]}
-           == {"ssr_v", "fb_v", "vout_v", "isup_a", *klt_run.ROW_METRICS}),
-          "all seven margin fields are tian metrics, nothing is left ungraded")
-    req = klt_run.handover_job("h", dut, sweep.HANDOVER_SSR_V, axes).request()
-    check("the hand-over deck is an op request with V(SSR) as a zipped .param row, no tian",
-          (req["analysis"]["kind"] == "op"
-           and len(req["corners"]["params"]["vssr"]) == 2 * len(sweep.HANDOVER_SSR_V)
-           and all("tian" not in m for m in req["measurements"])
-           and {m["name"] for m in req["measurements"]} == set(sweep.HOV_FIELDS) - {"ssr_cmd"}),
-          f"{len(sweep.HANDOVER_SSR_V)} states x {len(axes['supplies'])} supplies")
-
-    def corner(ssr, vals, diags=()):
-        return {"process": "tt", "temperature_c": 27.0, "status": "ok", "passes": [],
-                "params": {"vsup": 3.3, "vssr": ssr}, "diagnostics": list(diags),
-                "measurements": [{"name": k, "value": v, "status": "ok"}
-                                 for k, v in vals.items()]}
-    full = dict(ssr_v=0.05, fb_v=1.2, vout_v=0.075, isup_a=1e-4, dcgain_db=60.0,
-                f0_hz=1e5, phase_at_f0_deg=-120.0, f180_hz=1e6, gain_at_f180_db=15.0,
-                f0_rising_hz=2e5, resurgence_db=-1.0)
-    cid = "tt_27c_3.30v"
-    vals, probs = klt_run.collect({"corners": [corner(0.05, full),
-                                               corner(1.15, dict(full, ssr_v=1.15))]})
-    check("report values are keyed by (corner, ramp state), not collapsed per corner",
-          not probs and set(vals) == {(cid, "0.05"), (cid, "1.15")}
-          and vals[(cid, "1.15")]["ssr_v"] == 1.15 and vals[(cid, "0.05")]["ssr_v"] == 0.05,
-          "two ramp states at one corner stay two entries")
-    log = klt_run.margin_log(cid, "device", "ramp", {"ssr": (0.05, 1.15)}, [1e-6], [0.1],
-                             {("device", "ramp", 1e-6, 0.1): vals})
-    rows = [sweep.parse_row_fields(ln) for ln in log.splitlines() if ln.startswith("ROW ")]
-    check("the klt-written ROW lines parse with the deck's own strict ROW parser, "
-          "ramp state outermost, gain margin sign as the deck's (-klt's)",
-          [r["ssr_cmd"] for r in rows] == ["0.05", "1.15"]
-          and float(rows[0]["gain_at_f180_db"]) == -15.0,
-          "same field list as tb_ss_loop_gain.spice.in")
-    # an unavailable crossing (no -180 deg in band) is an empty field, not a problem
-    gone = dict(full, f180_hz=None, gain_at_f180_db=None)
-    diag = [{"code": "measurement", "message":
-             f"[tian_metric_unavailable] measurement '{n}': no crossing"}
-            for n in ("f180_hz", "gain_at_f180_db")]
-    vals2, probs2 = klt_run.collect({"corners": [corner(0.05, gone, diag)]})
-    line = klt_run.row_line("0.05", 1e-6, 0.1, vals2[(cid, "0.05")])
-    check("a tian metric klt reports unavailable is an empty ROW field, as a failed meas is locally",
-          not probs2 and sweep.parse_row_fields(line)["f180_hz"] == "",
-          "empty, parsed back as empty")
-    hlog = klt_run.handover_log(cid, (0.05,), {(cid, "0.05"): full})
-    check("the klt-written HOV line parses with the hand-over deck's strict HOV parser",
-          sweep.parse_hov_fields(
-              [ln for ln in hlog.splitlines() if ln.startswith("HOV ")][0])["ssr_cmd"] == "0.05",
-          "same field list as tb_ss_handover.spice.in")
+    # ---- part 2: this experiment's own additions, via the unit-test module
+    print("\n== 2/2 this experiment's own machinery "
+          "(sim/tests/test_soft_start_loop_gain.py)")
+    if not UNIT_TESTS.is_file():
+        print(f"\nFATAL: {UNIT_TESTS} is missing -- this file delegates every "
+              f"one of its own checks to it, so there is nothing left to run "
+              f"(environment)", file=sys.stderr)
+        return 3
+    proc = delegate(UNIT_TESTS)
+    check("sim/tests/test_soft_start_loop_gain.py",
+          proc.returncode == 0,
+          "delegated unmodified: the SSR port promotion, the device/binj A/B, "
+          "the AC-only transforms, the landing rule, the derived injection "
+          "current, the hand-over metrics, the imported margin semantics and "
+          "the `klt sim` front end. One copy of each assertion, and the same "
+          "copy CI runs via sim/selftest.sh -- see this file's docstring and "
+          "issue #593")
 
     print(f"\nSELFTEST {'PASS' if OK else 'FAIL'}")
     return 0 if OK else 1

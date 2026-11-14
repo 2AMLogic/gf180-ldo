@@ -56,7 +56,8 @@
 * design/netlist/ldo_core.spice: one port name appended to two `.subckt` lines
 * and one instance line, nothing else. SSR is already a node of the cell, so
 * naming it in the port list renames nothing and connects nothing --
-* selftest.py asserts the transform is exactly that, and the unpinned deck
+* sim/tests/test_soft_start_loop_gain.py asserts the transform is exactly
+* that (and selftest.py runs it before any sweep), while the unpinned deck
 * above measures that it is.
 *
 * ---------------------------------------------------------------------------

@@ -6,12 +6,25 @@
 Same contract and same shape as ``test_loop_stability.py``: these cover the
 parts of ``sim/soft-start-loop-gain/testbench/`` that decide whether a number
 becomes a claim in an evidence record -- the landing rule, the derived
-injection current, the netlist transforms, the deck template's substitution,
-and the fact that the margin semantics are *imported* from
-``sim/loop-stability/`` rather than re-implemented. The simulation itself is
-validated against closed-form answers by
-``sim/soft-start-loop-gain/testbench/selftest.py``, which delegates that job
-to ``sim/loop-stability/testbench/selftest.py``.
+injection current, the netlist transforms, the ``device``/``binj`` variant
+A/B, the deck template's substitution, the hand-over metrics, the ``klt sim``
+batch front end, and the fact that the margin semantics are *imported* from
+``sim/loop-stability/`` rather than re-implemented.
+
+**This module is the only copy of those assertions.** Since issue #593,
+``sim/soft-start-loop-gain/testbench/selftest.py`` -- the pre-sweep gate
+``run.sh`` runs -- delegates its whole second half to this file instead of
+restating it, the same way its first half already delegates the extraction's
+known-answer test to ``sim/loop-stability/testbench/selftest.py``. So a
+property asserted here is enforced in two places at once: in CI (via
+``sim/selftest.sh``) and before any sweep (via that selftest). Adding a check
+here is the way to put it in front of a sweep; there is no second file to
+keep in step, and there should not become one.
+
+The simulation itself is validated against closed-form answers by that same
+selftest, which needs ngspice. Nothing here does: no PDK, no simulator.
+``TestDutVariantAB`` needs the pre-#195 commit, which is not an ancestor of
+`main`, and skips with a named reason where it cannot be fetched.
 """
 
 from __future__ import annotations
@@ -39,6 +52,27 @@ sys.modules["ss_loop_gain_sweep"] = sweep
 _spec.loader.exec_module(sweep)
 
 CORE = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
+
+
+def device_lines(text: str) -> list[str]:
+    """The netlist's element lines, with `+` continuations folded in.
+
+    A raw ``splitlines()`` comparison cannot tell "this instance kept every
+    parameter it had" from "this instance was severed from its continuation
+    lines", because both leave the line *count* alone. Folding first makes
+    each element one string, so an equality over this list is a claim about
+    whole devices rather than about text rows.
+    """
+    out: list[str] = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if not s or s.startswith("*"):
+            continue
+        if s.startswith("+") and out:
+            out[-1] += " " + s[1:].strip()
+        else:
+            out.append(s)
+    return out
 
 
 def row(**kw) -> "sweep.Row":
@@ -116,8 +150,13 @@ class TestLandingRule(unittest.TestCase):
 
 class TestDerivedInjectionCurrent(unittest.TestCase):
     def test_it_is_kcl_at_the_feedback_node(self):
+        # The current is *derived* rather than measured, so the only tolerance
+        # it is entitled to is floating-point noise on a ~3 uA quantity --
+        # 1e-18 A, not a round number of decimal places. Anything looser would
+        # let a genuinely different expression pass.
         r = row(vout_v=0.9, fb_v=1.2)
-        self.assertAlmostEqual(r.iinj_a, 1.2 / 600e3 + 0.3 / 300e3, places=15)
+        self.assertAlmostEqual(r.iinj_a, 1.2 / 600e3 - (0.9 - 1.2) / 300e3,
+                               delta=1e-18)
 
     def test_it_is_zero_when_the_divider_alone_balances(self):
         # VOUT = 1.5*FB is the no-injection condition of a 300k/600k divider.
@@ -138,6 +177,38 @@ class TestNetlistTransforms(unittest.TestCase):
         # ... and changes nothing else.
         self.assertEqual(len(out.splitlines()), len(CORE.splitlines()))
 
+    def test_ssr_promotion_changes_exactly_three_lines_and_no_device(self):
+        """The promotion is a *rename*, not a circuit change.
+
+        The line count above is necessary but nowhere near sufficient: a
+        transform that also retyped a device, moved a node or changed a
+        parameter would keep it. This is the claim the record rests on --
+        that every `device` row is a measurement of the committed circuit --
+        so it is asserted as an equality over the whole folded element list,
+        naming the only three lines allowed to differ. Two of them are port
+        lists (not circuitry at all) and the third is the instance line that
+        has to match the subckt's.
+        """
+        out = nv.instrument_core(CORE)
+        base_lines, dev_lines = device_lines(CORE), device_lines(out)
+        self.assertEqual(len(base_lines), len(dev_lines))
+        changed = [(a, b) for a, b in zip(base_lines, dev_lines) if a != b]
+        promoted_instance = nv.SS_INSTANCE.replace(" ldo_softstart",
+                                                   " SSR ldo_softstart")
+        self.assertEqual(
+            set(changed),
+            {(nv.CORE_PORTS, nv.CORE_PORTS + " SSR"),
+             (nv.SS_PORTS, nv.SS_PORTS + " SSR"),
+             (nv.SS_INSTANCE, promoted_instance)},
+            "the promotion touched something other than the two port lists "
+            "and the instance line that must track one of them")
+        # Said the other way round, as the property rather than the fixture:
+        # no element line changes except Xsoftstart's port list.
+        for a, b in changed:
+            if a[:1].upper() in ("X", "M", "R", "C", "L", "V", "I", "F", "B"):
+                self.assertEqual((a, b), (nv.SS_INSTANCE, promoted_instance),
+                                 f"element line {a!r} was modified")
+
     def test_ssr_promotion_is_refused_if_the_port_list_is_not_what_it_expects(self):
         with self.assertRaises(nv.TransformError):
             nv.instrument_core(CORE.replace(nv.CORE_PORTS, ".subckt ldo_core A B"))
@@ -156,6 +227,21 @@ class TestNetlistTransforms(unittest.TestCase):
         self.assertIn("Lt FB_t FB " + nv.AC_OPEN_H, out)
         self.assertRegex(out, r"(?m)^XMpre_b_ss FB_t ")
         self.assertEqual(len(out.splitlines()), len(base.splitlines()) + 1)
+        # "exactly one" as an equality, not as a line count: exactly one
+        # inductor element, and exactly one *other* element differing from
+        # the base. An inductor is a short at DC, so with nothing else
+        # touched the operating point provably cannot move -- which is the
+        # whole DC-inertness claim the attribution rows rest on.
+        ol = device_lines(out)
+        ind = [l for l in ol if l.lower().startswith("lt ")]
+        rest = [l for l in ol if not l.lower().startswith("lt ")]
+        self.assertEqual(len(ind), 1)
+        base_lines = device_lines(base)
+        self.assertEqual(len(rest), len(base_lines))
+        diff = [(a, b) for a, b in zip(base_lines, rest) if a != b]
+        self.assertEqual(len(diff), 1, f"{len(diff)} element lines moved")
+        self.assertEqual(diff[0][0].split()[0], "XMpre_b_ss")
+        self.assertEqual(diff[0][1].split()[1], "FB_t")
 
     def test_ac_open_refuses_a_behavioural_b_prefixed_instance(self):
         """Issue #234: this is the exact `acopen-fb-inj` mistake -- a series
@@ -186,6 +272,18 @@ class TestNetlistTransforms(unittest.TestCase):
         i = next(k for k, ln in enumerate(out) if ln.startswith("Lt "))
         self.assertFalse(out[i + 1].startswith("+"))
         self.assertTrue(out[i - 1].startswith("+"))
+        # The placement above is the mechanism; this is the consequence it
+        # exists to guarantee. A severed instance silently loses its whole
+        # parameter tail (ngspice then says `Undefined parameter [nf]`), and
+        # the line *count* is identical either way -- so the assertion has to
+        # be over the folded element, comparing the parameters it kept.
+        folded = device_lines(nv.ac_open(base, "XMpre_b_ss", "FB", "t"))
+        rest = [l for l in folded if not l.lower().startswith("lt ")]
+        diff = [(a, b) for a, b in zip(device_lines(base), rest) if a != b]
+        self.assertEqual(len(diff), 1)
+        self.assertEqual(diff[0][0].split()[2:], diff[0][1].split()[2:],
+                         "the moved instance lost or gained a parameter")
+        self.assertIn("sd=0", diff[0][1])
 
     def test_ac_open_refuses_an_ambiguous_terminal(self):
         base = nv.instrument_core(CORE)
@@ -207,6 +305,14 @@ class TestNetlistTransforms(unittest.TestCase):
         self.assertEqual(len(out.splitlines()), len(base.splitlines()) + 1)
         block = nv.SS_BLOCK_RE.search(out).group(0)
         self.assertIn("Ct HG VIN", block)
+        # ... and changes nothing else at all: exactly one capacitor added,
+        # every other element byte-identical. A capacitor is an open at DC,
+        # so on that equality the operating point cannot move either.
+        sl = device_lines(out)
+        caps = [l for l in sl if l.lower().startswith("ct ")]
+        self.assertEqual(len(caps), 1)
+        self.assertEqual([l for l in sl if not l.lower().startswith("ct ")],
+                         device_lines(base))
 
     def test_add_cap_refuses_a_node_absent_from_the_netlist(self):
         """Issue #234: this is the exact `acshort-gmsum` mistake -- GMSUM was
@@ -279,6 +385,112 @@ class TestNetlistTransforms(unittest.TestCase):
         for tag, _desc, fn in sweep.ATTRIBUTIONS:
             with self.subTest(tag=tag):
                 fn(base)   # must not raise
+
+
+class TestDutVariantAB(unittest.TestCase):
+    """What the `device`/`binj` A/B actually differs in.
+
+    HISTORY, because this claim has now changed twice and a reader who only
+    sees the current assertion will mis-date the records:
+
+      pre-#231  `device` was #195's device-level Mgm* chain and `binj` the
+                ideal `Binj_ss` source -- the A/B WAS an injection-element
+                comparison (record 20260910-015601-2387ece).
+      #231/#234 the chain was reverted, so BOTH variants carried `Binj_ss`
+                and the A/B degenerated into a DR-0024 cap-resize before/
+                after with no injection-element content at all.
+      #246      DR-0023's cascoded mirror lands, so `device` carries the
+                Mgm* chain again (now with Mgmrc_ss/Mgmc_ss) and `binj`
+                still carries `Binj_ss`. The A/B is an injection-element
+                comparison again -- but it is CONFOUNDED by the DR-0024
+                cap resize, which `binj` (frozen at bfc4a0a) predates. That
+                confound is named rather than removed, because removing it
+                would mean re-freezing `binj` at a commit that does not
+                exist. Any record minted from this bench must say so.
+
+    See ``netlist_variants.py``'s module docstring and ``VARIANT_BLURB``.
+
+    ``binj`` is built from ``bfc4a0a``, which is a real commit in the
+    GitHub repository but **not** an ancestor of `main`, so it has to be
+    fetched by hash. A checkout that cannot reach it (no network, or a
+    shallow clone whose fetch is refused) SKIPS these: the A/B is a
+    property of two netlists, and without the second one there is nothing
+    to assert either way. It is never a silent pass -- `skipTest` names the
+    reason, and the pre-sweep gate in `run.sh` still runs it where the
+    commit is reachable.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dev = nv.instrument_core(CORE)
+        try:
+            cls.binj = nv.instrument_core(
+                CORE, nv.fetch_pre195_softstart(REPO_ROOT))
+        except nv.TransformError as exc:
+            cls.binj = None
+            cls.why = str(exc)
+
+    def setUp(self):
+        if self.binj is None:
+            self.skipTest(
+                f"the pre-#195 netlist at {nv.PRE195_SHORT} is unreachable "
+                f"from this checkout, so there is no second variant to "
+                f"compare: {self.why}")
+
+    @staticmethod
+    def _outside_softstart(text: str) -> list[str]:
+        return device_lines(nv.SS_BLOCK_RE.sub("", text))
+
+    def test_the_two_variants_are_identical_outside_ldo_softstart(self):
+        """The A/B has to be about the soft-start cell and nothing else.
+
+        Pass device, 300k/600k divider, Cff, error_amp and ldo_ilimit must
+        be byte-identical, or a device-vs-binj delta is not attributable to
+        the injection element at all.
+        """
+        self.assertEqual(self._outside_softstart(self.dev),
+                         self._outside_softstart(self.binj))
+
+    def test_device_carries_the_cascoded_mirror_and_binj_the_ideal_source(self):
+        dev_ss = nv.SS_BLOCK_RE.search(self.dev).group(0)
+        binj_ss = nv.SS_BLOCK_RE.search(self.binj).group(0)
+        cascode = ("XMgmr_ss", "XMgmrc_ss", "XMgmo_ss", "XMgmc_ss")
+        missing = [n for n in cascode if f"\n{n} " not in "\n" + dev_ss]
+        self.assertEqual(missing, [],
+                         "post-#246 `device` must carry all four of "
+                         "DR-0023's mirror devices")
+        self.assertNotIn("Binj_ss", dev_ss,
+                         "`device` must have no behavioural injection source")
+        self.assertIn("Binj_ss", binj_ss,
+                      "`binj` must carry the ideal Binj_ss source")
+        for n in cascode:
+            self.assertNotIn(n, binj_ss,
+                             f"`binj` must not carry the mirror device {n}")
+
+    def test_the_dr0024_cap_resize_confound_is_still_present(self):
+        """The A/B's OTHER difference, named rather than removed.
+
+        `binj` is frozen at bfc4a0a, which predates DR-0024's 5x MIM-cap
+        resize, so a device-vs-binj delta from this bench carries BOTH the
+        injection element and the ramp-speed resize. There is no commit that
+        has one without the other, so the confound is named in every record
+        instead of being removed (issues #234, #246). This test fails if the
+        confound ever silently disappears -- at which point the records'
+        caveat is the thing that became wrong.
+        """
+        dev_ss = device_lines(nv.SS_BLOCK_RE.search(self.dev).group(0))
+        binj_ss = device_lines(nv.SS_BLOCK_RE.search(self.binj).group(0))
+        for n in ("XCss", "XCh_ss", "XCr_ss"):
+            self.assertTrue(any(l.split()[0] == n for l in dev_ss),
+                            f"{n} is absent from `device`")
+            self.assertTrue(any(l.split()[0] == n for l in binj_ss),
+                            f"{n} is absent from `binj`")
+        self.assertNotEqual([l for l in dev_ss if l.split()[0] == "XCss"],
+                            [l for l in binj_ss if l.split()[0] == "XCss"],
+                            "the DR-0024 cap resize is no longer a difference "
+                            "between the two variants -- the confound every "
+                            "record of this bench names has gone, so those "
+                            "records' caveat is now wrong")
 
 
 def _classify_attribution_effect(base: str, out: str) -> tuple[str, str]:
@@ -925,6 +1137,150 @@ class TestHandoverConsistencyCheck(unittest.TestCase):
                 ceff_f=1e-6, esr_ohm=0.1)
         _, n = sweep.handover_consistency([c], [r])
         self.assertEqual(n, 0)
+
+
+class TestKltFrontEnd(unittest.TestCase):
+    """The `klt sim` batch front end: request shape and report parsing.
+
+    Issue #451 moved this experiment's grid onto `klt sim`, so
+    ``klt_run.py`` now decides what is simulated and how the returned report
+    becomes `ROW`/`HOV` lines. Nothing here needs klt installed or a
+    simulator: the request is a dict and the report is a dict, so both sides
+    are checked against the deck's own strict parsers offline.
+
+    These are *not* a substitute for a real batch run -- they cannot catch a
+    klt-side schema change, only a drift between this front end and the
+    decks it stands in for.
+    """
+
+    DUT = _TB / "sweep.py"      # any file: only copied and named, never simulated
+    AXES = {"process": ("tt",), "temps": (27.0,), "supplies": (2.97, 3.30)}
+    CID = "tt_27c_3.30v"
+    FULL = dict(ssr_v=0.05, fb_v=1.2, vout_v=0.075, isup_a=1e-4,
+                dcgain_db=60.0, f0_hz=1e5, phase_at_f0_deg=-120.0,
+                f180_hz=1e6, gain_at_f180_db=15.0, f0_rising_hz=2e5,
+                resurgence_db=-1.0)
+
+    @property
+    def klt_run(self):
+        return sweep.klt_run
+
+    def margin_request(self, phase):
+        return self.klt_run.margin_job(
+            "t", sweep.PHASES[phase], 1e-6, 0.1, self.DUT, 400, "0.01", "1e9",
+            self.AXES).request()
+
+    @staticmethod
+    def corner(ssr, vals, diags=()):
+        return {"process": "tt", "temperature_c": 27.0, "status": "ok",
+                "passes": [], "params": {"vsup": 3.3, "vssr": ssr},
+                "diagnostics": list(diags),
+                "measurements": [{"name": k, "value": v, "status": "ok"}
+                                 for k, v in vals.items()]}
+
+    def test_a_pinned_phase_zips_the_supply_with_every_ramp_state(self):
+        """Both axes are `.param` rows, not an `alter` of a source.
+
+        The supply and V(SSR) have to be swept as corner parameters so each
+        (supply, ramp state) pair is its own corner in the report; collapsing
+        either into an `alter` would make the two indistinguishable on the
+        way back.
+        """
+        ramp = sweep.PHASES["ramp"]
+        prm = self.margin_request("ramp")["corners"]["params"]
+        self.assertEqual(len(prm["vsup"]), 2 * len(ramp["ssr"]))
+        self.assertEqual(len(prm["vssr"]), 2 * len(ramp["ssr"]))
+        self.assertEqual(
+            set(zip(prm["vsup"], prm["vssr"])),
+            {(s, v) for s in self.AXES["supplies"] for v in ramp["ssr"]})
+        self.assertNotIn("supply_v", self.margin_request("ramp")["corners"])
+
+    def test_the_anchor_phase_has_no_ramp_axis_and_leaves_ssrpin_floating(self):
+        req = self.margin_request("anchor")
+        self.assertEqual(list(req["corners"]["params"]), ["vsup"])
+        body = self.klt_run.margin_body(sweep.PHASES["anchor"], 1e-6, 0.1)
+        self.assertFalse(any(ln.startswith("Vssr ")
+                             for ln in body.splitlines()),
+                         "the anchor phase must not pin SSRPIN")
+
+    def test_the_margin_request_grades_every_margin_field_as_a_tian_metric(self):
+        req = self.margin_request("anchor")
+        self.assertEqual([p["name"] for p in req["analysis"]["passes"]],
+                         ["inj_v", "inj_i"])
+        self.assertEqual(
+            {m["name"] for m in req["measurements"]},
+            {"ssr_v", "fb_v", "vout_v", "isup_a", *self.klt_run.ROW_METRICS},
+            "a margin field that is not a measurement is ungraded")
+
+    def test_the_handover_request_is_an_op_sweep_with_no_tian(self):
+        req = self.klt_run.handover_job(
+            "h", self.DUT, sweep.HANDOVER_SSR_V, self.AXES).request()
+        self.assertEqual(req["analysis"]["kind"], "op")
+        self.assertEqual(len(req["corners"]["params"]["vssr"]),
+                         len(self.AXES["supplies"]) * len(sweep.HANDOVER_SSR_V))
+        self.assertTrue(all("tian" not in m for m in req["measurements"]))
+        self.assertEqual({m["name"] for m in req["measurements"]},
+                         set(sweep.HOV_FIELDS) - {"ssr_cmd"})
+
+    def test_report_values_are_keyed_by_corner_and_ramp_state(self):
+        """Two ramp states at one corner must stay two entries.
+
+        Keying on the corner alone would silently keep whichever ramp state
+        klt happened to return last and report it for all of them.
+        """
+        vals, probs = self.klt_run.collect(
+            {"corners": [self.corner(0.05, self.FULL),
+                         self.corner(1.15, dict(self.FULL, ssr_v=1.15))]})
+        self.assertEqual(probs, [])
+        self.assertEqual(set(vals), {(self.CID, "0.05"), (self.CID, "1.15")})
+        self.assertEqual(vals[(self.CID, "0.05")]["ssr_v"], 0.05)
+        self.assertEqual(vals[(self.CID, "1.15")]["ssr_v"], 1.15)
+
+    def test_klt_written_row_lines_parse_with_the_decks_own_strict_parser(self):
+        """The front end has to emit exactly what the deck emits.
+
+        `parse_row_fields` is the same strict parser used on a local
+        ngspice log, so this is the assertion that a batch row and a local
+        row are the same record. The gain margin is also sign-flipped on the
+        way through: klt reports the gain at the -180 deg crossing, the deck
+        reports its negation.
+        """
+        vals, _ = self.klt_run.collect(
+            {"corners": [self.corner(0.05, self.FULL),
+                         self.corner(1.15, dict(self.FULL, ssr_v=1.15))]})
+        log = self.klt_run.margin_log(
+            self.CID, "device", "ramp", {"ssr": (0.05, 1.15)}, [1e-6], [0.1],
+            {("device", "ramp", 1e-6, 0.1): vals})
+        rows = [sweep.parse_row_fields(ln)
+                for ln in log.splitlines() if ln.startswith("ROW ")]
+        self.assertEqual([r["ssr_cmd"] for r in rows], ["0.05", "1.15"],
+                         "the ramp state is the outermost loop")
+        self.assertEqual(float(rows[0]["gain_at_f180_db"]), -15.0)
+
+    def test_a_metric_klt_reports_unavailable_is_an_empty_row_field(self):
+        """No -180 deg crossing in band is an absence, not a problem.
+
+        Locally that is a `meas` that found nothing and wrote an empty
+        field; through klt it arrives as a `tian_metric_unavailable`
+        diagnostic. Both have to land as the same empty field, or the batch
+        path would turn a legitimately unmeasurable corner into a failure.
+        """
+        gone = dict(self.FULL, f180_hz=None, gain_at_f180_db=None)
+        diag = [{"code": "measurement",
+                 "message": f"[tian_metric_unavailable] measurement "
+                            f"'{n}': no crossing"}
+                for n in ("f180_hz", "gain_at_f180_db")]
+        vals, probs = self.klt_run.collect(
+            {"corners": [self.corner(0.05, gone, diag)]})
+        self.assertEqual(probs, [])
+        line = self.klt_run.row_line("0.05", 1e-6, 0.1, vals[(self.CID, "0.05")])
+        self.assertEqual(sweep.parse_row_fields(line)["f180_hz"], "")
+
+    def test_klt_written_hov_lines_parse_with_the_handover_strict_parser(self):
+        hlog = self.klt_run.handover_log(
+            self.CID, (0.05,), {(self.CID, "0.05"): self.FULL})
+        line = next(ln for ln in hlog.splitlines() if ln.startswith("HOV "))
+        self.assertEqual(sweep.parse_hov_fields(line)["ssr_cmd"], "0.05")
 
 
 class TestRecordIsAppendOnly(unittest.TestCase):
