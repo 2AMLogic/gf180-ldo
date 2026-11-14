@@ -16,8 +16,11 @@ No PDK, no ngspice, no network -- these read committed text only.
 
 from __future__ import annotations
 
+import ast
 import csv
+import hashlib
 import importlib.util
+import json
 import re
 import shutil
 import subprocess
@@ -968,6 +971,340 @@ class TestFreshnessBindsToDesignatedDut(unittest.TestCase):
         record, snap = bcr.latest_substantive_record(self.SLUG)
         self.assertEqual(record.stem, "20260902-000000-bbbbbbb")
         self.assertEqual(bcr.freshness(snap, "ldo_core")[0], "stale")
+
+
+class TestStoreBackedRecordFreshness(unittest.TestCase):
+    """A record whose snapshot is in the artifact store is still evidence.
+
+    Since DR-0041 (issue #511) `python3 sim/run_corners.py <bench>` puts the
+    frozen netlist snapshot in the fleet artifact store and commits only the
+    run's manifest and its Markdown record, so
+    `sim/<slug>/netlist-snapshots/<record-id>.spice` is not a file. Requiring
+    that file made `latest_substantive_record()` skip every such record
+    (issue #597): the row kept citing an older, snapshotted record, or
+    reported `unknown` when no record of the bench had a committed snapshot.
+
+    These assert the rule, not the committed tree -- no store-backed record
+    exists under `sim/` yet, which is exactly why the committed-output diff
+    in CI cannot catch this. Synthetic trees only: `bcr.REPO_ROOT`,
+    `bcr.SIM_DIR`, `bcr.DUT_CANDIDATES` and `bcr.DUT_BY_SLUG` are repointed
+    at a tempdir.
+    """
+
+    SLUG = "zz-store-backed-fixture"
+    CORE = ".subckt ldo_core vin vout\nRz n1 n2 1k ppolyf_u_3k\n.ends\n"
+    STALE_CORE = ".subckt ldo_core vin vout\nRz n1 n2 1k ppolyf_u_1k\n.ends\n"
+    AMP = ".subckt error_amp inp inn out\nRa a b 1k\n.ends\n"
+    CORE_REL = "design/netlist/ldo_core.spice"
+    AMP_REL = "design/netlist/error_amp.spice"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        netlists = self.root / "design" / "netlist"
+        netlists.mkdir(parents=True)
+        self.core = netlists / "ldo_core.spice"
+        self.amp = netlists / "error_amp.spice"
+        self.core.write_text(self.CORE)
+        self.amp.write_text(self.AMP)
+
+        self.records_dir = self.root / "sim" / self.SLUG / "records"
+        self.snapshots_dir = self.root / "sim" / self.SLUG / "netlist-snapshots"
+        self.manifests_dir = self.root / "manifests" / "artifacts"
+        for directory in (self.records_dir, self.snapshots_dir, self.manifests_dir):
+            directory.mkdir(parents=True)
+
+        for name, value in (
+            ("REPO_ROOT", self.root),
+            ("SIM_DIR", self.root / "sim"),
+            ("DUT_CANDIDATES", {"ldo_core": self.core, "error_amp": self.amp}),
+            ("DUT_BY_SLUG", {self.SLUG: "ldo_core"}),
+        ):
+            original = getattr(bcr, name)
+            setattr(bcr, name, value)
+            self.addCleanup(setattr, bcr, name, original)
+
+    # -- fixture builders ------------------------------------------------
+
+    @staticmethod
+    def _sha(text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()
+
+    def _record(
+        self,
+        record_id: str,
+        *,
+        dut_rel: str | None = CORE_REL,
+        dut_sha: str | None = None,
+        includes: tuple[tuple[str, str], ...] = (),
+        manifest_sha: str | None = None,
+    ) -> Path:
+        """A Markdown record shaped as `sim/harness/report.py` renders one.
+
+        `dut_rel=None` is the `error_amp` bench shape: the testbench names no
+        DUT, so the record has no `DUT netlist:` Links bullet and no
+        `DUT netlist sha256:` line -- the netlist appears only as an
+        `Included design netlist` entry.
+        """
+        lines = [
+            f"# Record {record_id}",
+            "",
+            f"- **Record ID**: {record_id}",
+            "- **Links**:",
+            f"  - Testbench: `sim/{self.SLUG}/testbench/tb.spice`",
+        ]
+        if dut_rel is not None:
+            lines.append(f"  - DUT netlist: `{dut_rel}`")
+        lines += [
+            f"  - Netlist snapshot: `sim/{self.SLUG}/netlist-snapshots/{record_id}.spice`",
+            "",
+            "**Overall: PASS**",
+            "",
+            "## Environment",
+            "",
+            f"- Testbench netlist sha256: `{self._sha('tb')}`",
+        ]
+        if dut_sha is not None:
+            lines.append(f"- DUT netlist sha256: `{dut_sha}`")
+        # The decoy: `Manifest sha256` hashes the bench's tb.json, never a
+        # netlist, so it must never satisfy a DUT comparison.
+        lines.append(f"- Manifest sha256: `{manifest_sha or self._sha('tb.json')}`")
+        for path, sha in includes:
+            lines.append(f"- Included design netlist `{path}` sha256: `{sha}`")
+        lines.append("")
+        path = self.records_dir / f"{record_id}.md"
+        path.write_text("\n".join(lines))
+        return path
+
+    def _manifest(self, record_id: str, *, entry_name: str | None = None) -> Path:
+        """The committed artifact manifest `store_files()` installs.
+
+        `entry_name` overrides the snapshot entry's name, for the case of a
+        manifest that stores a run's logs but not its netlist snapshot.
+        """
+        if entry_name is None:
+            entry_name = f"sim/{self.SLUG}/netlist-snapshots/{record_id}.spice"
+        path = self.manifests_dir / f"{self.SLUG}-{record_id}.manifest.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "entries": [
+                        {"name": entry_name, "sha256": "ab" * 32, "size": 4096},
+                        {
+                            "name": f"sim/{self.SLUG}/corners/{record_id}/tt.log",
+                            "sha256": "cd" * 32,
+                            "size": 128,
+                        },
+                    ],
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        return path
+
+    def _committed_snapshot(self, record_id: str, body: str) -> None:
+        bar = "* " + "=" * 70
+        (self.snapshots_dir / f"{record_id}.spice").write_text(
+            f"* Frozen netlist snapshot\n\n{bar}\n"
+            f"* {'DUT netlist':<21}: {self.CORE_REL}\n"
+            f"* {'sha256':<21}: 00\n{bar}\n{body}"
+        )
+
+    def _store_backed(self, record_id: str, dut_sha: str) -> Path:
+        record = self._record(record_id, dut_sha=dut_sha)
+        self._manifest(record_id)
+        return record
+
+    # -- acceptance criteria --------------------------------------------
+
+    def test_store_backed_record_is_cited_fresh_over_an_older_stale_snapshot(self):
+        """The #597 defect: the newest record is store-backed and current,
+        an older one has a committed snapshot of a superseded DUT. The row
+        must cite the newest and report it fresh.
+        """
+        self._record("20261101-000000-0ld0ld0", dut_sha=self._sha(self.STALE_CORE))
+        self._committed_snapshot("20261101-000000-0ld0ld0", self.STALE_CORE)
+        newest = self._store_backed("20261110-120000-abcdef0", self._sha(self.CORE))
+
+        record, snapshot = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record, newest)
+        self.assertIsNone(snapshot, "a store-backed record has no snapshot file")
+        self.assertEqual(
+            bcr.record_freshness(record, snapshot, "ldo_core"),
+            ("fresh", "ldo_core", None),
+        )
+
+    def test_store_backed_record_with_a_superseded_dut_sha_is_stale(self):
+        record = self._store_backed("20261110-120000-abcdef0", self._sha(self.STALE_CORE))
+        self.assertEqual(
+            bcr.record_freshness(record, None, "ldo_core"), ("stale", None, None)
+        )
+        # ...and it is still the cited record: a stale row cites its newest
+        # evidence rather than silently reaching back past it.
+        selected, snapshot = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(selected, record)
+        self.assertIsNone(snapshot)
+
+    def test_a_record_with_neither_snapshot_nor_manifest_is_still_skipped(self):
+        """Unchanged: a metadata-only correction record is not a measurement,
+        and must not outrank the older measurement it points back at.
+        """
+        self._record("20261101-000000-0ld0ld0", dut_sha=self._sha(self.CORE))
+        self._committed_snapshot("20261101-000000-0ld0ld0", self.CORE)
+        self._record("20261110-120000-abcdef0", dut_sha=self._sha(self.CORE))
+
+        record, snapshot = bcr.latest_substantive_record(self.SLUG)
+        self.assertEqual(record.stem, "20261101-000000-0ld0ld0")
+        self.assertIsNotNone(snapshot)
+
+    def test_a_store_backed_record_with_no_sha_for_the_expected_dut_is_unknown(self):
+        """No sha256 line for the expected netlist is `unknown` with a
+        reason -- never matched against another hash the record happens to
+        state. The fixture's `Manifest sha256` is deliberately set to the
+        current DUT's hash: reading it would report a false `fresh`.
+        """
+        record = self._record(
+            "20261110-120000-abcdef0",
+            dut_sha=None,
+            manifest_sha=self._sha(self.CORE),
+        )
+        self._manifest("20261110-120000-abcdef0")
+
+        status, label, reason = bcr.record_freshness(record, None, "ldo_core")
+        self.assertEqual(status, "unknown")
+        self.assertIsNone(label)
+        self.assertIn(self.CORE_REL, reason)
+        self.assertIn("stored, not committed", reason)
+
+    def test_the_regenerated_report_is_unchanged_on_the_committed_tree(self):
+        """AC: `python3 sim/build_characterization_report.py` still matches
+        the committed `sim/CHARACTERIZATION.md` byte for byte -- the same
+        check CI's diff step performs, asserted here against the real tree.
+        """
+        proc = subprocess.run(
+            [sys.executable, str(_REPORT_PATH)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            proc.stdout,
+            (SIM_DIR / "CHARACTERIZATION.md").read_text(),
+            "regenerated report differs from the committed one",
+        )
+
+    def test_the_report_builder_makes_no_network_or_store_call(self):
+        """AC: grading a store-backed record reads committed bytes only.
+
+        Asserted structurally rather than by mocking: the module imports no
+        transport or subprocess machinery at all, so there is no code path
+        that could reach the broker.
+        """
+        source = _REPORT_PATH.read_text()
+        tree = ast.parse(source)
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".")[0])
+        self.assertEqual(
+            imported & {"subprocess", "socket", "http", "urllib", "requests", "os"},
+            set(),
+            f"report builder imports a transport/subprocess module: {sorted(imported)}",
+        )
+        self.assertNotIn("klt artifact", source)
+
+    # -- edge cases ------------------------------------------------------
+
+    def test_expected_dut_listed_only_as_an_included_design_cell_is_graded(self):
+        """The `error_amp` bench shape: the testbench designates no DUT, so
+        the netlist appears only as an `Included design netlist` line.
+        """
+        bcr.DUT_BY_SLUG[self.SLUG] = "error_amp"
+        record = self._record(
+            "20261110-120000-abcdef0",
+            dut_rel=None,
+            includes=((self.AMP_REL, self._sha(self.AMP)),),
+        )
+        self._manifest("20261110-120000-abcdef0")
+        self.assertEqual(
+            bcr.record_freshness(record, None, "error_amp"),
+            ("fresh", "error_amp", None),
+        )
+        self.assertEqual(bcr.latest_substantive_record(self.SLUG)[0], record)
+
+    def test_a_record_designating_another_dut_is_unknown_not_matched(self):
+        """Issue #393's rule, carried over: a record that measured the core
+        is not an `error_amp` measurement even when it froze the current amp
+        alongside it.
+        """
+        record = self._record(
+            "20261110-120000-abcdef0",
+            dut_rel=self.CORE_REL,
+            dut_sha=self._sha(self.CORE),
+            includes=((self.AMP_REL, self._sha(self.AMP)),),
+        )
+        self._manifest("20261110-120000-abcdef0")
+        status, label, reason = bcr.record_freshness(record, None, "error_amp")
+        self.assertEqual(status, "unknown")
+        self.assertIsNone(label)
+        self.assertIn(self.CORE_REL, reason)
+
+    def test_an_unmapped_slug_is_unknown_for_a_store_backed_record(self):
+        record = self._store_backed("20261110-120000-abcdef0", self._sha(self.CORE))
+        status, label, reason = bcr.record_freshness(record, None, None)
+        self.assertEqual((status, label), ("unknown", None))
+        self.assertIn("no expected DUT", reason)
+
+    def test_a_manifest_without_the_snapshot_entry_counts_as_no_manifest(self):
+        record_id = "20261110-120000-abcdef0"
+        self._record(record_id, dut_sha=self._sha(self.CORE))
+        self._manifest(record_id, entry_name=f"sim/{self.SLUG}/corners/{record_id}/tt.log")
+        self.assertIsNone(
+            bcr.stored_snapshot_manifest(self.records_dir / f"{record_id}.md")
+        )
+        # ...so it is skipped like a correction record, and the older
+        # snapshotted measurement is cited instead.
+        self._record("20261101-000000-0ld0ld0", dut_sha=self._sha(self.CORE))
+        self._committed_snapshot("20261101-000000-0ld0ld0", self.CORE)
+        self.assertEqual(
+            bcr.latest_substantive_record(self.SLUG)[0].stem, "20261101-000000-0ld0ld0"
+        )
+
+    def test_a_malformed_manifest_counts_as_no_manifest_rather_than_raising(self):
+        record_id = "20261110-120000-abcdef0"
+        self._record(record_id, dut_sha=self._sha(self.CORE))
+        (self.manifests_dir / f"{self.SLUG}-{record_id}.manifest.json").write_text(
+            "{not json"
+        )
+        self.assertIsNone(
+            bcr.stored_snapshot_manifest(self.records_dir / f"{record_id}.md")
+        )
+        self.assertEqual(bcr.latest_substantive_record(self.SLUG), (
+            self.records_dir / f"{record_id}.md", None
+        ))
+
+    def test_a_committed_snapshot_still_outranks_the_records_own_hashes(self):
+        """Where both exist the snapshot file is what is graded, so no
+        landed row's verdict changes: the record below states the current
+        DUT's sha but its committed snapshot froze the superseded netlist.
+        """
+        record_id = "20261110-120000-abcdef0"
+        record = self._record(record_id, dut_sha=self._sha(self.CORE))
+        self._committed_snapshot(record_id, self.STALE_CORE)
+        self._manifest(record_id)
+        snapshot = self.snapshots_dir / f"{record_id}.spice"
+        self.assertEqual(
+            bcr.record_freshness(record, snapshot, "ldo_core"), ("stale", None, None)
+        )
+        self.assertEqual(
+            bcr.latest_substantive_record(self.SLUG), (record, snapshot)
+        )
 
 
 if __name__ == "__main__":
