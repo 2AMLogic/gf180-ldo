@@ -2,6 +2,23 @@
 
 Sections moved byte-for-byte from [WORK_LOG.md](../WORK_LOG.md) by `loom-daemon work-docs archive`.
 
+### 2026-09-13
+
+- **PR #210**: refactor: dedup ngspice run+validate logic into run_ngspice_deck()
+- **PR #208**: Dedup PDK-discovery and corner_sections() codegen blocks across the four sim testbenches
+- **PR #206**: Dedup parse_row_fields() between loop-stability and soft-start-loop-gain sweep.py
+- **PR #205**: Dedup op-point-sanity's run_point(): reuse sim/harness/lib/run_point.sh
+- **Issue #209** (closed): Dedup ngspice run+validate logic: shared helper for loop-stability and soft-start-loop-gain sweeps
+- **Issue #207** (closed): Dedup PDK-discovery and corner_sections() codegen blocks across the four sim testbenches
+- **Issue #204** (closed): ngspice 'could not find a valid modelname' on all four .include-based testbenches (current-limit, enable-shutdown, op-point-sanity, likely soft-start)
+- **Issue #203** (closed): Dedup parse_row_fields() between loop-stability and soft-start-loop-gain sweep.py
+- **Issue #202** (closed): Dedup op-point-sanity's run_point(): reuse sim/harness/lib/run_point.sh
+
+### 2026-09-12
+
+- **PR #201**: Remove unused import: re in soft-start-loop-gain selftest
+- **Issue #200** (closed): Remove unused import: re in sim/soft-start-loop-gain/testbench/selftest.py
+
 ### 2026-09-10
 
 - **PR #197**: sim: soft-start hand-over loop-gain characterization, and the compensation recommendation for #191

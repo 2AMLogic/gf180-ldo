@@ -8,6 +8,16 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-13
 
+- **PR #591**: fix: grade the current-limit bench against DR-0005's ratified window once
+- **PR #590**: docs: grade soft-start against DR-0024 as ratified, not proposed
+- **PR #589**: refactor: parse HOV lines with the shared strict parser, hoist the FB-node KCL
+- **PR #583**: refactor: read the divider's geometry from plan.py in area_estimate
+- **PR #582**: refactor: share delta-CSV writer and spread() between the two compare_records
+- **Issue #587** (closed): Remove the expired "proposed, not yet ratified" wording from soft-start summarize.py and README: DR-0024 was ratified 2026-09-15
+- **Issue #585** (closed): Remove the superseded 65-80 mA window from current-limit summarize.py: one ratified (DR-0005) bound shared with klt_run.grade()
+- **Issue #584** (closed): Remove parse_hov_fields()'s hand-copied parser body in soft-start-loop-gain sweep.py: reuse harness.report.parse_row_fields()
+- **Issue #581** (closed): Remove duplicate delta-CSV writer and spread() in soft-start-loop-gain/testbench/compare_records.py: reuse loop-stability's
+- **Issue #580** (closed): Remove area_estimate.py's duplicate divider constants: read layout/divider/plan.py instead
 - **PR #578**: refactor: drop three unread module constants and the parse_measurements wrapper
 - **Issue #577** (closed): Remove three dead module constants and a test-only parse_measurements() wrapper
 
@@ -401,21 +411,4 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 - **PR #127**: spec: propose ratifying DR-0006's 6 ms startup settling window
 - **Issue #211** (closed): Remove duplicate run_point() in current-limit/enable-shutdown run.sh: consolidate the PVT-point wrapper
 - **Issue #106** (closed): Operator decision: ratify, reject, or revise DR-0006 (startup settling window)
-
-### 2026-09-13
-
-- **PR #210**: refactor: dedup ngspice run+validate logic into run_ngspice_deck()
-- **PR #208**: Dedup PDK-discovery and corner_sections() codegen blocks across the four sim testbenches
-- **PR #206**: Dedup parse_row_fields() between loop-stability and soft-start-loop-gain sweep.py
-- **PR #205**: Dedup op-point-sanity's run_point(): reuse sim/harness/lib/run_point.sh
-- **Issue #209** (closed): Dedup ngspice run+validate logic: shared helper for loop-stability and soft-start-loop-gain sweeps
-- **Issue #207** (closed): Dedup PDK-discovery and corner_sections() codegen blocks across the four sim testbenches
-- **Issue #204** (closed): ngspice 'could not find a valid modelname' on all four .include-based testbenches (current-limit, enable-shutdown, op-point-sanity, likely soft-start)
-- **Issue #203** (closed): Dedup parse_row_fields() between loop-stability and soft-start-loop-gain sweep.py
-- **Issue #202** (closed): Dedup op-point-sanity's run_point(): reuse sim/harness/lib/run_point.sh
-
-### 2026-09-12
-
-- **PR #201**: Remove unused import: re in soft-start-loop-gain selftest
-- **Issue #200** (closed): Remove unused import: re in sim/soft-start-loop-gain/testbench/selftest.py
 

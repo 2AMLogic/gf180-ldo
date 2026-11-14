@@ -83,7 +83,7 @@ candidate never counts: a stale ``ldo_core`` snapshot that also carries the
 current standalone ``error_amp`` as an included supporting cell is STALE for a
 core source.
 
-Two snapshot shapes are understood:
+Three evidence shapes are understood:
 
 * Harness snapshots carry provenance headers (``* DUT netlist : <path>`` /
   ``* included design cell : <path>``, each with its sha256). The section
@@ -94,19 +94,40 @@ Two snapshot shapes are understood:
 * Legacy snapshots (no section headers: a verbatim netlist copy, optionally
   with a one-line ``* source :`` header) are compared as a whole against the
   source's expected netlist only, using the explicit ``DUT_BY_SLUG`` mapping.
+* Store-backed records (issue #597) have no snapshot file to read at all:
+  since DR-0041 (issue #511) ``python3 sim/run_corners.py <bench>`` puts the
+  frozen snapshot in the fleet artifact store and commits only the run's
+  manifest (``manifests/artifacts/<slug>-<record-id>.manifest.json``, whose
+  entries name the stored ``sim/<slug>/netlist-snapshots/<record-id>.spice``)
+  plus the Markdown record. Such a record is graded from the sha256 lines its
+  *own committed record* states under Environment -- ``DUT netlist sha256``
+  for the netlist its Links section designates as the DUT, and one
+  ``Included design netlist <path> sha256`` per supporting design cell --
+  compared against the sha256 of the current netlist. A sha256 comparison
+  stands in for the byte-containment test, and the designated-DUT rule is
+  the same one the harness-snapshot shape applies: a record designating some
+  other DUT is UNKNOWN, and a supporting cell never satisfies the match for a
+  source whose DUT is another file. Nothing is fetched from the store and no
+  ``klt`` call is made -- this script reads committed bytes only, because CI
+  regenerates the report on every run with no broker in reach.
 
-A snapshot whose identity cannot be established (slug not in the mapping,
+A record whose identity cannot be established (slug not in the mapping,
 provenance naming some other DUT, headers but no section for the expected
-netlist, ambiguous DUT sections) is UNKNOWN with the reason rendered in the
-report -- never guessed from a different netlist. A record with no snapshot
-file at all is UNKNOWN. Selection (``latest_substantive_record()``) and
-rendering share the same expected DUT, so they cannot disagree.
+netlist, ambiguous DUT sections, a store-backed record stating no sha256 for
+the expected netlist) is UNKNOWN with the reason rendered in the report --
+never guessed from a different netlist. A record that is neither snapshotted
+nor store-backed -- a metadata-only correction record pointing back at an
+earlier measurement -- is UNKNOWN, and is not selected over a record that is
+a measurement. Selection (``latest_substantive_record()``) and rendering
+share one grading entry point (``record_freshness()``) and the same expected
+DUT, so they cannot disagree.
 """
 
 from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import math
 import pathlib
 import re
@@ -159,6 +180,28 @@ SECTION_HEADER_RE = re.compile(
 )
 LEGACY_SOURCE_RE = re.compile(rb"^\* source[ ]*: ([^\n]+)$", re.MULTILINE)
 
+# Store-backed records (issue #597). Where `sim/harness/evidence_store.py`
+# installs a run's artifact manifest, relative to the repo root, and the
+# directory name its snapshot entry is named under -- kept as a relative
+# constant so repointing REPO_ROOT (as the tests do) repoints this too.
+MANIFEST_SUBDIR = pathlib.Path("manifests") / "artifacts"
+SNAPSHOT_SUBDIR = "netlist-snapshots"
+# The record's own statement of what went into its snapshot, as
+# `sim/harness/report.py` renders it: the Links bullet naming the designated
+# DUT, the Environment line giving that netlist's sha256, and one
+# self-describing line per other design cell frozen alongside it.
+RECORD_DUT_PATH_RE = re.compile(
+    r"^[ \t]*-[ \t]*DUT netlist:[ \t]*`([^`\n]+)`[ \t]*$", re.MULTILINE
+)
+RECORD_DUT_SHA_RE = re.compile(
+    r"^[ \t]*-[ \t]*DUT netlist sha256:[ \t]*`([0-9a-f]{64})`[ \t]*$", re.MULTILINE
+)
+RECORD_INCLUDED_SHA_RE = re.compile(
+    r"^[ \t]*-[ \t]*Included design netlist[ \t]*`([^`\n]+)`[ \t]*"
+    r"sha256:[ \t]*`([0-9a-f]{64})`[ \t]*$",
+    re.MULTILINE,
+)
+
 # A verdict is stated as one or more **bold runs** inside a single Markdown
 # block (a paragraph, a list item, a table row). BOLD_RUN_RE finds the runs;
 # BLOCK_START_RE finds where the enclosing block ends, so a verdict never
@@ -209,12 +252,24 @@ def expected_dut(slug: str) -> str | None:
 def latest_substantive_record(
     slug: str, dut: str | None = None
 ) -> tuple[pathlib.Path | None, pathlib.Path | None]:
-    """The most recent record-id under sim/<slug>/records/ that has its own
-    frozen netlist snapshot -- i.e. the most recent record that is itself a
-    measurement, not a metadata-only correction record pointing back at an
-    earlier one (sim/README.md's Supersedes/correction convention). Record
-    ids sort chronologically as strings (YYYYMMDD-HHMMSS-sha), so newest
-    means lexicographically last.
+    """The most recent record-id under sim/<slug>/records/ that is itself a
+    measurement -- i.e. one that froze a netlist snapshot of its own, rather
+    than a metadata-only correction record pointing back at an earlier one
+    (sim/README.md's Supersedes/correction convention). Record ids sort
+    chronologically as strings (YYYYMMDD-HHMMSS-sha), so newest means
+    lexicographically last.
+
+    A record counts as a measurement when its snapshot is *committed* at
+    ``sim/<slug>/netlist-snapshots/<record-id>.spice`` **or** when its
+    committed artifact manifest names that snapshot as a stored object
+    (``stored_snapshot_manifest()``) -- the DR-0041 shape, where the bytes
+    went to the fleet artifact store and only the manifest and the record
+    were committed (issue #597). Requiring the file alone skipped every
+    store-backed record, so the row kept citing an older one; requiring
+    neither would promote correction records, which have no snapshot in
+    either place and must keep being skipped. The returned snapshot path is
+    None for a store-backed record: there is no file to read, and
+    ``record_freshness()`` grades it from the record instead.
 
     Recency alone is not the selector, though: the newest record whose
     snapshot still matches the *current* DUT wins over a strictly newer
@@ -227,16 +282,15 @@ def latest_substantive_record(
     exactly what #308's ``20260923-093349-7674ddf`` (pre-DR-0033 DUT) would
     have done to ``20260923-005938-b62ac83`` (post-swap) on the Iq row.
 
-    Freshness is judged by ``freshness()`` -- the same DUT-content test the
-    report already applies to whatever record this returns -- so there is
-    exactly one definition of "matches the current DUT" in this script.
+    Freshness is judged by ``record_freshness()`` -- the same test the report
+    applies to whatever record this returns -- so there is exactly one
+    definition of "matches the current DUT" in this script, for both shapes.
 
-    Fallbacks, both unchanged in behaviour: when no record's snapshot
-    matches the current DUT the newest record that *has* a snapshot is
-    returned (so a genuinely stale row still reports as stale, citing its
-    newest evidence), and when no record has a snapshot at all the newest
-    record is returned with no snapshot so the gap is still visible rather
-    than silently empty.
+    Fallbacks, both unchanged in behaviour: when no record matches the
+    current DUT the newest record that *is* a measurement is returned (so a
+    genuinely stale row still reports as stale, citing its newest evidence),
+    and when no record is a measurement at all the newest record is returned
+    with no snapshot so the gap is still visible rather than silently empty.
     """
     records_dir = SIM_DIR / slug / "records"
     snapshots_dir = SIM_DIR / slug / "netlist-snapshots"
@@ -245,17 +299,19 @@ def latest_substantive_record(
     if dut is None:
         dut = expected_dut(slug)
     records = sorted(records_dir.glob("*.md"), reverse=True)
-    newest_with_snapshot: tuple[pathlib.Path, pathlib.Path] | None = None
+    newest_measurement: tuple[pathlib.Path, pathlib.Path | None] | None = None
     for record in records:
-        snapshot = snapshots_dir / f"{record.stem}.spice"
+        snapshot: pathlib.Path | None = snapshots_dir / f"{record.stem}.spice"
         if not snapshot.is_file():
-            continue
-        if newest_with_snapshot is None:
-            newest_with_snapshot = (record, snapshot)
-        if freshness(snapshot, dut)[0] == "fresh":
+            if stored_snapshot_manifest(record) is None:
+                continue  # neither committed nor stored: a correction record
+            snapshot = None
+        if newest_measurement is None:
+            newest_measurement = (record, snapshot)
+        if record_freshness(record, snapshot, dut)[0] == "fresh":
             return record, snapshot
-    if newest_with_snapshot is not None:
-        return newest_with_snapshot
+    if newest_measurement is not None:
+        return newest_measurement
     return (records[0], None) if records else (None, None)
 
 
@@ -326,6 +382,114 @@ def freshness(
     if any(current in body for _kind, _path, body in matching):
         return "fresh", dut, None
     return "stale", None, None
+
+
+def stored_snapshot_manifest(record: pathlib.Path) -> pathlib.Path | None:
+    """``record``'s committed manifest, if its snapshot went to the store.
+
+    Under DR-0041 (issue #511) ``run_corners.py`` stores the frozen netlist
+    snapshot instead of committing it, and commits
+    ``manifests/artifacts/<slug>-<record-id>.manifest.json`` with an entry
+    named ``sim/<slug>/netlist-snapshots/<record-id>.spice``. That entry is
+    the committed proof that this record *is* a measurement with a snapshot,
+    which is the one thing selection needs to know (issue #597).
+
+    Returns None when there is no such manifest, or when its entries do not
+    name this record's snapshot -- a metadata-only correction record has
+    neither, so it keeps being skipped exactly as before. A manifest that is
+    unreadable or not shaped as ``{"entries": [{"name": ...}, ...]}`` also
+    counts as absent rather than raising: this script is a read-only rollup
+    over committed evidence and must still print a full report, and
+    ``scripts/check_artifact_manifests.py verify`` is what validates
+    manifests and their stored bytes.
+    """
+    slug = record.parent.parent.name
+    rid = record.stem
+    path = REPO_ROOT / MANIFEST_SUBDIR / f"{slug}-{rid}.manifest.json"
+    if not path.is_file():
+        return None
+    try:
+        entries = json.loads(path.read_text()).get("entries")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(entries, list):
+        return None
+    wanted = f"sim/{slug}/{SNAPSHOT_SUBDIR}/{rid}.spice"
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("name") == wanted:
+            return path
+    return None
+
+
+def stored_freshness(
+    record: pathlib.Path, dut: str | None
+) -> tuple[str, str | None, str | None]:
+    """``freshness()`` for a record whose snapshot is in the artifact store.
+
+    Same question and the same three answers, from committed bytes only: the
+    record states under Environment the sha256 of every design netlist frozen
+    into its snapshot, so comparing those against ``sha256(current netlist)``
+    stands in for the byte-containment test ``freshness()`` applies to a
+    snapshot file. Nothing is fetched and no ``klt`` call is made.
+
+    The designated-DUT rule is ``freshness()``'s, unchanged: a record whose
+    Links section designates some *other* netlist as its DUT is unknown even
+    if it lists the expected one as a supporting cell, and a record that
+    designates no DUT at all (the ``error_amp`` benches, which instantiate it
+    as an included design cell) is graded on its ``Included design netlist``
+    line for the expected path. The ``Manifest sha256`` line is deliberately
+    not consulted -- it hashes the bench's ``tb.json``, not any netlist.
+    """
+    if dut is None or dut not in DUT_CANDIDATES:
+        return "unknown", None, "no expected DUT is mapped for this experiment"
+    expected_path = _repo_rel(DUT_CANDIDATES[dut])
+    text = record.read_text()
+
+    designated = set(RECORD_DUT_PATH_RE.findall(text))
+    if len(designated) > 1:
+        return "unknown", None, "record designates more than one DUT netlist"
+    shas: list[str] = []
+    if designated:
+        only = designated.pop()
+        if only != expected_path:
+            return (
+                "unknown",
+                None,
+                f"record designates `{only}` as its DUT, not the expected "
+                f"`{expected_path}`",
+            )
+        shas += RECORD_DUT_SHA_RE.findall(text)
+    shas += [
+        sha for path, sha in RECORD_INCLUDED_SHA_RE.findall(text)
+        if path == expected_path
+    ]
+    if not shas:
+        return (
+            "unknown",
+            None,
+            f"record states no sha256 for the expected DUT `{expected_path}` "
+            "and its netlist snapshot is stored, not committed",
+        )
+    current = hashlib.sha256(DUT_CANDIDATES[dut].read_bytes()).hexdigest()
+    return ("fresh", dut, None) if current in shas else ("stale", None, None)
+
+
+def record_freshness(
+    record: pathlib.Path | None, snapshot: pathlib.Path | None, dut: str | None
+) -> tuple[str, str | None, str | None]:
+    """Freshness of ``record``, whichever shape its netlist snapshot takes.
+
+    The one grading entry point selection and rendering share, so they cannot
+    disagree (issue #597): a committed snapshot is graded by ``freshness()``,
+    a store-backed record by ``stored_freshness()``, and a record that is
+    neither -- a metadata-only correction record -- keeps reporting the
+    no-snapshot unknown it always did.
+    """
+    if snapshot is not None and snapshot.is_file():
+        return freshness(snapshot, dut)
+    if record is not None and stored_snapshot_manifest(record) is not None:
+        return stored_freshness(record, dut)
+    return freshness(None, dut)
 
 
 # ---------------------------------------------------------------------------
@@ -923,7 +1087,9 @@ def render() -> str:
                 text = record.read_text()
                 snippets = extract_verdict_snippets(text, source.keyword)
                 verdict = classify(snippets)
-            fresh_status, fresh_dut, fresh_reason = freshness(snapshot, dut)
+            fresh_status, fresh_dut, fresh_reason = record_freshness(
+                record, snapshot, dut
+            )
             source_results.append(
                 {
                     "source": source,
