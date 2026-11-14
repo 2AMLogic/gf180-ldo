@@ -84,6 +84,16 @@ class ParamOverride(unittest.TestCase):
                 parse_params([bad])
         self.assertEqual(driver_args(parse_params(["a=1", "b=2u"])), " --param a=1 --param b=2u")
 
+    def test_shared_flag_block_does_not_offer_param(self):
+        import argparse
+
+        from harness.klt_ab import add_ab_args
+
+        ap = argparse.ArgumentParser()
+        add_ab_args(ap, SIM_DIR.parent)
+        with self.assertRaises(SystemExit):
+            ap.parse_args(["--record-id", "X", "--param", "esr_val=0.2"])
+
     def test_recovery_measures_are_requested_and_graded(self):
         tb = _tb("load-transient")
         _, specs = ta.measurements(tb)
