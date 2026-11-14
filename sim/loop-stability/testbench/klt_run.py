@@ -76,6 +76,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
+from harness import deck  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
 
 #: ROW field -> (kind, klt metric, extra tian keys). Order is the ROW line's.
@@ -106,11 +107,10 @@ def _num(v: float) -> str:
 
 
 def body(iload: float, ceff: float, esr: float, dc_seed: str = "") -> str:
-    text = (HERE / "klt_body.spice.in").read_text()
-    for tok, val in (("@ILOAD@", _num(iload)), ("@CEFF@", _num(ceff)),
-                     ("@ESR@", _num(esr)), ("@DC_SEED@", dc_seed)):
-        text = text.replace(tok, val)
-    assert not re.search(r"@[A-Z_]+@", text), "unsubstituted token"
+    text = deck.render_file(HERE / "klt_body.spice.in", {
+        "ILOAD": _num(iload), "CEFF": _num(ceff), "ESR": _num(esr),
+        "DC_SEED": dc_seed,
+    }, source="klt_body.spice.in")
     return "\n".join([kb.DESIGN_PARAMS, kb.WNFLAG, text])
 
 

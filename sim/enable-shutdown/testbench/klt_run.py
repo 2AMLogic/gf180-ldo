@@ -30,7 +30,6 @@ A failed submit raises; this driver never falls back to a local grid.
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -39,6 +38,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
+from harness import deck  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab  # noqa: E402
 
@@ -96,10 +96,9 @@ STATES = {
 
 
 def body(enctl: str, rload: str, rforce: str) -> str:
-    text = (HERE / "klt_body.spice.in").read_text()
-    for tok, val in (("@ENCTL@", enctl), ("@RLOAD@", rload), ("@RFORCE@", rforce)):
-        text = text.replace(tok, val)
-    assert not re.search(r"@[A-Z]+@", text), "unsubstituted token"
+    text = deck.render_file(HERE / "klt_body.spice.in",
+                            {"ENCTL": enctl, "RLOAD": rload, "RFORCE": rforce},
+                            source="klt_body.spice.in")
     return "\n".join([kb.DESIGN_PARAMS, kb.WNFLAG, text])
 
 

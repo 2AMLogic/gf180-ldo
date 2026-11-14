@@ -26,6 +26,7 @@ REPO_ROOT = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 
 from harness import report  # noqa: E402
+from harness.deck import TOKEN_RE  # noqa: E402
 
 _SWEEP_PATH = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
 _spec = importlib.util.spec_from_file_location("loop_stability_sweep", _SWEEP_PATH)
@@ -286,7 +287,7 @@ class TestDeckTemplate(unittest.TestCase):
         )
         # Bare '@' survives legitimately (ngspice's `alter @Vinj[acmag]`);
         # what must not survive is an unsubstituted @PLACEHOLDER@.
-        self.assertEqual([], sweep.TOKEN_RE.findall(deck))
+        self.assertEqual([], TOKEN_RE.findall(deck))
         self.assertIn(".temp -40", deck)
         self.assertIn('.lib "/pdk/sm141064.ngspice" ss', deck)
         self.assertIn("Vin VIN 0 DC 2.97", deck)

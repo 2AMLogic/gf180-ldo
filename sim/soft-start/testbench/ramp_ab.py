@@ -49,7 +49,6 @@ import argparse
 import concurrent.futures
 import csv
 import datetime as _dt
-import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -64,6 +63,7 @@ sys.path.insert(0, str(REPO_ROOT / "sim"))
 sys.path.insert(0, str(LG_TB))
 
 import netlist_variants as nv  # noqa: E402
+from harness import deck  # noqa: E402
 from harness.corners import build_grid, resolve_corners  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.pvt_log import parse_meas_lines  # noqa: E402
@@ -74,7 +74,6 @@ from harness.runner import (  # noqa: E402
 )
 
 TEMPLATE = HERE / "tb_ss_ramp_ab.spice.in"
-TOKEN_RE = re.compile(r"@([A-Z0-9_]+)@")
 SPICEINIT = "set wnflag=1\nset num_threads=1\n"
 
 # The corner set this experiment is named against. `tt_-40c_2.97v` is the
@@ -118,27 +117,15 @@ def parse_meas(text: str) -> dict[str, float | None]:
 
 def render(point: Point, pdk, *, arm: str, netlist: Path, ssr_drive: str) -> str:
     corner = resolve_corners([point.corner])[0]
-    mos, res, bjt, diode, moscap, mimcap = corner.sections
-    subs = {
-        "DESIGN_INCLUDE": str(pdk.design_include),
-        "MODEL_LIB": str(pdk.model_lib),
-        "LDO_NETLIST": str(netlist),
-        "MOS_CORNER": mos, "RES_CORNER": res, "BJT_CORNER": bjt,
-        "DIODE_CORNER": diode, "MOSCAP_CORNER": moscap, "MIMCAP_CORNER": mimcap,
-        "TEMP_C": f"{point.temp_c:g}",
-        "VIN_V": f"{point.vin_v:g}",
+    return deck.render_file(TEMPLATE, {
+        **deck.pvt_subs(pdk, corner, point.temp_c, point.vin_v, netlist),
         "COUT": point.cout,
         "ESR_OHM": point.esr,
         "RLOAD_OHM": point.rload,
         "CORNER_ID": point.corner_id,
         "ARM": arm,
         "SSR_DRIVE": ssr_drive,
-    }
-    text = TEMPLATE.read_text()
-    missing = {m for m in TOKEN_RE.findall(text) if m not in subs}
-    if missing:
-        raise SystemExit(f"template has unsubstituted tokens: {sorted(missing)}")
-    return TOKEN_RE.sub(lambda m: subs[m.group(1)], text)
+    })
 
 
 INTERNAL_DRIVE = (
@@ -235,13 +222,9 @@ def main() -> int:
     args = ap.parse_args()
 
     pdk = find_pdk()
-    check = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "design" / "netlist.py"), "--check"],
-        capture_output=True, text=True)
-    if check.returncode != 0:
-        print("FATAL: design/netlist/*.spice is stale vs the schematics:",
-              file=sys.stderr)
-        print(check.stdout + check.stderr, file=sys.stderr)
+    stale = deck.require_fresh_netlists()
+    if stale:
+        print(stale, file=sys.stderr)
         return 3
 
     short = subprocess.run(
