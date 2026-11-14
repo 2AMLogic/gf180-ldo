@@ -434,6 +434,8 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
     chained = len(_split_states(tb.analyses)[0]) > 1
     ap = argparse.ArgumentParser(description=doc, formatter_class=argparse.RawDescriptionHelpFormatter)
     add_ab_args(ap, repo)
+    ap.add_argument("--param", action="append", default=[], metavar="NAME=VALUE",
+                    help="override a tb.json `params` entry for this run (repeatable), e.g. --param esr_val=0.2")
     # A bench with no `dut_netlist` of its own (an amplifier cell bench) runs its
     # first design include; `--dut` re-points it.
     if len(tb.design_netlists) > 1:

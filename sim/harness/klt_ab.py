@@ -30,8 +30,6 @@ def add_ab_args(ap, repo: Path) -> None:
     ap.add_argument("--baseline-ref", default=None)
     ap.add_argument("--backend", default=None)
     ap.add_argument("--only", default=None, help="one point, e.g. tt,27,3.30 (debug; runs locally)")
-    ap.add_argument("--param", action="append", default=[], metavar="NAME=VALUE",
-                    help="override a tb.json `params` entry for this run (repeatable), e.g. --param esr_val=0.2")
 
 
 def parse_params(pairs: list[str]) -> dict[str, str]:
