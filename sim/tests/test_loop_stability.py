@@ -608,7 +608,13 @@ class TestRunGridKltWiring(unittest.TestCase):
 
     The two classes above test the helpers; this tests that the sweep uses
     them, which is the regression that would otherwise pass unnoticed.
-    ``klt_run.run_configs`` is replaced, so nothing is submitted anywhere.
+
+    Two things are stubbed, and both must stay stubbed for this to be the
+    offline test it claims to be: ``klt_run.run_configs`` (so nothing is
+    submitted anywhere) and ``klt_run.klt_version`` (which ``run_grid_klt``
+    calls for the record's provenance, and which shells out to ``klt
+    --version`` -- absent on a CI runner, and present on a dispatch host, so
+    leaving it live passes locally and fails in CI).
     """
 
     def _capture(self, tmp: Path) -> dict:
@@ -631,6 +637,8 @@ class TestRunGridKltWiring(unittest.TestCase):
         logdir.mkdir()  # main() makes these; run_grid_klt only writes into them
         with unittest.mock.patch.dict(os.environ, {"PDK_ROOT": "/stale/root"}), \
                 unittest.mock.patch.object(sweep.klt_run, "run_configs", fake_run_configs), \
+                unittest.mock.patch.object(sweep.klt_run, "klt_version",
+                                           lambda: "klt (stubbed)"), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
             # The grid comes back empty, so every corner is reported as a
