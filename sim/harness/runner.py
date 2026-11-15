@@ -573,6 +573,7 @@ def ngspice_major_int(version: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
+# Retained positive form of the floor: counterpart to below_ngspice_floor, tested in sim/tests/test_harness.py.
 def meets_ngspice_floor(version: str | None) -> bool:
     """True when ``version`` is a known major at or above the floor."""
     major = ngspice_major_int(version)
@@ -606,17 +607,14 @@ class NgspiceRoot:
     ``"GF180_LDO_NGSPICE_ROOT"``, ...) so a mismatch message can name *which*
     probe produced the root it is talking about. ``version`` is the
     ``ngspice-<major>`` token that root's own ``bin/ngspice`` reports, or
-    ``None`` when that can't be determined -- a root whose version is not the
-    pinned one is not an authority to point a user at (issue #247).
+    ``None`` when that can't be determined -- a root whose major is unknown
+    or below the floor constant ``NGSPICE_MIN_MAJOR`` is not an authority to
+    point a user at (issue #247).
     """
 
     path: str
     source: str
     version: str | None = None
-
-    @property
-    def matches_pin(self) -> bool:
-        return meets_ngspice_floor(self.version)
 
     @property
     def drifted(self) -> bool:
