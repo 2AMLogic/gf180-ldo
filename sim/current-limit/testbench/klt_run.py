@@ -49,6 +49,12 @@ MEASUREMENTS = (
         {"name": "isns_mv_50ma", "expr": "(v(xreg.xilimit.isns)[0]-v(vout_r)[0])*1e3", "unit": "mV"},
         {"name": "vth_mv_50ma", "expr": "(v(xreg.xilimit.vth)[0]-v(vout_r)[0])*1e3", "unit": "mV"},
         {"name": "vref_port_ua", "expr": "-i(vref)[0]*1e6", "unit": "uA"},
+        {"name": "pshort_mw", "expr": "i(vforce)[0]*v(vin)[0]*1e3", "unit": "mW",
+         # Ratified Thermal row's short-circuit clause (DR-0005), from
+         # summarize.py: I into the Vout = 0 short (sweep index 0) times the
+         # solved supply node at that same index. Named pshort_mw, not
+         # p_short_mw, so grade()'s post-processed value stays distinct.
+         "limits": {"max": PSHORT_MAX_MW}, "spec_row": "Thermal"},
     ]
 )
 
@@ -58,6 +64,11 @@ def job(name: str, dut: Path, only=None) -> kb.Job:
     return kb.Job(name=name, body=body, dut_netlist=dut,
                   analysis={"kind": "dc", "args": "Vforce 0 1.764 0.012"},
                   measurements=MEASUREMENTS, timeout_s=900, stage_model_inputs=True,
+                  # Request-level form of `klt sim --wait-for-capacity 600`,
+                  # the dispatch-host rule for every batch submit (the
+                  # harness's own re-submit loop covers only the concurrency
+                  # cap, not Spot capacity).
+                  batch={"capacity_wait_s": 600},
                   **kb.only_axes(only))
 
 
