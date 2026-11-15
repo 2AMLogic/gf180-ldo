@@ -249,7 +249,15 @@ this public repo. Evidence already committed is not rewritten or migrated.
   calls `tb_adapter.main`; the hand-rolled batch drivers (`enable-shutdown`,
   `soft-start`, `current-limit`, `mc-output-accuracy`) still write the old
   layout and are tracked in
-  [#596](https://github.com/2AMLogic/gf180-ldo/issues/596).
+  [#596](https://github.com/2AMLogic/gf180-ldo/issues/596). The generator
+  asserts nothing it cannot read: the `Supersedes` line names the newest
+  earlier record (or `none`), the staging and PDK-stamp sentences are read
+  from the reports' `worker_environment.pdk` fields, and the old-vs-new
+  environment axes (backend, open_pdks pin, model library, ngspice build)
+  are derived from both runs — the current run's reports and the prior's
+  reports or `PDK:` line, with an axis neither speaks for reported as *not
+  determined*, never as a delta. A staged run with no `klt-report.json`
+  under either layout is refused rather than minted with an empty job list.
 - **Configuration** is the environment only, read by `klt`:
   `KLT_ARTIFACT_BROKER` and optionally `KLT_ARTIFACT_REPO`. Nothing is
   defaulted and no broker URL, bucket or account identifier is written in this
