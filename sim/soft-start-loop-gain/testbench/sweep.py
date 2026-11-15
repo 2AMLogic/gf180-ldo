@@ -2204,7 +2204,7 @@ def handover_extremes_table(curves: list[HovCurve]) -> list[str]:
         "|---|---|---|---|---|---|",
     ]
 
-    def block(label, intent, getter, fmt, worst_is_max=True, corner_of=None):
+    def block(label, intent, getter, fmt, worst_is_max=True):
         for variant in sorted({c.variant for c in curves}):
             sel = [c for c in curves if c.variant == variant]
             vals = [(getter(c), c) for c in sel]
@@ -2281,7 +2281,7 @@ def handover_curve_table(curves: list[HovCurve], corner_id: str,
     return out if n else []
 
 
-def handover_section(curves: list[HovCurve], consistency, args) -> str:
+def handover_section(curves: list[HovCurve], consistency) -> str:
     if not curves:
         return ("  **Not run** (`--skip-handover`). This record therefore "
                 "reports the injection element's margins but not its "
@@ -2464,7 +2464,7 @@ def handover_section(curves: list[HovCurve], consistency, args) -> str:
     return "\n".join(lines) + "\n"
 
 
-def xcheck_section(xcheck: dict, anchor_rows: list[Row]) -> str:
+def xcheck_section(xcheck: dict) -> str:
     if xcheck.get("skipped"):
         return ("  **Not run** (`--skip-crosscheck`, or no anchor phase in this "
                 "run). This record therefore makes no claim that its anchor "
@@ -2737,7 +2737,6 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
     procs = ", ".join(sorted({r.corner for r in rows}))
     temps = ", ".join(f"{t:g}" for t in sorted({r.temp_c for r in rows}))
     supplies = ", ".join(f"{v:.2f}" for v in sorted({r.vin_v for r in rows}))
-    anchor_rows = [r for r in rows if r.phase == "anchor" and r.variant == "device"]
     if klt_info:
         klt_md = (
             f"- Backend: `klt sim` (`--backend {klt_info['backend']}`), "
@@ -3083,7 +3082,7 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   *is*, which is the question a compensation recommendation has to be built
   on, so the transfer is measured directly:
 
-{handover_section(list(curves), hov_consistency, args)}
+{handover_section(list(curves), hov_consistency)}
   **1b. What each element leaves behind once the ramp is over** (the `anchor`
   phase: SSR wherever `Mtop_ss`'s ceiling clamp puts it, 50 mA, over every PVT
   corner). An injection element that does not rectify fully off is a standing
@@ -3119,7 +3118,7 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   anything else about this deck perturbed the circuit, this is where it would
   show.
 
-{xcheck_section(xcheck, anchor_rows)}
+{xcheck_section(xcheck)}
   **6. Pole/zero attribution at the worst corner (issue #196 AC3).**
 
 {attribution_section(attribution)}
