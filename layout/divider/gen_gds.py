@@ -106,6 +106,9 @@ import pya  # noqa: F401  (provided by the KLayout interpreter)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gen_gds_common import (  # noqa: E402
+    CO_1_SIZE_UM,
+    CO_2A_SPACE_UM,
+    CO_4_COMP_ENC_UM,
     DBU_UM,
     L_COMP,
     L_CONTACT,
@@ -155,9 +158,11 @@ GR_W = 0.42  # guard-ring COMP/Metal1 width (the PCell's own p-tap width)
 GR_IMPLANT_ENC = 0.02  # PPLUS overlap of the ring's COMP (the PCell's value)
 GR_MARGIN_X = 1.32  # ring inner edge to the outermost link track
 GR_MARGIN_Y = 2.00  # ring inner edge to the outermost head metal
-CONT_SIZE = 0.22  # CO.1 -- contacts are exactly this, min and max
-CONT_PITCH = 0.47  # CO.1 + CO.2b's 0.25 um contact space
-CONT_ENC = 0.10  # COMP/Metal1 overlap of contact (CO.4/CO.6 need 0.07/0.06)
+CONT_PITCH = CO_1_SIZE_UM + CO_2A_SPACE_UM  # one cut + CO.2a's space: the
+# guard-ring arms are single-file rows of cuts, so the 4x4-array rule CO.2b
+# does not govern them
+CONT_ENC = 0.10  # COMP/Metal1 overlap of contact -- deliberately above
+# CO.4's minimum (CO_4_COMP_ENC_UM) and CO.6's 0.06
 
 
 def strip_y0(position):
@@ -384,13 +389,13 @@ def _guard_ring(layout, cell, draw, heads, tracks):
     inner, outer = guard_ring(
         layout, cell, pya.DBox(x_left, y_bottom, x_right, y_top), arm_w=GR_W,
         comp_layer=L_COMP, implant_layer=L_PPLUS, implant_enc=GR_IMPLANT_ENC,
-        cont_layer=L_CONTACT, cont_pitch=CONT_PITCH, cont_size=CONT_SIZE,
+        cont_layer=L_CONTACT, cont_pitch=CONT_PITCH, cont_size=CO_1_SIZE_UM,
         cont_enc=CONT_ENC,
         # Left-anchored cuts, and horizontal arms that start CONT_PITCH -
-        # CONT_SIZE - CONT_ENC (0.15 um) in from the inner edge: the placement
+        # CO_1_SIZE_UM - CONT_ENC (0.15 um) in from the inner edge: the placement
         # the recorded DRC/LVS results were taken on.
         align="start",
-        corner_inset=CONT_PITCH - CONT_SIZE - 2 * CONT_ENC,
+        corner_inset=CONT_PITCH - CO_1_SIZE_UM - 2 * CONT_ENC,
     )
     draw.region("VSS", ring_region(layout, outer, inner))
     return inner, outer

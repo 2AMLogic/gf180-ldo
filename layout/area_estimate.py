@@ -41,24 +41,28 @@ from pathlib import Path
 # draws and `layout/tests/test_divider_layout.py` checks against §4.1. They are
 # read from there rather than transcribed a second time here, so the mismatch
 # `divider_field()` computes can never be the mismatch of a geometry the
-# drawing does not have. `plan.py` imports nothing, so it loads both under
-# plain Python and under `drclvs._load_module`.
+# drawing does not have. `plan.py` imports only the import-free
+# `drc_rules` (issue #603), so it still loads both under plain Python and
+# under `drclvs._load_module`; the DRC rule minimums this file draws against
+# come from that same one transcription.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "divider"))
 import plan  # noqa: E402
+from drc_rules import CO_1_SIZE_UM, CO_4_COMP_ENC_UM, PRES_2_SPACE_UM  # noqa: E402
 
 # --------------------------------------------------------------------------
-# gf180mcu geometric constants (gf180mcuD KLayout DRC deck, 3.3 V devices)
+# gf180mcu geometric constants (gf180mcuD KLayout DRC deck, 3.3 V devices).
+# The rules more than one file draws against are the one transcription in
+# `drc_rules.py` (issue #603); the rest are cited where they are used.
 # --------------------------------------------------------------------------
 
-CO_SIZE = 0.22  # CO.1   min/max contact size
 CO_TO_GATE = 0.15  # CO.7   space from COMP contact to Poly2 on COMP
-CO_COMP_ENC = 0.07  # CO.4   COMP overlap of contact
 DF_MAX_W = 100.0  # DF.2b  max COMP width (also the widest model bin, DR-0025)
 
 # A contacted source/drain region shared between two adjacent gates, and the
 # two outer source/drain regions that terminate the finger stack.
-SD_SHARED = CO_TO_GATE + CO_SIZE + CO_TO_GATE  # 0.52 um
-SD_END = CO_TO_GATE + CO_SIZE + CO_COMP_ENC  # 0.44 um
+SD_SHARED = CO_TO_GATE + CO_1_SIZE_UM + CO_TO_GATE  # 0.52 um
+SD_END = CO_TO_GATE + CO_1_SIZE_UM + CO_4_COMP_ENC_UM  # 0.44 um
 
 # Poly resistor, drawn as a metal-linked ladder of straight segments rather
 # than a poly serpentine (a poly bend is a non-uniform-current region and a
@@ -67,7 +71,6 @@ SD_END = CO_TO_GATE + CO_SIZE + CO_COMP_ENC  # 0.44 um
 # (CO.3, 0.07 um). The head does not have to be wider than a >= 0.8 um body
 # (PRES.1), so the ladder pitch is set by PRES.2 alone.
 RES_HEAD = 1.0  # per terminal, along the segment
-RES_SPACE = 0.4  # PRES.2  min space between Poly2 resistors
 RES_SEG_MAX = 100.0  # floorplan choice: longest drawn resistor segment
 
 # MIM bottom plate must stand off any other Metal2 by MIM.1 (1.2 um); a single
@@ -172,7 +175,7 @@ def res_field(w_um: float, l_um: float, mult: int) -> float:
     """Footprint of a poly resistor drawn as a metal-linked segment ladder."""
     n_seg = max(1, -(-l_um // RES_SEG_MAX))  # ceil
     seg_len = l_um / n_seg
-    return n_seg * (seg_len + 2 * RES_HEAD) * (w_um + RES_SPACE) * mult
+    return n_seg * (seg_len + 2 * RES_HEAD) * (w_um + PRES_2_SPACE_UM) * mult
 
 
 def ideal_res_field(

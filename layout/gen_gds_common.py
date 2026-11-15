@@ -83,6 +83,19 @@ L_FUSETOP = (75, 0)
 L_METAL5 = (81, 0)
 L_METAL5_LABEL = (81, 10)
 
+# gf180mcu DRC rule minimums (issue #603) live in ``drc_rules.py`` beside
+# this file -- one transcription of the PDK's rule deck, import-free so the
+# plain-Python consumers (``area_estimate.py``, ``divider/plan.py``) can
+# read it too. Re-exported here so each generator keeps its single
+# ``from gen_gds_common import (...)`` line.
+from drc_rules import (  # noqa: E402
+    CO_1_SIZE_UM,
+    CO_2A_SPACE_UM,
+    CO_2B_ARRAY_SPACE_UM,
+    CO_4_COMP_ENC_UM,
+    PRES_2_SPACE_UM,
+)
+
 
 def _fail(message):
     """Abort with ``message`` actually visible.
@@ -204,7 +217,8 @@ def guard_ring(layout, cell, inner, *, arm_w, comp_layer, implant_layer,
     contacts (``align`` as in ``_grid``); the horizontal arms are pulled
     ``corner_inset`` (default a whole ``cont_pitch``) clear of the vertical
     ones at each end, because two independently placed grids otherwise put
-    their corner cuts closer than CO.2b allows.
+    their corner cuts closer than CO.2a allows -- each arm is a single-file
+    row of cuts, so the 4x4-array rule CO.2b does not govern them.
 
     ``_fail``s if any arm has no room for a contact. Returns ``(inner, outer)``.
     """
