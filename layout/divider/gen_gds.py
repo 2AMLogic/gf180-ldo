@@ -108,7 +108,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gen_gds_common import (  # noqa: E402
     CO_1_SIZE_UM,
     CO_2A_SPACE_UM,
-    CO_4_COMP_ENC_UM,
     DBU_UM,
     L_COMP,
     L_CONTACT,

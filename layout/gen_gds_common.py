@@ -88,7 +88,7 @@ L_METAL5_LABEL = (81, 10)
 # plain-Python consumers (``area_estimate.py``, ``divider/plan.py``) can
 # read it too. Re-exported here so each generator keeps its single
 # ``from gen_gds_common import (...)`` line.
-from drc_rules import (  # noqa: E402
+from drc_rules import (  # noqa: E402,F401  (re-exports; see comment above)
     CO_1_SIZE_UM,
     CO_2A_SPACE_UM,
     CO_2B_ARRAY_SPACE_UM,
