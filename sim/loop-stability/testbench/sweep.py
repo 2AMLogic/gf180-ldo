@@ -78,7 +78,7 @@ sys.path.insert(0, str(REPO_ROOT / "sim"))
 sys.path.insert(0, str(HERE))  # sibling klt_run: sweep.py is also loaded by path
 from harness import deck, klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
-from harness.paths import display_path  # noqa: E402
+from harness.paths import display_home, display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 import klt_run  # noqa: E402  (sibling module; sweep.py runs as a script)
 from harness.report import (  # noqa: E402
@@ -212,6 +212,56 @@ F_STOP = "1e9"
 #      setup around them, not by the AC points. See "Sweep resolution" in
 #      sim/loop-stability/README.md.
 AC_DEC = "400"
+
+# --- `klt sim` request shape, batch backend (issue #615) -------------------
+#
+#: The fleet's whole-job ceiling, in seconds (``batch.max_job_seconds``;
+#: ``klt``'s own default when the fleet publishes no ``MaxJobSeconds`` tag).
+#: The harness kills the whole job at this age, and the interrupted report is
+#: not a complete one, so EVERY unit of that job -- including the units that
+#: had already finished -- comes back ``batch_job_timeout``. That is why one
+#: slow unit must not be allowed to take 62 finished ones down with it.
+KLT_JOB_CEILING_S = 3600
+#: The fixed per-job overhead in klt's pre-submit bound,
+#: ``job_bound_s = options.timeout_s * units + KLT_JOB_OVERHEAD_S``.
+KLT_JOB_OVERHEAD_S = 120
+
+#: ``request.batch.max_units_per_job``: klt splits the request into
+#: ``ceil(units / N)`` balanced fleet jobs, so no one job's bound reaches the
+#: ceiling above. The grid request is 63 units (7 process x 3 temps x
+#: 3 supplies), so N = 3 gives 21 jobs per load/C_eff/ESR configuration.
+#:
+#: **3 is the largest N that fits, not a preference.** ``klt_run.job()``
+#: submits ``timeout_s=900``, and klt's own auto-sizing form of this cap
+#: (``job_ceiling_check: "split"``) would compute exactly
+#: ``floor((KLT_JOB_CEILING_S - KLT_JOB_OVERHEAD_S) / timeout_s)``
+#: ``= floor(3480/900) = 3``. Raising N therefore means lowering ``timeout_s``
+#: first, which needs a measured per-unit runtime for this bench -- none
+#: exists yet (issue #465's probe never got a clean timing sample).
+#:
+#: An explicit cap is *honored* rather than refused when its bound still
+#: exceeds the ceiling (klayout-tools#4982 -- the bound is a fully-serial
+#: upper bound, so klt only warns on stderr, and the fleet harness still kills
+#: a job that really runs long). So nothing downstream fails loudly if this
+#: pair drifts out of the inequality: ``test_loop_stability.py`` asserts it
+#: from the built request's own ``options.timeout_s``, which is what makes a
+#: later ``timeout_s`` bump in ``klt_run.py`` fail a test rather than silently
+#: hand the fleet jobs it will kill. Do not combine this cap with
+#: ``job_ceiling_check: "enforce"``; klt rejects that combination.
+KLT_MAX_UNITS_PER_JOB = 3
+
+#: ``request.batch.max_concurrent_jobs``: once a request is split, the shards
+#: that the fleet's instance cap refuses come back ``lost_shard`` and are NOT
+#: retried (``sim/harness/klt_batch.py``); ``kb.run``'s own re-submit loop only
+#: covers a cap refusal of the whole submit. Bounding this request's jobs in
+#: flight keeps its 21 shards from provoking that refusal in the first place.
+KLT_MAX_CONCURRENT_JOBS = 3
+
+#: ``request.batch.capacity_wait_s``: wait out a Spot capacity refusal with
+#: backoff instead of failing the submit. This is the request-level form of the
+#: ``klt sim --wait-for-capacity 600`` the dispatch-host rules require of every
+#: batch submit.
+KLT_CAPACITY_WAIT_S = 600
 
 
 # ---------------------------------------------------------------------------
@@ -740,7 +790,62 @@ def render_analysis(rows: list[Row], failing: list[Row]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def run_grid_klt(grid, corners, args, iloads, ceffs, esrs, logdir: Path, workdir: Path, klt_backend: str):
+def klt_axes(process, temps, supplies, *, split: bool = True) -> dict:
+    """The ``kb.Job`` keyword arguments for one ``klt sim`` request of this bench.
+
+    The three PVT axes, plus the two request options a batch submit of this
+    bench needs:
+
+    * ``stage_model_inputs``: ship this host's model files with the job. An
+      off-host backend otherwise simulates whatever open_pdks revision the
+      runner image carries (``c6d73a3`` when issue #467 checked it), not the
+      revision ``sim/harness/pdk.py`` pins, and a record minted that way cannot
+      claim the pin. Staging is only half of that claim -- see
+      :func:`pin_klt_pdk_root` for the other half.
+    * ``batch``: the whole-job ceiling split and its two companions. See
+      ``KLT_MAX_UNITS_PER_JOB`` and below.
+
+    ``split=False`` drops ``max_units_per_job``/``max_concurrent_jobs``: the
+    DC-seed retry request covers a single PVT point, so it is one unit and one
+    job, with nothing to split or to bound. It keeps ``capacity_wait_s``, which
+    applies to any submit.
+
+    Factored out of :func:`run_grid_klt` so a test can build the exact request
+    the sweep would submit, offline -- see ``sim/tests/test_loop_stability.py``.
+    """
+    batch = {"capacity_wait_s": KLT_CAPACITY_WAIT_S}
+    if split:
+        batch = {"max_units_per_job": KLT_MAX_UNITS_PER_JOB,
+                 "max_concurrent_jobs": KLT_MAX_CONCURRENT_JOBS, **batch}
+    return {"process": tuple(process), "temps": tuple(temps), "supplies": tuple(supplies),
+            "stage_model_inputs": True, "batch": batch}
+
+
+def pin_klt_pdk_root(pdk) -> str:
+    """Point the ``klt`` client at the same PDK install ``find_pdk()`` pin-checked.
+
+    ``stage_model_inputs`` (see :func:`klt_axes`) is not by itself enough to
+    make a record claim the pin, because ``klt`` decides *which* local install
+    to stage from on its own: it searches the usual prefixes first-match-wins
+    and, when several provide the variant, warns and proceeds. On a host
+    carrying both a pinned ``~/.ciel`` tree and a stale ``~/.volare`` one, the
+    models that ship with the job are then chosen by sort order rather than by
+    the pin -- silently, with no error. ``$PDK_ROOT`` is the only client-side
+    pin the ``batch`` backend accepts.
+
+    ``find_pdk()`` has already run ``check_pin()`` on this ``Pdk``, so its
+    variant directory's parent (``sim/env.sh``'s ``PDK_ROOT`` convention) is
+    the one tree a record may claim. Assigned rather than ``setdefault``-ed:
+    an ambient ``$PDK_ROOT`` that lost to ``$GF180_PDK_PATH`` inside
+    ``find_pdk()`` names a *different*, un-pin-checked tree, and leaving it in
+    place would send klt there. Returns the value exported.
+    """
+    root = str(pdk.path.parent)
+    os.environ["PDK_ROOT"] = root
+    return root
+
+
+def run_grid_klt(grid, corners, args, pdk, iloads, ceffs, esrs, logdir: Path, workdir: Path, klt_backend: str):
     """Run the PVT grid through ``klt sim`` (``klt_run.py``) instead of local ngspice.
 
     One request per (load, C_eff, ESR) configuration over the whole grid; the
@@ -752,10 +857,19 @@ def run_grid_klt(grid, corners, args, iloads, ceffs, esrs, logdir: Path, workdir
     Returns ``(rows, failures, seeded, info)``; never falls back to local.
     """
     configs = [(il, ce, es) for il in iloads for ce in ceffs for es in esrs]
-    axes = {"process": tuple(c.name for c in corners), "temps": tuple(args.temps),
-            "supplies": tuple(sorted({p.vdd for p in grid}))}
+    axes = klt_axes((c.name for c in corners), args.temps, sorted({p.vdd for p in grid}))
+    # Before anything is staged: klt resolves its own PDK install, so pin it to
+    # the tree find_pdk() pin-checked (issue #615).
+    pdk_root = pin_klt_pdk_root(pdk)
     klt_backend_arg = klt_backend  # "batch" or "local", passed to `klt sim --backend`
     print(f"klt sim   : {len(configs)} requests x {len(grid)} corners, backend {klt_backend}")
+    print(f"klt pdk   : PDK_ROOT={display_home(pdk_root)} "
+          f"(pin-checked {pdk.variant} @ {pdk.version})")
+    if klt_backend == "batch":
+        # Staging and the split are both no-ops on the local backend.
+        print(f"klt batch : models staged with every job, <= {KLT_MAX_UNITS_PER_JOB} "
+              f"units per job ({math.ceil(len(grid) / KLT_MAX_UNITS_PER_JOB)} jobs "
+              f"per request, <= {KLT_MAX_CONCURRENT_JOBS} in flight)")
     results, problems, bad = klt_run.run_configs(
         configs, LDO_NETLIST, args.ac_dec, F_START, F_STOP, axes, workdir, logdir,
         klt_backend_arg, args.in_flight)
@@ -769,7 +883,8 @@ def run_grid_klt(grid, corners, args, iloads, ceffs, esrs, logdir: Path, workdir
         return rows_from_log(pvt, text, len(configs), log)
 
     def run_retry(pvt):
-        one = {"process": (pvt.corner.name,), "temps": (pvt.temp_c,), "supplies": (pvt.vdd,)}
+        # One PVT point, so one unit and one fleet job: nothing to split.
+        one = klt_axes((pvt.corner.name,), (pvt.temp_c,), (pvt.vdd,), split=False)
         res, probs, _ = klt_run.run_configs(
             configs, LDO_NETLIST, args.ac_dec, F_START, F_STOP, one, workdir, logdir,
             klt_backend_arg, args.in_flight, dc_seed=dc_seed_lines(pvt))
@@ -792,7 +907,8 @@ def run_grid_klt(grid, corners, args, iloads, ceffs, esrs, logdir: Path, workdir
         bad_key=lambda pvt: pvt.corner_id,
         bad_message="klt reported a problem for this corner (see warnings above)",
         retry_problem=lambda err, probs: err or "; ".join(probs), say=say, report=report)
-    info = {"backend": klt_backend, "requests": len(configs), "klt": klt_run.klt_version()}
+    info = {"backend": klt_backend, "requests": len(configs), "klt": klt_run.klt_version(),
+            "units_per_job": KLT_MAX_UNITS_PER_JOB, "pdk_root": display_home(pdk_root)}
     return rows, failures, seeded, info
 
 
@@ -945,7 +1061,7 @@ def main() -> int:
         # The `klt sim` path fills rows/failures/seeded; the local loops below
         # then have nothing to run (`local_grid` is empty).
         rows, failures, seeded, klt_info = run_grid_klt(
-            grid, corners, args, iloads, ceffs, esrs, logdir, workdir,
+            grid, corners, args, pdk, iloads, ceffs, esrs, logdir, workdir,
             "local" if backend == "klt-local" else "batch")
     local_grid = [] if use_klt else grid
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
@@ -1175,6 +1291,21 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
             f"request is under `corners/{record_id}/klt-reports/`), so the ngspice "
             f"version/hash and host above describe only the local full-curve re-run, "
             f"not the grid; the grid ran on the engine and host named in those reports."
+            # `stage_model_inputs` and the fleet-job split are no-ops on the
+            # klt-local backend, so only a batch record may claim either.
+            + (
+                f"\n- PDK on the grid: the model files of the pin-checked install above "
+                f"were staged with every job (`options.stage_model_inputs`, with the `klt` "
+                f"client pinned to that install via `PDK_ROOT={klt_info['pdk_root']}`), so "
+                f"the grid ran the pinned open_pdks revision and not whatever revision the "
+                f"runner image carries -- expect `pdk_stamp_comparison: mismatch` in each "
+                f"report, which is the reason for staging. Each request was split into "
+                f"fleet jobs of at most {klt_info['units_per_job']} units "
+                f"(`batch.max_units_per_job`) so no job reaches the fleet's whole-job "
+                f"ceiling, which would report every unit of it `batch_job_timeout` "
+                f"(issue #615)."
+                if klt_info["backend"] == "batch" else ""
+            )
         )
     else:
         klt_md = ""
