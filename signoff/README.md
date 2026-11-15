@@ -203,10 +203,12 @@ done
 That loop skips the `local_only` commands too. To actually run them, use
 `python3 design/netlist.py --check` and `bash sim/selftest.sh --quick
 --require-pdk` directly, or regenerate the envelope without `--check`.
-After any inventoried file changes, regenerate with `--attest N --inventory
-... -o signoff/evidence/itemN.generic.json`, copy
-`provenance.input.content_hash` into the manifest, and run `bash
-signoff/check.sh --write`.
+After any inventoried file changes, regenerate the envelope with `--attest N
+--inventory signoff/inventory-itemN.json -o signoff/evidence/itemN.generic.json`,
+then re-run `bash signoff/check.sh` and follow what it reports: with the
+current inventory-only bindings a hygiene-only change needs nothing further,
+while a changed inventory also needs the new `provenance.input.content_hash`
+copied into the manifest and a `bash signoff/check.sh --write` run.
 
 Item 2 is not a presentation choice: the layout does not exist.
 
