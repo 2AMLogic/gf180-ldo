@@ -641,6 +641,27 @@ class KltRunWrappers(GoldenCase):
                     else:
                         self.assertAlmostEqual(x, float(row[k]), places=9, msg=f"{dut} {k}")
 
+    def test_current_limit_thermal_measurement_declares_ratified_limit(self):
+        # Exactly one Thermal-tagged measurement, bound imported from
+        # summarize.py by identity (not a retyped literal), and no name that
+        # would collide with grade()'s keys in main()'s {**measurements,
+        # **grade(...)} row build.
+        tagged = {m["name"]: m for m in cl_klt.MEASUREMENTS if "spec_row" in m}
+        self.assertEqual(set(tagged), {"ilim_1764_ma", "pshort_mw"})
+        self.assertEqual(tagged["ilim_1764_ma"]["spec_row"], "Current limit")
+        self.assertEqual(tagged["pshort_mw"]["spec_row"], "Thermal")
+        # Identity, not value: the declared bound is the constant klt_run.py
+        # imports from summarize.py, not a retyped 346.0 literal. (The golden
+        # tests above already pin that constant's value to the ratified one.)
+        # cl's instance is a different module object from the `summarize`
+        # klt_run imported, so the anchor is cl_klt's own binding.
+        self.assertIs(tagged["pshort_mw"]["limits"]["max"], cl_klt.PSHORT_MAX_MW)
+        # Exercise every grade() branch so the collision check is complete.
+        v = {"ilim_1764_ma": 80.0, "ilim_0000_ma": 90.0, "ilim_1500_ma": 85.0,
+             "vout_50ma": 1.8, "vth_mv_50ma": 1.0, "isns_mv_50ma": 0.9}
+        grade_keys = set(cl_klt.grade(v, 3.63))
+        self.assertEqual(grade_keys & set(tagged), set())
+
     def test_quiescent_current_grade(self):
         base = SIM_DIR / "quiescent-current" / "corners" / "20261007-iq-320-tt27-probe"
         summary = _summary(base / "summary.csv")
