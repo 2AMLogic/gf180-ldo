@@ -607,9 +607,10 @@ class NgspiceRoot:
     ``"GF180_LDO_NGSPICE_ROOT"``, ...) so a mismatch message can name *which*
     probe produced the root it is talking about. ``version`` is the
     ``ngspice-<major>`` token that root's own ``bin/ngspice`` reports, or
-    ``None`` when that can't be determined -- a root whose major is unknown
-    or below the floor constant ``NGSPICE_MIN_MAJOR`` is not an authority to
-    point a user at (issue #247).
+    ``None`` when that can't be determined -- a root whose major is *known*
+    to be below the floor constant ``NGSPICE_MIN_MAJOR`` is not an authority
+    to point a user at (issue #247); an unknown major is not itself
+    disqualifying (see ``ngspice_major_int``).
     """
 
     path: str
