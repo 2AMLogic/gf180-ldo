@@ -5,7 +5,7 @@
 
 Only **ratified** records are in force. Everything else is a proposal or a held/negative-result write-up awaiting the operator. Status is read from each record's `Status` line (see `TEMPLATE.md`); CI fails if this file is stale or a record's status cannot be classified.
 
-41 records: 12 ratified, 28 proposed, 1 held, 0 superseded.
+42 records: 12 ratified, 29 proposed, 1 held, 0 superseded.
 
 | DR | Title | Status | Superseded by |
 |---|---|---|---|
@@ -50,6 +50,7 @@ Only **ratified** records are in force. Everything else is a proposal or a held/
 | [DR-0040](DR-0040-pass-array-generator-stays-own-against-gate-driver-power-array-folded.md) | the pass-array generator stays its own -- `gf180-gate-driver`'s `power_array_folded` solves a different problem (a row fold this array does not need), and neither generator subsumes the other | proposed | - |
 | [DR-0041](DR-0041-new-evidence-bytes-go-to-the-artifact-store-git-keeps-manifests.md) | new evidence bytes go to the fleet artifact store; git keeps a manifest and the Markdown record | proposed | - |
 | [DR-0043](DR-0043-ngspice-pin-is-a-major-version-floor-not-an-exact-version.md) | the ngspice pin is a major-version floor (at least ngspice-46), not an exact version | proposed | - |
+| [DR-0044](DR-0044-batch-adapter-evidence-store-split.md) | a `klt`-batch adapter run stores its bytes, and keeps the report envelope and the netlist snapshot in git | proposed | - |
 
 ## Design citations of unratified records
 
