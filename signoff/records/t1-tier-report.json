@@ -106,9 +106,10 @@
       "citation": null,
       "citations_graded": [
         {
-          "citation": "sim/current-limit/corners/20261104-limits-538-04eaa9a/new/klt-report.json",
+          "citation": "sim/current-limit/corners/20261115-limits-616-658920d0/new/klt-report.json",
           "rows": [
-            "Current limit"
+            "Current limit",
+            "Thermal"
           ],
           "status": "met",
           "reason": null
@@ -183,10 +184,6 @@
             "gap": "no passing corner envelope: Startup MIXED and stale in sim/CHARACTERIZATION.md; owned by #43 and #345"
           },
           {
-            "id": "Thermal",
-            "gap": "no tagged envelope: Thermal has no bench of its own and the current-limit envelope tags only the Current limit row, so no committed klt-report.json carries a Thermal spec_row; needs a limit-checked thermal measurement tagged spec_row Thermal"
-          },
-          {
             "id": "Output noise",
             "gap": "not corner-simulable: explicitly waived by the ratified spec (README note 7); no bound exists to check"
           },
@@ -204,7 +201,8 @@
           "Current limit": "derived",
           "Dropout @ 50 mA": "derived",
           "Enable / shutdown": "derived",
-          "Load reg (0\u201350 mA)": "derived"
+          "Load reg (0\u201350 mA)": "derived",
+          "Thermal": "derived"
         }
       }
     },
@@ -252,7 +250,7 @@
         "command": null,
         "kind": "generic",
         "check_status": "pass",
-        "content_hash": "sha256:b2845f0c4a793ace93fe65ebb22a594542b2b0eef6cc21e6aa82e6419287619e",
+        "content_hash": "sha256:d8491f99cf1185b78ccb049fae443d1f1ea2e1f66e09fd28acc329d893f63f62",
         "input_verified": null,
         "exit_status": 0,
         "attestation": {

@@ -36,7 +36,7 @@ from harness import evidence_store as store_mod  # noqa: E402
 KINDS = ("campaigns", "records", "corners", "reports")
 
 
-def _staged_dir_problem(staged: Path, bench: str) -> str | None:
+def _staged_dir_problem(staged: Path) -> str | None:
     if not staged.is_dir():
         return f"{staged} is not a directory"
     try:
@@ -69,7 +69,7 @@ def main(argv=None) -> int:
         print(f"ERROR: no bench directory sim/{args.bench}", file=sys.stderr)
         return 1
     staged = args.staged.resolve()
-    problem = _staged_dir_problem(staged, args.bench)
+    problem = _staged_dir_problem(staged)
     if problem:
         print(f"ERROR: {problem}", file=sys.stderr)
         return 1

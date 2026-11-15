@@ -8,7 +8,10 @@ The 81-point grid tb.json declares (tt ff ss fs sf res_ff res_ss bjt_ff bjt_ss
 x -40/27/125 C x 2.97/3.30/3.63 V), same measurements and same bounds, plus
 the VREF-port current of each instance (see klt_body.spice). With
 ``--baseline-ref`` the DUT at that ref is run as a second job on the same
-backend. Output: ``sim/quiescent-current/corners/<record-id>/``.
+backend. Output: the git-ignored staging tree
+``sim/.work/.stage/quiescent-current/sim/quiescent-current/corners/<record-id>/``; it becomes evidence only
+when ``PYTHONPATH=sim python3 -m harness.klt_record quiescent-current --record-id <id>``
+stores the bytes and mints the record (DR-0044).
 """
 
 from __future__ import annotations
