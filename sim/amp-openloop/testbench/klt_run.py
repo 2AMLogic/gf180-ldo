@@ -9,8 +9,10 @@ by sim/harness/tb_adapter.py. tb.json chains ``op`` and ``ac`` analyses in one
 ``.control`` block; ``klt sim`` runs one analysis per corner, so the adapter
 submits one request per analysis (``op1``, ``ac1``, ...) over the same grid and
 merges the values per corner. Error-amplifier cell bench: the DUT is design/netlist/error_amp.spice.
-Output: sim/amp-openloop/corners/<record-id>/ (``summary.csv``; raw reports and logs
-in ``klt-<state>/new/``).
+Output: the git-ignored staging tree
+``sim/.work/.stage/amp-openloop/sim/amp-openloop/corners/<record-id>/``; it becomes evidence only
+when ``PYTHONPATH=sim python3 -m harness.klt_record amp-openloop --record-id <id>``
+stores the bytes and mints the record (DR-0044).
 """
 
 import sys

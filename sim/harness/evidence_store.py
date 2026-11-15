@@ -342,6 +342,31 @@ def stage_files(stage_dir: Path, name_prefix: str, *, exclude=()) -> list[tuple[
     return out
 
 
+#: File names a ``klt``-batch run keeps committed instead of storing (DR-0044,
+#: issue #594). ``klt-report.json`` is the redacted request envelope:
+#: ``signoff/block-manifest.json`` pins five of them by ``content_hash`` and
+#: CI's ``signoff/check.sh`` grades them offline, with no broker. Everything
+#: else a batch run writes -- per-corner logs, ``dut.spice``, ``body.spice``,
+#: ``request.json``, ``summary.csv`` -- follows DR-0041 to the store.
+KEPT_BATCH_NAMES = ("klt-report.json",)
+
+
+def split_batch_run(stage_corner_dir: Path, name_prefix: str,
+                    kept_names=KEPT_BATCH_NAMES) -> tuple[list[tuple[Path, str]], list[Path]]:
+    """Split a staged batch run into ``(files_to_store, files_to_commit)``.
+
+    One function so every batch driver makes the same split (issue #596 reuses
+    it for the hand-rolled drivers). The kept files are passed to
+    :func:`stage_files` as ``exclude``, which is what keeps them out of the
+    manifest: ``scripts/check_artifact_manifests.py check`` fails an entry
+    whose ``name`` is a tracked path, so a file that stays in git must never
+    also be a manifest entry.
+    """
+    kept = sorted(p for p in stage_corner_dir.rglob("*")
+                  if p.is_file() and not p.is_symlink() and p.name in kept_names)
+    return stage_files(stage_corner_dir, name_prefix, exclude=kept), kept
+
+
 def summary_section(manifest_rel: str, manifest: dict, empty: list[str]) -> str:
     """Markdown appended to a run's committed summary: where its bytes are."""
     total = sum(e["size"] for e in manifest["entries"])
