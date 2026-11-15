@@ -52,7 +52,7 @@ A run takes about a minute and prints one line per stage:
 [1/9] layout      : drclvs_passives.gds (45508 bytes)
 [2/9] netlist     : 3 device line(s), LVS form
 [3/9] klt drc     : clean (0 violation(s), curated subset)
-[4/9] pdk drc     : 0 violation(s) across 642 rule categories (41 rule tables)
+[4/9] pdk drc     : 0 violation(s) across 739 rule categories (gf180mcu.drc, decks=all,-antenna,-density)
 [5/9] lvs         : MATCH
 [6/9] control topology  : gate shorted to drain -> MISMATCH (expected)
 [7/9] control parameter : device width doubled -> MISMATCH (expected)
@@ -156,8 +156,12 @@ before running a single rule. It fails as
 
 ```
 sh: pmap: command not found
-ERROR: In .../main.drc: undefined method 'strip' for nil
+ERROR: In .../gf180mcu.lvs: undefined method 'strip' for nil
 ```
+
+(The PDK's **LVS** deck shells out to `pmap`; the pinned revision's DRC deck
+does not — it reads memory through KLayout's own API — so this failure, when
+it fires, is stage 5 onwards.)
 
 which reads like a broken deck rather than a missing utility, and takes stages
 4–7 — i.e. every DRC number and every LVS verdict this repo is willing to
@@ -380,27 +384,32 @@ continue.
 JSON-contracted path; the report is kept in the run directory. Fast (milliseconds),
 and it is a **13-rule curated subset**. See "Coverage, honestly" below.
 
-**4. DRC — the PDK's own deck.** The full gf180mcu KLayout deck, assembled the
-way the PDK's own `run_drc.py` assembles it: `main.drc`, then every rule table
-(minus the flat-mode `*_split` variants, matching what `run_drc.py` does in deep
-mode), then `tail.drc`, with `layers_def.drc` copied beside the generated deck.
-41 rule tables, and ~640 rule categories. `drclvs.py` assembles the deck itself
-rather than shelling out to `run_drc.py`, which needs `docopt` and drives its
-own parallel run/report layout; what we want is one deck, one report, one exit
-status. **This is the DRC number worth quoting.**
+**4. DRC — the PDK's own deck.** The full gf180mcu KLayout deck, driven through
+its own Ruby driver (`libs.tech/klayout/tech/drc/gf180mcu.drc`, which
+`require_relative`s its rule tables from `tech/drc/rule_decks/*.rb`), invoked
+exactly as the driver's documented contract prescribes:
+`klayout -b -r gf180mcu.drc -rd input=… -rd report=… -rd decks=all,-antenna,-density …`.
+The `decks=` selection excludes the `antenna` and `density` decks, the same
+tables the old concatenated-deck flow excluded explicitly; the driver honours
+`run_mode=deep`, `threads`, and the variant's metal-stack switches
+(`metal_level`/`metal_top`/`mim_option`). **This is the DRC number worth
+quoting.**
 
 Quote it from a *record*, not from this file: the category count is a property
-of the deck **as the installed KLayout builds it**, not of the PDK alone. At
-the same open_pdks hash it was 642 under KLayout 0.28.16 (record
-`20260801-075800-9419809`) and is 640 under 0.30.10 (record
-`20260922-215349-74f117f`). What matters for a DRC claim is that the count is
-large and non-zero — see the zero-category trap immediately below — and that
-the violation count beside it is zero.
+of the deck **as the installed KLayout builds it**, not of the PDK alone, and
+it moved when the deck itself moved — 642 under the pre-bump
+concatenated-deck layout (record `20260801-075800-9419809`), 640 under the
+same old layout on KLayout 0.30.10 (record `20260922-215349-74f117f`), and
+739 under the pinned revision's driver deck with the `decks=` selection above
+(record `20261115-191323-63218ad`). Old counts are not comparable to new ones:
+they are different rule sets. What matters for a DRC claim is that the count
+is large and non-zero — see the zero-category trap immediately below — and
+that the violation count beside it is zero.
 
 A deck that runs but registers *zero* rule categories produces an empty report
-that is indistinguishable from a clean one — that is what a mis-assembled deck
-looks like, so `drclvs.py` treats zero categories as a hard error rather than a
-pass.
+that is indistinguishable from a clean one — that is what a deck that ran no
+rules looks like (a mis-set `decks=` selection does exactly this), so
+`drclvs.py` treats zero categories as a hard error rather than a pass.
 
 **5. LVS.** The PDK's own `gf180mcu.lvs`, layout against the netlist from stage 2.
 The deck reports its own verdict in its log and exits 0 either way, so the log is
@@ -530,7 +539,7 @@ generically against [klayout-tools](https://github.com/2AMLogic/klayout-tools):
   ignores the layout's database unit (above).
 - [#173](https://github.com/2AMLogic/klayout-tools/issues/173) — `klt drc` can
   only run its own built-in decks; there is no way to point it at the deck the
-  PDK ships. This is why stage 4 assembles and drives the PDK deck by hand.
+  PDK ships. This is why stage 4 drives the PDK's deck directly.
 - [#163](https://github.com/2AMLogic/klayout-tools/issues/163) (existing, part
   of the `klt lvs` epic) — commented with two requirements this bring-up
   surfaced: the simulation-vs-LVS netlist-form split, and the need for negative

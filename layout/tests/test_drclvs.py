@@ -40,7 +40,12 @@ def fake_summary(record_id: str) -> dict:
         "record_id": record_id,
         "netlist_devices": 1,
         "klt_drc": {"status": "clean", "violations": 0, "dbu_um": 0.001},
-        "pdk_drc": {"violations": 0, "rule_categories": 1, "rule_tables": 1},
+        "pdk_drc": {
+            "violations": 0,
+            "rule_categories": 1,
+            "deck": "gf180mcu.drc",
+            "decks_selection": "all,-antenna,-density",
+        },
         "lvs": {"match": True, "warnings": []},
         "lvs_negative_controls": {
             "topology": {"match": False, "mutation": "gate shorted to drain"},
@@ -137,6 +142,113 @@ class DeckEnvTests(unittest.TestCase):
             self.assertTrue(sliced, f"empty slice from {last!r}")
             self.assertTrue(sliced.endswith("K"), sliced)
             self.assertTrue(sliced[:-1].strip().isdigit(), sliced)
+
+
+class RunPdkDrcSwitchesTests(unittest.TestCase):
+    """Stage 4 must drive the pinned revision's deck driver, and only it.
+
+    The driver (`tech/drc/gf180mcu.drc`) SILENTLY IGNORES unknown ``-rd``
+    switches -- it exits 0 and writes a valid report regardless -- so a stale
+    switch in ``run_pdk_drc()`` would change nothing while the code claimed an
+    intent the deck never carries out. These tests hold the emitted switch set
+    to the driver's measured contract (``-rd help=true``): required
+    ``input``/``report``; optional ``topcell``, ``run_mode``, ``verbose``,
+    ``threads``, ``metal_level``, ``metal_top``, ``mim_option``, ``decks``.
+    """
+
+    STALE_SWITCHES = (
+        # the pre-bump invocation's switch set: none of these exist in the
+        # driver's contract, and every one of them would be silently ignored
+        "feol", "beol", "conn_drc", "offgrid",
+        "split_deep", "table_name", "thr",
+    )
+
+    def run_stage4(self, report_text: str = "<category><a/></category>"):
+        """Run run_pdk_drc() with run_logged stubbed; return (cmd, result)."""
+        captured: dict = {}
+
+        def fake_run_logged(cmd, log, what, env=None):
+            captured["cmd"] = cmd
+            captured["env"] = env
+            for arg in cmd:
+                if arg.startswith("report="):
+                    Path(arg.split("=", 1)[1]).write_text(report_text)
+            return ""
+
+        original = drclvs.run_logged
+        drclvs.run_logged = fake_run_logged
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                run_dir = Path(tmp)
+                spec = drclvs.CELLS["testcell"]
+                result = drclvs.run_pdk_drc(
+                    fake_pdk(run_dir / "pdk"),
+                    spec, run_dir / "in.gds", run_dir, run_dir / "pdk-drc.log",
+                )
+        finally:
+            drclvs.run_logged = original
+        return captured["cmd"], result
+
+    @staticmethod
+    def switches_of(cmd: list[str]) -> dict[str, str]:
+        switches = {}
+        it = iter(cmd)
+        for arg in it:
+            if arg == "-rd":
+                key, _, value = next(it).partition("=")
+                switches[key] = value
+        return switches
+
+    def test_drives_the_pdk_deck_driver_not_an_assembled_deck(self):
+        cmd, result = self.run_stage4()
+        self.assertEqual(cmd[:3], ["klayout", "-b", "-r"])
+        self.assertTrue(cmd[3].endswith("/drc/gf180mcu.drc"), cmd[3])
+        self.assertEqual(result["deck"], "gf180mcu.drc")
+
+    def test_no_stale_switch_from_the_old_deck_contract_is_emitted(self):
+        cmd, _ = self.run_stage4()
+        switches = self.switches_of(cmd)
+        for stale in self.STALE_SWITCHES:
+            self.assertNotIn(stale, switches, f"stale -rd switch {stale!r}")
+
+    def test_every_emitted_switch_is_in_the_driver_contract(self):
+        cmd, _ = self.run_stage4()
+        known = {
+            "input", "report", "topcell", "run_mode", "verbose", "workers",
+            "threads", "variant", "metal_level", "metal_top", "mim_option",
+            "decks", "help",
+        }
+        unknown = set(self.switches_of(cmd)) - known
+        self.assertEqual(unknown, set(), "switches the driver would ignore")
+
+    def test_decks_selection_excludes_exactly_antenna_and_density(self):
+        cmd, result = self.run_stage4()
+        self.assertEqual(result["decks_selection"], "all,-antenna,-density")
+        self.assertEqual(self.switches_of(cmd)["decks"], "all,-antenna,-density")
+
+    def test_run_mode_is_deep_and_threads_replaces_thr(self):
+        cmd, _ = self.run_stage4()
+        switches = self.switches_of(cmd)
+        self.assertEqual(switches["run_mode"], "deep")
+        self.assertIn("threads", switches)
+
+    def test_variant_switches_carry_the_metal_stack(self):
+        cmd, _ = self.run_stage4()
+        switches = self.switches_of(cmd)
+        self.assertEqual(switches["metal_top"], "11K")
+        self.assertEqual(switches["mim_option"], "B")
+        self.assertEqual(switches["metal_level"], "5LM")
+
+    def test_counts_categories_and_items_from_the_report(self):
+        text = "<category>a</category><category>b</category><item>x</item>"
+        _, result = self.run_stage4(report_text=text)
+        self.assertEqual(result["rule_categories"], 2)
+        self.assertEqual(result["violations"], 1)
+
+    def test_a_zero_category_report_is_a_hard_error(self):
+        with self.assertRaises(drclvs.StageError) as ctx:
+            self.run_stage4(report_text="<item>x</item>")
+        self.assertIn("ZERO rule categories", str(ctx.exception))
 
 
 class CellRegistryTests(unittest.TestCase):
