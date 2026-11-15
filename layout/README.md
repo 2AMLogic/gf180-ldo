@@ -401,7 +401,7 @@ it moved when the deck itself moved — 642 under the pre-bump
 concatenated-deck layout (record `20260801-075800-9419809`), 640 under the
 same old layout on KLayout 0.30.10 (record `20260922-215349-74f117f`), and
 739 under the pinned revision's driver deck with the `decks=` selection above
-(record `20261115-191323-63218ad`). Old counts are not comparable to new ones:
+(record `20261115-231214-136fe3e`). Old counts are not comparable to new ones:
 they are different rule sets. What matters for a DRC claim is that the count
 is large and non-zero — see the zero-category trap immediately below — and
 that the violation count beside it is zero.
