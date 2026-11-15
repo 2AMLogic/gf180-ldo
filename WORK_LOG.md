@@ -6,13 +6,24 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-14
+
+- **PR #605**: fix: grade a store-backed record from its own committed netlist hashes
+- **PR #599**: refactor(sim): one harness @TOKEN@ renderer and netlist preflight for eight drivers
+- **Issue #597** (closed): build_characterization_report.py skips store-backed records: latest_record() needs a committed netlist snapshot
+- **Issue #592** (closed): Remove the per-driver copies of the @TOKEN@ deck-template renderer and netlist-freshness preflight: one harness helper each (3 drifted guard regexes)
+
 ### 2026-11-13
 
+- **PR #600**: test: move soft-start-loop-gain's selftest part 2 into the unit tests
+- **PR #598**: refactor: define PDK_OPTION, DBU_UM and the GDS layer table once in gen_gds_common
 - **PR #591**: fix: grade the current-limit bench against DR-0005's ratified window once
 - **PR #590**: docs: grade soft-start against DR-0024 as ratified, not proposed
 - **PR #589**: refactor: parse HOV lines with the shared strict parser, hoist the FB-node KCL
 - **PR #583**: refactor: read the divider's geometry from plan.py in area_estimate
 - **PR #582**: refactor: share delta-CSV writer and spread() between the two compare_records
+- **Issue #593** (closed): Remove the duplicated simulator-free checks from soft-start-loop-gain selftest.py: delegate to the unit tests, and move its CI-invisible klt_run checks there
+- **Issue #588** (closed): Remove the four per-generator copies of PDK_OPTION, DBU_UM and the GDS layer table: define once in gen_gds_common.py
 - **Issue #587** (closed): Remove the expired "proposed, not yet ratified" wording from soft-start summarize.py and README: DR-0024 was ratified 2026-09-15
 - **Issue #585** (closed): Remove the superseded 65-80 mA window from current-limit summarize.py: one ratified (DR-0005) bound shared with klt_run.grade()
 - **Issue #584** (closed): Remove parse_hov_fields()'s hand-copied parser body in soft-start-loop-gain sweep.py: reuse harness.report.parse_row_fields()
