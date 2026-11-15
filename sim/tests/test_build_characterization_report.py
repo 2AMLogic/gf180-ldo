@@ -1307,5 +1307,199 @@ class TestStoreBackedRecordFreshness(unittest.TestCase):
         )
 
 
+class TestSpecTableParsedByTheRatifiedGate(unittest.TestCase):
+    """The report reads README's spec table through the gate's own parser.
+
+    Until issue #628 this script carried a second, independently-written
+    regex parser of the same table. Both returned ``dict[str, tuple[str,
+    str]]`` and neither imported the other, so they were free to drift --
+    and had already diverged on whitespace normalization, escaped pipes, row
+    arity and alignment-colon separators. CI's regenerate-and-diff check
+    cannot catch any of that: both sides of that diff are produced by this
+    same script, so a mis-parsed row simply reads the same wrong way twice.
+
+    These tests pin the collapse. Each divergence the issue measured is
+    asserted against the *report's* parse, so re-forking the parser (or
+    loosening it) fails here rather than silently in `sim/CHARACTERIZATION.md`.
+    """
+
+    HEADER = "| Parameter | Target | Stretch |"
+
+    def _table_text(self, body: str, separator: str = "|---|---|---|") -> str:
+        return f"# Fixture\n\n{self.HEADER}\n{separator}\n{body}\n"
+
+    def _parse(self, body: str, separator: str = "|---|---|---|"):
+        """Parse a synthetic table through whatever parser the report uses."""
+        return bcr.check_spec_table.parse_table(self._table_text(body, separator))
+
+    def _legacy_parse(self, body: str, separator: str = "|---|---|---|"):
+        """The pre-#628 forked parser, verbatim, as the divergence oracle.
+
+        Each test below asserts both halves of the finding: what the gate's
+        parser does with the input, *and* that this copy disagreed. Without
+        the second half the tests would only restate `check_spec_table`'s
+        own behaviour and would not document why the fork mattered. Same
+        role `LEGACY_OVERALL_RE` plays above for issue #251.
+        """
+        text = self._table_text(body, separator)
+        m = re.search(
+            r"\| Parameter \| Target \| Stretch \|\n\|[-\s|]+\|\n((?:\|.*\|\n)+)",
+            text,
+        )
+        if not m:
+            raise RuntimeError("could not locate README.md's spec table")
+        rows = re.findall(
+            r"^\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$",
+            m.group(1),
+            re.MULTILINE,
+        )
+        return {name: (target, stretch) for name, target, stretch in rows}
+
+    def test_the_legacy_oracle_agrees_with_the_gate_on_todays_README(self):
+        """The collapse is a no-op on the committed table -- which is why
+        the regenerated `sim/CHARACTERIZATION.md` is byte-identical, and why
+        the four divergences below are the whole behavioural delta.
+        """
+        readme = (bcr.REPO_ROOT / "README.md").read_text()
+        m = re.search(
+            r"\| Parameter \| Target \| Stretch \|\n\|[-\s|]+\|\n((?:\|.*\|\n)+)",
+            readme,
+        )
+        legacy = {
+            name: (target, stretch)
+            for name, target, stretch in re.findall(
+                r"^\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$",
+                m.group(1),
+                re.MULTILINE,
+            )
+        }
+        self.assertEqual(bcr.check_spec_table.parse_table(readme), legacy)
+
+    def test_the_report_has_no_parser_of_its_own(self):
+        """The forked `parse_spec_table` is gone, not merely unused."""
+        self.assertFalse(
+            hasattr(bcr, "parse_spec_table"),
+            "build_characterization_report defines a spec-table parser again; "
+            "it must read the table through check_spec_table.parse_table",
+        )
+
+    def test_the_parser_is_the_one_backing_the_ratified_lock(self):
+        """Same module object the lock's own checker uses, not a copy."""
+        lock_spec = importlib.util.spec_from_file_location(
+            "cst_oracle", bcr.REPO_ROOT / "spec" / "check_spec_table.py"
+        )
+        oracle = importlib.util.module_from_spec(lock_spec)
+        lock_spec.loader.exec_module(oracle)
+        readme = (bcr.REPO_ROOT / "README.md").read_text()
+        self.assertEqual(
+            bcr.check_spec_table.parse_table(readme), oracle.parse_table(readme)
+        )
+
+    def test_every_ROWS_name_resolves_in_the_ratified_table(self):
+        """The precondition that makes a loud lookup safe on the real tree."""
+        table = bcr.check_spec_table.parse_table(
+            (bcr.REPO_ROOT / "README.md").read_text()
+        )
+        self.assertEqual([row.name for row in bcr.ROWS if row.name not in table], [])
+
+    # -- the four measured divergences (issue #628) ----------------------
+
+    def test_alignment_colons_in_the_separator_parse(self):
+        """A cosmetic `|:---|---:|---|` edit must not take the report down."""
+        body, separator = "| Input | 3.3 V | none |", "|:---|---:|---|"
+        self.assertEqual(self._parse(body, separator), {"Input": ("3.3 V", "none")})
+        # The fork's header regex required `|[-\s|]+|`, so a colon was fatal.
+        with self.assertRaises(RuntimeError):
+            self._legacy_parse(body, separator)
+
+    def test_an_escaped_pipe_stays_inside_its_cell(self):
+        r"""The old regex split `200 mV @ 50 mA \| 25 C` across two cells."""
+        body = r"| Dropout | 200 mV @ 50 mA \| 25 C | 150 mV |"
+        self.assertEqual(
+            self._parse(body), {"Dropout": (r"200 mV @ 50 mA \| 25 C", "150 mV")}
+        )
+        # The fork split on every pipe, truncating Target and mangling Stretch.
+        self.assertEqual(
+            self._legacy_parse(body),
+            {"Dropout": ("200 mV @ 50 mA \\", r"25 C | 150 mV")},
+        )
+
+    def test_a_four_cell_row_is_rejected_not_absorbed(self):
+        """The old regex folded the surplus cell into Stretch."""
+        body = "| Input | 3.3 V | none | oops |"
+        with self.assertRaises(bcr.check_spec_table.CheckError):
+            self._parse(body)
+        # The fork absorbed the surplus cell into Stretch and parsed happily.
+        self.assertEqual(self._legacy_parse(body), {"Input": ("3.3 V", "none | oops")})
+
+    def test_a_double_space_in_a_Parameter_normalizes(self):
+        """`Line  regulation` and `Line regulation` are one row identity.
+
+        This is the divergence that bit: the gate normalizes the key, the old
+        parser did not, so a ROWS entry naming the normalized form missed and
+        rendered a blank Target.
+        """
+        body = "| Line  regulation | < 5 mV/V | none |"
+        self.assertEqual(
+            self._parse(body), {"Line regulation": ("< 5 mV/V", "none")}
+        )
+        # The fork kept the double space, so a ROWS entry naming the
+        # normalized form missed the row and rendered a blank Target.
+        self.assertEqual(
+            self._legacy_parse(body), {"Line  regulation": ("< 5 mV/V", "none")}
+        )
+
+
+class TestMissingRatifiedRowFailsLoudly(unittest.TestCase):
+    """A ROWS name absent from the ratified table stops the build (#628).
+
+    `spec_table.get(row.name, ("", ""))` used to default silently, so a
+    renamed or removed ratified row rendered an empty Target column instead
+    of failing -- and CI's regenerate-and-diff check passed, because the
+    committed file and the regenerated one agree on the same wrong output.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.readme = self.root / "README.md"
+        original = bcr.README
+        bcr.README = self.readme
+        self.addCleanup(setattr, bcr, "README", original)
+
+    def _write_readme(self, *row_names: str) -> None:
+        lines = ["# Fixture", "", "| Parameter | Target | Stretch |", "|---|---|---|"]
+        lines += [f"| {name} | some target | none |" for name in row_names]
+        self.readme.write_text("\n".join(lines) + "\n")
+
+    def test_render_raises_when_a_ROWS_name_is_not_a_ratified_row(self):
+        # A table that is well-formed but names none of the ROWS entries.
+        self._write_readme("Some unrelated parameter")
+        with self.assertRaises(bcr.check_spec_table.CheckError) as caught:
+            bcr.render()
+        message = str(caught.exception)
+        self.assertIn("ratified spec table", message)
+        # The gap is named, not merely counted.
+        self.assertIn(bcr.ROWS[0].name, message)
+
+    def test_the_failure_names_every_missing_row_not_just_the_first(self):
+        self._write_readme(bcr.ROWS[0].name)
+        with self.assertRaises(bcr.check_spec_table.CheckError) as caught:
+            bcr.render()
+        message = str(caught.exception)
+        self.assertNotIn(repr(bcr.ROWS[0].name), message)
+        for row in bcr.ROWS[1:]:
+            self.assertIn(row.name, message)
+
+    def test_a_table_naming_every_ROWS_entry_does_not_raise_for_absence(self):
+        """The guard fires on drift only -- it is not a blanket failure."""
+        self._write_readme(*[row.name for row in bcr.ROWS])
+        try:
+            bcr.render()
+        except bcr.check_spec_table.CheckError as exc:  # pragma: no cover
+            self.fail(f"guard fired with every ROWS name present: {exc}")
+
+
 if __name__ == "__main__":
     unittest.main()

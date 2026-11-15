@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+import types
 import unittest
 from pathlib import Path
 
@@ -27,6 +28,11 @@ def _tb(slug: str) -> testbench.Testbench:
 
 def _grid(job) -> int:
     return len(job.process) * len(job.temps) * len(job.supplies)
+
+
+def _no_pdk(variant=None):
+    """A `pdk.find_pdk` that fails the test if a cheap refusal consults it."""
+    raise AssertionError("a PDK-free refusal must not resolve the PDK")
 
 
 class SupplyWaveform(unittest.TestCase):
@@ -335,6 +341,119 @@ class BodyHooks(unittest.TestCase):
         base = ta.job(tb, "t", DUT).measurements
         j = ta.job(tb, "t", DUT, extra_measurements=extra)
         self.assertEqual(list(j.measurements), [*base, *extra])
+
+
+class StagedOutput(unittest.TestCase):
+    """DR-0044 (#594): a batch run lands in git-ignored staging, and refuses to
+    start at all when its evidence could not be stored."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        self.root = Path(td.name).resolve()
+        # `main` resolves its repo from __file__, so a staged run lands in this
+        # repo's own git-ignored sim/.work/. Clear it afterwards so the tests
+        # leave no scratch behind.
+        self.addCleanup(shutil.rmtree, SIM_DIR / ".work" / ".stage" / "line-regulation",
+                        ignore_errors=True)
+
+    def test_stage_dir_is_under_the_gitignored_work_tree(self):
+        d = ta.stage_corner_dir(self.root, "line-regulation", "r1")
+        self.assertEqual(d.relative_to(self.root).as_posix(),
+                         "sim/.work/.stage/line-regulation/sim/line-regulation/corners/r1")
+        # The path below the stage root repeats the repo-relative layout, so a
+        # staged file's path under it is exactly its manifest `name`.
+        stage_root = self.root / "sim/.work/.stage/line-regulation"
+        self.assertEqual((d / "tt_27c_3.30v.log").relative_to(stage_root).as_posix(),
+                         "sim/line-regulation/corners/r1/tt_27c_3.30v.log")
+
+    def _run(self, argv, preflight, *, find_pdk=None):
+        """``main`` for a flat bench, with the fleet call and the PDK stubbed.
+
+        These tests run in the PDK-free lane, so ``pdk.find_pdk`` is always
+        stubbed: a real lookup would raise ``PdkNotFound`` on a host with no
+        install. ``find_pdk`` overrides the stub -- the refusal tests pass one
+        that raises, asserting the gate never needs a PDK at all.
+        """
+        import os
+
+        from harness import klt_ab
+        from harness import pdk
+        calls = {}
+
+        def fake_run_ab(job_factory, dut, baseline_ref, dest, repo, **kw):
+            calls["dest"] = dest
+            Path(dest).mkdir(parents=True, exist_ok=True)
+            return {"new": {"tt_27c_3.30v": {"vout_v": 1.8, "_status": "pass", "_diagnostics": ""}}}
+
+        real = klt_ab.run_ab
+        klt_ab.run_ab = fake_run_ab
+        self.addCleanup(lambda: setattr(klt_ab, "run_ab", real))
+
+        def fake_find_pdk(variant=None):
+            calls["pdk"] = True
+            return types.SimpleNamespace(path=Path("/nonexistent/pdk-root/gf180mcuD"))
+
+        real_find_pdk = pdk.find_pdk
+        pdk.find_pdk = find_pdk or fake_find_pdk
+        self.addCleanup(lambda: setattr(pdk, "find_pdk", real_find_pdk))
+        # `main` pins $PDK_ROOT via os.environ.setdefault; keep that out of the
+        # rest of the suite's environment.
+        prior_root = os.environ.get("PDK_ROOT")
+
+        def restore_root():
+            if prior_root is None:
+                os.environ.pop("PDK_ROOT", None)
+            else:
+                os.environ["PDK_ROOT"] = prior_root
+
+        self.addCleanup(restore_root)
+
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = ta.main(SIM_DIR / "line-regulation" / "testbench", "doc", argv,
+                         preflight=preflight)
+        return rc, calls
+
+    def test_a_run_writes_into_staging_not_into_sim(self):
+        seen = []
+        rc, calls = self._run(["--record-id", "zz-stage-test"], lambda repo: seen.append(repo))
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(seen), 1, "the store is probed once, before any fleet time")
+        dest = Path(calls["dest"])
+        self.assertIn("/sim/.work/.stage/", dest.as_posix())
+        self.assertEqual(dest, ta.stage_corner_dir(SIM_DIR.parent, "line-regulation", "zz-stage-test"))
+        self.assertFalse((SIM_DIR / "line-regulation" / "corners" / "zz-stage-test").exists())
+
+    def test_an_unstorable_run_exits_10_before_simulating(self):
+        from harness import evidence_store as es
+
+        def refuse(repo):
+            raise es.StoreError("no artifact broker configured ($KLT_ARTIFACT_BROKER is unset)")
+
+        rc, calls = self._run(["--record-id", "zz-refused"], refuse, find_pdk=_no_pdk)
+        self.assertEqual(rc, ta.EXIT_NOT_STORED)
+        self.assertNotIn("pdk", calls, "refusing an unstorable run must not need a PDK")
+        self.assertNotIn("dest", calls, "the fleet was never asked to run anything")
+        self.assertFalse((SIM_DIR / "line-regulation" / "corners" / "zz-refused").exists())
+        self.assertFalse(ta.stage_corner_dir(SIM_DIR.parent, "line-regulation", "zz-refused").exists())
+
+    def test_an_only_debug_point_needs_no_store(self):
+        def explode(repo):
+            raise AssertionError("--only must not probe the store")
+
+        rc, calls = self._run(["--record-id", "zz-only", "--only", "tt,27,3.30"], explode)
+        self.assertEqual(rc, 0)
+        self.assertIn("/sim/.work/.stage/", Path(calls["dest"]).as_posix())
+
+    def test_a_record_id_already_committed_is_refused(self):
+        existing = sorted((SIM_DIR / "line-regulation" / "corners").iterdir())[0].name
+        with self.assertRaises(SystemExit) as cm:
+            self._run(["--record-id", existing], lambda repo: None, find_pdk=_no_pdk)
+        self.assertIn("append-only", str(cm.exception))
 
 
 class Grade(unittest.TestCase):
