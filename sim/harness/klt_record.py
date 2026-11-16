@@ -470,6 +470,16 @@ def main(argv=None) -> int:
     # `install_kept` and `store_files` guard everything else under `sim/`.
     (stage_exp / report.SNAPSHOT_DIR / f"{rid}.spice").unlink(missing_ok=True)
     try:
+        # Refuse a kept-destination collision *before* anything is written:
+        # `store_files` installs the manifest and writes the record before
+        # returning, so a later refusal from `install_kept` would leave both
+        # committed while printing "nothing committed" (issue #662, the
+        # window #645 closed for the tb-free caller). `install_kept`'s own
+        # check stays as the TOCTOU backstop.
+        for dst in store.kept_destinations(kept, corner_dir, exp / report.CORNERS_DIR / rid):
+            if dst.exists():
+                raise store.StoreError(f"{dst.relative_to(REPO)} already exists; append-only "
+                                       "evidence is never rewritten")
         snapshot = report.write_netlist_snapshot(tb, stage_exp, rid, repo_root=REPO)
         mpath = store.store_files(files, repo_root=REPO, bench=slug, rid=rid, summary_text=text,
                                   summary_path=exp / report.RECORDS_DIR / f"{rid}.md")

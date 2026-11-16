@@ -227,8 +227,23 @@ SPICE reader delegate understands, carrying `l` and `w` across faithfully:
 
 ```
 Rbias NBIAS RBT VSS ppolyf_u_1k l=1000u w=1u m=1
-Cc    NZ OUT       cap_mim_2f0_m3m4_noshield l=48u w=48u m=1
+Cc    NZ OUT       cap_mim_2f0fF l=48u w=48u m=1
 ```
+
+and, for the MIM capacitors, it also maps the **model token**: the deck's
+extraction registers `cap_mim_<n>f<m>fF` device classes
+(`rule_decks/mimcap_extraction.lvs`), while the token an export carries is
+the *symbol* name (`cap_mim_2f0_m3m4_noshield`). KLayout's compare matches
+device classes **by name**, so a pass-through token pairs with nothing and
+the cell mismatches with no rule-level diagnosis (issue #642). The flavour
+`<n>f<m>` is common to both spellings, so one regex maps the whole family;
+the mapping mirrors the PDK's own LVS regression netlists, where the
+*subcircuit* is named after the symbol and the *device* after the class. A
+`cap_mim_*` flavour the mapping cannot parse is a hard `LvsFormError`, never
+a silently passed-through token. Resistors need no mapping (the resistor
+symbols' names are the registered class names) and neither do the non-MIM
+capacitors (`rule_decks/moscap_extraction.lvs` registers `cap_nmos_03v3` &
+co under their symbol names).
 
 The rewrite runs **before** `drclvs.py`'s simulation-form guard, not instead of
 it, and only on lines that carry a complete `r_width`/`r_length` or
@@ -259,9 +274,11 @@ single-FET cell cannot:
 - the MIM cap is the only device here whose terminals are not on metal1/poly2.
   For the 5LM / MIM-option-B stack this repo builds against they are metal4 and
   metal5, which ties the layout, the deck's `mim_option`/`metal_level`/`mim_cap`
-  switches and the schematic's `model=cap_mim_2f0_m4m5_noshield` into one
-  self-checking loop. Get any of the three wrong and the device extracts as
-  nothing at all.
+  switches, the schematic's `model=` symbol name and `lvs_form.py`'s mapping of
+  it to the registered `cap_mim_2f0fF` device class into one self-checking
+  loop. Get any of them wrong and the device extracts as nothing at all -- or
+  pairs with no class, which since issue #642 is a loud export error rather
+  than an undiagnosed mismatch.
 
 ## The feedback divider
 
@@ -299,15 +316,20 @@ than of this design:
   the high-sheet flavours in a `case POLY_RES`, so exactly one of `1k`/`2k`/
   `3k` is extracted per run. A `ppolyf_u_3k` cell run under the default `1k`
   extracts *nothing* and mismatches. It is a `CellSpec` field for that reason.
-- **Leaving every LVS option off is what turns simplification _on_.**
-  `gf180mcu.lvs` derives `SIMPLIFY` as "`net_only`, `top_lvl_pins`,
-  `combine`, `purge` and `purge_nets` are all false", and `netlist.simplify`
-  collapses series/parallel chains **in the extracted netlist only**. Left
-  alone it folds the 18 drawn units into two lumped resistors, so the compare
-  could no longer tell an 18-unit string from one long strip — precisely the
-  property DR-0003 asks the divider to have. `CellSpec.simplify_extracted`
-  turns it off (by turning `top_lvl_pins` on), and the divider's LVS `MATCH`
-  is therefore a device-by-device compare of all twenty strips.
+- **The deck no longer derives anything: every compare-affecting option is
+  its own `-rd` switch, all defaulting false.** The pinned `gf180mcu.lvs`
+  reads `SIMPLIFY` from `$simplify` alone, and it gates *both* sides
+  (`netlist.simplify` and `schematic.simplify`). Left unset it is false, and
+  `netlist.simplify` is what collapses series/parallel chains in the
+  extracted netlist: on it would fold the 18 drawn units into two lumped
+  resistors, so the compare could no longer tell an 18-unit string from one
+  long strip — precisely the property DR-0003 asks the divider to have.
+  `run_lvs()` therefore passes `simplify` explicitly from
+  `CellSpec.simplify_extracted` (`false` for this cell), and passes
+  `implicit_connect=true` unconditionally — the deck's
+  `connect_implicit('*')` is what joins the straps a cell like
+  `drclvs_passives` deliberately does not draw in metal. The divider's LVS
+  `MATCH` is a device-by-device compare of all twenty strips.
 - **The resistor PCell's own substrate tie had to go.** It draws a p-tap
   column 0.71 µm to the left of *each* strip, which leaves room for exactly
   one Metal1 track in the left routing channel. `gen_gds.py` removes the
