@@ -29,12 +29,9 @@ Human-approved issues ready for implementation (`loom:issue`).
 - **#465**: sim: re-qualify loop-stability and soft-start reference records at open_pdks f6eeac7 (part of #430)
 - **#626**: run_corners.py is the sixth local driver #366's -j cap never reached: sim/harness/cli.py still resolves -j to min(8, cpu_count())
 - **#630**: Give loop-stability's borrowed testbench surface a home in sim/harness/: 40 symbols reached by filesystem path, and the shim shadows this bench's own modules
-- **#634**: bug: loop-stability --backend local fails with 'could not find a valid modelname' on the pass device
 - **#642**: LVS mismatches on pass_array and passives with current toolchain (klayout 0.30.12 + pinned PDK), pre-existing on main
-- **#646**: sim: stage the current-limit, enable-shutdown and soft-start klt_run.py runs instead of committing them (all 673 hand-rolled-driver files as of 2026-11-15)
 - **#647**: sim: route the four latent hand-rolled batch drivers (mc-output-accuracy, soft-start peak/bias_acq) through the store
 - **#655**: record_diff.py: scrub status-derived 'tier' so a stale-evidence-only diff is not reported as a residual
-- **#662**: sim: klt_record.main commits the record before install_kept's collision check can refuse
 
 ## In Progress
 
@@ -45,7 +42,9 @@ Issues currently being built (`loom:building`).
 - **#603**: Remove the per-file copies of the gf180mcu DRC rule minimums: define each rule once, as #588 did for the layer table
 - **#609**: Render the record Environment block once: three copies have already drifted, one cites a sim/README.md section that does not exist
 - **#625**: Define the path-loading idiom once: 21 hand-rolled importlib.util copies, and 10 of them skip the sys.modules step the other 11 take
+- **#634**: bug: loop-stability --backend local fails with 'could not find a valid modelname' on the pass device
 - **#639**: sim: the three remaining os.environ.setdefault("PDK_ROOT", ...) sites can leave klt staging an un-pin-checked tree
+- **#646**: sim: stage the current-limit, enable-shutdown and soft-start klt_run.py runs instead of committing them (all 673 hand-rolled-driver files as of 2026-11-15)
 
 ## PRs Awaiting Review
 
@@ -84,7 +83,6 @@ Issues carrying `loom:curated`.
 - **#646**: sim: stage the current-limit, enable-shutdown and soft-start klt_run.py runs instead of committing them (all 673 hand-rolled-driver files as of 2026-11-15) *(curated)*
 - **#647**: sim: route the four latent hand-rolled batch drivers (mc-output-accuracy, soft-start peak/bias_acq) through the store *(curated)*
 - **#655**: record_diff.py: scrub status-derived 'tier' so a stale-evidence-only diff is not reported as a residual *(curated)*
-- **#662**: sim: klt_record.main commits the record before install_kept's collision check can refuse *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -107,11 +105,11 @@ _None._
 | Operator merge-risk holds | 1 |
 | Very important | 1 |
 | Important | 2 |
-| Ready (`loom:issue`) | 11 |
-| In Progress (`loom:building`) | 6 |
+| Ready (`loom:issue`) | 8 |
+| In Progress (`loom:building`) | 8 |
 | PRs awaiting review | 0 |
 | Approved PRs awaiting merge | 1 |
-| Curated | 22 |
+| Curated | 21 |
 | Architect / Hermit proposals | 7 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
