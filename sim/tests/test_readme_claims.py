@@ -135,6 +135,22 @@ class CheckTablesTests(unittest.TestCase):
         self.assertIn("item 2", errs[0])
         self.assertIn("but the record says unmet / no_evidence", errs[0])
 
+    def test_bare_unmet_cell_is_reported_as_unmet(self):
+        # A status cell that parses but dropped its `/ <reason>` half must
+        # not be rendered as 'met' in the drift message (#668).
+        errs = rc.check_tables(record([(5, "unmet", "partial_coverage")]),
+                               {"a": table([(5, "unmet", None)])})
+        self.assertEqual(len(errs), 1)
+        self.assertIn("table row says 'unmet' but", errs[0])
+        self.assertIn("unmet / partial_coverage", errs[0])
+
+    def test_fmt_keys_on_status(self):
+        self.assertEqual(rc._fmt(None, None), "no verdict")
+        self.assertEqual(rc._fmt("met", None), "met")
+        self.assertEqual(rc._fmt("unmet", None), "unmet")
+        self.assertEqual(rc._fmt("met", "xyz"), "met / xyz")
+        self.assertEqual(rc._fmt("unmet", "no_evidence"), "unmet / no_evidence")
+
     def test_wrong_reason_fails(self):
         errs = rc.check_tables(record([(5, "unmet", "no_evidence")]),
                                {"a": table([(5, "unmet", "partial_coverage")])})
