@@ -2714,7 +2714,7 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
             f"#451). The per-corner logs are `ROW`/`HOV` lines of values "
             f"`klt` returned (each request's report JSON is under "
             f"`corners/{record_id}/klt-reports/`), so the ngspice version/hash "
-            f"and host below describe only the local attribution and curve "
+            f"and host above describe only the local attribution and curve "
             f"re-runs, not the grid; the grid ran on the engine and host "
             f"named in those reports. Crossings are `klt`'s log-frequency "
             f"interpolation, not the deck's `meas ... when`.\n")
