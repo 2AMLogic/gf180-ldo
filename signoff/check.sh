@@ -23,7 +23,10 @@
 # 3. **The committed record matches the fresh run.** signoff/records/t1-tier-report.json
 #    is the verdict of record cited by the gap-to-T1 tracker (issue #79); if it
 #    no longer matches what the tool says today, it is stale prose again and the
-#    whole point of the manifest is lost.
+#    whole point of the manifest is lost. signoff/record_diff.py (issue #623)
+#    does the comparison and the diagnosis: a difference that is only stale
+#    attested evidence (a hygiene file an envelope covers changed) is reported
+#    as a re-attest case, not as a reason to regenerate the record.
 #
 # Why klt is pinned (grade: git revision KLT_REV; attest: PyPI KLT_VERSION)
 # ----------------------------------------
@@ -191,36 +194,7 @@ with open(sys.argv[2], "w") as fh:
   exit 0
 fi
 
-python3 - "$FRESH" "$RECORD" <<'PY'
-import json
-import sys
-
-fresh = json.load(open(sys.argv[1]))
-try:
-    committed = json.load(open(sys.argv[2]))
-except FileNotFoundError:
-    print(f"signoff/check.sh: {sys.argv[2]} is missing -- regenerate it with "
-          f"'bash signoff/check.sh --write' and commit it", file=sys.stderr)
-    sys.exit(1)
-
-if fresh != committed:
-    print(
-        "signoff/check.sh: the committed T1 verdict of record is stale.\n"
-        "  A fresh 'klt signoff --manifest' run no longer matches\n"
-        f"  {sys.argv[2]}. That is not a tool bug: either this block's\n"
-        "  evidence moved, or the checklist did. Regenerate with\n"
-        "    bash signoff/check.sh --write\n"
-        "  commit the result, and update signoff/README.md's reading of any\n"
-        "  item whose status or reason changed.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-
-met = fresh.get("t1_met_count")
-total = fresh.get("t1_item_count")
-print(f"signoff/check.sh: verdict of record is current -- T1 {met}/{total} items met, "
-      f"tier={fresh.get('tier')!r}")
-PY
+python3 signoff/record_diff.py "$FRESH" "$RECORD"
 
 # ---------------------------------------------------------------------------
 # 4. README prose that cites the verdict must agree with it (issue #398).

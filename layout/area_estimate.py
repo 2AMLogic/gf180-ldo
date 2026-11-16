@@ -18,7 +18,7 @@ rather than buried here.
 
 Every geometric constant below is a gf180mcu DRC rule, cited by its rule name as
 it appears in the PDK's own KLayout deck
-(`libs.tech/klayout/drc/rule_decks/`, gf180mcuD). Nothing here is a guess.
+(`libs.tech/klayout/tech/drc/rule_decks/`, gf180mcuD). Nothing here is a guess.
 
 Usage
 -----

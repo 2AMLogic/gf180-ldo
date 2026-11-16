@@ -29,7 +29,7 @@ What this module does
 ---------------------
 It translates exactly those two shapes into the primitive ``R``/``C``
 elements the deck's own ``SubcircuitModelsReader`` delegate understands
-(``libs.tech/klayout/lvs/rule_decks/custom_classes.lvs``)::
+(``libs.tech/klayout/tech/lvs/rule_decks/custom_classes.lvs``)::
 
     Rbias NBIAS RBT VSS ppolyf_u_1k l=1000u w=1u m=1
     Cc    NZ    OUT     cap_mim_2f0_m3m4_noshield l=48u w=48u m=1
