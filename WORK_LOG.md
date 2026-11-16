@@ -6,8 +6,24 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-16
+
+- **PR #654**: fix: drive the PDK's deck driver, whose layout replaced the old decks
+- **PR #652**: fix: diagnose stale attested evidence as a re-attest case in check.sh
+- **PR #650**: refactor: drop dead NgspiceRoot.matches_pin; docstring now states floor semantics
+- **Issue #641** (closed): layout/drclvs.py stage 4 (PDK DRC deck) cannot run against the pinned open_pdks revision: the deck layout changed
+- **Issue #623** (closed): signoff/check.sh: name the stale pinned artifact and offer re-attest, not --write
+- **Issue #619** (closed): Remove NgspiceRoot.matches_pin: dead property left behind by DR-0043's floor rewrite
+- **Issue #612** (closed): klt_record's old-vs-new section asserts a hard-coded backend/PDK delta that is now false on every record
+
 ### 2026-11-15
 
+- **PR #653**: feat: limit-check short-circuit power as spec_row Thermal, cite it for T1 item 5
+- **PR #640**: fix: declare --param only in tb_adapter, the wrapper that reads it
+- **PR #620**: refactor(sim): drop six parameters no caller supplies and no body reads
+- **Issue #631** (closed): Stop offering --param on the four klt_run.py benches that never read it: add_ab_args declares it for every wrapper, only tb_adapter consumes it
+- **Issue #616** (closed): current-limit: tag the short-circuit power measurement with spec_row Thermal and cite it for T1 item 5
+- **Issue #613** (closed): Remove six dead function parameters in sim/ that the correctness-only lint gate cannot see
 - **PR #644**: fix: derive klt_record's provenance claims from run data, not frozen prose
 - **PR #614**: docs: roadmap as of 2026-11-13
 - **PR #602**: feat(sim): route klt-batch adapter runs through the artifact store
