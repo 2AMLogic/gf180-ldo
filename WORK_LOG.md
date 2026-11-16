@@ -8,6 +8,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-16
 
+- **PR #627**: refactor: define the loop sweeps' local-grid CLI block once in klt_grid.py
+- **Issue #621** (closed): Define the two loop sweeps' local-grid CLI block once in klt_grid.py: the help text drifted in 4 places and #366's -j cap reached 2 of 5 drivers
 - **PR #666**: refactor: read A/B driver ROW lines through the deck's strict parser
 - **PR #665**: test: smoke-cover both drivers' render_record with structural environment assertions
 - **PR #664**: docs: restate DR-0044's netlist-snapshot rationale on stronger-check grounds (#622)
@@ -419,24 +421,4 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 - **Issue #219** (closed): spec: propose ratifying DR-0025's per-finger model-bin convention and deck-level wnflag pin
 - **Issue #191** (closed): Soft start: replace the idealized FB-injection source (Binj_ss) with a device-level transconductor
 - **Issue #187** (closed): Soft-start: inrush and current-limit clearance still fail at the 4.7 uF end of DR-0001's capacitor window
-
-### 2026-09-16
-
-- **PR #245**: sim(startup): re-judge tb.json checks against DR-0006's ratified 6 ms bound
-- **PR #244**: fix(sim/harness): catch undefined-vector .let/v(...) as fatal (#242)
-- **PR #243**: fix(sim/soft-start-loop-gain): rewrite device/binj narrative as cap-resize A/B, retire has_gmsum
-- **PR #241**: fix: widen merge-pr.sh closing-keyword regex for colon-adjacent form
-- **PR #240**: fix(sim/soft-start-loop-gain): drop dead acopen-fb-inj/acshort-gmsum attribution rows (#234)
-- **PR #238**: sim(startup): re-run full PVT against current main's DUT, confirm DR-0006's 6 ms bound holds
-- **PR #236**: docs(sim/harness): document -j/--timeout override for Gear-integration benches
-- **PR #233**: fix(soft-start): revert device-level FB transconductor to Binj_ss (issue #231)
-- **Issue #242** (closed): sim/harness: run_ngspice_deck()'s FATAL_LOG_PATTERNS misses ngspice's "no such variable" wording
-- **Issue #239** (closed): sim/soft-start-loop-gain: device/binj is now a DR-0024 cap-resize A/B, not an injection-element A/B (render_record narrative + hand-over GMSUM bug)
-- **Issue #237** (closed): merge-pr.sh champion:hold-state pipefail fix (#224/#230) regressed via resync (64fe646)
-- **Issue #235** (closed): merge-pr.sh's closing-keyword detector misses colon-adjacent `fix: #N` — false-close self-heal gap (recurred on #191)
-- **Issue #234** (closed): sim/soft-start-loop-gain: acopen-fb-inj and acshort-gmsum no longer measure anything after #231's Binj_ss revert
-- **Issue #232** (closed): sim/startup: default -j/--timeout causes mass CPU-contention timeouts on multi-core hosts
-- **Issue #231** (closed): sim/startup regresses: ff/sf high-temp/voltage corners no longer settle within 6 ms (blocks #128)
-- **Issue #220** (closed): sim: DR-0006's 6 ms startup bound may no longer hold — the post-#195/#197 DUT settles 1.455x slower than the netlist it was measured against
-- **Issue #128** (closed): Re-run sim/startup with tb.json's checks at 6 ms once DR-0006 ratifies
 
