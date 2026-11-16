@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import os
 import re
 import shutil
@@ -56,7 +57,15 @@ from harness.runner import (  # noqa: E402
 
 SWEEP = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
 
-_ROW_RE = re.compile(r"^ROW\s+(.*)$")
+# The deck's own driver owns the parser for the deck's own `ROW` lines, and the
+# field tuple it validates against -- imported, not copied, so the two cannot
+# drift (same idiom as `sim/soft-start-loop-gain/testbench/sweep.py`). The
+# script sits under a hyphenated directory, so it is loaded by path.
+_ls_spec = importlib.util.spec_from_file_location("loop_stability_sweep", SWEEP)
+ls = importlib.util.module_from_spec(_ls_spec)
+sys.modules["loop_stability_sweep"] = ls
+_ls_spec.loader.exec_module(ls)
+
 _RECORD_ID_RE = re.compile(r"^record id\s*:\s*(\S+)")
 
 
@@ -102,27 +111,24 @@ def parse_corner_logs(logdir: Path) -> dict[Point, Margin]:
     for log in sorted(logdir.glob("*.log")):
         corner_id = log.stem
         for line in log.read_text(errors="replace").splitlines():
-            match = _ROW_RE.match(line.strip())
-            if not match:
+            if not line.startswith("ROW "):
                 continue
-            fields = {}
-            for tok in match.group(1).split():
-                if "=" in tok:
-                    key, value = tok.split("=", 1)
-                    fields[key] = value
+            # Strict: raises ValueError on a missing, repeated, unknown or
+            # non-`key=value` field instead of absorbing it as "no measurement".
+            f = ls.parse_row_fields(line)
             point = Point(
                 corner_id=corner_id,
-                iload_a=fields.get("iload_a", ""),
-                ceff_f=fields.get("ceff_f", ""),
-                esr_ohm=fields.get("esr_ohm", ""),
+                iload_a=f["iload_a"],
+                ceff_f=f["ceff_f"],
+                esr_ohm=f["esr_ohm"],
             )
-            phase = _float_or_none(fields.get("phase_at_f0_deg", ""))
-            gain = _float_or_none(fields.get("gain_at_f180_db", ""))
+            phase = _float_or_none(f["phase_at_f0_deg"])
+            gain = _float_or_none(f["gain_at_f180_db"])
             out[point] = Margin(
                 pm_deg=None if phase is None else 180.0 + phase,
                 gm_db=None if gain is None else -gain,
-                f0_hz=_float_or_none(fields.get("f0_hz", "")),
-                vout_v=_float_or_none(fields.get("vout_v", "")),
+                f0_hz=_float_or_none(f["f0_hz"]),
+                vout_v=_float_or_none(f["vout_v"]),
             )
     return out
 
