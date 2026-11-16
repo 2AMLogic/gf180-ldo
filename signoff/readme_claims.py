@@ -54,8 +54,8 @@ def _fmt(status: str | None, reason: str | None) -> str:
     if status is None:
         return "no verdict"
     if reason is None:
-        return "met"
-    return f"unmet / {reason}"
+        return status
+    return f"{status} / {reason}"
 
 
 def table_rows(text: str) -> list[tuple[int, str]]:
