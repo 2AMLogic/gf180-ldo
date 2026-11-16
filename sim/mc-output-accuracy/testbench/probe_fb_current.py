@@ -78,8 +78,7 @@ def main() -> int:
     ap.add_argument("--baseline-ref", default=None)
     ap.add_argument("--points", nargs="+", default=["ff,125,3.63", "tt,27,3.30"])
     a = ap.parse_args()
-    import os
-    os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
+    pdk.pin_klt_pdk_root()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     rows = []

@@ -26,6 +26,7 @@ REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 sys.path.insert(0, str(HERE))  # sibling summarize: klt_run.py also runs as a script
 from harness import klt_batch as kb  # noqa: E402
+from harness import pdk  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab, write_summary_csv  # noqa: E402
 from summarize import ILIM_WINDOW_MA, PSHORT_MAX_MW  # noqa: E402
 
@@ -93,6 +94,9 @@ def main(argv=None) -> int:
     add_ab_args(ap, REPO)
     args = ap.parse_args(argv)
     dest = HERE.parent / "corners" / args.record_id
+    # stage_model_inputs=True below stages model files: point klt's own PDK
+    # search at the pin-checked tree before the first submit (issue #639).
+    pdk.pin_klt_pdk_root()
     results = run_ab(lambda n, d: job(n, d, args.only), Path(args.dut), args.baseline_ref, dest, REPO, backend=args.backend)
 
     rows = []

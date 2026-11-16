@@ -80,6 +80,7 @@ from harness import deck, klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
 from harness.paths import display_home, display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
+from harness.pdk import pin_klt_pdk_root as _pdk_pin_klt_pdk_root  # noqa: E402
 import klt_run  # noqa: E402  (sibling module; sweep.py runs as a script)
 from harness.report import (  # noqa: E402
     allocate_record_id,
@@ -839,10 +840,12 @@ def pin_klt_pdk_root(pdk) -> str:
     an ambient ``$PDK_ROOT`` that lost to ``$GF180_PDK_PATH`` inside
     ``find_pdk()`` names a *different*, un-pin-checked tree, and leaving it in
     place would send klt there. Returns the value exported.
+
+    Kept as this experiment's name for the shared implementation,
+    ``harness.pdk.pin_klt_pdk_root`` -- the reasoning above now lives beside
+    ``find_pdk()``/``check_pin()`` where every staging call site can see it.
     """
-    root = str(pdk.path.parent)
-    os.environ["PDK_ROOT"] = root
-    return root
+    return _pdk_pin_klt_pdk_root(pdk)
 
 
 def run_grid_klt(grid, corners, args, pdk, iloads, ceffs, esrs, logdir: Path, workdir: Path, klt_backend: str):

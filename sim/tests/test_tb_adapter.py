@@ -395,6 +395,8 @@ class StagedOutput(unittest.TestCase):
 
         def fake_run_ab(job_factory, dut, baseline_ref, dest, repo, **kw):
             calls["dest"] = dest
+            # Read at submit time: the pin must already be in place by now.
+            calls["pdk_root"] = os.environ.get("PDK_ROOT")
             Path(dest).mkdir(parents=True, exist_ok=True)
             return {"new": {"tt_27c_3.30v": {"vout_v": 1.8, "_status": "pass", "_diagnostics": ""}}}
 
@@ -409,8 +411,8 @@ class StagedOutput(unittest.TestCase):
         real_find_pdk = pdk.find_pdk
         pdk.find_pdk = find_pdk or fake_find_pdk
         self.addCleanup(lambda: setattr(pdk, "find_pdk", real_find_pdk))
-        # `main` pins $PDK_ROOT via os.environ.setdefault; keep that out of the
-        # rest of the suite's environment.
+        # `main` pins $PDK_ROOT (assigned) via pdk.pin_klt_pdk_root(); keep
+        # that out of the rest of the suite's environment.
         prior_root = os.environ.get("PDK_ROOT")
 
         def restore_root():
@@ -458,6 +460,14 @@ class StagedOutput(unittest.TestCase):
         rc, calls = self._run(["--record-id", "zz-only", "--only", "tt,27,3.30"], explode)
         self.assertEqual(rc, 0)
         self.assertIn("/sim/.work/.stage/", Path(calls["dest"]).as_posix())
+
+    def test_the_submit_is_pdk_pinned_to_the_resolved_tree(self):
+        # stage_model_inputs=True requests stage model files: klt stages from
+        # whatever $PDK_ROOT names, so `main` must have assigned the
+        # pin-checked tree's root before the first submit (issue #639).
+        rc, calls = self._run(["--record-id", "zz-pin-wiring"], lambda repo: None)
+        self.assertEqual(rc, 0)
+        self.assertEqual("/nonexistent/pdk-root", calls["pdk_root"])
 
     def test_a_record_id_already_committed_is_refused(self):
         existing = sorted((SIM_DIR / "line-regulation" / "corners").iterdir())[0].name

@@ -33,7 +33,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -141,7 +140,7 @@ def main(argv=None) -> int:
                          "simulates its own PDK tree (open_pdks c6d73a3 when this was written); the "
                          "result speaks for that revision, not the pin")
     args = ap.parse_args(argv)
-    os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
+    pdk.pin_klt_pdk_root()
     dest = HERE.parent / "corners" / args.record_id
     only = kb.only_axes(args.only)
     supplies = only.get("supplies") or supply_points(TB.nominal_supply_v, TB.supply_tolerance)
