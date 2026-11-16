@@ -8,6 +8,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-16
 
+- **PR #679**: fix: pass the pinned LVS runset's switches explicitly and emit its MIM-cap device class
+- **Issue #642** (closed): LVS mismatches on pass_array and passives with current toolchain (klayout 0.30.12 + pinned PDK), pre-existing on main
 - **PR #676**: fix: refuse kept-envelope collisions before klt_record commits anything
 - **Issue #662** (closed): sim: klt_record.main commits the record before install_kept's collision check can refuse
 - **PR #672**: fix: soft-start record says ngspice/host bullets are above the Backend bullet
