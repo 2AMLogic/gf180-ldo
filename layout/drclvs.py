@@ -1193,19 +1193,34 @@ def run_lvs(
         "scale": "false",
         "schematic_simplify": "false",
         "net_only": "false",
-        # NOT a stray switch: gf180mcu.lvs derives its own SIMPLIFY as
-        # "net_only, top_lvl_pins, combine, purge and purge_nets are ALL
-        # false" -- i.e. leaving every option off is what *enables*
-        # `netlist.simplify`, which collapses series/parallel device chains
-        # in the extracted netlist (and only there: `schematic.simplify` is
-        # gated separately, and off). For a one-device cell that is
-        # invisible. For a unit-resistor string it is not: it collapses the
-        # 18 drawn units into two lumped resistors, so the compare would
-        # stop being able to tell an 18-unit string from one long strip --
-        # exactly the property DR-0003 asks the divider to have. Turning
-        # `top_lvl_pins` on is what switches SIMPLIFY off, and it is the
-        # option with no other cost here, because creating the top-level
-        # pins is a step `netlist.simplify` was performing anyway.
+        # The pinned runset reads every compare-affecting option as its own
+        # -rd global, each defaulting to FALSE through `bool_check?`
+        # (tech/lvs/gf180mcu.lvs:109): nothing is derived any more. The two
+        # defaults below would silently change what the compare sees, so
+        # both are passed explicitly:
+        #   * SIMPLIFY comes from $simplify alone (gf180mcu.lvs:149) and
+        #     gates BOTH sides -- `netlist.simplify` and `schematic.simplify`
+        #     (gf180mcu.lvs:427-428) collapse series/parallel device chains
+        #     before comparing. For a one-device cell that is invisible. For
+        #     a unit-resistor string it folds the 18 drawn units into two
+        #     lumped resistors, so the compare would stop being able to tell
+        #     an 18-unit string from one long strip -- exactly the property
+        #     DR-0003 asks the divider to preserve. CellSpec's
+        #     simplify_extracted is that choice, so the switch follows it.
+        #   * IMPLICIT_CONNECT comes from $implicit_connect alone
+        #     (gf180mcu.lvs:179) and gates `connect_implicit('*')`
+        #     (gf180mcu.lvs:415). Without it, same-named nets that touch only
+        #     through the extraction stay separate nets: drclvs_passives
+        #     draws no strapping metal (layout/passives/gen_gds.py) precisely
+        #     so that join is what lands its two `S` straps and two `G`
+        #     labels on one net each.
+        "simplify": "true" if spec.simplify_extracted else "false",
+        "implicit_connect": "true",
+        # top_lvl_pins is an independent switch in the pinned runset
+        # (gf180mcu.lvs:159) -- not SIMPLIFY's off-toggle the pre-bump deck
+        # derived. Kept paired with simplify_extracted: this is the
+        # combination the verification probes ran, the divider keeping
+        # top-level pin creation on as it always has.
         "top_lvl_pins": "false" if spec.simplify_extracted else "true",
         "combine": "false",
         "purge": "false",
