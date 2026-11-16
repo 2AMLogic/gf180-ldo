@@ -5,7 +5,7 @@
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
 
-_None._
+- **#656**: chore(loom): resync installed Loom to v0.19.1302
 
 ## Very Important
 
@@ -27,9 +27,14 @@ Human-approved issues ready for implementation (`loom:issue`).
 - **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 - **#465**: sim: re-qualify loop-stability and soft-start reference records at open_pdks f6eeac7 (part of #430)
-- **#623**: signoff/check.sh: name the stale pinned artifact and offer re-attest, not --write
-- **#635**: Remove .loom/manifest.json.tmp: a tracked, truncated atomic-write leftover that .gitignore:95 already covers
-- **#639**: sim: the three remaining os.environ.setdefault("PDK_ROOT", ...) sites can leave klt staging an un-pin-checked tree
+- **#626**: run_corners.py is the sixth local driver #366's -j cap never reached: sim/harness/cli.py still resolves -j to min(8, cpu_count())
+- **#630**: Give loop-stability's borrowed testbench surface a home in sim/harness/: 40 symbols reached by filesystem path, and the shim shadows this bench's own modules
+- **#634**: bug: loop-stability --backend local fails with 'could not find a valid modelname' on the pass device
+- **#642**: LVS mismatches on pass_array and passives with current toolchain (klayout 0.30.12 + pinned PDK), pre-existing on main
+- **#646**: sim: stage the current-limit, enable-shutdown and soft-start klt_run.py runs instead of committing them (all 673 hand-rolled-driver files as of 2026-11-15)
+- **#647**: sim: route the four latent hand-rolled batch drivers (mc-output-accuracy, soft-start peak/bias_acq) through the store
+- **#655**: record_diff.py: scrub status-derived 'tier' so a stale-evidence-only diff is not reported as a residual
+- **#662**: sim: klt_record.main commits the record before install_kept's collision check can refuse
 
 ## In Progress
 
@@ -39,29 +44,20 @@ Issues currently being built (`loom:building`).
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
 - **#603**: Remove the per-file copies of the gf180mcu DRC rule minimums: define each rule once, as #588 did for the layer table
 - **#609**: Render the record Environment block once: three copies have already drifted, one cites a sim/README.md section that does not exist
-- **#613**: Remove six dead function parameters in sim/ that the correctness-only lint gate cannot see
-- **#618**: Mint the record id once: handover_t15.py and ramp_ab.py hand-roll it from git rev-parse --short (8 chars at HEAD, vs the ratified 7) and drop the dirty-tree flag
-- **#619**: Remove NgspiceRoot.matches_pin: dead property left behind by DR-0043's floor rewrite
-- **#621**: Define the two loop sweeps' local-grid CLI block once in klt_grid.py: the help text drifted in 4 places and #366's -j cap reached 2 of 5 drivers
 - **#625**: Define the path-loading idiom once: 21 hand-rolled importlib.util copies, and 10 of them skip the sys.modules step the other 11 take
-- **#631**: Stop offering --param on the four klt_run.py benches that never read it: add_ab_args declares it for every wrapper, only tb_adapter consumes it
+- **#639**: sim: the three remaining os.environ.setdefault("PDK_ROOT", ...) sites can leave klt staging an un-pin-checked tree
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
-- **#620**: refactor(sim): drop six parameters no caller supplies and no body reads
-- **#624**: refactor: mint the sim record id through the harness in all four drivers
-- **#636**: refactor: load path-imported scripts through one harness.load_script helper
-- **#640**: fix: declare --param only in tb_adapter, the wrapper that reads it
-- **#643**: refactor: transcribe the gf180mcu DRC rule minimums once, in layout/drc_rules.py
-- **#650**: refactor: drop dead NgspiceRoot.matches_pin; docstring now states floor semantics
+_None._
 
 ## Approved (Awaiting Merge)
 
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
-_None._
+- **#656**: chore(loom): resync installed Loom to v0.19.1302
 
 ## Proposed
 
@@ -81,14 +77,14 @@ Issues carrying `loom:curated`.
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)*
 - **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)*
-- **#612**: klt_record's old-vs-new section asserts a hard-coded backend/PDK delta that is now false on every record *(curated)*
-- **#617**: signoff/README.md: the per-item table and item 8 notes contradict the verdict of record on item 5 *(curated)*
-- **#622**: DR-0044 item 5 justifies keeping the netlist snapshot committed with a defect (#597) that is now fixed *(curated)*
-- **#623**: signoff/check.sh: name the stale pinned artifact and offer re-attest, not --write *(curated)*
+- **#626**: run_corners.py is the sixth local driver #366's -j cap never reached: sim/harness/cli.py still resolves -j to min(8, cpu_count()) *(curated)*
 - **#634**: bug: loop-stability --backend local fails with 'could not find a valid modelname' on the pass device *(curated)*
-- **#635**: Remove .loom/manifest.json.tmp: a tracked, truncated atomic-write leftover that .gitignore:95 already covers *(curated)*
 - **#639**: sim: the three remaining os.environ.setdefault("PDK_ROOT", ...) sites can leave klt staging an un-pin-checked tree *(curated)*
-- **#645**: sim: give run_store_evidence.py DR-0044's kept-file split so a tb.json-free batch run can be stored *(curated)*
+- **#642**: LVS mismatches on pass_array and passives with current toolchain (klayout 0.30.12 + pinned PDK), pre-existing on main *(curated)*
+- **#646**: sim: stage the current-limit, enable-shutdown and soft-start klt_run.py runs instead of committing them (all 673 hand-rolled-driver files as of 2026-11-15) *(curated)*
+- **#647**: sim: route the four latent hand-rolled batch drivers (mc-output-accuracy, soft-start peak/bias_acq) through the store *(curated)*
+- **#655**: record_diff.py: scrub status-derived 'tier' so a stale-evidence-only diff is not reported as a residual *(curated)*
+- **#662**: sim: klt_record.main commits the record before install_kept's collision check can refuse *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -97,10 +93,8 @@ Issues carrying `loom:curated`.
 - **#607**: Define the deck preamble once: 8 byte-identical copies in the .spice.in templates, and DR-0025's wnflag=1 pin reached only 3 of them *(hermit)*
 - **#608**: Split sim/soft-start-loop-gain/testbench/sweep.py: 34% of it is self-contained report rendering *(hermit)*
 - **#610**: Remove the hand-rolled fleet-capacity retry loop in klt_batch.py: klt sim covers that refusal, and 89 of 98 committed requests set no capacity wait at all *(hermit)*
-- **#630**: Give loop-stability's borrowed testbench surface a home in sim/harness/: 40 symbols reached by filesystem path, and the shim shadows this bench's own modules *(hermit)*
 - **#637**: Define the compliance-limited load sink once: 10 hand copies in 9 decks, and #478's supply gate reached 1 of them *(hermit)*
-- **#638**: Remove ab_loop_stability.py's hand-rolled ROW parser: reuse loop-stability sweep.py's own parse_row_fields() *(hermit)*
-- **#649**: Relocate divider-specific record note out of generic drclvs.py (import-time cost, ~165 LOC) *(hermit)*
+- **#649**: Relocate divider-specific record note out of generic drclvs.py (import-time cost, 60 LOC) *(hermit)*
 
 ## Epics
 
@@ -110,14 +104,14 @@ _None._
 
 | Bucket | Count |
 |------|-------|
-| Operator merge-risk holds | 0 |
+| Operator merge-risk holds | 1 |
 | Very important | 1 |
 | Important | 2 |
-| Ready (`loom:issue`) | 6 |
-| In Progress (`loom:building`) | 10 |
-| PRs awaiting review | 6 |
-| Approved PRs awaiting merge | 0 |
+| Ready (`loom:issue`) | 11 |
+| In Progress (`loom:building`) | 6 |
+| PRs awaiting review | 0 |
+| Approved PRs awaiting merge | 1 |
 | Curated | 22 |
-| Architect / Hermit proposals | 9 |
+| Architect / Hermit proposals | 7 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
