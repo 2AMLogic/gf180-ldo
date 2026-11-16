@@ -54,10 +54,12 @@ DR-0041, with two named exceptions.
    tracked path), so it is excluded from the manifest at staging time.
 5. **`netlist-snapshots/<id>.spice` stays committed**, departing from
    DR-0041 item 1, which names the snapshot as stored.
-   `sim/build_characterization_report.py` skips a record whose snapshot is not
-   a committed file and compares its bytes with the current DUT to decide
-   whether the row is fresh; a stored snapshot would cost that row its
-   freshness verdict (the defect filed as #597 for `run_corners.py` records).
+   `sim/build_characterization_report.py` grades a record either way, but not
+   equally: a committed snapshot gets `freshness()`'s byte-containment test
+   against the snapshot's actual bytes, whereas a stored one only gets
+   `stored_freshness()`'s sha256 comparison of the hash lines the record
+   states about itself. The committed snapshot is the stronger check, and the
+   snapshot stays readable offline, with no broker.
 
 DR-0041 is not edited, its Status is unchanged, and nothing here is ratified.
 
@@ -67,10 +69,11 @@ DR-0041 is not edited, its Status is unchanged, and nothing here is ratified.
   breaks signoff item 5: `signoff/check.sh` grades those envelopes in CI with
   no broker and no credentials, and would have to fetch them instead. Changing
   how signoff is graded is a larger decision than this one.
-- **Store the netlist snapshot too.** Same inconsistency as #597: the
-  characterization report would stop being able to judge the row fresh. Fixing
-  the report to resolve a stored snapshot needs the broker in a path that is
-  deliberately offline.
+- **Store the netlist snapshot too.** The characterization report would still
+  grade the row, but through `stored_freshness()`'s sha256 comparison of the
+  hash lines the record states about itself rather than `freshness()`'s
+  byte-containment test against the snapshot's actual bytes. Committing the
+  snapshot buys the stronger of the two checks.
 - **Keep committing batch evidence, and amend DR-0041 to say so.** Honest
   about the status quo, but it abandons DR-0041's purpose on the path that
   produces most of the bytes.
