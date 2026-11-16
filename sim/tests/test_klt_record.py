@@ -261,15 +261,31 @@ class StoreRun(unittest.TestCase):
         committed = (manifest.read_text(), record.read_text())
         # Restage, or the second attempt is refused by the staging guard that
         # test_an_unstaged_record_id_is_refused_before_anything_is_written
-        # already covers, and `store_files`' overwrite refusal -- the one this
-        # test is named for -- is never reached.
+        # already covers. The hoisted kept-destination refusal (#662) now
+        # fires before `store_files`' overwrite guard; either way the mint is
+        # refused and nothing is rewritten.
         self._stage()
         self.assertEqual(self._mint(), kr.EXIT_NOT_STORED)
-        self.assertIn("refusing to overwrite evidence", self.err)
+        self.assertIn("already exists; append-only evidence is never rewritten", self.err)
         # Neither committed artifact was rewritten, and the second run's bytes
         # are still staged rather than lost.
         self.assertEqual((manifest.read_text(), record.read_text()), committed)
         self.assertTrue((self.stage / "new" / "tt_27c_3.30v.log").is_file())
+
+    def test_a_pre_existing_kept_envelope_refuses_before_anything_is_written(self):
+        """A kept envelope already at its committed destination refuses the
+        mint up front (#662): left to `install_kept`, the refusal would fire
+        only after the manifest and record were already committed."""
+        committed = self.exp / "corners" / self.RID / "new" / "klt-report.json"
+        committed.parent.mkdir(parents=True)
+        committed.write_text("{}\n")
+        self.assertEqual(self._mint(), kr.EXIT_NOT_STORED)
+        self.assertIn("already exists; append-only evidence is never rewritten", self.err)
+        self.assertFalse(self.objects)   # refused before any put reached the store
+        self.assertFalse((self.repo / "manifests").exists())
+        self.assertFalse((self.exp / "records" / f"{self.RID}.md").exists())
+        self.assertFalse((self.exp / "netlist-snapshots").exists())
+        self.assertTrue((self.stage / "new" / "klt-report.json").is_file())
 
     def test_an_unstaged_record_id_is_refused_before_anything_is_written(self):
         with self.assertRaises(SystemExit) as cm:
