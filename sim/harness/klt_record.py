@@ -422,21 +422,10 @@ def render(tb, rid, points, grid_jobs, prior, dut_rel, dut_sha, driver) -> str:
     return "\n".join(out)
 
 
-def install_kept(kept: list[Path], stage_corner_dir: Path, corner_dir: Path) -> list[Path]:
-    """Copy the files that stay in git out of the staging tree, same layout.
-
-    Called only after :func:`evidence_store.store_files` has returned, so a
-    store failure leaves ``sim/`` untouched (fail closed). Never overwrites.
-    """
-    out = []
-    for src in kept:
-        dst = corner_dir / src.relative_to(stage_corner_dir)
-        if dst.exists():
-            raise store.StoreError(f"{dst} already exists; append-only evidence is never rewritten")
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, dst)
-        out.append(dst)
-    return out
+#: DR-0044's kept-file copy, moved beside ``split_batch_run`` in
+#: ``evidence_store`` so tb-free callers share it (issue #645); aliased so
+#: this module keeps one name and its behaviour does not change.
+install_kept = store.install_kept
 
 
 def main(argv=None) -> int:

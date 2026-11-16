@@ -6,8 +6,38 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-16
+
+- **PR #654**: fix: drive the PDK's deck driver, whose layout replaced the old decks
+- **PR #652**: fix: diagnose stale attested evidence as a re-attest case in check.sh
+- **PR #650**: refactor: drop dead NgspiceRoot.matches_pin; docstring now states floor semantics
+- **Issue #641** (closed): layout/drclvs.py stage 4 (PDK DRC deck) cannot run against the pinned open_pdks revision: the deck layout changed
+- **Issue #623** (closed): signoff/check.sh: name the stale pinned artifact and offer re-attest, not --write
+- **Issue #619** (closed): Remove NgspiceRoot.matches_pin: dead property left behind by DR-0043's floor rewrite
+- **Issue #612** (closed): klt_record's old-vs-new section asserts a hard-coded backend/PDK delta that is now false on every record
+
+### 2026-11-15
+
+- **PR #653**: feat: limit-check short-circuit power as spec_row Thermal, cite it for T1 item 5
+- **PR #640**: fix: declare --param only in tb_adapter, the wrapper that reads it
+- **PR #620**: refactor(sim): drop six parameters no caller supplies and no body reads
+- **Issue #631** (closed): Stop offering --param on the four klt_run.py benches that never read it: add_ab_args declares it for every wrapper, only tb_adapter consumes it
+- **Issue #616** (closed): current-limit: tag the short-circuit power measurement with spec_row Thermal and cite it for T1 item 5
+- **Issue #613** (closed): Remove six dead function parameters in sim/ that the correctness-only lint gate cannot see
+- **PR #644**: fix: derive klt_record's provenance claims from run data, not frozen prose
+- **PR #614**: docs: roadmap as of 2026-11-13
+- **PR #602**: feat(sim): route klt-batch adapter runs through the artifact store
+- **Issue #604** (closed): Replace klt_record.py's frozen provenance narrative with the report data it already reads
+- **Issue #594** (closed): Remove the klt-batch adapters' commit-the-bytes path: every evidence run since DR-0041 bypassed the artifact store (913 files in git, 0 manifests)
+
 ### 2026-11-14
 
+- **PR #633**: fix: stage models and split the loop-stability klt grid under the job ceiling
+- **PR #632**: refactor: parse README's spec table through the ratified-spec gate's parser
+- **PR #611**: ci: reject added records that still carry klt_record's "(to be written)"
+- **Issue #628** (closed): Remove the second README spec-table parser: build_characterization_report.py forks the ratified parse_table
+- **Issue #615** (closed): loop-stability sweep.py: stage model files and split each klt batch request under the whole-job ceiling
+- **Issue #606** (closed): CI does not reject an added evidence record that still carries klt_record's `(to be written)` placeholder
 - **PR #605**: fix: grade a store-backed record from its own committed netlist hashes
 - **PR #599**: refactor(sim): one harness @TOKEN@ renderer and netlist preflight for eight drivers
 - **Issue #597** (closed): build_characterization_report.py skips store-backed records: latest_record() needs a committed netlist snapshot
@@ -395,31 +425,4 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 - **Issue #231** (closed): sim/startup regresses: ff/sf high-temp/voltage corners no longer settle within 6 ms (blocks #128)
 - **Issue #220** (closed): sim: DR-0006's 6 ms startup bound may no longer hold — the post-#195/#197 DUT settles 1.455x slower than the netlist it was measured against
 - **Issue #128** (closed): Re-run sim/startup with tb.json's checks at 6 ms once DR-0006 ratifies
-
-### 2026-09-15
-
-- **PR #230**: fix: guard unmatched grep -o in champion:hold-state staleness check (#224)
-- **PR #229**: spec: mark DR-0022's clearance-at-1uF pass-count as stale
-- **PR #226**: ci: run a pass-device-bearing corner in pvt-smoke (verify wnflag=1 on ngspice-42/47)
-- **PR #225**: sim(soft-start): confirm DR-0024's resize is a no-op on Iq and loop-stability
-- **PR #223**: spec: propose 1 uF startup-current budget + ~5x soft-start resize (DR-0024)
-- **PR #222**: spec: pin gf180mcu model-bin selection in the deck and root-cause it (DR-0025)
-- **PR #218**: sim: regenerate CHARACTERIZATION.md and add CI staleness check
-- **PR #215**: spec: propose DR-0023, cascode the soft-start injection mirror
-- **PR #199**: spec: propose ratifying DR-0018's narrowed Stability envelope (+ DR-0007 hold-condition note)
-- **PR #137**: spec: propose ratifying DR-0005's 62-95 mA current-limit window
-- **Issue #227** (closed): spec: DR-0022's clearance-at-1uF evidence is stale against issue #191's fresher regression data
-- **Issue #224** (closed): merge-pr.sh silently exits 1 on every merge when no champion:hold-state comment exists (pipefail bug)
-- **Issue #221** (closed): sim: verify the deck-level '.options wnflag=1' bin pin on ngspice-42 and ngspice-47 (only 46 is covered by DR-0025)
-- **Issue #216** (closed): sim/CHARACTERIZATION.md is stale against main's own netlist — regenerate after the DR-0005/DR-0006 ratifications and re-point note references
-- **Issue #214** (closed): ngspice model-bin resolution for XMpass (pfet_03v3, W=2000u/nf=40) is unverified and build-dependent; every large-W-device sim/ record may rest on an unpinned bin choice
-- **Issue #198** (closed): Cut the DR-0018 ratification PR (narrow Stability envelope to 1 µF nominal + DR-0007 status update)
-- **Issue #105** (closed): Operator decision: ratify, reject, or revise DR-0005 (current-limit window)
-
-### 2026-09-14
-
-- **PR #213**: refactor(sim): consolidate current-limit/enable-shutdown run_point() into a shared harness_run_pvt_point
-- **PR #127**: spec: propose ratifying DR-0006's 6 ms startup settling window
-- **Issue #211** (closed): Remove duplicate run_point() in current-limit/enable-shutdown run.sh: consolidate the PVT-point wrapper
-- **Issue #106** (closed): Operator decision: ratify, reject, or revise DR-0006 (startup settling window)
 
