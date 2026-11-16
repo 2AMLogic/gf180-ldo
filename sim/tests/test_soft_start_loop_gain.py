@@ -35,7 +35,9 @@ import math
 import re
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
+from types import SimpleNamespace
 
 SIM_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = SIM_DIR.parent
@@ -1288,6 +1290,95 @@ class TestRecordIsAppendOnly(unittest.TestCase):
         src = (_TB / "sweep.py").read_text()
         self.assertIn("write_markdown_record(record_id, md, records_dir)", src)
         self.assertNotIn(".write_text(md)", src)
+
+
+class TestRenderRecordSmoke(unittest.TestCase):
+    """`render_record` renders a whole record from fabricated inputs (#658).
+
+    This driver mints its published evidence through `render_record`, and no
+    test called it: a wrong key or a bad template splice in it raised only
+    after the entire PVT grid had run, at record-write time -- the most
+    expensive possible place to discover that, and invisible to a green
+    `unittest` run before it. These smoke tests call it with a four-row
+    fabricated device/binj A/B (two ramp states at one corner, one output
+    network cell) and assert on structure only: the `## Environment` block is
+    present with its canonical bullets in order, and the no-klt / klt-local /
+    klt-batch variants all render without raising. Deliberately no golden
+    file -- the record prose evolves (the #609 Champion ruling accepted
+    exactly such a change), so pinning the full text would only make this
+    test churn on every wording edit. The not-run paths are taken for the
+    optional sections (`curves=[]`, `xcheck={"skipped": True}`) so the
+    fixture stays small; those sections have their own tests above.
+
+    Stubbed, and why: `ngspice_version` shells out to the host's ngspice and
+    `ngspice_binary_sha256` hashes that binary. This module's contract is
+    no-ngspice (matching `test_loop_stability.py`, where the same stubbing
+    is reasoned through); a smoke render must not depend on what is (or is
+    not) installed. `socket.gethostname()` is left live -- it is a plain
+    stdlib call with no external dependency.
+    """
+
+    RECORD_ID = "unittest-000000-smoke"
+    COMMAND_BULLET = "- Command: `./sim/soft-start-loop-gain/testbench/run.sh`"
+
+    def _render(self, klt_info=None) -> str:
+        # device/binj mates at the same (phase, ramp state, corner, C_eff,
+        # ESR), so `ab_table` has pairs to tabulate and `handover_table` has
+        # a two-state transfer at the tt corner. VOUT follows the intended
+        # 1.5*V(SSR) ramp and FB sits near VREF, which are the physical
+        # relationships the derived columns (I_inj, the hand-over tracking
+        # error) are computed from -- the values only have to be finite and
+        # self-consistent, not measured.
+        rows = [
+            row(variant=variant, ssr_cmd=cmd, ssr_v=v, vout_v=1.5 * v,
+                fb_v=1.1975)
+            for variant in ("device", "binj")
+            for cmd, v in (("0.05", 0.05), ("1.15", 1.15))
+        ]
+        args = SimpleNamespace(ac_dec=int(sweep.AC_DEC), author="unittest",
+                               phases=["ramp"], subset_reason="", supersedes=None)
+        pdk = SimpleNamespace(variant="gf180mcuD", version="unittest")
+        with \
+                unittest.mock.patch.object(sweep, "ngspice_version",
+                                           lambda: "ngspice-46 (stubbed)"), \
+                unittest.mock.patch.object(sweep, "ngspice_binary_sha256",
+                                           lambda: "0" * 64):
+            return sweep.render_record(
+                record_id=self.RECORD_ID, rows=rows, grid=["tt_27c_3.30v"],
+                ceffs=[1e-6], esrs=[0.1], pdk=pdk,
+                prov={"short": "abc1234", "branch": "unittest", "dirty": False},
+                args=args, xcheck={"skipped": True}, attribution=[],
+                seeded=(), curves=(), klt_info=klt_info)
+
+    def test_no_klt_renders_the_environment_block_in_order(self):
+        md = self._render()
+        self.assertIn("## Environment", md)
+        self.assertIn(self.COMMAND_BULLET, md)
+        self.assertIn("- PDK: gf180mcuD @ unittest", md)
+        # Presence AND order: Environment header, then the provenance bullets
+        # it introduces. Index comparisons, not byte comparison.
+        self.assertLess(md.index("## Environment"),
+                        md.index("- PDK: gf180mcuD @ unittest"))
+        self.assertLess(md.index("- PDK: gf180mcuD @ unittest"),
+                        md.index(self.COMMAND_BULLET))
+        self.assertNotIn("- Backend:", md,
+                         "a no-klt record must not claim a klt backend")
+
+    def test_klt_local_renders_the_backend_bullet(self):
+        md = self._render(klt_info={"backend": "local", "requests": 3,
+                                    "klt": "klt (stubbed)"})
+        self.assertIn("## Environment", md)
+        self.assertIn("- Backend: `klt sim`", md)
+        self.assertIn("--backend local", md)
+        self.assertLess(md.index("## Environment"), md.index("- Backend:"))
+
+    def test_klt_batch_renders_the_backend_bullet(self):
+        md = self._render(klt_info={"backend": "batch", "requests": 3,
+                                    "klt": "klt (stubbed)"})
+        self.assertIn("## Environment", md)
+        self.assertIn("- Backend: `klt sim`", md)
+        self.assertIn("--backend batch", md)
+        self.assertLess(md.index("## Environment"), md.index("- Backend:"))
 
 
 if __name__ == "__main__":
