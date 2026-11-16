@@ -8,6 +8,10 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-16
 
+- **PR #672**: fix: soft-start record says ngspice/host bullets are above the Backend bullet
+- **PR #671**: fix: signoff drift message renders the cell's own status instead of 'met'
+- **Issue #668** (closed): signoff/readme_claims.py: _fmt() renders a reason-less 'unmet' table cell as 'met' in the drift message
+- **Issue #667** (closed): soft-start record prose: the klt Backend bullet says the ngspice/host bullets are "below" it; they are above
 - **PR #627**: refactor: define the loop sweeps' local-grid CLI block once in klt_grid.py
 - **Issue #621** (closed): Define the two loop sweeps' local-grid CLI block once in klt_grid.py: the help text drifted in 4 places and #366's -j cap reached 2 of 5 drivers
 - **PR #666**: refactor: read A/B driver ROW lines through the deck's strict parser
