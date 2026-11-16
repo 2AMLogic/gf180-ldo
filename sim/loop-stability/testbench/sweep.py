@@ -86,6 +86,7 @@ from harness.report import (  # noqa: E402
     format_record_id,
     git_provenance,
     parse_row_fields as _harness_parse_row_fields,
+    print_provenance_banner,
     write_markdown_record,
 )
 from harness.runner import (  # noqa: E402
@@ -1040,16 +1041,10 @@ def main() -> int:
     else:
         logdir = workdir
 
-    print(f"pdk       : {pdk.variant} @ {pdk.version}")
-    print(f"ngspice   : {ngspice_version()}")
-    # Issue #182: the version string alone was found to be insufficient --
-    # two differently-built binaries reported the identical banner a month
-    # apart. Print (and record, below) the resolved binary's content hash
-    # too, so a future comparison can tell a rebuild from a real change.
-    print(f"ngspice sha256: {ngspice_binary_sha256()}")
-    print(f"host      : {socket.gethostname()}")
-    print(f"record id : {record_id}{' (NOT WRITTEN: --no-write)' if args.no_write else ''}")
-    print(f"grid      : {len(grid)} PVT points x "
+    print_provenance_banner(
+        pdk, record_id, host=socket.gethostname(), dirty=dirty,
+        note=" (NOT WRITTEN: --no-write)" if args.no_write else "")
+    print(f"{'grid':<14}: {len(grid)} PVT points x "
           f"{len(iloads)}x{len(ceffs)}x{len(esrs)} load/cap/ESR = {n_points} loop-gain points")
     print()
 

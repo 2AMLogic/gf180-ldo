@@ -58,7 +58,6 @@ import concurrent.futures
 import csv
 import datetime as _dt
 import math
-import subprocess
 import sys
 from pathlib import Path
 
@@ -74,7 +73,11 @@ import netlist_variants as nv  # noqa: E402
 import sweep  # noqa: E402
 from harness import deck  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
-from harness.runner import ngspice_binary_sha256, ngspice_version  # noqa: E402
+from harness.report import (  # noqa: E402
+    format_record_id,
+    git_provenance,
+    print_provenance_banner,
+)
 
 # --- the targets, as machine-checkable predicates ---------------------------
 T1_RESIDUAL_A = 50e-9          # I_inj <= 50 nA for all V(SSR) >= VREF
@@ -212,12 +215,15 @@ def main() -> int:
         print(stale, file=sys.stderr)
         return 3
 
-    short = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
-        capture_output=True, text=True).stdout.strip()
-    record_id = args.record_id or (
-        _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
-        + f"-{short}")
+    # The record id is minted by the harness, not here: `format_record_id`
+    # is the single definition of the shape `sim/README.md` ratifies (a
+    # SEVEN-character sha -- `git rev-parse --short` emits however many
+    # characters git currently needs, which is already eight at some
+    # commits). `git_provenance` also reports the dirty-tree state, which
+    # the banner and the write-the-record-by-hand reminder below carry.
+    prov = git_provenance(REPO_ROOT)
+    record_id = args.record_id or format_record_id(
+        prov["short"], _dt.datetime.now(_dt.timezone.utc))
 
     workdir = REPO_ROOT / "sim" / ".work" / EXPDIR.name / f"{record_id}-handover"
     workdir.mkdir(parents=True, exist_ok=True)
@@ -247,10 +253,8 @@ def main() -> int:
     supplies = sweep.supply_points(sweep.NOMINAL_SUPPLY_V, args.supply_tol)
     grid = sweep.build_grid(corners, args.temps, supplies)
 
-    print(f"pdk           : {pdk.variant} @ {pdk.version}")
-    print(f"ngspice       : {ngspice_version()}")
-    print(f"ngspice sha256: {ngspice_binary_sha256()}")
-    print(f"record id     : {record_id}-handover")
+    print_provenance_banner(pdk, f"{record_id}-handover",
+                            dirty=prov["dirty"])
     print(f"variant       : {dut_label}")
     if dut_override is not None:
         print(f"dut netlist   : {dut_override}  (--dut-netlist override)")
@@ -354,6 +358,15 @@ def main() -> int:
                   "committed export, so no record may be minted from this run")
     else:
         print(f"(write {EXPDIR}/records/<id>.md by hand -- see sim/README.md)")
+        if prov["dirty"]:
+            # The id carries a commit sha and nothing else, so a record
+            # written by hand from a dirty-tree run looks like a clean-tree
+            # result unless whoever writes it is told otherwise. The two
+            # drivers that render their own record body put this line in it;
+            # this driver's body is written by a human, so the human gets it.
+            print("                the working tree was DIRTY at run time: "
+                  "the record MUST say so; it is not citable as a "
+                  "clean-tree result")
     return 0
 
 

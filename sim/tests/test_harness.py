@@ -1646,6 +1646,151 @@ class RecordIdTests(unittest.TestCase):
             self.assertEqual("keep\n", path.read_text())
 
 
+#: Every ``sim/`` driver that mints its own ``<record-id>``. Each must do it
+#: through ``report.format_record_id`` -- see EveryDriverMintsTheIdOnce below.
+_MINTING_DRIVERS = (
+    "loop-stability/testbench/sweep.py",
+    "soft-start-loop-gain/testbench/sweep.py",
+    "soft-start/testbench/handover_t15.py",
+    "soft-start/testbench/ramp_ab.py",
+)
+
+
+class EveryDriverMintsTheIdOnce(unittest.TestCase):
+    """No driver may hand-roll the record id (issue #618).
+
+    Two of these four drivers used to build the id from ``git rev-parse
+    --short HEAD`` inline. That is not a style complaint: ``--short`` emits
+    however many characters git currently needs for an unambiguous prefix,
+    which is already **eight** at some commits in this repo, whereas
+    ``format_record_id`` takes ``commit[:7]`` unconditionally and
+    ``sim/README.md`` ratifies the seven-character shape. A hand-rolled mint
+    therefore drifts off the ratified shape with no code change at all, the
+    first time git needs a wider prefix -- and nothing in the driver notices.
+
+    The same block also dropped ``git_provenance``'s ``dirty`` flag, so a run
+    from a dirty working tree produced committed logs whose only provenance
+    was a clean-looking commit sha.
+
+    Asserted on source text rather than behaviour because the mint sits
+    inline in each driver's ``main()``, which cannot run without a PDK and
+    ngspice. A source assertion is what keeps a *future* driver from
+    reintroducing the same copy.
+    """
+
+    def _read(self, rel: str) -> str:
+        return (SIM_DIR / rel).read_text()
+
+    def test_no_driver_builds_the_id_from_git_rev_parse_short(self):
+        for rel in _MINTING_DRIVERS:
+            with self.subTest(driver=rel):
+                self.assertNotIn(
+                    '"--short"', self._read(rel),
+                    f"{rel} hand-rolls the record id from `git rev-parse "
+                    "--short`, whose width git chooses; call "
+                    "report.format_record_id instead",
+                )
+
+    def test_every_driver_mints_through_the_harness_helpers(self):
+        for rel in _MINTING_DRIVERS:
+            with self.subTest(driver=rel):
+                text = self._read(rel)
+                self.assertIn("format_record_id", text)
+                self.assertIn("git_provenance", text)
+
+    def test_the_ratified_shape_is_seven_hex_characters(self):
+        """The shape the drivers now inherit, re-asserted against a real sha.
+
+        `git_provenance` truncates to 7 regardless of what `--short` would
+        have chosen, so an eight-character ambiguity window cannot widen the
+        id.
+        """
+        prov = report.git_provenance(SIM_DIR.parent)
+        if prov["commit"] == "unknown":  # pragma: no cover - git is present
+            self.skipTest("not a git checkout")
+        self.assertEqual(len(prov["short"]), 7)
+        minted = report.format_record_id(
+            prov["short"], datetime.datetime.now(datetime.timezone.utc))
+        self.assertRegex(minted, r"^\d{8}-\d{6}-[0-9a-f]{7}$")
+
+    def test_both_by_hand_record_drivers_warn_on_a_dirty_tree(self):
+        """The two drivers whose record body a human writes must say so.
+
+        `sim/loop-stability` and `sim/soft-start-loop-gain` render their own
+        record and put the dirty-tree warning in it. These two print "write
+        .../records/<id>.md by hand", so the only place the warning can reach
+        the person writing that record is stdout.
+        """
+        for rel in ("soft-start/testbench/handover_t15.py",
+                    "soft-start/testbench/ramp_ab.py"):
+            with self.subTest(driver=rel):
+                text = self._read(rel)
+                self.assertIn('prov["dirty"]', text)
+                self.assertIn("DIRTY at run time", text)
+
+
+class ProvenanceBannerTests(unittest.TestCase):
+    """One definition of the banner, one label width (issue #618)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.pdk = fake_pdk(Path(self.tmp.name) / "gf180mcuD")
+        patches = [
+            unittest.mock.patch.object(report, "ngspice_version",
+                                       return_value="ngspice-46"),
+            unittest.mock.patch.object(report, "ngspice_binary_sha256",
+                                       return_value="abc123"),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def banner(self, *args, **kwargs) -> list[str]:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report.print_provenance_banner(*args, **kwargs)
+        return buf.getvalue().splitlines()
+
+    def test_every_label_colon_lands_in_the_same_column(self):
+        lines = self.banner(self.pdk, "20260729-153000-1a7ef75",
+                            host="a-host", dirty=True, note=" (a note)")
+        columns = {line.index(":") for line in lines}
+        self.assertEqual(len(columns), 1, lines)
+        self.assertEqual(columns, {14})
+
+    def test_the_banner_carries_the_four_provenance_facts(self):
+        lines = self.banner(self.pdk, "20260729-153000-1a7ef75")
+        self.assertEqual(
+            lines,
+            [
+                f"pdk           : {self.pdk.variant} @ {self.pdk.version}",
+                "ngspice       : ngspice-46",
+                "ngspice sha256: abc123",
+                "record id     : 20260729-153000-1a7ef75",
+            ],
+        )
+
+    def test_host_and_note_are_opt_in(self):
+        lines = self.banner(self.pdk, "20260729-153000-1a7ef75",
+                            host="a-host", note=" (NOT WRITTEN: --no-write)")
+        self.assertIn("host          : a-host", lines)
+        self.assertIn(
+            "record id     : 20260729-153000-1a7ef75 (NOT WRITTEN: --no-write)",
+            lines,
+        )
+
+    def test_a_dirty_tree_is_stated_not_implied(self):
+        clean = self.banner(self.pdk, "20260729-153000-1a7ef75", dirty=False)
+        self.assertNotIn("DIRTY", "\n".join(clean))
+        dirty = self.banner(self.pdk, "20260729-153000-1a7ef75", dirty=True)
+        self.assertIn(
+            "working tree  : DIRTY at run time; "
+            "not citable as a clean-tree result",
+            dirty,
+        )
+
+
 class MatrixConformanceTests(unittest.TestCase):
     """sim/README.md requires the full mandated matrix, or a stated reason."""
 
