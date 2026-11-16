@@ -8,6 +8,20 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-16
 
+- **PR #666**: refactor: read A/B driver ROW lines through the deck's strict parser
+- **PR #665**: test: smoke-cover both drivers' render_record with structural environment assertions
+- **PR #664**: docs: restate DR-0044's netlist-snapshot rationale on stronger-check grounds (#622)
+- **PR #663**: feat: give run_store_evidence.py --kind corners DR-0044's kept-file split
+- **PR #659**: fix: signoff README prose now matches the record; per-item table check added
+- **PR #657**: Remove tracked .loom/manifest.json.tmp atomic-write leftover
+- **PR #624**: refactor: mint the sim record id through the harness in all four drivers
+- **Issue #658** (closed): Neither sweep driver's render_record is covered by any test: 0 call sites in both driver suites vs 14 for the harness path
+- **Issue #645** (closed): sim: give run_store_evidence.py DR-0044's kept-file split so a tb.json-free batch run can be stored
+- **Issue #638** (closed): Remove ab_loop_stability.py's hand-rolled ROW parser: reuse loop-stability sweep.py's own parse_row_fields()
+- **Issue #635** (closed): Remove .loom/manifest.json.tmp: a tracked, truncated atomic-write leftover that .gitignore:95 already covers
+- **Issue #622** (closed): DR-0044 item 5 justifies keeping the netlist snapshot committed with a defect (#597) that is now fixed
+- **Issue #618** (closed): Mint the record id once: handover_t15.py and ramp_ab.py hand-roll it from git rev-parse --short (8 chars at HEAD, vs the ratified 7) and drop the dirty-tree flag
+- **Issue #617** (closed): signoff/README.md: the per-item table and item 8 notes contradict the verdict of record on item 5
 - **PR #654**: fix: drive the PDK's deck driver, whose layout replaced the old decks
 - **PR #652**: fix: diagnose stale attested evidence as a re-attest case in check.sh
 - **PR #650**: refactor: drop dead NgspiceRoot.matches_pin; docstring now states floor semantics
