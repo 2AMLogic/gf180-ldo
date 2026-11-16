@@ -129,6 +129,7 @@ from gen_gds_common import (  # noqa: E402
     _merged_region,
     _rd,
     cut_grid,
+    display_path,
     guard_ring,
 )
 
@@ -605,7 +606,7 @@ def build(out_path, pdk_path):
 
     box = top.dbbox()
     print(
-        f"gen_gds.py: wrote {os.path.basename(str(out_path))} "
+        f"gen_gds.py: wrote {display_path(out_path)} "
         f"(top={TOP_CELL}, dbu={layout.dbu}, "
         f"bbox={box.width():.3f}x{box.height():.3f} um)"
     )
