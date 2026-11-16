@@ -32,9 +32,27 @@ elements the deck's own ``SubcircuitModelsReader`` delegate understands
 (``libs.tech/klayout/tech/lvs/rule_decks/custom_classes.lvs``)::
 
     Rbias NBIAS RBT VSS ppolyf_u_1k l=1000u w=1u m=1
-    Cc    NZ    OUT     cap_mim_2f0_m3m4_noshield l=48u w=48u m=1
+    Cc    NZ    OUT     cap_mim_2f0fF l=48u w=48u m=1
 
-which is the shape the PDK's own LVS regression netlists use.
+For the MIM capacitors the model token is rewritten too, and that is not
+cosmetic: KLayout's compare matches device classes BY NAME. The deck's
+extraction registers ``cap_mim_<n>f<m>fF`` classes
+(``rule_decks/mimcap_extraction.lvs``), while the token an export carries is
+the *symbol* name (``cap_mim_2f0_m3m4_noshield``), so the two names have to
+be reconciled here -- the flavour ``<n>f<m>`` is common to both spellings,
+and one regex maps the whole family (issue #642). This mirrors the
+convention the PDK's own LVS regression netlists follow: the *subcircuit*
+is named after the symbol, the *device* after the extraction class --
+``testing/unit/mimcap_devices/netlist/cap_mim_2f0fF_B_5LM_2p0.cdl`` has
+``.SUBCKT cap_mim_2f0_m4m5_noshield`` whose device lines read
+``C... cap_mim_2f0fF ...``. A ``cap_mim_*`` token whose flavour cannot be
+mapped is a hard :class:`LvsFormError`, never a silent pass-through: a token
+naming a class the deck does not register compares as a well-formed wrong
+verdict with no rule-level diagnosis. Resistors need no mapping -- on the
+pinned deck the resistor symbols' names are the registered class names
+(``ppolyf_u_1k`` & co) -- and the non-MIM capacitors register their classes
+under the symbol names too (``rule_decks/moscap_extraction.lvs``), so their
+tokens pass through unchanged.
 
 Only ``l`` and ``w`` are carried over, and that is deliberate rather than
 lazy: the delegate registers ``R`` with ``enable_parameter('R', false)`` and
@@ -105,6 +123,47 @@ _FAMILIES = (
     ("C", "c_width", "c_length"),
 )
 
+# The MIM-capacitor family's *symbol* names are not what the deck's
+# extraction registers as device classes: rule_decks/mimcap_extraction.lvs
+# registers cap_mim_<n>f<m>fF (on the pinned revision: cap_mim_1f0fF,
+# cap_mim_1f5fF, cap_mim_2f0fF), while the tokens an xschem export carries --
+# the PDK symbols' names, and the `model=` overrides this repo's schematics
+# set -- are the symbol spellings: cap_mim_<n>f<m>_<metals>_noshield.
+# KLayout's compare matches device classes BY NAME, so the rendered C line
+# has to carry the class name. The flavour is the <n>f<m> group both
+# spellings share, so one regex maps the whole family; a token that is
+# already the class name passes through unchanged, and a cap_mim_* token
+# matching neither shape is a hard LvsFormError (see _mimcap_model_token).
+_MIMCAP_CLASS_RE = re.compile(r"^cap_mim_(\d+f\d+)fF$")
+_MIMCAP_SYMBOL_RE = re.compile(r"^cap_mim_(\d+f\d+)(?:_.+)?$")
+
+
+def _mimcap_model_token(model: str, line: str) -> str:
+    """Map a cap_mim *symbol* name to the device class the deck registers.
+
+    Non-``cap_mim_*`` capacitor models are returned unchanged: the deck
+    registers their classes under the symbol names themselves
+    (``rule_decks/moscap_extraction.lvs``: ``cap_nmos_03v3`` & co).
+    """
+    if not model.startswith("cap_mim_"):
+        return model
+    if _MIMCAP_CLASS_RE.match(model):
+        return model
+    match = _MIMCAP_SYMBOL_RE.match(model)
+    if match:
+        return f"cap_mim_{match.group(1)}fF"
+    raise LvsFormError(
+        f"capacitor model token {model!r} is a cap_mim flavour this module "
+        "cannot map to a device class the deck's MIM extraction registers "
+        "(cap_mim_<n>f<m>fF -- on the pinned revision: cap_mim_1f0fF, "
+        "cap_mim_1f5fF, cap_mim_2f0fF). Passing it through would compare a "
+        "class the deck never registers: the compare would report a "
+        "well-formed mismatch with no rule-level diagnosis:\n"
+        f"    {line}\n"
+        "  Set the instance's `model=` to a flavour the deck registers, or "
+        "extend the extraction deck for the new flavour."
+    )
+
 
 def _split_params(tokens: list[str]) -> tuple[list[str], list[str]]:
     """Split ``tokens`` at the first ``key=value`` token."""
@@ -147,6 +206,8 @@ def _rewrite_line(line: str) -> str | None:
     name = head[0][1:]
     nets = head[1:-1]
     model = head[-1]
+    if letter == "C":
+        model = _mimcap_model_token(model, line)
     if not name:
         raise LvsFormError(f"passive instance has no name after its `X` prefix: {line}")
     if name[:1].upper() != letter:
