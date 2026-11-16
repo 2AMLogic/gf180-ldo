@@ -199,6 +199,11 @@ class StoreRun(unittest.TestCase):
         self.out, self.err = out.getvalue(), err.getvalue()
         return rc
 
+    def test_install_kept_is_evidence_store_s_one_copy(self):
+        # Moved beside split_batch_run (issue #645) so a tb-free caller can
+        # share it; klt_record must use that copy, not a second definition.
+        self.assertIs(kr.install_kept, es.install_kept)
+
     def test_bytes_are_stored_and_only_the_kept_files_are_committed(self):
         self.assertEqual(self._mint(), 0)
         new = sorted(q.relative_to(self.repo).as_posix() for q in self.repo.rglob("*")
