@@ -50,9 +50,9 @@ What this runs, in order
 3. **DRC, klt.** ``klt drc --deck gf180mcu --format json``. This is the
    agent-facing, JSON-contracted path; it is also a **curated 13-rule subset**,
    not signoff. See "Coverage, honestly" in layout/README.md.
-4. **DRC, the PDK's own deck.** The full gf180mcu KLayout deck, assembled the
-   way the PDK's ``run_drc.py`` assembles it (``main.drc`` + every rule table +
-   ``tail.drc``, with ``layers_def.drc`` beside it). Hundreds of rule
+4. **DRC, the PDK's own deck.** The full gf180mcu KLayout deck, driven through
+   its own Ruby driver (``tech/drc/gf180mcu.drc``, which ``require_relative``s
+   its rule tables) with an explicit ``decks=`` selection. Hundreds of rule
    categories. This is the DRC result worth quoting.
 5. **LVS.** The PDK's own ``gf180mcu.lvs`` deck, layout vs. the netlist from
    step 2.
@@ -107,7 +107,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import difflib
-import glob
 import importlib.util
 import json
 import os
@@ -285,8 +284,9 @@ from harness.report import (  # noqa: E402
 from harness.xschem_export import XschemExportError, run_xschem_netlist  # noqa: E402
 
 # metal_top / mim_option / metal_level per gf180mcu variant, transcribed from
-# the PDK's own libs.tech/klayout/lvs/run_lvs.py (and the identical table in
-# run_drc.py). The variant is not a free choice: it is which metal stack the
+# the PDK's own libs.tech/klayout/tech/lvs/run_lvs.py (the pinned revision's
+# DRC driver carries the same presets as its built-in variant table). The
+# variant is not a free choice: it is which metal stack the
 # installed PDK was built for.
 VARIANT_SWITCHES = {
     "A": {"metal_top": "30K", "mim_option": "A", "metal_level": "3LM"},
@@ -331,9 +331,10 @@ def check_env(verbose: bool = True) -> tuple[bool, Pdk | None]:
     else:
         pdk_line = f"{pdk.path} (variant {pdk.variant})"
         for sub, label in (
-            (pdk.klayout_dir / "drc" / "rule_decks" / "main.drc", "DRC rule decks"),
+            (pdk.klayout_dir / "drc" / "gf180mcu.drc", "DRC deck driver"),
+            (pdk.klayout_dir / "drc" / "rule_decks", "DRC rule decks"),
             (pdk.klayout_dir / "lvs" / "gf180mcu.lvs", "LVS deck"),
-            (pdk.path / "libs.tech" / "klayout" / "tech" / "pymacros", "PCell library"),
+            (pdk.klayout_dir / "pymacros", "PCell library"),
         ):
             if not sub.exists():
                 ok = False
@@ -376,16 +377,22 @@ def variant_switches(pdk: Pdk) -> dict[str, str]:
 # host portability: the PDK decks' `pmap` dependency
 # --------------------------------------------------------------------------
 
-# The gf180mcu DRC and LVS decks install a Ruby Logger formatter that shells
-# out to pmap(1) on EVERY log line:
+# The gf180mcu LVS deck (libs.tech/klayout/tech/lvs/gf180mcu.lvs, around its
+# line 74) installs a Ruby Logger formatter that shells out to pmap(1) on
+# EVERY log line:
 #
 #     "#{datetime}: Memory Usage (" + `pmap #{Process.pid} | tail -1`[10, 40].strip + ...
+#
+# The DRC deck no longer does this -- the pinned revision's driver
+# (tech/drc/gf180mcu.drc) reads memory via KLayout's own API
+# (`RBA::Timer.memory_size`) and never shells out -- but the shim must stay
+# for stage 5+ (LVS).
 #
 # pmap is procps, i.e. Linux-only. On a host without it the backtick returns
 # "", `""[10, 40]` is nil, and `nil.strip` raises -- so the deck dies on its
 # very first logger.info(), before it has run a single rule. The failure reads
-# as `undefined method 'strip' for nil` in main.drc, which looks like a deck
-# bug rather than a missing utility.
+# as `undefined method 'strip' for nil` in gf180mcu.lvs, which looks like a
+# deck bug rather than a missing utility.
 #
 # Rather than let that make the whole flow Linux-only, supply a pmap that
 # reports the process's real RSS via ps(1), on PATH for the deck subprocesses
@@ -1091,58 +1098,50 @@ def run_klt_drc(gds: Path, out_json: Path) -> dict:
 # stage 4 -- the PDK's own DRC deck
 # --------------------------------------------------------------------------
 
-def assemble_pdk_drc_deck(pdk: Pdk, run_dir: Path) -> tuple[Path, int]:
-    """Concatenate the PDK's rule tables into one runnable deck.
-
-    This mirrors ``generate_drc_run_template()`` in the PDK's own
-    ``libs.tech/klayout/drc/run_drc.py``: ``main.drc`` first, then every rule
-    table, then ``tail.drc``, with ``layers_def.drc`` copied next to the
-    generated deck because ``main.drc`` loads it from the run directory.
-
-    We assemble it ourselves rather than shelling out to ``run_drc.py`` because
-    that script needs ``docopt`` and drives its own parallel run/report layout;
-    what we want is one deck, one report, one exit status.
-
-    ``*_split`` tables are excluded, matching what ``run_drc.py`` does for the
-    ``deep`` run mode (they are the flat-mode variants of the same rules).
-    """
-    rule_decks = pdk.klayout_dir / "drc" / "rule_decks"
-    excluded = ("antenna", "density", "main", "layers_def", "split", "tail")
-    tables = sorted(
-        os.path.basename(f)
-        for f in glob.glob(str(rule_decks / "*.drc"))
-        if all(token not in os.path.basename(f) for token in excluded)
-    )
-    if not tables:
-        raise StageError(f"no DRC rule tables found under {rule_decks}")
-
-    shutil.copyfile(rule_decks / "layers_def.drc", run_dir / "layers_def.drc")
-    deck = run_dir / "main.drc"
-    with deck.open("wb") as out:
-        for name in ["main.drc"] + tables + ["tail.drc"]:
-            out.write((rule_decks / name).read_bytes())
-    return deck, len(tables)
-
-
 def run_pdk_drc(pdk: Pdk, spec: CellSpec, gds: Path, run_dir: Path, log: Path) -> dict:
-    deck, table_count = assemble_pdk_drc_deck(pdk, run_dir)
+    """Run the PDK's own DRC deck via its Ruby driver.
+
+    The pinned open_pdks revision ships the deck as a driver script
+    (``tech/drc/gf180mcu.drc``) that ``require_relative``s its own rule tables
+    from ``tech/drc/rule_decks/*.rb``; we drive it exactly as its ``help``
+    contract documents (``klayout -b -r gf180mcu.drc -rd help=true``).
+
+    The driver SILENTLY IGNORES unknown ``-rd`` switches: it exits 0 and
+    writes a perfectly valid report no matter what else is passed. That is
+    why the switch set below is minimal and every entry is one the driver
+    actually honours -- a stale switch left in here would change nothing in
+    the invocation while the code claimed an intent the deck never carries
+    out, and the report would look normal.
+    """
+    driver = pdk.klayout_dir / "drc" / "gf180mcu.drc"
     report = run_dir / f"{spec.cell}.lyrdb"
+    # Deck selection, replacing the old assembly step's exclusion tuple. The
+    # concatenated-deck era excluded the `antenna` and `density` tables
+    # explicitly (plus the `*_split` flat-mode variants and the framework
+    # files, none of which exist in the driver's registry any more); under the
+    # new driver the equivalent is the `decks=` tag selection below --
+    # `antenna` and `density` are each carried by exactly one deck file
+    # (antenna.rb / density.rb), so `all,-antenna,-density` excludes exactly
+    # what the old tuple excluded.
+    #
+    # The old `conn_drc=false` switch has no successor: connectivity checking
+    # in the pinned deck is framework logic (tech/drc/connectivity.rb), not a
+    # taggable rule deck, and the driver's tag vocabulary has no `conn*` tag
+    # to deselect. The run therefore gets whatever connectivity checking the
+    # driver applies by default -- stated here so that it is a decision, not
+    # something that defaulted in silently.
     switches = {
         "input": str(gds),
         "report": str(report),
         "topcell": spec.top_cell,
-        "thr": str(max(1, min(4, os.cpu_count() or 1))),
         "run_mode": "deep",
-        "feol": "true",
-        "beol": "true",
-        "conn_drc": "false",
-        "offgrid": "true",
+        # the old switch was named `thr`
+        "threads": str(max(1, min(4, os.cpu_count() or 1))),
+        "decks": "all,-antenna,-density",
         "verbose": "false",
-        "split_deep": "false",
-        "table_name": "main",
         **variant_switches(pdk),
     }
-    cmd = ["klayout", "-b", "-r", str(deck)]
+    cmd = ["klayout", "-b", "-r", str(driver)]
     for key, value in switches.items():
         cmd += ["-rd", f"{key}={value}"]
     env, pmap_provenance = deck_env(run_dir)
@@ -1164,7 +1163,8 @@ def run_pdk_drc(pdk: Pdk, spec: CellSpec, gds: Path, run_dir: Path, log: Path) -
         "report": report,
         "rule_categories": categories,
         "violations": items,
-        "rule_tables": table_count,
+        "deck": driver.name,
+        "decks_selection": switches["decks"],
         "pmap": pmap_provenance,
     }
 
@@ -1371,13 +1371,14 @@ def run(args: argparse.Namespace) -> int:
     summary["pdk_drc"] = {
         "violations": pdk_drc["violations"],
         "rule_categories": pdk_drc["rule_categories"],
-        "rule_tables": pdk_drc["rule_tables"],
+        "deck": pdk_drc["deck"],
+        "decks_selection": pdk_drc["decks_selection"],
     }
     summary["pmap"] = pdk_drc["pmap"]
     print(
         f"[4/{total}] pdk drc     : {pdk_drc['violations']} violation(s) across "
         f"{pdk_drc['rule_categories']} rule categories "
-        f"({pdk_drc['rule_tables']} rule tables)"
+        f"({pdk_drc['deck']}, decks={pdk_drc['decks_selection']})"
         + ("" if pdk_drc["pmap"] == "host" else ", pmap shimmed")
     )
     if pdk_drc["violations"]:
@@ -1504,7 +1505,7 @@ a re-run mints a new record rather than editing this one.
 | Stage | Result |
 | --- | --- |
 | DRC -- `klt drc --deck gf180mcu` | **{klt['status']}**, {klt['violations']} violation(s); layout dbu {klt['dbu_um']} um |
-| DRC -- PDK deck ({drc['rule_tables']} rule tables) | **{drc['violations']} violation(s)** across {drc['rule_categories']} rule categories |
+| DRC -- PDK deck (`{drc['deck']}`, `decks={drc['decks_selection']}`) | **{drc['violations']} violation(s)** across {drc['rule_categories']} rule categories |
 | LVS -- PDK `gf180mcu.lvs` vs. xschem export | **{'match' if summary['lvs']['match'] else 'MISMATCH'}** |
 {control_rows(summary)}
 

@@ -13,12 +13,16 @@ answer by ``sim/loop-stability/testbench/selftest.py``.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import math
+import os
 import re
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 SIM_DIR = Path(__file__).resolve().parents[1]
@@ -27,6 +31,7 @@ sys.path.insert(0, str(SIM_DIR))
 
 from harness import report  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
+from harness.pdk import Pdk  # noqa: E402
 
 _SWEEP_PATH = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
 _spec = importlib.util.spec_from_file_location("loop_stability_sweep", _SWEEP_PATH)
@@ -452,6 +457,204 @@ class TestRecordWriteIsAppendOnly(unittest.TestCase):
                 )
             # the first run's evidence survived intact
             self.assertEqual("# first\n", path.read_text())
+
+
+
+class TestKltRequestShape(unittest.TestCase):
+    """The ``klt sim`` request the batch grid submits (issue #615).
+
+    Two defects made a batch grid unable to produce a record that claims the
+    PDK pin, and these are the offline guards against their return:
+
+    * the request did not set ``options.stage_model_inputs``, so a fleet worker
+      simulated whatever open_pdks revision its image carried;
+    * it submitted all 63 PVT units as one job, which klt rates above the
+      fleet's 3600 s whole-job ceiling -- and a job that reaches that ceiling
+      reports EVERY unit of itself ``batch_job_timeout``.
+
+    Everything here builds request dictionaries. No simulator, no ``klt``
+    client, no network, no PDK install.
+    """
+
+    #: One (I_load, C_eff, ESR) configuration; the request shape does not
+    #: depend on which, so any point of the DR-0001 matrix will do.
+    CFG = (1e-3, 1.0e-6, 0.05)
+
+    def _request(self, axes: dict, dc_seed: str = "") -> dict:
+        """The request ``klt_run.py`` would submit for one configuration."""
+        return sweep.klt_run.job(
+            "test", self.CFG, sweep.LDO_NETLIST, int(sweep.AC_DEC),
+            sweep.F_START, sweep.F_STOP, axes, dc_seed=dc_seed,
+        ).request()
+
+    def _grid_axes(self) -> dict:
+        """The axes ``run_grid_klt`` builds for the full ratified matrix."""
+        corners = sweep.resolve_corners(list(sweep.PROCESS_CORNERS))
+        supplies = sweep.supply_points(sweep.NOMINAL_SUPPLY_V, sweep.SUPPLY_TOL)
+        grid = sweep.build_grid(corners, list(sweep.TEMPS_C), list(supplies))
+        return sweep.klt_axes((c.name for c in corners), sweep.TEMPS_C,
+                              sorted({p.vdd for p in grid}))
+
+    @staticmethod
+    def _units(req: dict) -> int:
+        """The unit count klt derives from the request's own corner axes."""
+        corners = req["corners"]
+        supplies = corners["params"][sweep.klt_run.SUPPLY_PARAM]
+        return len(corners["process"]) * len(supplies) * len(corners["temperature_c"])
+
+    def test_the_grid_request_stages_the_submitters_model_files(self):
+        req = self._request(self._grid_axes())
+        self.assertIs(req["options"]["stage_model_inputs"], True)
+
+    def test_the_grid_request_is_the_63_unit_ratified_matrix(self):
+        # The split below is sized against this count, so a change to the
+        # matrix must be read together with KLT_MAX_UNITS_PER_JOB.
+        self.assertEqual(63, self._units(self._request(self._grid_axes())))
+
+    def test_the_grid_request_is_split_into_jobs_the_fleet_can_finish(self):
+        batch = self._request(self._grid_axes())["batch"]
+        self.assertEqual(sweep.KLT_MAX_UNITS_PER_JOB, batch["max_units_per_job"])
+        # Once a request is split, these two stop being optional: shards the
+        # fleet's instance cap refuses come back `lost_shard` and are not
+        # retried, and `capacity_wait_s` is the request-level form of the
+        # `--wait-for-capacity 600` the dispatch hosts require.
+        self.assertEqual(sweep.KLT_MAX_CONCURRENT_JOBS, batch["max_concurrent_jobs"])
+        self.assertEqual(sweep.KLT_CAPACITY_WAIT_S, batch["capacity_wait_s"])
+
+    def test_the_split_keeps_every_job_under_the_whole_job_ceiling(self):
+        """klt's own bound, read off the request rather than restated as literals.
+
+        ``timeout_s`` is set by ``klt_run.job()``, not by ``sweep.py``, so a
+        bump there raises the per-job bound with nothing in ``sweep.py``
+        changing. And klt *honors* an explicit cap whose bound exceeds the
+        ceiling (klayout-tools#4982: the bound is a serial upper bound, so it
+        only warns) -- the fleet then kills the job for real and reports every
+        unit of it ``batch_job_timeout``. Nothing else fails loudly, so this is
+        the assertion that has to, and it reads both sides from the built
+        request to do it.
+        """
+        req = self._request(self._grid_axes())
+        timeout_s = req["options"]["timeout_s"]
+        units = req["batch"]["max_units_per_job"]
+        bound = timeout_s * units + sweep.KLT_JOB_OVERHEAD_S
+        self.assertLessEqual(
+            bound, sweep.KLT_JOB_CEILING_S,
+            f"a fleet job of {units} units at timeout_s={timeout_s} is bounded at "
+            f"{bound}s, past the {sweep.KLT_JOB_CEILING_S}s whole-job ceiling: the fleet "
+            f"would kill such a job and report EVERY unit of it batch_job_timeout, the "
+            f"finished ones included. Lower KLT_MAX_UNITS_PER_JOB to "
+            f"{(sweep.KLT_JOB_CEILING_S - sweep.KLT_JOB_OVERHEAD_S) // timeout_s}, or "
+            f"lower timeout_s in klt_run.job()",
+        )
+
+    def test_the_cap_is_the_largest_klts_own_auto_sizing_would_pick(self):
+        """N is derived, not chosen: it is `job_ceiling_check: "split"`'s formula.
+
+        Asserted as `==` rather than `<=` so that lowering `timeout_s` without
+        revisiting the cap shows up as a test to update (the grid would then be
+        split into more, smaller jobs than it needs -- 1512 fleet jobs is
+        already the capacity problem issue #465 is parked on).
+        """
+        req = self._request(self._grid_axes())
+        largest = ((sweep.KLT_JOB_CEILING_S - sweep.KLT_JOB_OVERHEAD_S)
+                   // req["options"]["timeout_s"])
+        self.assertEqual(largest, req["batch"]["max_units_per_job"])
+
+    def test_the_dc_seed_retry_request_stages_its_models_too(self):
+        """The retry mints rows for the same record, so it must claim the same pin."""
+        one = self._request(sweep.klt_axes(("tt",), (27.0,), (3.3,), split=False),
+                            dc_seed="* seed\n")
+        self.assertIs(one["options"]["stage_model_inputs"], True)
+
+    def test_the_single_point_retry_request_has_nothing_to_split(self):
+        one = self._request(sweep.klt_axes(("tt",), (27.0,), (3.3,), split=False))
+        self.assertEqual(1, self._units(one))
+        # One unit is one job: a unit cap and a concurrency bound would both be
+        # noise, but a capacity refusal can still happen to any submit.
+        self.assertEqual({"capacity_wait_s": sweep.KLT_CAPACITY_WAIT_S}, one["batch"])
+
+
+class TestKltClientPdkPin(unittest.TestCase):
+    """``stage_model_inputs`` alone cannot make a record claim the pin (issue #615).
+
+    ``klt`` resolves *which* local install to stage from itself, first-match-wins
+    across the install prefixes, and merely warns when several provide the
+    variant. On a host carrying both the pinned tree and a stale one, the models
+    shipped with the job are then chosen by sort order. ``$PDK_ROOT`` is the only
+    client-side pin the ``batch`` backend accepts, so the sweep must set it from
+    the install ``find_pdk()`` already pin-checked.
+    """
+
+    PINNED = Pdk(path=Path("/pinned/root/gf180mcuD"), variant="gf180mcuD",
+                 source="search_root:/pinned/root")
+
+    def test_the_client_is_pinned_to_the_pin_checked_installs_parent(self):
+        with unittest.mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PDK_ROOT", None)
+            self.assertEqual("/pinned/root", sweep.pin_klt_pdk_root(self.PINNED))
+            self.assertEqual("/pinned/root", os.environ["PDK_ROOT"])
+
+    def test_an_ambient_pdk_root_naming_another_tree_does_not_survive(self):
+        """The ambient value is not the pin-checked one -- `find_pdk()` resolves
+        `$GF180_PDK_PATH` ahead of `$PDK_ROOT`, so the two can name different
+        trees and only the returned `Pdk` has been through `check_pin()`."""
+        with unittest.mock.patch.dict(os.environ, {"PDK_ROOT": "/stale/root"}):
+            self.assertEqual("/pinned/root", sweep.pin_klt_pdk_root(self.PINNED))
+            self.assertEqual("/pinned/root", os.environ["PDK_ROOT"])
+
+
+class TestRunGridKltWiring(unittest.TestCase):
+    """``run_grid_klt`` actually submits the staged, split, pinned request.
+
+    The two classes above test the helpers; this tests that the sweep uses
+    them, which is the regression that would otherwise pass unnoticed.
+
+    Two things are stubbed, and both must stay stubbed for this to be the
+    offline test it claims to be: ``klt_run.run_configs`` (so nothing is
+    submitted anywhere) and ``klt_run.klt_version`` (which ``run_grid_klt``
+    calls for the record's provenance, and which shells out to ``klt
+    --version`` -- absent on a CI runner, and present on a dispatch host, so
+    leaving it live passes locally and fails in CI).
+    """
+
+    def _capture(self, tmp: Path) -> dict:
+        seen: dict = {}
+
+        def fake_run_configs(configs, dut, ac_dec, f_start, f_stop, axes, workdir,
+                             outdir, backend, in_flight, dc_seed="", log=print):
+            seen["axes"] = axes
+            seen["backend"] = backend
+            seen["configs"] = list(configs)
+            # Read at submit time: the pin must already be in place by now.
+            seen["pdk_root"] = os.environ.get("PDK_ROOT")
+            return {}, [], set()
+
+        corners = sweep.resolve_corners(["tt"])
+        grid = sweep.build_grid(corners, [27.0], [3.3])
+        args = unittest.mock.Mock(temps=[27.0], ac_dec=int(sweep.AC_DEC), in_flight=1)
+        pdk = Pdk(path=tmp / "root" / "gf180mcuD", variant="gf180mcuD", source="test")
+        logdir = tmp / "logs"
+        logdir.mkdir()  # main() makes these; run_grid_klt only writes into them
+        with unittest.mock.patch.dict(os.environ, {"PDK_ROOT": "/stale/root"}), \
+                unittest.mock.patch.object(sweep.klt_run, "run_configs", fake_run_configs), \
+                unittest.mock.patch.object(sweep.klt_run, "klt_version",
+                                           lambda: "klt (stubbed)"), \
+                contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            # The grid comes back empty, so every corner is reported as a
+            # failure; only what was submitted is under test here.
+            sweep.run_grid_klt(grid, corners, args, pdk, [1e-3], [1.0e-6], [0.05],
+                               logdir, tmp / "work", "batch")
+        seen["expected_pdk_root"] = str(pdk.path.parent)
+        return seen
+
+    def test_the_submitted_request_is_staged_split_and_pdk_pinned(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            seen = self._capture(Path(tmpdir))
+        self.assertIs(seen["axes"]["stage_model_inputs"], True)
+        self.assertEqual(sweep.KLT_MAX_UNITS_PER_JOB,
+                         seen["axes"]["batch"]["max_units_per_job"])
+        self.assertEqual(seen["expected_pdk_root"], seen["pdk_root"])
 
 
 if __name__ == "__main__":

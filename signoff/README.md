@@ -45,14 +45,17 @@ signoff/
   declare a boundary for. So the Analog column of items 1, 2, 5, 7 and 11
   applies, and `mixed-signal`'s partition-boundary declaration does not arise.
 
-### Item 5: four rows cited, the rest declared gaps
+### Item 5: five rows cited, the rest declared gaps
 
 `block-manifest.json` declares the full ratified row set under
-`spec_rows."5"`. Four rows carry no `gap` and are cited from the limit-checked
-`klt sim` envelopes minted under #538, each tagged with its ratified `spec_row`
-and reading `status: pass`, `failed: 0`, `measurements_with_limits > 0`:
+`spec_rows."5"`. Five rows carry no `gap` and are cited from the limit-checked
+`klt sim` envelopes minted under #538 and #616, each tagged with its ratified
+`spec_row` and reading `status: pass`, `failed: 0`, `measurements_with_limits > 0`:
 
-- Current limit: `sim/current-limit/corners/20261104-limits-538-04eaa9a/new/klt-report.json`
+- Current limit and Thermal: `sim/current-limit/corners/20261115-limits-616-658920d0/new/klt-report.json`
+  (the current-limit bench declares a short-circuit dissipation measurement,
+  `pshort_mw`, limit-checked against the ratified 346 mW ceiling and tagged
+  `spec_row: Thermal`, beside the on-limit current tagged `Current limit`)
 - Dropout @ 50 mA: `sim/dropout-vs-load/corners/20261104-limits-538-04eaa9a/new/klt-report.json`
 - Load reg (0–50 mA): `sim/load-regulation/corners/20261104-limits-538-04eaa9a/new/klt-report.json`
 - Enable / shutdown: the `klt-disabled` and `klt-leakage` reports under
@@ -62,9 +65,18 @@ Row ids match the ratified table and the envelope tags byte for byte (the Load
 reg id uses an en dash). `klt signoff` grades each citation `met`; item 5 stays
 `unmet` / `partial_coverage` because the other rows remain declared gaps, each
 naming its owner issue (or why no corner can express it: Input, Load, Output
-noise (waived, note 7) and Area). Thermal has no tagged envelope: the
-current-limit envelope tags only `Current limit`, so Thermal needs a
-limit-checked measurement tagged `Thermal`. `check.sh` grades `--manifest`
+noise (waived, note 7) and Area).
+
+**Thermal clause coverage.** The citation covers only the Thermal row's
+short-circuit clause: the 346 mW worst-case dissipation into a Vout = 0 short
+over the corner grid (worst measured corner `ff_125c_3.63v` at 345.598 mW,
+0.402 mW under the ceiling). The row's other two clauses are **not**
+corner-checked here: the ~92 mW continuous worst case at Vin 3.63 V / 50 mA
+load, and Tj ≤ 125 °C with theta-JA and sustained-short survivability — the
+latter two are delegated to the package/integration spec by the ratified row
+itself. `klt signoff` grades the row `met` off the one tagged measurement, so
+the `met` above must not be read as corner evidence for those clauses.
+`check.sh` grades `--manifest`
 against a klayout-tools git revision (`KLT_REV`) because the declared-gap fix
 (klayout-tools#4190) is in no PyPI release yet (newest 0.8.0, checked
 2026-11-04); the attest steps stay on the `KLT_VERSION` release.
@@ -203,10 +215,12 @@ done
 That loop skips the `local_only` commands too. To actually run them, use
 `python3 design/netlist.py --check` and `bash sim/selftest.sh --quick
 --require-pdk` directly, or regenerate the envelope without `--check`.
-After any inventoried file changes, regenerate with `--attest N --inventory
-... -o signoff/evidence/itemN.generic.json`, copy
-`provenance.input.content_hash` into the manifest, and run `bash
-signoff/check.sh --write`.
+After any inventoried file changes, regenerate the envelope with `--attest N
+--inventory signoff/inventory-itemN.json -o signoff/evidence/itemN.generic.json`,
+then re-run `bash signoff/check.sh` and follow what it reports: with the
+current inventory-only bindings a hygiene-only change needs nothing further,
+while a changed inventory also needs the new `provenance.input.content_hash`
+copied into the manifest and a `bash signoff/check.sh --write` run.
 
 Item 2 is not a presentation choice: the layout does not exist.
 

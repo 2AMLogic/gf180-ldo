@@ -22,9 +22,12 @@ list, and this module does the rest:
   cap is re-submitted after a bounded, jittered wait (``klt``'s own
   ``batch.capacity_wait_s`` covers Spot *capacity* refusals but not this one);
 * the per-corner logs ``klt`` returns (``options.keep_artifacts``) are copied
-  into ``sim/<slug>/corners/<record-id>/`` under this repo's
-  ``<corner>_<temp>c_<vin>v`` names, next to the report JSON, so the record's
-  Links point at committed evidence exactly as for ``run.sh``.
+  into the caller's ``dest`` under this repo's ``<corner>_<temp>c_<vin>v``
+  names, next to the report JSON. :func:`collect` writes wherever it is
+  pointed; a ``tb_adapter`` run points it at the git-ignored staging tree and
+  ``harness.klt_record`` then stores those bytes (DR-0044), while the
+  hand-rolled drivers still point it straight at
+  ``sim/<slug>/corners/<record-id>/`` (issue #596).
 
 Nothing here decides pass/fail; drivers summarise the returned values against
 their own bench's bounds.

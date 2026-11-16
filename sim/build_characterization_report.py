@@ -137,6 +137,27 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 SIM_DIR = REPO_ROOT / "sim"
 README = REPO_ROOT / "README.md"
 
+# The ratified spec table has exactly one parser, and it is not this script's:
+# `spec/check_spec_table.py`'s `parse_table` is the strict, normalizing parse
+# that backs the ratified-spec lock. This script reads the table *through* it
+# rather than re-implementing it, so the report cannot disagree with what the
+# gate ratified (issue #628). A second, independently-written regex parser
+# lived here until then, and the two had already diverged on whitespace
+# normalization, escaped pipes, row arity and alignment-colon separators --
+# none of which the regenerate-and-diff check in CI can catch, because both
+# sides of that diff come from the same parser.
+#
+# `spec/` is a normal directory, so a sys.path insert plus a plain import is
+# enough -- no importlib incantation is needed. The path is derived from this
+# file's own location rather than from REPO_ROOT, which the tests repoint at
+# synthetic trees: the *parser* is code and always comes from the real tree,
+# while the *table* it parses comes from README, which may be repointed.
+_SPEC_DIR = pathlib.Path(__file__).resolve().parent.parent / "spec"
+if str(_SPEC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SPEC_DIR))
+
+import check_spec_table  # noqa: E402  -- requires the sys.path insert above
+
 # The only two design netlists any experiment in sim/ instantiates as its
 # "device under test" (as opposed to a supporting cell it merely includes).
 # Keyed by the label used in the report.
@@ -219,25 +240,6 @@ RESULT_TOKEN_RE = re.compile(r"PASS|FAIL", re.IGNORECASE)
 # as separate bold runs, marking the unbolded prose elided between them.
 CLAUSE_JOIN = " … "
 RESULT_HEADING_RE = re.compile(r"^##\s*Result\b.*$", re.MULTILINE)
-
-
-# ---------------------------------------------------------------------------
-# README spec-table parsing -- ground truth for row names/targets, so this
-# script cannot silently drift from what the ratified table actually says.
-# ---------------------------------------------------------------------------
-
-def parse_spec_table() -> dict[str, tuple[str, str]]:
-    text = README.read_text()
-    m = re.search(
-        r"\| Parameter \| Target \| Stretch \|\n\|[-\s|]+\|\n((?:\|.*\|\n)+)",
-        text,
-    )
-    if not m:
-        raise RuntimeError("could not locate README.md's spec table")
-    rows = re.findall(
-        r"^\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$", m.group(1), re.MULTILINE
-    )
-    return {name: (target, stretch) for name, target, stretch in rows}
 
 
 # ---------------------------------------------------------------------------
@@ -1021,7 +1023,10 @@ def dut_current_shas() -> dict[str, str]:
 
 
 def render() -> str:
-    spec_table = parse_spec_table()
+    # Ground truth for row names/targets, parsed by the gate's own parser so
+    # the report cannot disagree with the ratified table (issue #628). A
+    # malformed or missing table raises CheckError and stops the build.
+    spec_table = check_spec_table.parse_table(README.read_text())
     dut_shas = dut_current_shas()
 
     out: list[str] = []
@@ -1054,9 +1059,25 @@ def render() -> str:
     out.append("| Spec row | Verdict | Fresh? | Evidence |")
     out.append("|---|---|---|---|")
 
+    # A hardcoded ROWS name that the ratified table does not contain is real
+    # drift -- a renamed, reworded or removed spec row -- and it must stop the
+    # build, not render a blank Target (issue #628). The silent
+    # `.get(row.name, ("", ""))` default that used to be here is invisible to
+    # CI's regenerate-and-diff check, because both sides of that diff are
+    # produced by this same script: the row simply reads empty in both.
+    missing = [row.name for row in ROWS if row.name not in spec_table]
+    if missing:
+        raise check_spec_table.CheckError(
+            "ROWS names no longer present in README.md's ratified spec table: "
+            f"{missing}. The spec table is ground truth; update ROWS (or the "
+            "Row's name) to match the ratified row, and cite the decision "
+            "record that renamed it. Rendering a blank Target instead would "
+            "pass CI's regenerate-and-diff check unnoticed."
+        )
+
     row_render_cache: dict[str, dict] = {}
     for row in ROWS:
-        target, _stretch = spec_table.get(row.name, ("", ""))
+        target, _stretch = spec_table[row.name]
         if not row.sources:
             out.append(f"| {row.name} | N/A | N/A | see note below |")
             row_render_cache[row.name] = {"na": True, "target": target}
