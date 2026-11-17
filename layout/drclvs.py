@@ -218,7 +218,14 @@ class CellSpec:
     # apply to this cell's netlist (check_controls_apply, called before any
     # LVS run, turns "this control does nothing here" into a hard error).
     controls: tuple[Control, ...]
-    # The schematic's bulk/substrate port == the LVS deck's lvs_sub switch.
+    # The schematic's bulk/substrate port NAME. Not an LVS deck switch: the
+    # pinned deck dereferences no lvs_sub global (see lvs_switches, issue
+    # #691) and names the substrate itself instead --
+    # rule_decks/substrate_connections.lvs hardcodes
+    # `connect_global(..., 'SUB')`. This field is only the port name the
+    # schematic netlist carries; whether the deck should ever take the
+    # substrate net from the run is a separate decision, deliberately not
+    # made here.
     substrate_net: str = "VSS"
     # The LVS deck's `poly_res` switch: which high-sheet ppolyf_u_* flavour
     # the deck extracts. A `case POLY_RES` in rule_decks/res_extraction.lvs
@@ -1178,25 +1185,36 @@ def run_pdk_drc(pdk: Pdk, spec: CellSpec, gds: Path, run_dir: Path, log: Path) -
 # stage 5/6 -- LVS
 # --------------------------------------------------------------------------
 
-def run_lvs(
-    pdk: Pdk, spec: CellSpec, gds: Path, netlist: Path, run_dir: Path, log: Path, tag: str
-) -> dict:
-    lvsdb = run_dir / f"{tag}.lvsdb"
-    extracted = run_dir / f"{tag}_extracted.cir"
-    switches = {
+def lvs_switches(
+    pdk: Pdk, spec: CellSpec, gds: Path, netlist: Path, lvsdb: Path, extracted: Path
+) -> dict[str, str]:
+    """The ``-rd`` switch set the LVS stage passes to the PDK's deck.
+
+    The deck is a Ruby script: ``-rd key=value`` only sets a ``$key``
+    global, and a global the deck never dereferences is silently unused --
+    the invocation looks valid while the code claims an intent the deck
+    never carries out (the same silent-ignore failure the DRC driver
+    documents). So every key here is one the pinned deck actually reads:
+    layout/tests/test_lvs_switches.py holds this dict to the deck's
+    dereferenced ``$global`` set and fails loudly on a stale key.
+
+    Deliberately ABSENT (dead on the pinned revision, dropped in issue
+    #691): ``thr`` (no thread pool switch in the LVS deck), ``lvs_sub``
+    (the deck names the substrate itself --
+    rule_decks/substrate_connections.lvs hardcodes ``connect_global``),
+    ``scale`` and ``schematic_simplify`` (never dereferenced; the compare
+    options the deck does take are the explicit per-side switches below).
+    """
+    return {
         "input": str(gds),
         "schematic": str(netlist),
         "report": str(lvsdb),
         "target_netlist": str(extracted),
         "topcell": spec.top_cell,
-        "thr": str(max(1, min(4, os.cpu_count() or 1))),
         "run_mode": "deep",
-        "lvs_sub": spec.substrate_net,
         "verbose": "false",
         "spice_net_names": "true",
         "spice_comments": "false",
-        "scale": "false",
-        "schematic_simplify": "false",
         "net_only": "false",
         # The pinned runset reads every compare-affecting option as its own
         # -rd global, each defaulting to FALSE through `bool_check?`
@@ -1239,6 +1257,14 @@ def run_lvs(
         "mim_cap": MIMCAP_SWITCH,
         **variant_switches(pdk),
     }
+
+
+def run_lvs(
+    pdk: Pdk, spec: CellSpec, gds: Path, netlist: Path, run_dir: Path, log: Path, tag: str
+) -> dict:
+    lvsdb = run_dir / f"{tag}.lvsdb"
+    extracted = run_dir / f"{tag}_extracted.cir"
+    switches = lvs_switches(pdk, spec, gds, netlist, lvsdb, extracted)
     cmd = ["klayout", "-b", "-r", str(pdk.klayout_dir / "lvs" / "gf180mcu.lvs")]
     for key, value in switches.items():
         cmd += ["-rd", f"{key}={value}"]
