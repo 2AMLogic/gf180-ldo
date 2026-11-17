@@ -8,6 +8,12 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-17
 
+- **PR #731**: fix: restore PDK_ROOT in the probe _main test helper
+- **Issue #728** (closed): test_mc_klt_run's probe _main helper leaks PDK_ROOT into the environment (cross-suite)
+- **PR #730**: refactor(sim): split soft-start-loop-gain sweep.py into model/record siblings
+- **Issue #608** (closed): Split sim/soft-start-loop-gain/testbench/sweep.py: 34% of it is self-contained report rendering
+- **PR #661**: fix: pin klt's PDK staging to the pin-checked tree at every staging call site
+- **Issue #639** (closed): sim: the three remaining os.environ.setdefault("PDK_ROOT", ...) sites can leave klt staging an un-pin-checked tree
 - **Issue #609** (closed): Render the record Environment block once: three copies have already drifted, one cites a sim/README.md section that does not exist
 - **PR #648**: refactor: render the record Environment block from one harness helper
 - **Issue #721** (closed): Two live `.spice.in` deck templates still quote the pre-DR-0034 pass-device width W=2000u (#714's grep was py/md-only)
