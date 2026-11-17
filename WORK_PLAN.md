@@ -5,7 +5,7 @@
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
 
-- **#656**: chore(loom): resync installed Loom to v0.19.1302
+- **#682**: chore(loom): resync installed Loom to v0.19.1305
 
 ## Very Important
 
@@ -27,11 +27,10 @@ Human-approved issues ready for implementation (`loom:issue`).
 - **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 - **#465**: sim: re-qualify loop-stability and soft-start reference records at open_pdks f6eeac7 (part of #430)
-- **#626**: run_corners.py is the sixth local driver #366's -j cap never reached: sim/harness/cli.py still resolves -j to min(8, cpu_count())
-- **#630**: Give loop-stability's borrowed testbench surface a home in sim/harness/: 40 symbols reached by filesystem path, and the shim shadows this bench's own modules
-- **#642**: LVS mismatches on pass_array and passives with current toolchain (klayout 0.30.12 + pinned PDK), pre-existing on main
-- **#647**: sim: route the four latent hand-rolled batch drivers (mc-output-accuracy, soft-start peak/bias_acq) through the store
 - **#655**: record_diff.py: scrub status-derived 'tier' so a stale-evidence-only diff is not reported as a residual
+- **#687**: sim: klt_peak_run.py's summary.csv is overwritten per --part, so a split-part record stores only the last part's rows
+- **#695**: sim: apply tb_adapter.refuse_protected_out to the three remaining caller-chosen output paths
+- **#697**: gen_gds.py's resistor docstring still cites a `lvs_sub` deck switch that does not exist
 
 ## In Progress
 
@@ -42,21 +41,20 @@ Issues currently being built (`loom:building`).
 - **#603**: Remove the per-file copies of the gf180mcu DRC rule minimums: define each rule once, as #588 did for the layer table
 - **#609**: Render the record Environment block once: three copies have already drifted, one cites a sim/README.md section that does not exist
 - **#625**: Define the path-loading idiom once: 21 hand-rolled importlib.util copies, and 10 of them skip the sys.modules step the other 11 take
-- **#634**: bug: loop-stability --backend local fails with 'could not find a valid modelname' on the pass device
 - **#639**: sim: the three remaining os.environ.setdefault("PDK_ROOT", ...) sites can leave klt staging an un-pin-checked tree
-- **#646**: sim: stage the current-limit, enable-shutdown and soft-start klt_run.py runs instead of committing them (all 673 hand-rolled-driver files as of 2026-11-15)
+- **#700**: sim: no structural test enforces the unique-name sibling-load rule across the 16 klt_run.py benches
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
-_None._
+- **#701**: test(sim): enforce the unique-name sibling-load rule across testbench drivers
 
 ## Approved (Awaiting Merge)
 
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
-- **#656**: chore(loom): resync installed Loom to v0.19.1302
+- **#682**: chore(loom): resync installed Loom to v0.19.1305
 
 ## Proposed
 
@@ -76,13 +74,12 @@ Issues carrying `loom:curated`.
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)*
 - **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)*
-- **#626**: run_corners.py is the sixth local driver #366's -j cap never reached: sim/harness/cli.py still resolves -j to min(8, cpu_count()) *(curated)*
-- **#634**: bug: loop-stability --backend local fails with 'could not find a valid modelname' on the pass device *(curated)*
 - **#639**: sim: the three remaining os.environ.setdefault("PDK_ROOT", ...) sites can leave klt staging an un-pin-checked tree *(curated)*
-- **#642**: LVS mismatches on pass_array and passives with current toolchain (klayout 0.30.12 + pinned PDK), pre-existing on main *(curated)*
-- **#646**: sim: stage the current-limit, enable-shutdown and soft-start klt_run.py runs instead of committing them (all 673 hand-rolled-driver files as of 2026-11-15) *(curated)*
-- **#647**: sim: route the four latent hand-rolled batch drivers (mc-output-accuracy, soft-start peak/bias_acq) through the store *(curated)*
 - **#655**: record_diff.py: scrub status-derived 'tier' so a stale-evidence-only diff is not reported as a residual *(curated)*
+- **#687**: sim: klt_peak_run.py's summary.csv is overwritten per --part, so a split-part record stores only the last part's rows *(curated)*
+- **#695**: sim: apply tb_adapter.refuse_protected_out to the three remaining caller-chosen output paths *(curated)*
+- **#697**: gen_gds.py's resistor docstring still cites a `lvs_sub` deck switch that does not exist *(curated)*
+- **#700**: sim: no structural test enforces the unique-name sibling-load rule across the 16 klt_run.py benches *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -105,11 +102,11 @@ _None._
 | Operator merge-risk holds | 1 |
 | Very important | 1 |
 | Important | 2 |
-| Ready (`loom:issue`) | 8 |
-| In Progress (`loom:building`) | 8 |
-| PRs awaiting review | 0 |
+| Ready (`loom:issue`) | 7 |
+| In Progress (`loom:building`) | 7 |
+| PRs awaiting review | 1 |
 | Approved PRs awaiting merge | 1 |
-| Curated | 21 |
+| Curated | 20 |
 | Architect / Hermit proposals | 7 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->

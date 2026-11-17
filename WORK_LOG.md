@@ -8,6 +8,11 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-17
 
+- **PR #699**: fix(sim): load ss-loop-gain's klt_run under its unique name, dropping the last bare import
+- **Issue #693** (closed): sim: ss-loop-gain sweep.py's bare `import klt_run` still leaks the name — soft-start's klt_peak_run wins the race, so the driver silently gets the wrong bench's klt_run
+- **PR #692**: sim: hoist the append-only output refusal into tb_adapter and guard bias_acq's explicit --dest
+- **Issue #686** (closed): sim: hoist the probe's append-only --out refusal into tb_adapter and apply it to bias_acq's explicit --dest
+- **Issue #596** (closed): Route the hand-rolled klt_run.py drivers' batch evidence through the artifact store (605 of 913 post-DR-0041 files)
 - **PR #696**: refactor(lvs): extract lvs_switches() and drop four switches the deck never reads
 - **Issue #691** (closed): LVS switch dict passes four globals the pinned deck never reads (lvs_sub, scale, schematic_simplify, thr)
 - **PR #690**: refactor(sim): home the shared loop-margin surface in sim/harness
