@@ -14,14 +14,23 @@ its own transcription of the document.
 
 Imported by ``layout/divider/gen_gds.py`` (under KLayout's interpreter) and
 by ``layout/tests/test_divider_layout.py`` (plain Python, no PDK), which is
-why it imports nothing itself.
+why it imports nothing with a KLayout dependency of its own: the one thing
+it imports, the gf180mcu DRC rule minimums in ``layout/drc_rules.py``, is
+import-free for the same reason (issue #603).
 """
+
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from drc_rules import PRES_2_SPACE_UM  # noqa: E402
 
 # --- geometry -------------------------------------------------------------
 
 UNIT_W_UM = 2.0  # drawn strip width  == the extracted device's W
 UNIT_L_UM = 31.8  # drawn strip length == the extracted device's L
-PITCH_UM = 2.4  # 2.0 um strip + PRES.2's 0.4 um minimum poly-resistor space
+PITCH_UM = UNIT_W_UM + PRES_2_SPACE_UM  # strip + drc_rules.PRES_2_SPACE_UM
+# (PRES.2's 0.4 um minimum poly-resistor space)
 
 # floorplan.md §4.1's own numbers for the unit: 50 kOhm per strip, from
 # sim/devchar's MEASURED effective sheet for this flavour rather than the
