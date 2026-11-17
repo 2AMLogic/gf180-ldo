@@ -251,6 +251,114 @@ class RunPdkDrcSwitchesTests(unittest.TestCase):
         self.assertIn("ZERO rule categories", str(ctx.exception))
 
 
+def lvs_switches_of(cmd: list[str]) -> dict[str, str]:
+    """Pull the ``-rd key=value`` switches out of an emitted klayout command."""
+    switches = {}
+    it = iter(cmd)
+    for arg in it:
+        if arg == "-rd":
+            key, _, value = next(it).partition("=")
+            switches[key] = value
+    return switches
+
+
+class RunLvsSwitchesTests(unittest.TestCase):
+    """Stage 5 must pass the switches the pinned runset actually reads.
+
+    The pinned ``gf180mcu.lvs`` reads every compare-affecting option as its
+    own ``-rd`` global, each defaulting to FALSE through ``bool_check?``
+    (``tech/lvs/gf180mcu.lvs:109``): nothing is derived any more. A driver
+    that relies on the pre-bump derivation therefore runs a compare whose
+    SIMPLIFY and IMPLICIT_CONNECT are both off -- parallel devices never
+    merge, same-named nets never join -- and gets a well-formed WRONG
+    verdict, not an error (issue #642). These tests hold ``run_lvs()`` to
+    the switch set the pinned deck needs, so the next PDK bump that changes
+    the defaults cannot silently reintroduce the gap.
+    """
+
+    def run_stage5(self, spec_key: str):
+        """Run run_lvs() with run_logged stubbed; return the emitted switches."""
+        captured: dict = {}
+
+        def fake_run_logged(cmd, log, what, env=None):
+            captured["cmd"] = cmd
+            captured["env"] = env
+            for arg in cmd:
+                if arg.startswith("report="):
+                    Path(arg.split("=", 1)[1]).write_text("<lvsdb/>")
+            return "INFO : Congratulations! Netlists match."
+
+        original = drclvs.run_logged
+        drclvs.run_logged = fake_run_logged
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                run_dir = Path(tmp)
+                spec = drclvs.CELLS[spec_key]
+                drclvs.run_lvs(
+                    fake_pdk(run_dir / "pdk"), spec,
+                    run_dir / "in.gds", run_dir / "ref.spice", run_dir,
+                    run_dir / "lvs.log", "lvs",
+                )
+        finally:
+            drclvs.run_logged = original
+        return lvs_switches_of(captured["cmd"])
+
+    def test_simplify_is_passed_and_tracks_simplify_extracted(self):
+        """``$simplify`` alone gates SIMPLIFY now (``gf180mcu.lvs:149``, both
+        sides at :427-428): if it stops being passed, the deck silently runs
+        with it FALSE and parallel devices stop merging."""
+        for key, spec in drclvs.CELLS.items():
+            with self.subTest(cell=key):
+                switches = self.run_stage5(key)
+                self.assertEqual(
+                    switches.get("simplify"),
+                    "true" if spec.simplify_extracted else "false",
+                )
+        self.assertEqual(self.run_stage5("testcell")["simplify"], "true")
+        self.assertEqual(self.run_stage5("divider")["simplify"], "false")
+
+    def test_implicit_connect_is_always_passed_true(self):
+        """``$implicit_connect`` alone gates ``connect_implicit('*')``
+        (``gf180mcu.lvs:179`` / :415): drclvs_passives draws no strapping
+        metal and relies on that join, so it must never be left unset."""
+        for key in drclvs.CELLS:
+            with self.subTest(cell=key):
+                self.assertEqual(self.run_stage5(key).get("implicit_connect"), "true")
+
+    def test_top_lvl_pins_stays_paired_with_simplify_extracted(self):
+        """An independent switch in the pinned runset (``gf180mcu.lvs:159``),
+        kept inverted against ``simplify`` exactly as probe-verified: the
+        flow vehicles run ``top_lvl_pins=false``, the divider ``true``."""
+        self.assertEqual(self.run_stage5("testcell")["top_lvl_pins"], "false")
+        self.assertEqual(self.run_stage5("divider")["top_lvl_pins"], "true")
+
+    def test_stage5_drives_the_pinned_runset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            cmd = None
+
+            def fake_run_logged(cap_cmd, log, what, env=None):
+                nonlocal cmd
+                cmd = cap_cmd
+                for arg in cap_cmd:
+                    if arg.startswith("report="):
+                        Path(arg.split("=", 1)[1]).write_text("<lvsdb/>")
+                return "INFO : Congratulations! Netlists match."
+
+            original = drclvs.run_logged
+            drclvs.run_logged = fake_run_logged
+            try:
+                drclvs.run_lvs(
+                    fake_pdk(run_dir / "pdk"), drclvs.TESTCELL_SPEC,
+                    run_dir / "in.gds", run_dir / "ref.spice", run_dir,
+                    run_dir / "lvs.log", "lvs",
+                )
+            finally:
+                drclvs.run_logged = original
+            self.assertEqual(cmd[:3], ["klayout", "-b", "-r"])
+            self.assertTrue(cmd[3].endswith("/lvs/gf180mcu.lvs"), cmd[3])
+
+
 class CellRegistryTests(unittest.TestCase):
     """The --cell registry this issue's generalization introduces."""
 
@@ -486,12 +594,15 @@ class NetlistDirGuardTests(unittest.TestCase):
             )
 
 
-# One FET and one of each passive, in the LVS form stage 2 produces.
+# One FET and one of each passive, in the LVS form stage 2 produces -- the
+# MIM cap carries the device class the deck's extraction registers
+# (rule_decks/mimcap_extraction.lvs), which lvs_form.py maps the exported
+# symbol-name token to.
 NETLIST = """\
 .subckt cell D G S VSS RP RM CT CB
 M1 D G S VSS nfet_03v3 L=0.28u W=6u nf=2 m=1
 R1 RM RP VSS ppolyf_u_1k l=10u w=1u m=1
-C1 CT CB cap_mim_2f0_m4m5_noshield l=20u w=20u m=1
+C1 CT CB cap_mim_2f0fF l=20u w=20u m=1
 .ends
 """
 
@@ -563,13 +674,13 @@ class ControlSetTests(unittest.TestCase):
         out = mutate(NETLIST)
         self.assertIn("R1 RM RP VSS ppolyf_u_1k l=20u w=1u m=1", out)
         # the capacitor and the FET are untouched
-        self.assertIn("C1 CT CB cap_mim_2f0_m4m5_noshield l=20u w=20u m=1", out)
+        self.assertIn("C1 CT CB cap_mim_2f0fF l=20u w=20u m=1", out)
         self.assertIn("M1 D G S VSS nfet_03v3 L=0.28u W=6u nf=2 m=1", out)
 
     def test_the_capacitor_control_doubles_only_the_capacitor_length(self):
         mutate = drclvs.build_controls(NETLIST)["passive-c"].mutate
         out = mutate(NETLIST)
-        self.assertIn("C1 CT CB cap_mim_2f0_m4m5_noshield l=40u w=20u m=1", out)
+        self.assertIn("C1 CT CB cap_mim_2f0fF l=40u w=20u m=1", out)
         self.assertIn("R1 RM RP VSS ppolyf_u_1k l=10u w=1u m=1", out)
 
     def test_the_topology_control_still_shorts_gate_to_drain(self):

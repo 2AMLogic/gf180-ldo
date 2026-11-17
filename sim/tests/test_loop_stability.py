@@ -307,6 +307,42 @@ class TestDeckTemplate(unittest.TestCase):
         self.assertIn(f"ac dec {sweep.AC_DEC} 0.01 1e9", deck)
         self.assertIn("let fres = f0*1.05", deck)
 
+    def test_template_pins_model_bin_selection_before_the_dut_include(self):
+        """DR-0025 (issue #214): the deck, not the host's ngspice startup
+        files, must decide gf180mcu's model-bin selection.
+
+        The models are binned and the widest declared bin stops at
+        ``wmax=100.001u``; ``XMpass`` is ``W=2800u nf=40`` (70 um per
+        finger), so it resolves to a bin only when ngspice divides ``W``
+        by ``NF`` -- its ``wnflag``, default 0 outside HSPICE/Spectre
+        compatibility mode. Without the card the deck dies at parse time
+        (``could not find a valid modelname``) on any host that does not
+        already set the flag, which is what the ``--backend local`` path
+        did (issue #634). The card must also stay the deck's FIRST
+        ``.options`` card: DR-0025's measured rule is that duplicate
+        ``.options`` cards resolve earliest-wins, silently.
+        """
+        from harness.corners import CORNERS, PvtPoint
+
+        class FakePdk:
+            design_include = "/pdk/design.ngspice"
+            model_lib = "/pdk/sm141064.ngspice"
+
+        pvt = PvtPoint(corner=CORNERS["tt"], temp_c=27.0, vdd=3.3)
+        deck = sweep.render_deck(
+            pvt, FakePdk(), [0.0, 50e-3], [0.33e-6], [0.001, 0.5],
+            int(sweep.AC_DEC),
+        )
+        card = f".options {sweep.MODEL_BINNING_OPTION}"
+        self.assertIn(card, deck)
+        # Ahead of the DUT include that instantiates the pass device.
+        self.assertLess(deck.index(card), deck.index(str(sweep.LDO_NETLIST)))
+        # Earliest-wins: a later duplicate .options card would not take
+        # effect, so this must be the deck's first one.
+        options_cards = [ln for ln in deck.splitlines()
+                         if ln.strip().lower().startswith(".options")]
+        self.assertEqual(card, options_cards[0])
+
     def test_ac_resolution_resolves_the_q_the_policy_claims(self):
         """`AC_DEC` must deliver the bound issue #58's policy states.
 
