@@ -19,10 +19,11 @@ a worktree may legally hold an untracked Python tree, e.g. a throwaway
 ``.venv``, whose vendored calls are not regrowth) -- nothing is imported or
 executed, so comments and string literals cannot trip it -- and fails,
 naming file and line, on any ``spec_from_file_location`` call outside the
-allowlist below, or at an allowlisted path whose call count changed. A file
-that is not UTF-8 or not valid Python 3 is reported with a named reason
-rather than an unhandled error. The allowlist carries a one-line rationale
-per site. Hermetic: no PDK, ngspice, klt or fleet.
+allowlist below, or at an allowlisted path whose call count changed. A
+file that cannot be read, is not UTF-8, or is not valid Python 3 is
+reported with a named reason rather than an unhandled error. The
+allowlist carries a one-line rationale per site. Hermetic: no PDK,
+ngspice, klt or fleet.
 
     python3 -m unittest sim/tests/test_load_script_sites.py -v
 """
@@ -99,20 +100,33 @@ def spec_load_calls(source: str, filename: str = "<source>") -> list[tuple[str, 
 def read_calls(path: Path, rel: str) -> tuple[list[tuple[str, int]], str | None]:
     """``spec_load_calls`` of *path*, or ``([], problem)`` naming why not.
 
-    A file that is not UTF-8 or not valid Python 3 cannot be ast-walked;
-    the guard reports it in its own ``file``/``file:line`` message style
-    with the named reason instead of letting ``UnicodeDecodeError`` /
-    ``SyntaxError`` escape the test body as an unhandled ERROR (#716).
+    A file that cannot be read, is not UTF-8, or is not valid Python 3
+    cannot be ast-walked; the guard reports it in its own
+    ``file``/``file:line`` message style with the named reason instead of
+    letting ``OSError`` / ``UnicodeDecodeError`` / ``SyntaxError`` escape
+    the test body as an unhandled ERROR (#716). Each failure class names
+    itself: a tracked path missing from the working tree (``rm`` without
+    ``git rm`` -- ``git ls-files`` reads the index, so the guard is still
+    handed the path) is a presence problem, not a UTF-8 one (#723), and a
+    ``SyntaxError`` with no line number (a NUL byte in the source) does
+    not report a literal ``None``.
     """
     try:
         source = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
+    except FileNotFoundError:
+        return [], (f"{rel}: not present in the working tree "
+                    "-- guard cannot check it")
+    except OSError as exc:
+        return [], (f"{rel}: cannot be read "
+                    f"({type(exc).__name__}) -- guard cannot check it")
+    except UnicodeError as exc:
         return [], (f"{rel}: cannot be read as UTF-8 "
                     f"({type(exc).__name__}) -- guard cannot check it")
     try:
         return spec_load_calls(source, rel), None
     except SyntaxError as exc:
-        return [], (f"{rel}:{exc.lineno}: not valid Python 3 "
+        where = f":{exc.lineno}" if exc.lineno is not None else ""
+        return [], (f"{rel}{where}: not valid Python 3 "
                     f"({exc.msg}) -- guard cannot check it")
 
 
@@ -301,6 +315,27 @@ class LoadScriptSites(unittest.TestCase):
             self.assertEqual(calls, [])
             self.assertTrue(problem.startswith(
                 "bad_bytes.py: cannot be read as UTF-8"), problem)
+
+    def test_absent_tracked_file_and_nul_byte_get_named_reasons(self):
+        """A tracked-but-absent path (``git ls-files`` reads the index, so
+        ``rm`` without ``git rm`` still hands the path over) is a read
+        failure with its own reason, not a UTF-8 one (#723); a NUL byte --
+        valid UTF-8, invalid Python -- reports no ``None`` where the line
+        number belongs (``SyntaxError.lineno`` is None for it on CPython
+        3.12.3)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            calls, problem = read_calls(root / "gone.py", "gone.py")
+            self.assertEqual(calls, [])
+            self.assertIn("gone.py: not present in the working tree", problem)
+            self.assertNotIn("UTF-8", problem)
+            nul = root / "nul.py"
+            nul.write_bytes(b"x = 1\x00\n")
+            calls, problem = read_calls(nul, "nul.py")
+            self.assertEqual(calls, [])
+            self.assertTrue(problem.startswith(
+                "nul.py: not valid Python 3"), problem)
+            self.assertNotIn("None", problem)
 
 
 if __name__ == "__main__":
