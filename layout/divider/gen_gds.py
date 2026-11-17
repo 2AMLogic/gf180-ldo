@@ -162,7 +162,7 @@ CONT_PITCH = CO_1_SIZE_UM + CO_2A_SPACE_UM  # one cut + CO.2a's space: the
 # guard-ring arms are single-file rows of cuts, so the 4x4-array rule CO.2b
 # does not govern them
 CONT_ENC = 0.10  # COMP/Metal1 overlap of contact -- deliberately above
-# CO.4's minimum (CO_4_COMP_ENC_UM) and CO.6's 0.06
+# CO.4's minimum (CO_4_COMP_ENC_UM) and CO.6a/CO.6b's 0.06
 
 
 def strip_y0(position):

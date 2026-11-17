@@ -26,8 +26,8 @@ from; rule ids and wording follow the decks' own rule names:
     pres.rb:    'PRES.2 : Minimum space between Poly2 resistors: 0.4µm'
 
 Only the rules more than one file draws against live here. A rule a single
-file cites in a comment (CO.6's 0.06 beside the divider's deliberately
-wider overlap, CO.7, PRES.7, ...) stays where it is used.
+file cites in a comment (CO.6a/CO.6b's 0.06 beside the divider's
+deliberately wider overlap, CO.7, PRES.7, ...) stays where it is used.
 """
 
 CO_1_SIZE_UM = 0.22  # CO.1  min/max contact size (contact.rb)
