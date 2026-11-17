@@ -36,12 +36,16 @@ They share no nets on purpose: interconnect would add routing-DRC and
 extraction variables that have nothing to do with what is under test.
 
 MODEL NAMES ARE NOT FREE CHOICES. KLayout's netlist compare matches device
-classes BY NAME, so each `model=` here has to be the name the LVS deck's own
-extraction registers:
+classes BY NAME, so the name a device is compared under has to be one the
+LVS deck's own extraction registers:
   - `ppolyf_u_1k` because layout/drclvs.py passes poly_res=1k (the deck
     extracts exactly one H-poly flavour per run -- see issue #312);
-  - `cap_mim_2f0_m4m5_noshield` because the deck's MIM branch for
-    mim_option=B + metal_level=5LM + mim_cap=2 registers that name.
+  - the cap's exported token is the symbol name (`cap_mim_2f0_m4m5_
+    noshield`, the spellings the PDK's cap_mim symbols carry); the deck's
+    MIM branch registers the DEVICE CLASS `cap_mim_2f0fF`, and
+    layout/lvs_form.py maps the one to the other when it renders the C
+    line (issue #642). A cap_mim flavour that mapping cannot parse is an
+    export-time error, not an undiagnosed mismatch.
 Changing either switch in layout/drclvs.py means changing the model here.
 
 PARAMETERS ARE THE ELECTRICAL ONES, not the PCell's. The resistor PCell's `w`

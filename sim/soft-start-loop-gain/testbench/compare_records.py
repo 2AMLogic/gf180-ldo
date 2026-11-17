@@ -6,10 +6,11 @@ Same job, same semantics and -- where it matters -- the same code as
 (``inf`` in the gain-margin column is a *value*, "no -180 deg crossing in
 band", not a parse failure), the ``inf - inf == 0`` delta rule, and the
 ``resurgence_db`` AC_DEC-comparability tolerance issue #69 established, the
-delta-CSV writer that is ``_num``'s inverse, and the median/p99 summary
-statistics are all imported from it rather than restated, so the two
-experiments cannot disagree about what a delta means or about how one is
-written to a committed record.
+delta-CSV writer that is the parser's inverse, and the median/p99 summary
+statistics are all imported from ``harness/record_compare.py`` (issue #630)
+-- the same module loop-stability's own script imports -- rather than
+restated, so the two experiments cannot disagree about what a delta means
+or about how one is written to a committed record.
 
 What is different is the join key. A point of this experiment is not
 (corner, load, cap, ESR) but
@@ -42,13 +43,15 @@ REPO_ROOT = EXPDIR.parent.parent
 RECORDS = EXPDIR / "records"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
-from harness.loader import load_script  # noqa: E402
-
-_LS = REPO_ROOT / "sim" / "loop-stability" / "testbench" / "compare_records.py"
-lsc = load_script("loop_stability_compare", _LS)
-
-_num, delta, fmt = lsc._num, lsc.delta, lsc.fmt
-RESURGENCE_AC_DEC_TOLERANCE_DB = lsc.RESURGENCE_AC_DEC_TOLERANCE_DB
+from harness.record_compare import (  # noqa: E402
+    RESURGENCE_AC_DEC_TOLERANCE_DB,
+    delta,
+    fmt,
+    load,
+    parse_num,
+    spread,
+    write_delta_csv,
+)
 
 KEY_FIELDS = ("variant", "phase", "ssr_cmd", "corner_id", "ceff_uf", "esr_ohm")
 
@@ -67,8 +70,8 @@ def main() -> int:
                     help="also write records/<OUT_ID>-delta.csv")
     args = ap.parse_args()
 
-    base = lsc.load(args.baseline, KEY_FIELDS, RECORDS)
-    head = lsc.load(args.head, KEY_FIELDS, RECORDS)
+    base = load(args.baseline, KEY_FIELDS, RECORDS)
+    head = load(args.head, KEY_FIELDS, RECORDS)
     common = sorted(set(base) & set(head))
     only_base = sorted(set(base) - set(head))
     only_head = sorted(set(head) - set(base))
@@ -87,12 +90,12 @@ def main() -> int:
     rows = []
     for key in common:
         b, h = base[key], head[key]
-        pm_b, pm_h = _num(b["phase_margin_deg"]), _num(h["phase_margin_deg"])
-        gm_b, gm_h = _num(b["gain_margin_db"]), _num(h["gain_margin_db"])
-        f0_b, f0_h = _num(b["f_crossover_hz"]), _num(h["f_crossover_hz"])
-        rs_b, rs_h = _num(b["resurgence_db"]), _num(h["resurgence_db"])
-        vo_b, vo_h = _num(b["vout_v"]), _num(h["vout_v"])
-        ii_b, ii_h = _num(b["iinj_ua"]), _num(h["iinj_ua"])
+        pm_b, pm_h = parse_num(b["phase_margin_deg"]), parse_num(h["phase_margin_deg"])
+        gm_b, gm_h = parse_num(b["gain_margin_db"]), parse_num(h["gain_margin_db"])
+        f0_b, f0_h = parse_num(b["f_crossover_hz"]), parse_num(h["f_crossover_hz"])
+        rs_b, rs_h = parse_num(b["resurgence_db"]), parse_num(h["resurgence_db"])
+        vo_b, vo_h = parse_num(b["vout_v"]), parse_num(h["vout_v"])
+        ii_b, ii_h = parse_num(b["iinj_ua"]), parse_num(h["iinj_ua"])
         rows.append(dict(
             variant=key[0], phase=key[1], ssr_cmd=key[2], corner_id=key[3],
             ceff_uf=key[4], esr_ohm=key[5],
@@ -125,12 +128,12 @@ def main() -> int:
                 f"{r['corner_id']} / {r['ceff_uf']}uF / {r['esr_ohm']}ohm")
 
     print("Per-point movement (head - baseline), over the common matrix:")
-    lsc.spread(rows, "d_pm", "|delta phase margin| ", "deg", where)
-    lsc.spread(rows, "d_gm", "|delta gain margin|  ", "dB", where)
-    lsc.spread(rows, "d_f0_pct", "|delta crossover|    ", "%", where)
-    lsc.spread(rows, "d_res", "|delta resurgence|   ", "dB", where)
-    lsc.spread(rows, "d_vout", "|delta landed VOUT|  ", "V", where, nd=5)
-    lsc.spread(rows, "d_iinj", "|delta injection I|  ", "uA", where, nd=4)
+    spread(rows, "d_pm", "|delta phase margin| ", "deg", where)
+    spread(rows, "d_gm", "|delta gain margin|  ", "dB", where)
+    spread(rows, "d_f0_pct", "|delta crossover|    ", "%", where)
+    spread(rows, "d_res", "|delta resurgence|   ", "dB", where)
+    spread(rows, "d_vout", "|delta landed VOUT|  ", "V", where, nd=5)
+    spread(rows, "d_iinj", "|delta injection I|  ", "uA", where, nd=4)
 
     res_deltas = [abs(r["d_res"]) for r in rows if r["d_res"] is not None]
     if res_deltas:
@@ -158,7 +161,7 @@ def main() -> int:
 
     if args.write_delta:
         out = RECORDS / f"{args.write_delta}-delta.csv"
-        lsc.write_delta_csv(rows, out)
+        write_delta_csv(rows, out)
         print(f"\ndelta csv : {out}")
     return 0
 

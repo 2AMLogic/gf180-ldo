@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Roll up a mc-output-accuracy Monte Carlo run into a histogram + budget combine.
 
-    python3 sim/mc-output-accuracy/summarize.py <record-id>
+    python3 sim/mc-output-accuracy/summarize.py <record-id | corner-dir>
 
-Reads the per-sample data out of the committed raw corner logs
-(``sim/mc-output-accuracy/corners/<record-id>/<corner-id>.log``) and prints a
+Reads the per-sample data out of the raw corner logs
+(``sim/mc-output-accuracy/corners/<record-id>/<corner-id>.log``, or a staged
+run directory given as a path -- issue #647) and prints a
 Markdown report: the per-corner sigma table, the pooled histogram, a normality
 cross-check, and the combine of this run's *statistical* result with the
 *deterministic* and *non-simulable* terms of ``design/error_amp.md`` S3.
@@ -208,7 +209,11 @@ def main() -> int:
         print(__doc__)
         return 2
     record_id = sys.argv[1]
-    corner_dir = HERE / "corners" / record_id
+    # A staged (unminted) run is rolled up by directory, the way the
+    # soft-start summarizer takes its logs; a bare record id still resolves
+    # against the committed records under corners/ (issue #647).
+    given = pathlib.Path(record_id)
+    corner_dir = given if given.is_dir() else HERE / "corners" / record_id
     if not corner_dir.is_dir():
         print(f"no such record: {corner_dir}", file=sys.stderr)
         return 2

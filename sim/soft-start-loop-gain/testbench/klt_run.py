@@ -60,15 +60,22 @@ REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import deck  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
-from harness.loader import load_script  # noqa: E402
+from harness.klt_tian import (  # noqa: E402
+    METRICS,
+    SUPPLY_PARAM,
+    analysis,
+    collect_values,
+    fmt_num,
+    klt_version,  # noqa: F401  (re-export: sweep.py calls klt_run.klt_version())
+    measurements,
+)
+# The Tian metric table, the dual-injection analysis passes and the report
+# collection above are the loop-gain extraction this front end shares with
+# ``sim/loop-stability/testbench/klt_run.py``; they live in
+# ``harness/klt_tian.py`` (issue #630) and are imported by name by both
+# benches, which previously reached them across bench directories by
+# filesystem path.
 
-# loop-stability's klt_run is a sibling bench's module of the same file name, so
-# it is loaded by path under its own name rather than imported (sweep.py does
-# the same for loop-stability's sweep.py).
-_LSK_PATH = REPO / "sim" / "loop-stability" / "testbench" / "klt_run.py"
-lsk = load_script("loop_stability_klt_run", _LSK_PATH)
-
-SUPPLY_PARAM = lsk.SUPPLY_PARAM
 SSR_PARAM = "vssr"
 
 #: ROW field -> expr measured at the operating point before any alter.
@@ -87,10 +94,7 @@ _HOV_EXPRS = (
     ("erramp_v", "v(ainj)"),
     ("isup_a", "-i(vin)"),
 )
-ROW_METRICS = tuple(m[0] for m in lsk.METRICS)
-
-_num = lsk._num
-
+ROW_METRICS = tuple(m[0] for m in METRICS)
 
 def _g(v: float) -> str:
     """A ramp state as the local decks print it (``foreach ss <v:g ...>``)."""
@@ -126,24 +130,24 @@ def _fill(template: str, subs: dict) -> str:
 def margin_body(spec: dict, ceff: float, esr: float, dc_seed: str = "") -> str:
     pinned = spec["ssr"] is not None
     return _fill("klt_body.spice.in", {
-        "ILOAD": _num(spec["iload_a"]), "RLOAD": _num(spec["rload_ohm"]),
-        "CEFF": _num(ceff), "ESR": _num(esr), "DC_SEED": dc_seed,
+        "ILOAD": fmt_num(spec["iload_a"]), "RLOAD": fmt_num(spec["rload_ohm"]),
+        "CEFF": fmt_num(ceff), "ESR": fmt_num(esr), "DC_SEED": dc_seed,
         "SSR_SOURCE": (f"Vssr SSRPIN 0 DC {{{SSR_PARAM}}}" if pinned else
                        "* SSR is NOT pinned in this phase: SSRPIN is left unconnected."),
     })
 
 
 def margin_measurements() -> list:
-    # lsk's list carries `vout_v` (and the seven tian metrics); the other
+    # the shared list carries `vout_v` (and the seven tian metrics); the other
     # landing quantities are added here.
-    out = [m for m in lsk.measurements() if m["name"] != "vout_v"]
+    out = [m for m in measurements() if m["name"] != "vout_v"]
     return [{"name": n, "expr": e} for n, e in _DC_EXPRS] + out
 
 
 def margin_job(name: str, spec: dict, ceff: float, esr: float, dut: Path, ac_dec: int,
                f_start: str, f_stop: str, axes: dict, dc_seed: str = "") -> SSJob:
     return SSJob(name=name, body=margin_body(spec, ceff, esr, dc_seed), dut_netlist=dut,
-                 analysis=lsk.analysis(ac_dec, f_start, f_stop),
+                 analysis=analysis(ac_dec, f_start, f_stop),
                  measurements=margin_measurements(), timeout_s=900,
                  supply_param=SUPPLY_PARAM,
                  ssr_values=tuple(spec["ssr"]) if spec["ssr"] is not None else (), **axes)
@@ -173,7 +177,7 @@ def collect(report: dict) -> tuple[dict, list[tuple[str, str]]]:
     values: dict = {}
     problems: list[tuple[str, str]] = []
     for ssr, corners in by_ssr.items():
-        vals, probs = lsk.collect_values({"corners": corners}, SUPPLY_PARAM)
+        vals, probs = collect_values({"corners": corners}, SUPPLY_PARAM)
         problems += probs
         for cid, fields in vals.items():
             values[(cid, ssr)] = fields
@@ -188,7 +192,7 @@ def _fmt(f: dict, k: str) -> str:
 def row_line(ssr_cmd: str, ceff: float, esr: float, f: dict) -> str:
     """One ``ROW`` line in ``tb_ss_loop_gain.spice.in``'s field layout."""
     head = " ".join(f"{k}={_fmt(f, k)}" for k, _ in _DC_EXPRS)
-    return (f"ROW ssr_cmd={ssr_cmd} " + head + f" ceff_f={_num(ceff)} esr_ohm={_num(esr)} "
+    return (f"ROW ssr_cmd={ssr_cmd} " + head + f" ceff_f={fmt_num(ceff)} esr_ohm={fmt_num(esr)} "
             + " ".join(f"{n}={_fmt(f, n)}" for n in ROW_METRICS))
 
 
@@ -250,7 +254,7 @@ def _submit(jobs, outdir: Path, backend: str | None, in_flight: int, log=print):
 
 
 def _tag(variant: str, phase: str, ce: float, es: float, suffix: str) -> str:
-    return f"{variant}_{phase}_ce{_num(ce)}_es{_num(es)}{suffix}"
+    return f"{variant}_{phase}_ce{fmt_num(ce)}_es{fmt_num(es)}{suffix}"
 
 
 def run_margin(variants, phases: dict, ceffs, esrs, netlists: dict, ac_dec: int,
@@ -277,7 +281,3 @@ def run_handover(variants, ssr_values, netlists: dict, axes: dict, outdir: Path,
     jobs = [(v, handover_job(f"{v}_handover", netlists[v], ssr_values, axes)) for v in variants]
     results, problems, _ = _submit(jobs, outdir, backend, in_flight, log=log)
     return results, problems
-
-
-def klt_version() -> str:
-    return lsk.klt_version()

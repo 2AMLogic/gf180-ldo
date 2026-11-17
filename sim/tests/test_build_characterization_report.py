@@ -515,20 +515,26 @@ class TestEnvelopeVerdict(unittest.TestCase):
         self.assertIn("630/631 passing", snippet)
 
     def test_required_axes_match_the_sweep_definitions_and_dr0018_accounting(self):
+        # The PVT axes (PROCESS_CORNERS / TEMPS_C / NOMINAL_SUPPLY_V /
+        # SUPPLY_TOL) live in harness/loop_margin.py since issue #630 -- the
+        # one definition both loop-gain benches read -- so that is where the
+        # single-source check reads them from; the swept (load, ESR) axes stay
+        # this bench's own, in its driver.
         src = (SIM_DIR / "loop-stability" / "testbench" / "sweep.py").read_text()
+        shared = (SIM_DIR / "harness" / "loop_margin.py").read_text()
 
-        def tup(name):
-            m = re.search(rf"^{name}\s*=\s*\(([^)]*)\)", src, re.MULTILINE)
+        def tup(name, text=src):
+            m = re.search(rf"^{name}\s*=\s*\(([^)]*)\)", text, re.MULTILINE)
             return [eval(x.strip()) for x in m.group(1).split(",") if x.strip()]
 
-        self.assertEqual(tuple(tup("PROCESS_CORNERS")), bcr.DR0018_PROCESSES)
-        self.assertEqual(tuple(tup("TEMPS_C")), bcr.DR0018_TEMPS_C)
+        self.assertEqual(tuple(tup("PROCESS_CORNERS", shared)), bcr.DR0018_PROCESSES)
+        self.assertEqual(tuple(tup("TEMPS_C", shared)), bcr.DR0018_TEMPS_C)
         loads = tuple(round(v * 1e3, 6) for v in tup("ILOADS_A") if v > 0)
         self.assertEqual(loads, bcr.DR0018_LOADS_MA)
         esrs = tuple(v for v in tup("ESRS_OHM") if v >= 0.2)
         self.assertEqual(esrs, bcr.DR0018_ESRS_OHM)
-        nominal = float(re.search(r"^NOMINAL_SUPPLY_V\s*=\s*([\d.]+)", src, re.M).group(1))
-        tol = float(re.search(r"^SUPPLY_TOL\s*=\s*([\d.]+)", src, re.M).group(1))
+        nominal = float(re.search(r"^NOMINAL_SUPPLY_V\s*=\s*([\d.]+)", shared, re.M).group(1))
+        tol = float(re.search(r"^SUPPLY_TOL\s*=\s*([\d.]+)", shared, re.M).group(1))
         self.assertEqual(
             tuple(round(nominal * k, 2) for k in (1 - tol, 1.0, 1 + tol)),
             bcr.DR0018_SUPPLIES_V,

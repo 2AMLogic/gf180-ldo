@@ -352,7 +352,8 @@ KEPT_BATCH_NAMES = ("klt-report.json",)
 
 
 def split_batch_run(stage_corner_dir: Path, name_prefix: str,
-                    kept_names=KEPT_BATCH_NAMES) -> tuple[list[tuple[Path, str]], list[Path]]:
+                    kept_names=KEPT_BATCH_NAMES, *, exclude=()
+                    ) -> tuple[list[tuple[Path, str]], list[Path]]:
     """Split a staged batch run into ``(files_to_store, files_to_commit)``.
 
     One function so every batch driver makes the same split (issue #596 reuses
@@ -360,11 +361,38 @@ def split_batch_run(stage_corner_dir: Path, name_prefix: str,
     :func:`stage_files` as ``exclude``, which is what keeps them out of the
     manifest: ``scripts/check_artifact_manifests.py check`` fails an entry
     whose ``name`` is a tracked path, so a file that stays in git must never
-    also be a manifest entry.
+    also be a manifest entry. ``exclude`` names further files to keep out of
+    the store (e.g. the run's summary) and is unioned with the kept set.
     """
     kept = sorted(p for p in stage_corner_dir.rglob("*")
                   if p.is_file() and not p.is_symlink() and p.name in kept_names)
-    return stage_files(stage_corner_dir, name_prefix, exclude=kept), kept
+    return stage_files(stage_corner_dir, name_prefix, exclude=[*kept, *exclude]), kept
+
+
+def kept_destinations(kept: list[Path], stage_corner_dir: Path,
+                      corner_dir: Path) -> list[Path]:
+    """Each kept file's committed location: ``corner_dir`` plus the same
+    relative path it had under the staging tree."""
+    return [corner_dir / src.relative_to(stage_corner_dir) for src in kept]
+
+
+def install_kept(kept: list[Path], stage_corner_dir: Path, corner_dir: Path) -> list[Path]:
+    """Copy the files that stay in git out of the staging tree, same layout.
+
+    Called only after :func:`store_files` has returned, so a store failure
+    leaves ``sim/`` untouched (fail closed). Never overwrites. The existence
+    check here is a TOCTOU backstop: a caller that must fail closed --
+    :func:`store_files` installs the manifest and writes the summary before
+    returning -- hoists :func:`kept_destinations` into its refuse phase.
+    """
+    out = []
+    for src, dst in zip(kept, kept_destinations(kept, stage_corner_dir, corner_dir)):
+        if dst.exists():
+            raise StoreError(f"{dst} already exists; append-only evidence is never rewritten")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dst)
+        out.append(dst)
+    return out
 
 
 def summary_section(manifest_rel: str, manifest: dict, empty: list[str]) -> str:

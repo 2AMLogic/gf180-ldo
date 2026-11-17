@@ -52,6 +52,14 @@ results.
 Grading is ``classify()``; thresholds are ``TOL``. Nothing here is a spec
 limit. Missing / non-finite values or an errored corner grade ``INVALID``,
 never ``ACQUIRED``.
+
+Output lands in the git-ignored staging tree ``sim/.work/.stage/`` (DR-0044,
+issue #647), never under ``sim/soft-start/corners/``: a run becomes evidence
+only when ``sim/run_store_evidence.py --kind corners`` mints it, committing
+the manifest, the hand-written Markdown record and the per-scenario
+``klt-report.json`` envelopes. An explicit ``--dest`` still wins over the
+staging default; one resolving inside the append-only evidence tree is
+refused before anything is written (issue #686).
 """
 
 from __future__ import annotations
@@ -72,6 +80,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import klt_batch as kb  # noqa: E402
+from harness import evidence_store as store  # noqa: E402
+from harness import tb_adapter  # noqa: E402
 
 # --------------------------------------------------------------------------
 # DUT instrumentation
@@ -480,7 +490,7 @@ def _stage_and_run(j: kb.Job, tmp: Path, backend: str | None):
     return req, report
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, preflight=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--record-id", required=True)
     ap.add_argument("--dut", default=str(REPO / "design/netlist/ldo_core.spice"))
@@ -491,18 +501,42 @@ def main(argv=None) -> int:
                     help="subset as 'proc1+proc2,temp1+temp2,vin1+vin2' (e.g. waveform reference runs)")
     ap.add_argument("--waveforms", action="store_true",
                     help="request rawfiles (keep to a few corners: they are large)")
-    ap.add_argument("--dest", default=None, help="output dir (default sim/soft-start/corners/<record-id>)")
+    ap.add_argument("--dest", default=None,
+                    help="output dir (default: the git-ignored staging tree for --record-id, "
+                         "sim/.work/.stage/soft-start/.../corners/<record-id>)")
     args = ap.parse_args(argv)
     scens = [s.strip() for s in args.scenario.split(",") if s.strip()]
     for s in scens:
         if s not in SCENARIOS:
             ap.error(f"unknown scenario {s}")
+    if (HERE.parent / "corners" / args.record_id).exists():
+        raise SystemExit(f"sim/soft-start/corners/{args.record_id}/ already exists; "
+                         "append-only evidence is never rewritten -- choose another --record-id")
+    if args.dest:
+        # An explicit --dest still wins (#647), but one resolving inside the
+        # append-only evidence tree is the one destination raw bytes may never
+        # take (DR-0041, issue #686): refused before the store is even probed.
+        tb_adapter.refuse_protected_out(REPO, Path(args.dest), flag="--dest", slug="soft-start")
+    # An evidence run must be storable before any fleet time is spent (DR-0044):
+    # no broker, no `klt artifact` verb, or an unreachable broker refuses now.
+    # There is no commit-the-bytes fallback. An `--only` debug point is not
+    # evidence and needs no store.
+    if args.only is None:
+        try:
+            (preflight or store.preflight)(REPO)
+        except store.StoreError as exc:
+            print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+                  "Evidence bytes go to the artifact store only (sim/README.md, "
+                  '"Stored evidence"); an --only debug point needs no store.',
+                  file=sys.stderr)
+            return tb_adapter.EXIT_NOT_STORED
     axes = kb.only_axes(args.only)
     if args.axes:
         p, t, vv = args.axes.split(",")
         axes = {"process": tuple(p.split("+")), "temps": tuple(float(x) for x in t.split("+")),
                 "supplies": tuple(float(x) for x in vv.split("+"))}
-    dest = Path(args.dest) if args.dest else HERE.parent / "corners" / args.record_id
+    dest = (Path(args.dest) if args.dest
+            else tb_adapter.stage_corner_dir(REPO, "soft-start", args.record_id))
     dest.mkdir(parents=True, exist_ok=True)
     dut_src = Path(args.dut).read_text()
     manifest = {"dut": str(Path(args.dut).resolve().relative_to(REPO)) if str(Path(args.dut).resolve()).startswith(str(REPO)) else args.dut,
@@ -559,6 +593,11 @@ def main(argv=None) -> int:
     _write_csv(dest / "op.csv", oprows)
     (dest / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True, default=str) + "\n")
     print(f"wrote {dest}")
+    print(f"staged  : {dest} (not evidence yet)")
+    print(f"mint it : python3 sim/run_store_evidence.py soft-start {args.record_id} "
+          f"{dest} --summary <summary.md> --kind corners")
+    print("         (<summary.md> is the run's hand-written Markdown record; the store commits "
+          f"it as sim/soft-start/corners/{args.record_id}.md)")
     return 0
 
 

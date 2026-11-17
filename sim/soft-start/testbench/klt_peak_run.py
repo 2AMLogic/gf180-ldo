@@ -12,20 +12,41 @@ body and DUT A/B plumbing but runs a short, fine-step transient
 reports only the quantities that event sets: peak Icap, its time, peak supply
 current and peak dV/dt. Multi-corner requests go to the batch fleet exactly as
 klt_run.py's do; ``--only`` runs one point locally.
+
+Those bytes land in the git-ignored staging tree ``sim/.work/.stage/`` (DR-0044,
+issue #647), never under ``sim/soft-start/corners/``: a run becomes evidence
+only when ``sim/run_store_evidence.py --kind corners`` mints it, committing the
+manifest, the hand-written Markdown record and the ``klt-report.json``
+envelopes; an unminted run leaves the tree clean. ``--part main`` and
+``--part extra`` both accumulate into the same staged record, so the mint runs
+once, after the last part (the store refuses a second mint of the same id).
 """
 from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-import klt_run as kr  # noqa: E402
+# klt_run.py is loaded by path under a unique name, never a bare
+# ``import klt_run``: this driver is itself loaded by filesystem path (tests,
+# other drivers), and the bare name is ambiguous across the 16 benches -- it
+# binds to whichever bench's sibling resolves first in that interpreter
+# (issues #693/#630; enforced by sim/tests/test_sibling_import_names.py,
+# issue #700). Same rule and pattern as
+# sim/soft-start-loop-gain/testbench/sweep.py.
+_klt_run_spec = importlib.util.spec_from_file_location(
+    "soft_start_klt_run", HERE / "klt_run.py")
+kr = importlib.util.module_from_spec(_klt_run_spec)
+sys.modules["soft_start_klt_run"] = kr
+_klt_run_spec.loader.exec_module(kr)
 
 kb, run_ab = kr.kb, kr.run_ab
 REPO = kr.REPO
+from harness import evidence_store as store  # noqa: E402
+from harness import tb_adapter  # noqa: E402
 
 
 def measurements(n: int, tstop: str) -> list:
@@ -43,7 +64,7 @@ def measurements(n: int, tstop: str) -> list:
     return out
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, preflight=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--record-id", required=True)
     ap.add_argument("--dut", default=str(REPO / "design/netlist/ldo_core.spice"))
@@ -54,8 +75,25 @@ def main(argv=None) -> int:
     ap.add_argument("--tmax", default="2n")
     ap.add_argument("--tstop", default="400u")
     args = ap.parse_args(argv)
-    dest = HERE.parent / "corners" / args.record_id
+    dest = tb_adapter.stage_corner_dir(REPO, "soft-start", args.record_id)
+    if (HERE.parent / "corners" / args.record_id).exists():
+        raise SystemExit(f"sim/soft-start/corners/{args.record_id}/ already exists; "
+                         "append-only evidence is never rewritten -- choose another --record-id")
+    # An evidence run must be storable before any fleet time is spent (DR-0044):
+    # no broker, no `klt artifact` verb, or an unreachable broker refuses now.
+    # There is no commit-the-bytes fallback. An `--only` debug point is not
+    # evidence and needs no store.
+    if args.only is None:
+        try:
+            (preflight or store.preflight)(REPO)
+        except store.StoreError as exc:
+            print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+                  "Evidence bytes go to the artifact store only (sim/README.md, "
+                  '"Stored evidence"); an --only debug point needs no store.',
+                  file=sys.stderr)
+            return tb_adapter.EXIT_NOT_STORED
     parts = [p for p in (("main", kr.MAIN, {}), ("extra", kr.EXTRA, kr.EXTRA_AXES)) if args.part in (p[0], "both")]
+    owed = "" if args.part == "both" else f"--part {'extra' if args.part == 'main' else 'main'}"
     rows = []
     for part, configs, axes in parts:
         ax = kb.only_axes(args.only) or axes
@@ -81,6 +119,15 @@ def main(argv=None) -> int:
         w.writeheader()
         w.writerows(rows)
     print(f"wrote {dest / 'summary.csv'}")
+    print(f"staged  : {dest} (not evidence yet)")
+    if owed:
+        print(f"parts   : {owed} still to run for this record -- "
+              "mint only once, after the last part (the store refuses a second "
+              "mint of the same record id)")
+    print(f"mint it : python3 sim/run_store_evidence.py soft-start {args.record_id} "
+          f"{dest} --summary <summary.md> --kind corners")
+    print("         (<summary.md> is the run's hand-written Markdown record, not summary.csv; "
+          f"the store commits it as sim/soft-start/corners/{args.record_id}.md)")
     return 0
 
 
