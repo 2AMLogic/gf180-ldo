@@ -3031,17 +3031,25 @@ class LocalGridCliTests(unittest.TestCase):
     """
 
     #: Every driver that fans ngspice out on this host itself, or passes ``-j``
-    #: straight through to one that does.
+    #: straight through to one that does. ``harness/cli.py`` is
+    #: ``run_corners.py`` (issue #626): its effective default used to live at
+    #: the resolution site rather than the registration site, so it also
+    #: needs the resolution-site assertions below.
     LOCAL_DRIVERS = (
         "loop-stability/testbench/sweep.py",
         "soft-start-loop-gain/testbench/sweep.py",
         "soft-start/testbench/handover_t15.py",
         "soft-start/testbench/ramp_ab.py",
         "toolchain-portability/testbench/ab_loop_stability.py",
+        "harness/cli.py",
     )
 
+    #: A ``-j`` registration ends where the driver's next argument begins:
+    #: the testbench drivers add theirs on ``ap``, ``run_corners.py`` on
+    #: ``parser`` (issue #626). Accept both followers, or the guard goes
+    #: vacuous for ``harness/cli.py`` again.
     JOBS_RE = re.compile(
-        r"""add_argument\(\s*["']-j["']\s*,\s*["']--jobs["'](.*?)\n\s*ap\.""",
+        r"""add_argument\(\s*["']-j["']\s*,\s*["']--jobs["'](.*?)\n\s*(?:ap|parser)\.""",
         re.S)
 
     GRID_FLAGS = ("--backend", "--in-flight", "--jobs", "--no-write",
@@ -3050,6 +3058,9 @@ class LocalGridCliTests(unittest.TestCase):
     def test_default_jobs_is_capped_for_shared_dispatch_workers(self):
         self.assertEqual(klt_grid.DEFAULT_JOBS, min(2, os.cpu_count() or 2))
         self.assertLessEqual(klt_grid.DEFAULT_JOBS, 2)
+        # ``or 2`` guards a None cpu_count and a 1-core host caps at its own
+        # count: the default is never below 1 (issue #626 edge case).
+        self.assertGreaterEqual(klt_grid.DEFAULT_JOBS, 1)
 
     def test_add_grid_args_registers_the_whole_shared_block(self):
         ap = argparse.ArgumentParser()
@@ -3102,9 +3113,40 @@ class LocalGridCliTests(unittest.TestCase):
             with self.subTest(driver=rel):
                 src = (SIM_DIR / rel).read_text()
                 self.assertNotRegex(src, r"(?m)^DEFAULT_JOBS\s*=")
-                for registration in self.JOBS_RE.findall(src):
+                if "klt_grid.add_grid_args(" in src:
+                    # Registers the whole shared block through the harness;
+                    # its ``-j`` default is asserted behaviorally in
+                    # test_add_grid_args_registers_the_whole_shared_block.
+                    continue
+                # Issue #626: a self-registering driver whose registration
+                # JOBS_RE cannot see would pass this guard vacuously -- and
+                # it did, for harness/cli.py. Require the match.
+                registrations = self.JOBS_RE.findall(src)
+                self.assertTrue(
+                    registrations, f"JOBS_RE matched no -j registration in {rel}")
+                for registration in registrations:
                     self.assertIn("default=klt_grid.DEFAULT_JOBS", registration)
                     self.assertIn("type=int", registration)
+
+    def test_run_corners_default_lives_at_registration_not_resolution(self):
+        """``harness/cli.py`` registered ``-j`` with a ``default=0`` sentinel
+        and picked the effective value at the resolution site
+        (``args.jobs or min(8, ...)``, issue #626) -- invisible to a
+        registration-only guard. Both halves must stay gone."""
+        src = (SIM_DIR / "harness/cli.py").read_text()
+        self.assertNotRegex(src, r"min\(8,")
+        self.assertNotIn("args.jobs or", src)
+
+    def test_run_corners_jobs_semantics_after_the_cap(self):
+        """``-j 0`` was the pre-#626 "unset" sentinel (``default=0`` plus an
+        ``or`` fallback made it mean 8-wide). It now reaches
+        ``runner.run_grid``, which runs serially for ``jobs <= 1`` -- a safe
+        landing, asserted deliberately rather than left incidental."""
+        ap = cli.build_parser()
+        self.assertEqual(
+            ap.parse_args(["smoke-bias"]).jobs, klt_grid.DEFAULT_JOBS)
+        self.assertEqual(ap.parse_args(["smoke-bias", "-j", "8"]).jobs, 8)
+        self.assertEqual(ap.parse_args(["smoke-bias", "-j", "0"]).jobs, 0)
 
 
 if __name__ == "__main__":

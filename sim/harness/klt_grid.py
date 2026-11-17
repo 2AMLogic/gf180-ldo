@@ -24,7 +24,7 @@ from typing import Callable, Hashable, Iterable
 #: that defaults to every core starves other sweeps. Pass ``-j`` to raise it on
 #: a box you own. One definition for every driver that fans ngspice out
 #: locally, so the cap cannot reach some of them and miss the rest (issue
-#: #621).
+#: #621; ``run_corners.py`` took its default from here too in #626).
 DEFAULT_JOBS = min(2, os.cpu_count() or 2)
 
 
