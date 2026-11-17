@@ -25,12 +25,23 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-import klt_run as kr  # noqa: E402
+# klt_run.py is loaded by path under a unique name, never a bare
+# ``import klt_run``: this driver is itself loaded by filesystem path (tests,
+# other drivers), and the bare name is ambiguous across the 16 benches -- it
+# binds to whichever bench's sibling resolves first in that interpreter
+# (issues #693/#630; enforced by sim/tests/test_sibling_import_names.py,
+# issue #700). Same rule and pattern as
+# sim/soft-start-loop-gain/testbench/sweep.py.
+_klt_run_spec = importlib.util.spec_from_file_location(
+    "soft_start_klt_run", HERE / "klt_run.py")
+kr = importlib.util.module_from_spec(_klt_run_spec)
+sys.modules["soft_start_klt_run"] = kr
+_klt_run_spec.loader.exec_module(kr)
 
 kb, run_ab = kr.kb, kr.run_ab
 REPO = kr.REPO
