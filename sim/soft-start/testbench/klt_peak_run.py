@@ -114,8 +114,29 @@ def main(argv=None, *, preflight=None) -> int:
                                  "isup_peak_ma": None if g("isup_peak_a") is None else g("isup_peak_a") * 1e3,
                                  "dvout_max_vpms": g("dvout_max_vpms"),
                                  "status": v.get("_status"), "diagnostics": v.get("_diagnostics")})
-    with open(dest / "summary.csv", "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0]) if rows else [])
+    path = dest / "summary.csv"
+    # Split-part runs accumulate into one staged record (issue #687): merge
+    # with any summary.csv a previous --part wrote instead of clobbering it.
+    # Rows are keyed by (dut, corner, cout, esr, rload), so re-running a part
+    # replaces its own rows; a header that disagrees with this run's fields
+    # means the staged record follows a different row schema -- refuse rather
+    # than write a mixed file.
+    key = ("dut", "corner", "cout", "esr", "rload")
+    produced = {tuple(r[k] for k in key) for r in rows}
+    fields = list(rows[0]) if rows else []
+    if path.exists():
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            old_fields = list(reader.fieldnames or [])
+            old_rows = list(reader)
+        if fields and old_fields and old_fields != fields:
+            raise SystemExit(f"{path}: existing header {old_fields} does not match "
+                             f"this run's fields {fields} -- refusing to write a "
+                             "summary.csv of mixed schemas")
+        rows = [r for r in old_rows if tuple(r[k] for k in key) not in produced] + rows
+        fields = fields or old_fields
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerows(rows)
     print(f"wrote {dest / 'summary.csv'}")
