@@ -90,6 +90,7 @@ from harness.report import (  # noqa: E402
     write_markdown_record,
 )
 from harness.runner import (  # noqa: E402
+    MODEL_BINNING_OPTION,
     ngspice_binary_sha256,
     ngspice_version,
     run_ngspice_deck,
@@ -1478,6 +1479,12 @@ Everything needed to re-run this record:
   string alone does not guarantee the resolved binary's content is
   unchanged between two evidence-gathering runs -- see `sim/README.md`'s
   reproducibility note)
+- Model binning: deck pins `.options {MODEL_BINNING_OPTION}` -- gf180mcu
+  bins on the per-finger width W/NF, and XMpass (`W=2800u nf=40`, 70 um
+  per finger) resolves to a declared bin only with it; without it ngspice
+  hard-errors rather than clamping, so a record minted from this path
+  either carries this setting or does not exist (issue #214,
+  spec/decision-records/DR-0025)
 - Host: `{socket.gethostname()}` (issue #182: this repo's evidence is
   produced across a fleet of independently-provisioned builder hosts, each
   with its own locally-installed ngspice -- recording the host is what
