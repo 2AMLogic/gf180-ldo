@@ -391,8 +391,8 @@ def _guard_ring(layout, cell, draw, heads, tracks):
         cont_layer=L_CONTACT, cont_pitch=CONT_PITCH, cont_size=CO_1_SIZE_UM,
         cont_enc=CONT_ENC,
         # Left-anchored cuts, and horizontal arms that start CONT_PITCH -
-        # CO_1_SIZE_UM - CONT_ENC (0.15 um) in from the inner edge: the placement
-        # the recorded DRC/LVS results were taken on.
+        # CO_1_SIZE_UM - 2 * CONT_ENC (0.05 um) in from the inner edge: the
+        # placement the recorded DRC/LVS results were taken on.
         align="start",
         corner_inset=CONT_PITCH - CO_1_SIZE_UM - 2 * CONT_ENC,
     )

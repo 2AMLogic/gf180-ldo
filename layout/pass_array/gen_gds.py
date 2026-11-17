@@ -175,7 +175,11 @@ GR_GAP_X_UM = 0.32       # cmp2cmp, draw_fet.py
 GR_GAP_Y_UM = 0.26       # ply2gr, draw_fet.py
 NP_ENC_CMP_UM = 0.16     # np_enc_cmp, draw_fet.py
 NW_ENC_NCMP_UM = 0.12    # nwell_enc_ncomp, draw_fet.py
-# the ring is one >=4x4 contact array, so CO.2b's 0.28 governs the space
+# One cut + a 0.28 um space. The arms are single-file rows of cuts -- GR_ARM_UM
+# less 2 * CMP2CONT_UM leaves 0.30 um, exactly one 0.22 cut across -- so CO.2a's
+# 0.25 is the rule governing the space; 0.28 sits deliberately above it, the
+# PDK's own draw_fet.py guard-ring pitch (cont2cont = 0.28), which is also the
+# pitch the recorded DRC/LVS evidence was taken on.
 CONT_PITCH_UM = CO_1_SIZE_UM + CO_2B_ARRAY_SPACE_UM
 
 GATE_BUS_W_UM = 0.45     # >= PL.1 (0.28)
