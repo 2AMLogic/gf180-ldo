@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 import subprocess
 import sys
@@ -13,10 +12,11 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location(
-    "record_diff", REPO / "signoff" / "record_diff.py")
-rd = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(rd)
+sys.path.insert(0, str(REPO / "sim"))
+
+from harness.loader import load_script  # noqa: E402
+
+rd = load_script("record_diff", REPO / "signoff" / "record_diff.py")
 
 RECORD_PATH = REPO / "signoff" / "records" / "t1-tier-report.json"
 RECORD = json.loads(RECORD_PATH.read_text())

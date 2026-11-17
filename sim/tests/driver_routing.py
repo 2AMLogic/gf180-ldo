@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import atexit
 import contextlib
-import importlib.util
 import io
 import os
 import subprocess
@@ -27,13 +26,12 @@ SIM_DIR = Path(__file__).resolve().parents[1]
 REPO = SIM_DIR.parent
 
 from harness import evidence_store as es  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
 # fake_klt is shared with the store's own tests rather than duplicated: both
 # files fake the same `klt artifact put` contract.
-_spec = importlib.util.spec_from_file_location(
+_tes = load_script(
     "test_evidence_store", Path(__file__).resolve().parent / "test_evidence_store.py")
-_tes = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_tes)
 fake_klt = _tes.fake_klt
 
 GIT_ENV = {
@@ -53,10 +51,8 @@ def mint(bench: str, rid: str, staged: Path):
     ``(rc, root, committed)`` where ``committed`` is the sorted list of
     repo-relative paths the scratch root gained.
     """
-    spec = importlib.util.spec_from_file_location(
+    store_cli = load_script(
         f"run_store_evidence_{bench.replace('-', '_')}", SIM_DIR / "run_store_evidence.py")
-    store_cli = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(store_cli)
     td = tempfile.TemporaryDirectory()
     atexit.register(td.cleanup)  # the caller inspects root after mint returns
     base = Path(td.name).resolve()
@@ -84,10 +80,8 @@ def mint(bench: str, rid: str, staged: Path):
 
 def check_manifests(root: Path) -> int:
     """``check_artifact_manifests.py check`` over the minted scratch repo."""
-    spec = importlib.util.spec_from_file_location(
+    chk = load_script(
         "check_artifact_manifests_routing", REPO / "scripts" / "check_artifact_manifests.py")
-    chk = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(chk)
     for cmd in (["git", "-C", str(root), "init", "-q", "-b", "main"],
                 ["git", "-C", str(root), "add", "-A"],
                 ["git", "-C", str(root), "commit", "-q", "-m", "t"]):

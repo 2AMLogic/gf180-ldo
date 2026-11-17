@@ -14,7 +14,6 @@ required; ``run_ab`` and the store's ``klt`` calls are faked.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import json
 import os
@@ -33,13 +32,12 @@ sys.path.insert(0, str(SIM_DIR))
 
 from harness import evidence_store as es  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
 # fake_klt is shared with the store's own tests rather than duplicated: both
 # files fake the same `klt artifact put` contract.
-_spec = importlib.util.spec_from_file_location(
+_tes = load_script(
     "test_evidence_store", Path(__file__).resolve().parent / "test_evidence_store.py")
-_tes = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_tes)
 fake_klt = _tes.fake_klt
 
 _GIT_ENV = {
@@ -55,11 +53,9 @@ _DRIVERS: dict[str, object] = {}
 def _driver(slug: str):
     """The ``klt_run.py`` of ``sim/<slug>/testbench``, imported by path."""
     if slug not in _DRIVERS:
-        spec = importlib.util.spec_from_file_location(
-            f"klt_run_{slug.replace('-', '_')}", SIM_DIR / slug / "testbench" / "klt_run.py")
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        _DRIVERS[slug] = mod
+        _DRIVERS[slug] = load_script(
+            f"klt_run_{slug.replace('-', '_')}",
+            SIM_DIR / slug / "testbench" / "klt_run.py")
     return _DRIVERS[slug]
 
 
@@ -184,10 +180,8 @@ class _DriverCase:
         """Mint this run's staged tree into a scratch repo root, with the
         store's ``klt artifact put`` calls faked. Returns (rc, root, the
         sorted list of committed repo-relative paths)."""
-        spec = importlib.util.spec_from_file_location(
+        store_cli = load_script(
             "run_store_evidence_drivers", SIM_DIR / "run_store_evidence.py")
-        store_cli = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(store_cli)
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         base = Path(td.name).resolve()
@@ -215,10 +209,9 @@ class _DriverCase:
 
     def _check_manifests(self, root: Path) -> int:
         """``check_artifact_manifests.py check`` over the minted scratch repo."""
-        spec = importlib.util.spec_from_file_location(
-            "check_artifact_manifests_drivers", REPO / "scripts" / "check_artifact_manifests.py")
-        chk = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(chk)
+        chk = load_script(
+            "check_artifact_manifests_drivers",
+            REPO / "scripts" / "check_artifact_manifests.py")
         for cmd in (["git", "-C", str(root), "init", "-q", "-b", "main"],
                     ["git", "-C", str(root), "add", "-A"],
                     ["git", "-C", str(root), "commit", "-q", "-m", "t"]):

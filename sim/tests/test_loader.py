@@ -138,6 +138,22 @@ class Failures(LoaderTestCase):
             load_script("fx_missing", self.tmp / "nope.py")
         sys.modules.pop("fx_missing", None)
 
+    def test_mid_exec_failure_leaves_no_sys_modules_entry(self):
+        """A module that raises mid-exec is not left half-initialized.
+
+        CPython's own ``importlib._bootstrap._load`` wraps ``exec_module``:
+        on failure it deletes the ``sys.modules`` entry it had installed and
+        re-raises. ``load_script`` registers before executing, so it owes
+        the same cleanup -- a half-initialized module left behind under the
+        caller's chosen name is exactly the state the registration exists
+        to avoid exposing (issue #706).
+        """
+        body = "raise RuntimeError('boom during exec')\n"
+        with self.assertRaises(RuntimeError) as caught:
+            self.load("fx_mid_exec_boom", self.script("boom.py", body))
+        self.assertIn("boom during exec", str(caught.exception))
+        self.assertNotIn("fx_mid_exec_boom", sys.modules)
+
     def test_accepts_str_and_pathlike(self):
         path = self.script("has_dataclass.py")
         as_path = self.load("fx_pathlike", path)
