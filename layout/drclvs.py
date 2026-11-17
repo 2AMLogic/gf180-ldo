@@ -226,11 +226,15 @@ class CellSpec:
     # from ppolyf_u_3k units is unextractable -- and mismatches -- under the
     # default. Not a free choice: it is which flavour the cell is drawn in.
     poly_res: str = "1k"
-    # Whether the LVS deck may collapse series/parallel device chains in the
-    # EXTRACTED netlist before comparing (`netlist.simplify`). Harmless for a
-    # cell whose devices cannot be combined; for a unit-resistor string it
-    # erases the very structure the layout exists to prove, so such a cell
-    # sets this False. See run_lvs() for how the deck's switches express it.
+    # Whether the LVS deck may collapse series/parallel device chains before
+    # comparing. Despite the name, this is not an extracted-side-only choice:
+    # the pinned runset has ONE switch for it -- $simplify -- and it gates
+    # BOTH sides, `netlist.simplify` and `schematic.simplify`
+    # (gf180mcu.lvs:427-428), so a True here lets chains fold on the
+    # schematic side too. Harmless for a cell whose devices cannot be
+    # combined; for a unit-resistor string it erases the very structure the
+    # layout exists to prove, so such a cell sets this False. run_lvs()
+    # maps this onto $simplify -- there is no extracted-only switch to set.
     simplify_extracted: bool = True
     # One-line human description, quoted verbatim in --record's run record.
     description: str = ""
@@ -270,6 +274,7 @@ class CellSpec:
 sys.path.insert(0, str(LAYOUT_DIR))
 from lvs_form import (  # noqa: E402
     LvsFormError,
+    MIMCAP_SWITCH,
     rewrite_passives,
     unrendered_device_lines,
 )
@@ -1226,7 +1231,12 @@ def run_lvs(
         "purge": "false",
         "purge_nets": "false",
         "poly_res": spec.poly_res,
-        "mim_cap": "2",
+        # The MIM flavour the deck extracts this run -- and the only flavour
+        # lvs_form.py's renderer lets a C line name. The switch value and
+        # the registered class are one pairing transcribed in one place
+        # (lvs_form.MIMCAP_SWITCH <-> lvs_form.MIMCAP_CLASS), so this
+        # literal and the renderer cannot drift apart (issue #680).
+        "mim_cap": MIMCAP_SWITCH,
         **variant_switches(pdk),
     }
     cmd = ["klayout", "-b", "-r", str(pdk.klayout_dir / "lvs" / "gf180mcu.lvs")]

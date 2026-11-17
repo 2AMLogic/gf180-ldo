@@ -236,11 +236,15 @@ extraction registers `cap_mim_<n>f<m>fF` device classes
 the *symbol* name (`cap_mim_2f0_m3m4_noshield`). KLayout's compare matches
 device classes **by name**, so a pass-through token pairs with nothing and
 the cell mismatches with no rule-level diagnosis (issue #642). The flavour
-`<n>f<m>` is common to both spellings, so one regex maps the whole family;
-the mapping mirrors the PDK's own LVS regression netlists, where the
-*subcircuit* is named after the symbol and the *device* after the class. A
-`cap_mim_*` flavour the mapping cannot parse is a hard `LvsFormError`, never
-a silently passed-through token. Resistors need no mapping (the resistor
+`<n>f<m>` is common to both spellings, so the mapping is keyed on it, and it
+mirrors the PDK's own LVS regression netlists, where the *subcircuit* is
+named after the symbol and the *device* after the class. But the deck
+registers only one MIM flavour per run (`2f0`, the `mim_cap` switch
+`drclvs.py` pins), so that flavour alone maps: any other `cap_mim_*` token
+is a hard `LvsFormError`, never a silently passed-through token -- whether
+no spelling of it can be parsed into a flavour at all, or it names a
+flavour other than the pinned one (issue #680). Resistors need no mapping
+(the resistor
 symbols' names are the registered class names) and neither do the non-MIM
 capacitors (`rule_decks/moscap_extraction.lvs` registers `cap_nmos_03v3` &
 co under their symbol names).

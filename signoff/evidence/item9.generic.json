@@ -3,14 +3,14 @@
   "kind": "generic",
   "status": "pass",
   "t1_item": 9,
-  "summary": "T1 item 9 (Testbenches shipped): 90/90 attestation checks passed (klt signoff --attest)",
+  "summary": "T1 item 9 (Testbenches shipped): 93/93 attestation checks passed (klt signoff --attest)",
   "source": "signoff/inventory-item9.json",
   "attestation": {
     "producer": "klt signoff --attest",
     "inventory_schema_version": 1,
     "hash_algorithm": "sha256-raw-bytes",
-    "check_count": 90,
-    "passed_count": 90,
+    "check_count": 93,
+    "passed_count": 93,
     "checks": [
       {
         "check": "present",
@@ -141,6 +141,27 @@
       {
         "check": "present",
         "role": "testbench",
+        "path": "sim/harness/klt_tian.py",
+        "passed": true,
+        "content_hash": "sha256:986ddbe263c291d7f4dc503dc191b93e3b7c45b0f218b3be51a1b3dd6bbabdb4"
+      },
+      {
+        "check": "present",
+        "role": "testbench",
+        "path": "sim/harness/loop_margin.py",
+        "passed": true,
+        "content_hash": "sha256:aa78927d24745d5acab29880619ebe68735f8561f12f2a461a9d9eb9e1313650"
+      },
+      {
+        "check": "present",
+        "role": "testbench",
+        "path": "sim/harness/record_compare.py",
+        "passed": true,
+        "content_hash": "sha256:1dd65e2bbfad2390044ecb093d19c1f8e1a4f642b2ff097030946f3a2f6361e1"
+      },
+      {
+        "check": "present",
+        "role": "testbench",
         "path": "sim/line-regulation/testbench/klt_run.py",
         "passed": true,
         "content_hash": "sha256:e5e981cc2aac66e05d37a5435931378c6969a1248f92554dff19f5721b20c48d"
@@ -206,7 +227,7 @@
         "role": "testbench",
         "path": "sim/loop-stability/testbench/compare_records.py",
         "passed": true,
-        "content_hash": "sha256:10a254f1d29056efd49846ae4360904f8f9600f5598a3d41c8068358577ba2db"
+        "content_hash": "sha256:0270dc1a683dc6bbe877db7ef9a4d715ba92c952d229aa849132261cd95b240e"
       },
       {
         "check": "present",
@@ -220,7 +241,7 @@
         "role": "testbench",
         "path": "sim/loop-stability/testbench/klt_run.py",
         "passed": true,
-        "content_hash": "sha256:6c0bab57e49419d3e1a095f3d050f4eeb4bacb6bfc34e0550cc5c67ec463feb4"
+        "content_hash": "sha256:974712e5a872d1cfe5859b53dd70f0c5a6251db8e4ce32cad1e9c24f4ac87b69"
       },
       {
         "check": "present",
@@ -241,7 +262,7 @@
         "role": "testbench",
         "path": "sim/loop-stability/testbench/sweep.py",
         "passed": true,
-        "content_hash": "sha256:34d92981a1979b0a32c3ed622ec4442482196c10a6007f83f894b346dabc5d8e"
+        "content_hash": "sha256:889697bbe248447ca69daf6d4797964f83b6824233863af6157fc648b80c0e24"
       },
       {
         "check": "present",
@@ -409,7 +430,7 @@
         "role": "testbench",
         "path": "sim/soft-start-loop-gain/testbench/compare_records.py",
         "passed": true,
-        "content_hash": "sha256:630d389aa9a52f6c26bd01549c634554048894f9a807c6df95c118652f3c06e2"
+        "content_hash": "sha256:7d00ba35d7fd1e6b3d495d96baac853fce83b8ad0a05fbeed1b626290d2e21a8"
       },
       {
         "check": "present",
@@ -430,7 +451,7 @@
         "role": "testbench",
         "path": "sim/soft-start-loop-gain/testbench/klt_run.py",
         "passed": true,
-        "content_hash": "sha256:7468e0f9ece4a1dee3bb5df0774a954110573db18d16da653073ec28e58a15d7"
+        "content_hash": "sha256:6661a517595e5c1ac9813944db166b9140e52c4c4a8db80046e668a6ef73c778"
       },
       {
         "check": "present",
@@ -458,7 +479,7 @@
         "role": "testbench",
         "path": "sim/soft-start-loop-gain/testbench/sweep.py",
         "passed": true,
-        "content_hash": "sha256:547854aedf27888cbde8fecd036bcb0b90f7809becb3f2fdb1b0e17394e31e62"
+        "content_hash": "sha256:4f6717e889397d5fa24ca740eab9b42da9aeb547a9c66826541f592d098fb2cc"
       },
       {
         "check": "present",
@@ -666,7 +687,7 @@
         "path": "signoff/inventory-item9.json",
         "scope": "repo"
       },
-      "content_hash": "sha256:34cf9a4ec481e7149cf5ae7675c6d4095b0435ccaf60db202c1e83b7a8370f55"
+      "content_hash": "sha256:d675dde9a0bceee84dc086386d11455bb7cebe04dd6391d7021a3e6699a61ff9"
     }
   }
 }

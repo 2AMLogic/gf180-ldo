@@ -9,7 +9,8 @@ becomes a claim in an evidence record -- the landing rule, the derived
 injection current, the netlist transforms, the ``device``/``binj`` variant
 A/B, the deck template's substitution, the hand-over metrics, the ``klt sim``
 batch front end, and the fact that the margin semantics are *imported* from
-``sim/loop-stability/`` rather than re-implemented.
+``sim/harness/loop_margin.py`` (the same single source
+``sim/loop-stability/`` reads) rather than re-implemented.
 
 **This module is the only copy of those assertions.** Since issue #593,
 ``sim/soft-start-loop-gain/testbench/selftest.py`` -- the pre-sweep gate
@@ -47,12 +48,25 @@ _TB = SIM_DIR / "soft-start-loop-gain" / "testbench"
 sys.path.insert(0, str(_TB))
 import netlist_variants as nv  # noqa: E402
 from harness import klt_grid  # noqa: E402
+from harness import loop_margin  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("ss_loop_gain_sweep", _TB / "sweep.py")
 sweep = importlib.util.module_from_spec(_spec)
 sys.modules["ss_loop_gain_sweep"] = sweep
 _spec.loader.exec_module(sweep)
+
+# `sim/loop-stability/`'s own driver, loaded the same way its own test file
+# loads it, so the identity assertions below can check BOTH benches read the
+# same harness objects (the driver itself no longer reaches into this bench's
+# process, so there is no shared module object to compare against any more).
+_LS_SWEEP = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
+_ls = sys.modules.get("loop_stability_sweep")
+if _ls is None:
+    _ls_spec = importlib.util.spec_from_file_location("loop_stability_sweep", _LS_SWEEP)
+    _ls = importlib.util.module_from_spec(_ls_spec)
+    sys.modules["loop_stability_sweep"] = _ls
+    _ls_spec.loader.exec_module(_ls)
 
 CORE = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
 
@@ -94,26 +108,30 @@ def row(**kw) -> "sweep.Row":
 class TestMarginSemanticsAreNotForked(unittest.TestCase):
     """The whole comparability claim of this experiment rests on this."""
 
-    def test_the_bars_are_loop_stabilitys_own_objects(self):
-        self.assertIs(sweep.PM_MIN_DEG, sweep.ls.PM_MIN_DEG)
-        self.assertIs(sweep.GM_MIN_DB, sweep.ls.GM_MIN_DB)
-        self.assertIs(sweep.RESURGENCE_MAX_DB, sweep.ls.RESURGENCE_MAX_DB)
+    def test_both_benches_read_the_same_harness_bars(self):
+        for mod in (sweep, _ls):
+            self.assertIs(mod.PM_MIN_DEG, loop_margin.PM_MIN_DEG)
+            self.assertIs(mod.GM_MIN_DB, loop_margin.GM_MIN_DB)
+            self.assertIs(mod.RESURGENCE_MAX_DB, loop_margin.RESURGENCE_MAX_DB)
 
-    def test_the_ac_band_and_resolution_are_loop_stabilitys_own(self):
-        self.assertIs(sweep.AC_DEC, sweep.ls.AC_DEC)
-        self.assertIs(sweep.F_START, sweep.ls.F_START)
-        self.assertIs(sweep.F_STOP, sweep.ls.F_STOP)
+    def test_both_benches_read_the_same_harness_ac_band_and_resolution(self):
+        for mod in (sweep, _ls):
+            self.assertIs(mod.AC_DEC, loop_margin.AC_DEC)
+            self.assertIs(mod.F_START, loop_margin.F_START)
+            self.assertIs(mod.F_STOP, loop_margin.F_STOP)
         self.assertEqual(sweep.AC_DEC, "400")
 
     def test_row_inherits_rather_than_restates_the_margin_definitions(self):
-        self.assertTrue(issubclass(sweep.Row, sweep.ls.Row))
+        self.assertIs(_ls.Row, loop_margin.Row)
+        self.assertTrue(issubclass(sweep.Row, loop_margin.Row))
         for name in ("pm_deg", "gm_db", "passes", "resurges"):
-            self.assertIs(getattr(sweep.Row, name), getattr(sweep.ls.Row, name),
+            self.assertIs(getattr(sweep.Row, name), getattr(loop_margin.Row, name),
                           f"{name} is redefined here instead of inherited")
 
-    def test_the_pvt_grid_is_loop_stabilitys_own(self):
-        self.assertIs(sweep.PROCESS_CORNERS, sweep.ls.PROCESS_CORNERS)
-        self.assertIs(sweep.TEMPS_C, sweep.ls.TEMPS_C)
+    def test_both_benches_read_the_same_harness_pvt_grid(self):
+        for mod in (sweep, _ls):
+            self.assertIs(mod.PROCESS_CORNERS, loop_margin.PROCESS_CORNERS)
+            self.assertIs(mod.TEMPS_C, loop_margin.TEMPS_C)
         self.assertEqual(sweep.SUPPLY_TOL, 0.10)
 
 
@@ -742,7 +760,7 @@ class TestOperatingPoints(unittest.TestCase):
 
     def test_all_but_one_config_is_also_a_loop_stability_grid_point(self):
         shared = [(c, e) for c in sweep.CEFFS_F for e in sweep.ESRS_OHM
-                  if c in sweep.ls.CEFFS_F and e in sweep.ls.ESRS_OHM]
+                  if c in _ls.CEFFS_F and e in _ls.ESRS_OHM]
         total = len(sweep.CEFFS_F) * len(sweep.ESRS_OHM)
         self.assertEqual(len(shared), total - len(sweep.CEFFS_F))  # the 0.1 col
 
