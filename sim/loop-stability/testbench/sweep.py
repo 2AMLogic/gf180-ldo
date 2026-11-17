@@ -115,7 +115,7 @@ from harness.report import (  # noqa: E402
     write_markdown_record,
 )
 from harness.runner import (  # noqa: E402
-    MODEL_BINNING_OPTION,
+    MODEL_BINNING_OPTION,  # noqa: F401  (re-export: sim/tests assert sweep.MODEL_BINNING_OPTION)
     ngspice_binary_sha256,
     ngspice_version,
     run_ngspice_deck,
