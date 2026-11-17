@@ -8,9 +8,13 @@ Submits ``klt_body.spice`` over the 63-point matrix run.sh sweeps (7 process x
 3 temperatures x 3 supplies), for the committed DUT and -- with
 ``--baseline-ref`` -- for the DUT at that git ref too, as two jobs on the same
 backend, so the comparison is same-binary by construction. Logs, the klt
-reports, a frozen copy of each DUT netlist and ``summary.csv`` land under
-``sim/current-limit/corners/<record-id>/``. The record markdown is written by
-hand, as for run.sh. Grading imports summarize.py's ratified DR-0005 bounds
+reports, a frozen copy of each DUT netlist and ``summary.csv`` land in the
+git-ignored staging tree ``sim/.work/.stage/current-limit/`` (DR-0044, issue
+#646), never under ``sim/current-limit/corners/``: a run becomes evidence only
+when ``sim/run_store_evidence.py --kind corners`` mints it, committing the
+manifest, the hand-written Markdown record and the ``klt-report.json``
+envelopes; an unminted run leaves the tree clean. Grading imports
+summarize.py's ratified DR-0005 bounds
 (``ILIM_WINDOW_MA`` / ``PSHORT_MAX_MW``) rather than restating them, so the two
 graders for the same spec rows cannot disagree.
 """
@@ -25,7 +29,9 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 sys.path.insert(0, str(HERE))  # sibling summarize: klt_run.py also runs as a script
+from harness import evidence_store as store  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
+from harness import tb_adapter  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab, write_summary_csv  # noqa: E402
 from summarize import ILIM_WINDOW_MA, PSHORT_MAX_MW  # noqa: E402
 
@@ -88,11 +94,27 @@ def grade(v: dict, vin: float) -> dict:
     return out
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, preflight=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     add_ab_args(ap, REPO)
     args = ap.parse_args(argv)
-    dest = HERE.parent / "corners" / args.record_id
+    dest = tb_adapter.stage_corner_dir(REPO, "current-limit", args.record_id)
+    if (HERE.parent / "corners" / args.record_id).exists():
+        raise SystemExit(f"sim/current-limit/corners/{args.record_id}/ already exists; "
+                         "append-only evidence is never rewritten -- choose another --record-id")
+    # An evidence run must be storable before any fleet time is spent (DR-0044):
+    # no broker, no `klt artifact` verb, or an unreachable broker refuses now.
+    # There is no commit-the-bytes fallback. An `--only` debug point is not
+    # evidence and needs no store.
+    if args.only is None:
+        try:
+            (preflight or store.preflight)(REPO)
+        except store.StoreError as exc:
+            print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+                  "Evidence bytes go to the artifact store only (sim/README.md, "
+                  '"Stored evidence"); an --only debug point needs no store.',
+                  file=sys.stderr)
+            return tb_adapter.EXIT_NOT_STORED
     results = run_ab(lambda n, d: job(n, d, args.only), Path(args.dut), args.baseline_ref, dest, REPO, backend=args.backend)
 
     rows = []
@@ -102,6 +124,11 @@ def main(argv=None) -> int:
             rows.append({"dut": tag or "new", "corner": cid, **{k: v.get(k) for k in v if not k.startswith("_")},
                          "status": v.get("_status"), "diagnostics": v.get("_diagnostics"), **grade(v, vin)})
     write_summary_csv(rows, dest / "summary.csv")
+    print(f"staged  : {dest} (not evidence yet)")
+    print(f"mint it : python3 sim/run_store_evidence.py current-limit {args.record_id} "
+          f"{dest} --summary <summary.md> --kind corners")
+    print("         (<summary.md> is the run's hand-written Markdown record, not summary.csv; "
+          f"the store commits it as sim/current-limit/corners/{args.record_id}.md)")
     return 0
 
 
