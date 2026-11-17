@@ -11,7 +11,7 @@ block fits the ratified area budget.
 
 Every number below is either measured evidence already committed to this repo
 (cited by file), a gf180mcu design rule (cited by rule name as it appears in the
-PDK's own KLayout deck, `libs.tech/klayout/drc/rule_decks/`, `gf180mcuD`), or a
+PDK's own KLayout deck, `libs.tech/klayout/tech/drc/rule_decks/`, `gf180mcuD`), or a
 stated assumption called out as one in [§8](#8-where-the-em-limits-come-from-and-what-is-still-an-assumption).
 The area arithmetic is produced by
 [`layout/area_estimate.py`](area_estimate.py) from the committed
@@ -938,8 +938,9 @@ field.
 `gf180mcuD` install's *only* machine-readable current-density data is the
 `DCCURRENTDENSITY` / `ACCURRENTDENSITY` entries in the standard-cell tech LEFs,
 `libs.ref/gf180mcu_fd_sc_mcu{7,9}t5v0/techlef/*.tlef`. Nothing else in the
-install carries EM data — not the DRC decks (geometry-only across all 41 rule
-tables / 642 rule categories), not the ngspice models, not `libs.tech/magic`,
+install carries EM data — not the DRC decks (geometry-only across the whole
+driver deck, 739 rule categories at the pinned revision), not the ngspice
+models, not `libs.tech/magic`,
 not `libs.tech/openlane`. Two consequences:
 
 1. **The metal and via limits §3.3 uses are real PDK data, not assumptions.**

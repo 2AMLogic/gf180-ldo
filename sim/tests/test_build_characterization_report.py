@@ -19,7 +19,6 @@ from __future__ import annotations
 import ast
 import csv
 import hashlib
-import importlib.util
 import json
 import re
 import shutil
@@ -30,13 +29,11 @@ import unittest
 from pathlib import Path
 
 SIM_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SIM_DIR))
+from harness.loader import load_script  # noqa: E402
+
 _REPORT_PATH = SIM_DIR / "build_characterization_report.py"
-_spec = importlib.util.spec_from_file_location(
-    "build_characterization_report", _REPORT_PATH
-)
-bcr = importlib.util.module_from_spec(_spec)
-sys.modules["build_characterization_report"] = bcr
-_spec.loader.exec_module(bcr)
+bcr = load_script("build_characterization_report", _REPORT_PATH)
 
 # The pre-#251 extractor: one bold run per `**Overall...**`, terminated by
 # the next `*`. Kept here as the regression oracle -- every verdict it finds
@@ -518,20 +515,26 @@ class TestEnvelopeVerdict(unittest.TestCase):
         self.assertIn("630/631 passing", snippet)
 
     def test_required_axes_match_the_sweep_definitions_and_dr0018_accounting(self):
+        # The PVT axes (PROCESS_CORNERS / TEMPS_C / NOMINAL_SUPPLY_V /
+        # SUPPLY_TOL) live in harness/loop_margin.py since issue #630 -- the
+        # one definition both loop-gain benches read -- so that is where the
+        # single-source check reads them from; the swept (load, ESR) axes stay
+        # this bench's own, in its driver.
         src = (SIM_DIR / "loop-stability" / "testbench" / "sweep.py").read_text()
+        shared = (SIM_DIR / "harness" / "loop_margin.py").read_text()
 
-        def tup(name):
-            m = re.search(rf"^{name}\s*=\s*\(([^)]*)\)", src, re.MULTILINE)
+        def tup(name, text=src):
+            m = re.search(rf"^{name}\s*=\s*\(([^)]*)\)", text, re.MULTILINE)
             return [eval(x.strip()) for x in m.group(1).split(",") if x.strip()]
 
-        self.assertEqual(tuple(tup("PROCESS_CORNERS")), bcr.DR0018_PROCESSES)
-        self.assertEqual(tuple(tup("TEMPS_C")), bcr.DR0018_TEMPS_C)
+        self.assertEqual(tuple(tup("PROCESS_CORNERS", shared)), bcr.DR0018_PROCESSES)
+        self.assertEqual(tuple(tup("TEMPS_C", shared)), bcr.DR0018_TEMPS_C)
         loads = tuple(round(v * 1e3, 6) for v in tup("ILOADS_A") if v > 0)
         self.assertEqual(loads, bcr.DR0018_LOADS_MA)
         esrs = tuple(v for v in tup("ESRS_OHM") if v >= 0.2)
         self.assertEqual(esrs, bcr.DR0018_ESRS_OHM)
-        nominal = float(re.search(r"^NOMINAL_SUPPLY_V\s*=\s*([\d.]+)", src, re.M).group(1))
-        tol = float(re.search(r"^SUPPLY_TOL\s*=\s*([\d.]+)", src, re.M).group(1))
+        nominal = float(re.search(r"^NOMINAL_SUPPLY_V\s*=\s*([\d.]+)", shared, re.M).group(1))
+        tol = float(re.search(r"^SUPPLY_TOL\s*=\s*([\d.]+)", shared, re.M).group(1))
         self.assertEqual(
             tuple(round(nominal * k, 2) for k in (1 - tol, 1.0, 1 + tol)),
             bcr.DR0018_SUPPLIES_V,
@@ -1385,11 +1388,9 @@ class TestSpecTableParsedByTheRatifiedGate(unittest.TestCase):
 
     def test_the_parser_is_the_one_backing_the_ratified_lock(self):
         """Same module object the lock's own checker uses, not a copy."""
-        lock_spec = importlib.util.spec_from_file_location(
+        oracle = load_script(
             "cst_oracle", bcr.REPO_ROOT / "spec" / "check_spec_table.py"
         )
-        oracle = importlib.util.module_from_spec(lock_spec)
-        lock_spec.loader.exec_module(oracle)
         readme = (bcr.REPO_ROOT / "README.md").read_text()
         self.assertEqual(
             bcr.check_spec_table.parse_table(readme), oracle.parse_table(readme)

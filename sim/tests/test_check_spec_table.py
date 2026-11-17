@@ -11,19 +11,20 @@ ngspice or network.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location("cst", REPO / "spec" / "check_spec_table.py")
-cst = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(cst)
+sys.path.insert(0, str(REPO / "sim"))
+from harness.loader import load_script  # noqa: E402
+
+cst = load_script("cst", REPO / "spec" / "check_spec_table.py")
 
 TABLE = """# Project
 

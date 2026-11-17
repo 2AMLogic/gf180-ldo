@@ -52,7 +52,7 @@ A run takes about a minute and prints one line per stage:
 [1/9] layout      : drclvs_passives.gds (45508 bytes)
 [2/9] netlist     : 3 device line(s), LVS form
 [3/9] klt drc     : clean (0 violation(s), curated subset)
-[4/9] pdk drc     : 0 violation(s) across 642 rule categories (41 rule tables)
+[4/9] pdk drc     : 0 violation(s) across 739 rule categories (gf180mcu.drc, decks=all,-antenna,-density)
 [5/9] lvs         : MATCH
 [6/9] control topology  : gate shorted to drain -> MISMATCH (expected)
 [7/9] control parameter : device width doubled -> MISMATCH (expected)
@@ -156,8 +156,12 @@ before running a single rule. It fails as
 
 ```
 sh: pmap: command not found
-ERROR: In .../main.drc: undefined method 'strip' for nil
+ERROR: In .../gf180mcu.lvs: undefined method 'strip' for nil
 ```
+
+(The PDK's **LVS** deck shells out to `pmap`; the pinned revision's DRC deck
+does not — it reads memory through KLayout's own API — so this failure, when
+it fires, is stage 5 onwards.)
 
 which reads like a broken deck rather than a missing utility, and takes stages
 4–7 — i.e. every DRC number and every LVS verdict this repo is willing to
@@ -223,8 +227,27 @@ SPICE reader delegate understands, carrying `l` and `w` across faithfully:
 
 ```
 Rbias NBIAS RBT VSS ppolyf_u_1k l=1000u w=1u m=1
-Cc    NZ OUT       cap_mim_2f0_m3m4_noshield l=48u w=48u m=1
+Cc    NZ OUT       cap_mim_2f0fF l=48u w=48u m=1
 ```
+
+and, for the MIM capacitors, it also maps the **model token**: the deck's
+extraction registers `cap_mim_<n>f<m>fF` device classes
+(`rule_decks/mimcap_extraction.lvs`), while the token an export carries is
+the *symbol* name (`cap_mim_2f0_m3m4_noshield`). KLayout's compare matches
+device classes **by name**, so a pass-through token pairs with nothing and
+the cell mismatches with no rule-level diagnosis (issue #642). The flavour
+`<n>f<m>` is common to both spellings, so the mapping is keyed on it, and it
+mirrors the PDK's own LVS regression netlists, where the *subcircuit* is
+named after the symbol and the *device* after the class. But the deck
+registers only one MIM flavour per run (`2f0`, the `mim_cap` switch
+`drclvs.py` pins), so that flavour alone maps: any other `cap_mim_*` token
+is a hard `LvsFormError`, never a silently passed-through token -- whether
+no spelling of it can be parsed into a flavour at all, or it names a
+flavour other than the pinned one (issue #680). Resistors need no mapping
+(the resistor
+symbols' names are the registered class names) and neither do the non-MIM
+capacitors (`rule_decks/moscap_extraction.lvs` registers `cap_nmos_03v3` &
+co under their symbol names).
 
 The rewrite runs **before** `drclvs.py`'s simulation-form guard, not instead of
 it, and only on lines that carry a complete `r_width`/`r_length` or
@@ -255,9 +278,11 @@ single-FET cell cannot:
 - the MIM cap is the only device here whose terminals are not on metal1/poly2.
   For the 5LM / MIM-option-B stack this repo builds against they are metal4 and
   metal5, which ties the layout, the deck's `mim_option`/`metal_level`/`mim_cap`
-  switches and the schematic's `model=cap_mim_2f0_m4m5_noshield` into one
-  self-checking loop. Get any of the three wrong and the device extracts as
-  nothing at all.
+  switches, the schematic's `model=` symbol name and `lvs_form.py`'s mapping of
+  it to the registered `cap_mim_2f0fF` device class into one self-checking
+  loop. Get any of them wrong and the device extracts as nothing at all -- or
+  pairs with no class, which since issue #642 is a loud export error rather
+  than an undiagnosed mismatch.
 
 ## The feedback divider
 
@@ -295,15 +320,20 @@ than of this design:
   the high-sheet flavours in a `case POLY_RES`, so exactly one of `1k`/`2k`/
   `3k` is extracted per run. A `ppolyf_u_3k` cell run under the default `1k`
   extracts *nothing* and mismatches. It is a `CellSpec` field for that reason.
-- **Leaving every LVS option off is what turns simplification _on_.**
-  `gf180mcu.lvs` derives `SIMPLIFY` as "`net_only`, `top_lvl_pins`,
-  `combine`, `purge` and `purge_nets` are all false", and `netlist.simplify`
-  collapses series/parallel chains **in the extracted netlist only**. Left
-  alone it folds the 18 drawn units into two lumped resistors, so the compare
-  could no longer tell an 18-unit string from one long strip — precisely the
-  property DR-0003 asks the divider to have. `CellSpec.simplify_extracted`
-  turns it off (by turning `top_lvl_pins` on), and the divider's LVS `MATCH`
-  is therefore a device-by-device compare of all twenty strips.
+- **The deck no longer derives anything: every compare-affecting option is
+  its own `-rd` switch, all defaulting false.** The pinned `gf180mcu.lvs`
+  reads `SIMPLIFY` from `$simplify` alone, and it gates *both* sides
+  (`netlist.simplify` and `schematic.simplify`). Left unset it is false, and
+  `netlist.simplify` is what collapses series/parallel chains in the
+  extracted netlist: on it would fold the 18 drawn units into two lumped
+  resistors, so the compare could no longer tell an 18-unit string from one
+  long strip — precisely the property DR-0003 asks the divider to have.
+  `run_lvs()` therefore passes `simplify` explicitly from
+  `CellSpec.simplify_extracted` (`false` for this cell), and passes
+  `implicit_connect=true` unconditionally — the deck's
+  `connect_implicit('*')` is what joins the straps a cell like
+  `drclvs_passives` deliberately does not draw in metal. The divider's LVS
+  `MATCH` is a device-by-device compare of all twenty strips.
 - **The resistor PCell's own substrate tie had to go.** It draws a p-tap
   column 0.71 µm to the left of *each* strip, which leaves room for exactly
   one Metal1 track in the left routing channel. `gen_gds.py` removes the
@@ -380,27 +410,32 @@ continue.
 JSON-contracted path; the report is kept in the run directory. Fast (milliseconds),
 and it is a **13-rule curated subset**. See "Coverage, honestly" below.
 
-**4. DRC — the PDK's own deck.** The full gf180mcu KLayout deck, assembled the
-way the PDK's own `run_drc.py` assembles it: `main.drc`, then every rule table
-(minus the flat-mode `*_split` variants, matching what `run_drc.py` does in deep
-mode), then `tail.drc`, with `layers_def.drc` copied beside the generated deck.
-41 rule tables, and ~640 rule categories. `drclvs.py` assembles the deck itself
-rather than shelling out to `run_drc.py`, which needs `docopt` and drives its
-own parallel run/report layout; what we want is one deck, one report, one exit
-status. **This is the DRC number worth quoting.**
+**4. DRC — the PDK's own deck.** The full gf180mcu KLayout deck, driven through
+its own Ruby driver (`libs.tech/klayout/tech/drc/gf180mcu.drc`, which
+`require_relative`s its rule tables from `tech/drc/rule_decks/*.rb`), invoked
+exactly as the driver's documented contract prescribes:
+`klayout -b -r gf180mcu.drc -rd input=… -rd report=… -rd decks=all,-antenna,-density …`.
+The `decks=` selection excludes the `antenna` and `density` decks, the same
+tables the old concatenated-deck flow excluded explicitly; the driver honours
+`run_mode=deep`, `threads`, and the variant's metal-stack switches
+(`metal_level`/`metal_top`/`mim_option`). **This is the DRC number worth
+quoting.**
 
 Quote it from a *record*, not from this file: the category count is a property
-of the deck **as the installed KLayout builds it**, not of the PDK alone. At
-the same open_pdks hash it was 642 under KLayout 0.28.16 (record
-`20260801-075800-9419809`) and is 640 under 0.30.10 (record
-`20260922-215349-74f117f`). What matters for a DRC claim is that the count is
-large and non-zero — see the zero-category trap immediately below — and that
-the violation count beside it is zero.
+of the deck **as the installed KLayout builds it**, not of the PDK alone, and
+it moved when the deck itself moved — 642 under the pre-bump
+concatenated-deck layout (record `20260801-075800-9419809`), 640 under the
+same old layout on KLayout 0.30.10 (record `20260922-215349-74f117f`), and
+739 under the pinned revision's driver deck with the `decks=` selection above
+(record `20261115-231214-136fe3e`). Old counts are not comparable to new ones:
+they are different rule sets. What matters for a DRC claim is that the count
+is large and non-zero — see the zero-category trap immediately below — and
+that the violation count beside it is zero.
 
 A deck that runs but registers *zero* rule categories produces an empty report
-that is indistinguishable from a clean one — that is what a mis-assembled deck
-looks like, so `drclvs.py` treats zero categories as a hard error rather than a
-pass.
+that is indistinguishable from a clean one — that is what a deck that ran no
+rules looks like (a mis-set `decks=` selection does exactly this), so
+`drclvs.py` treats zero categories as a hard error rather than a pass.
 
 **5. LVS.** The PDK's own `gf180mcu.lvs`, layout against the netlist from stage 2.
 The deck reports its own verdict in its log and exits 0 either way, so the log is
@@ -530,7 +565,7 @@ generically against [klayout-tools](https://github.com/2AMLogic/klayout-tools):
   ignores the layout's database unit (above).
 - [#173](https://github.com/2AMLogic/klayout-tools/issues/173) — `klt drc` can
   only run its own built-in decks; there is no way to point it at the deck the
-  PDK ships. This is why stage 4 assembles and drives the PDK deck by hand.
+  PDK ships. This is why stage 4 drives the PDK's deck directly.
 - [#163](https://github.com/2AMLogic/klayout-tools/issues/163) (existing, part
   of the `klt lvs` epic) — commented with two requirements this bring-up
   surfaced: the simulation-vs-LVS netlist-form split, and the need for negative

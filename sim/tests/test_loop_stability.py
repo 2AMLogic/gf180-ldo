@@ -14,7 +14,6 @@ answer by ``sim/loop-stability/testbench/selftest.py``.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import math
 import os
@@ -24,6 +23,7 @@ import tempfile
 import unittest
 import unittest.mock
 from pathlib import Path
+from types import SimpleNamespace
 
 SIM_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = SIM_DIR.parent
@@ -31,15 +31,13 @@ sys.path.insert(0, str(SIM_DIR))
 
 from harness import report  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 from harness.pdk import Pdk  # noqa: E402
 
-_SWEEP_PATH = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
-_spec = importlib.util.spec_from_file_location("loop_stability_sweep", _SWEEP_PATH)
-sweep = importlib.util.module_from_spec(_spec)
 # sweep.py is a script under a hyphenated directory, so it is not importable
-# by name; register it before exec so its @dataclass can resolve its module.
-sys.modules["loop_stability_sweep"] = sweep
-_spec.loader.exec_module(sweep)
+# by name.
+_SWEEP_PATH = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
+sweep = load_script("loop_stability_sweep", _SWEEP_PATH)
 
 
 def row(**kw) -> "sweep.Row":
@@ -305,6 +303,42 @@ class TestDeckTemplate(unittest.TestCase):
         # at different resolutions) -- a fixed fraction of f0 instead.
         self.assertIn(f"ac dec {sweep.AC_DEC} 0.01 1e9", deck)
         self.assertIn("let fres = f0*1.05", deck)
+
+    def test_template_pins_model_bin_selection_before_the_dut_include(self):
+        """DR-0025 (issue #214): the deck, not the host's ngspice startup
+        files, must decide gf180mcu's model-bin selection.
+
+        The models are binned and the widest declared bin stops at
+        ``wmax=100.001u``; ``XMpass`` is ``W=2800u nf=40`` (70 um per
+        finger), so it resolves to a bin only when ngspice divides ``W``
+        by ``NF`` -- its ``wnflag``, default 0 outside HSPICE/Spectre
+        compatibility mode. Without the card the deck dies at parse time
+        (``could not find a valid modelname``) on any host that does not
+        already set the flag, which is what the ``--backend local`` path
+        did (issue #634). The card must also stay the deck's FIRST
+        ``.options`` card: DR-0025's measured rule is that duplicate
+        ``.options`` cards resolve earliest-wins, silently.
+        """
+        from harness.corners import CORNERS, PvtPoint
+
+        class FakePdk:
+            design_include = "/pdk/design.ngspice"
+            model_lib = "/pdk/sm141064.ngspice"
+
+        pvt = PvtPoint(corner=CORNERS["tt"], temp_c=27.0, vdd=3.3)
+        deck = sweep.render_deck(
+            pvt, FakePdk(), [0.0, 50e-3], [0.33e-6], [0.001, 0.5],
+            int(sweep.AC_DEC),
+        )
+        card = f".options {sweep.MODEL_BINNING_OPTION}"
+        self.assertIn(card, deck)
+        # Ahead of the DUT include that instantiates the pass device.
+        self.assertLess(deck.index(card), deck.index(str(sweep.LDO_NETLIST)))
+        # Earliest-wins: a later duplicate .options card would not take
+        # effect, so this must be the deck's first one.
+        options_cards = [ln for ln in deck.splitlines()
+                         if ln.strip().lower().startswith(".options")]
+        self.assertEqual(card, options_cards[0])
 
     def test_ac_resolution_resolves_the_q_the_policy_claims(self):
         """`AC_DEC` must deliver the bound issue #58's policy states.
@@ -655,6 +689,96 @@ class TestRunGridKltWiring(unittest.TestCase):
         self.assertEqual(sweep.KLT_MAX_UNITS_PER_JOB,
                          seen["axes"]["batch"]["max_units_per_job"])
         self.assertEqual(seen["expected_pdk_root"], seen["pdk_root"])
+
+
+class TestRenderRecordSmoke(unittest.TestCase):
+    """`render_record` renders a whole record from fabricated inputs (#658).
+
+    This driver mints its published evidence through `render_record`, and no
+    test called it: a wrong key or a bad template splice in it raised only
+    after the entire PVT grid had run, at record-write time -- the most
+    expensive possible place to discover that, and invisible to a green
+    `unittest` run before it. These smoke tests call it with a one-cell
+    fabricated matrix and assert on structure only: the `## Environment`
+    block is present with its canonical bullets in order, and the no-klt /
+    klt-local / klt-batch variants all render without raising. Deliberately
+    no golden file -- the record prose evolves (the #609 Champion ruling
+    accepted exactly such a change), so pinning the full text would only
+    make this test churn on every wording edit.
+
+    Stubbed, and why: `ngspice_version` shells out to the host's ngspice and
+    `ngspice_binary_sha256` hashes that binary. This module's contract is
+    no-ngspice (see the stubbing note on `TestRunGridKltWiring` for the same
+    reasoning about `klt`); a smoke render must not depend on what is (or is
+    not) installed. `socket.gethostname()` is left live -- it is a plain
+    stdlib call with no external dependency.
+    """
+
+    RECORD_ID = "unittest-000000-smoke"
+    COMMAND_BULLET = "- Command: `./sim/loop-stability/testbench/run.sh`"
+    PDK_BULLET = "- PDK: gf180mcuD @ open_pdks `unittest`"
+
+    def _render(self, klt_info=None) -> str:
+        rows = [
+            row(),
+            row(iload_a=2e-3, phase_at_f0_deg=-100.0),
+        ]
+        args = SimpleNamespace(ac_dec=int(sweep.AC_DEC), author="unittest",
+                               subset_reason="", supersedes=None)
+        pdk = SimpleNamespace(
+            variant="gf180mcuD", version="unittest",
+            provenance=lambda: {
+                "path": "",
+                "variant": "gf180mcuD",
+                "open_pdks_version": "unittest",
+                "discovered_via": "",
+            })
+        with \
+                unittest.mock.patch.object(sweep, "ngspice_version",
+                                           lambda: "ngspice-46 (stubbed)"), \
+                unittest.mock.patch.object(sweep, "ngspice_binary_sha256",
+                                           lambda: "0" * 64):
+            return sweep.render_record(
+                record_id=self.RECORD_ID, rows=rows,
+                worst=sweep.worst_of(rows), failing=[], multi_cross=[],
+                resurging=[], grid=["tt_27c_3.30v"], iloads=[1e-3],
+                ceffs=[1e-6], esrs=[0.05], pdk=pdk, dirty=False, args=args,
+                curve_log=sweep.REPO_ROOT / "sim" / "loop-stability" / "testbench" / "sweep.py",
+                prov={"commit": "abc1234", "short": "abc1234",
+                      "branch": "unittest", "dirty": False},
+                klt_info=klt_info)
+
+    def test_no_klt_renders_the_environment_block_in_order(self):
+        md = self._render()
+        self.assertIn("## Environment", md)
+        self.assertIn(self.COMMAND_BULLET, md)
+        self.assertIn(self.PDK_BULLET, md)
+        # Presence AND order: Environment header, then the provenance bullets
+        # it introduces. Index comparisons, not byte comparison.
+        self.assertLess(md.index("## Environment"),
+                        md.index(self.PDK_BULLET))
+        self.assertLess(md.index(self.PDK_BULLET),
+                        md.index(self.COMMAND_BULLET))
+        self.assertNotIn("- Backend:", md,
+                         "a no-klt record must not claim a klt backend")
+
+    def test_klt_local_renders_the_backend_bullet(self):
+        md = self._render(klt_info={"backend": "local", "requests": 3,
+                                    "klt": "klt (stubbed)"})
+        self.assertIn("## Environment", md)
+        self.assertIn("- Backend: `klt sim`", md)
+        self.assertIn("--backend local", md)
+        self.assertLess(md.index("## Environment"), md.index("- Backend:"))
+
+    def test_klt_batch_renders_the_backend_bullet(self):
+        md = self._render(klt_info={"backend": "batch", "requests": 3,
+                                    "klt": "klt (stubbed)",
+                                    "pdk_root": "/pinned/root",
+                                    "units_per_job": 4})
+        self.assertIn("## Environment", md)
+        self.assertIn("- Backend: `klt sim`", md)
+        self.assertIn("--backend batch", md)
+        self.assertLess(md.index("## Environment"), md.index("- Backend:"))
 
 
 if __name__ == "__main__":

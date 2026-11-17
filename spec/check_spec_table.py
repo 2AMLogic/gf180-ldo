@@ -66,10 +66,18 @@ SCHEMA_VERSION = 2
 LEGACY_SCHEMA_VERSION = 1
 NOTE_PREFIX = "note:"
 
+# `spec/` is a standalone tree -- CI runs this as `python3 spec/check_spec_table.py`
+# from the repo root -- so this is the one path load in the repo that does NOT go
+# through `sim/harness/loader.py`'s `load_script`, rather than make `spec/` depend
+# on `sim/`. The `sys.modules`-before-`exec_module` order is the same, and is the
+# load-bearing part: `@dataclass` resolves its annotations through
+# `sys.modules[cls.__module__]`, so a module that defines one raises
+# AttributeError if it is not registered yet.
 _bi_spec = importlib.util.spec_from_file_location(
     "dr_build_index", HERE / "decision-records" / "build_index.py"
 )
 build_index = importlib.util.module_from_spec(_bi_spec)
+sys.modules["dr_build_index"] = build_index
 _bi_spec.loader.exec_module(build_index)
 
 

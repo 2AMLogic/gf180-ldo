@@ -40,142 +40,32 @@ not share a common matrix, 3 a usage/environment problem.
 from __future__ import annotations
 
 import argparse
-import csv
-import math
 import sys
-from collections.abc import Callable
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EXPDIR = HERE.parent
+REPO_ROOT = EXPDIR.parent.parent
 RECORDS = EXPDIR / "records"
 
+sys.path.insert(0, str(REPO_ROOT / "sim"))
+from harness.record_compare import (  # noqa: E402
+    RESURGENCE_AC_DEC_TOLERANCE_DB,
+    delta,
+    fmt,
+    load,
+    parse_num,
+    spread,
+    write_delta_csv,
+)
+# The numeric parsing, the ``inf - inf == 0`` delta rule, the delta-CSV writer
+# and the median/p99 summary statistics above are this script's shared surface
+# with ``sim/soft-start-loop-gain/testbench/compare_records.py``: they live in
+# ``harness/record_compare.py`` (issue #630), imported by name by both, so the
+# two experiments cannot disagree about what a delta means. What stays here is
+# this experiment's own join key and report.
+
 KEY_FIELDS = ("corner_id", "iload_ma", "ceff_uf", "esr_ohm")
-
-# resurgence_db's AC_DEC-invariance tolerance (issue #69) -- must match
-# selftest.py's MAX_INVARIANCE_ERR_DB, which is where this budget is derived
-# and exercised. A per-point movement inside this budget is expected grid
-# quantization near the metric's fixed scan-start offset; a movement beyond
-# it is a signal worth investigating (different AC_DEC on a pre-#69 record,
-# or a genuine change in the loop).
-RESURGENCE_AC_DEC_TOLERANCE_DB = 1.75
-
-
-def _num(tok: str) -> float | None:
-    """Parse a matrix-CSV numeric cell, including the sentinels it uses.
-
-    ``inf`` is a real, meaningful value in the gain-margin column (the loop
-    phase never reaches -180 deg in band), not a parse failure. ``n/a`` and
-    empty are genuinely absent quantities and come back as ``None`` so a
-    delta against them is never computed.
-    """
-    tok = tok.strip()
-    if tok in ("", "n/a"):
-        return None
-    if tok == "inf":
-        return math.inf
-    try:
-        return float(tok)
-    except ValueError:
-        return None
-
-
-def load(
-    record_id: str,
-    key_fields: tuple[str, ...] = KEY_FIELDS,
-    records_dir: Path = RECORDS,
-) -> dict[tuple, dict]:
-    path = records_dir / f"{record_id}-matrix.csv"
-    if not path.exists():
-        raise SystemExit(f"FATAL: no such matrix CSV: {path}")
-    out: dict[tuple, dict] = {}
-    with path.open(newline="") as fh:
-        for row in csv.DictReader(fh):
-            key = tuple(row[f] for f in key_fields)
-            if key in out:
-                raise SystemExit(f"FATAL: duplicate key {key} in {path}")
-            out[key] = row
-    if not out:
-        raise SystemExit(f"FATAL: {path} has no rows")
-    return out
-
-
-def delta(a: float | None, b: float | None) -> float | None:
-    """b - a, with ``inf`` handled as the value it actually is.
-
-    ``inf - inf`` is 0 here (both records say "no -180 deg crossing in band",
-    which is agreement, not an indeterminate form), while a finite-vs-infinite
-    pair is genuinely unbounded and comes back as ``None`` -- the flip itself
-    is reported separately as a verdict change.
-    """
-    if a is None or b is None:
-        return None
-    if math.isinf(a) and math.isinf(b):
-        return 0.0
-    if math.isinf(a) or math.isinf(b):
-        return None
-    return b - a
-
-
-def fmt(v: float | None, nd: int = 2) -> str:
-    if v is None:
-        return ""
-    if math.isinf(v):
-        return "inf"
-    return f"{v:.{nd}f}"
-
-
-def write_delta_csv(rows: list[dict], out: Path) -> None:
-    """Write the per-point delta rows to ``out`` as the committed delta CSV.
-
-    This is the inverse of :func:`_num` and is shared for the same reason
-    ``_num`` is: it is what decides that an infinite gain margin is written
-    ``inf``, an absent quantity an empty cell, and any other float ``%.6g``.
-    Its output is append-only evidence under ``records/``, so the experiments
-    that write it must not be able to drift apart on how a cell is spelled.
-    """
-    cols = list(rows[0].keys())
-    with out.open("w", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow(cols)
-        for r in rows:
-            w.writerow([
-                "" if r[c] is None
-                else ("inf" if isinstance(r[c], float) and math.isinf(r[c])
-                      else (f"{r[c]:.6g}" if isinstance(r[c], float) else r[c]))
-                for c in cols
-            ])
-
-
-def spread(
-    rows: list[dict],
-    field: str,
-    label: str,
-    unit: str,
-    where: Callable[[dict], str],
-    nd: int = 3,
-) -> None:
-    """Print median / p99 / max of ``|row[field]|`` over the comparable points.
-
-    Shared by every experiment that summarises a record-to-record comparison,
-    so "median" and "p99" cannot come to mean different indices in two scripts
-    whose summaries a reader expects to compare. ``where`` renders the worst
-    point in whatever coordinates the calling experiment uses. Points whose
-    delta is ``None`` are not comparable: they are excluded from the statistics
-    and counted in the line instead of being silently dropped.
-    """
-    vals = [(abs(r[field]), r) for r in rows if r[field] is not None]
-    n_none = len(rows) - len(vals)
-    if not vals:
-        print(f"  {label}: no comparable points")
-        return
-    vals.sort(key=lambda t: t[0])
-    worst = vals[-1][1]
-    med = vals[len(vals) // 2][0]
-    p99 = vals[int(0.99 * (len(vals) - 1))][0]
-    print(f"  {label}: median {med:.{nd}f} {unit}, p99 {p99:.{nd}f} {unit}, "
-          f"max {vals[-1][0]:.{nd}f} {unit} at {where(worst)}"
-          f"{'' if not n_none else f'  ({n_none} points not comparable)'}")
 
 
 def main() -> int:
@@ -192,8 +82,8 @@ def main() -> int:
                          "this (default 1.0 deg)")
     args = ap.parse_args()
 
-    base = load(args.baseline)
-    head = load(args.head)
+    base = load(args.baseline, KEY_FIELDS, RECORDS)
+    head = load(args.head, KEY_FIELDS, RECORDS)
 
     only_base = sorted(set(base) - set(head))
     only_head = sorted(set(head) - set(base))
@@ -213,10 +103,10 @@ def main() -> int:
     res_pass_to_fail, res_fail_to_pass = [], []
     for key in common:
         b, h = base[key], head[key]
-        pm_b, pm_h = _num(b["phase_margin_deg"]), _num(h["phase_margin_deg"])
-        gm_b, gm_h = _num(b["gain_margin_db"]), _num(h["gain_margin_db"])
-        f0_b, f0_h = _num(b["f_crossover_hz"]), _num(h["f_crossover_hz"])
-        rs_b, rs_h = _num(b["resurgence_db"]), _num(h["resurgence_db"])
+        pm_b, pm_h = parse_num(b["phase_margin_deg"]), parse_num(h["phase_margin_deg"])
+        gm_b, gm_h = parse_num(b["gain_margin_db"]), parse_num(h["gain_margin_db"])
+        f0_b, f0_h = parse_num(b["f_crossover_hz"]), parse_num(h["f_crossover_hz"])
+        rs_b, rs_h = parse_num(b["resurgence_db"]), parse_num(h["resurgence_db"])
         d_pm, d_gm = delta(pm_b, pm_h), delta(gm_b, gm_h)
         d_rs = delta(rs_b, rs_h)
         d_f0_pct = (

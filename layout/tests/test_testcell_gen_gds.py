@@ -111,5 +111,34 @@ class TestTestcellGeneratorFailuresAreAudible(unittest.TestCase):
         )
 
 
+class TestWroteLinesAreRecordSafe(unittest.TestCase):
+    """Every generator renders the ``wrote`` line's path via ``display_path``.
+
+    The line is quoted verbatim in run records (``layout/drclvs.py
+    --record``), so an interpolated raw ``out_path`` embeds the absolute host
+    path of the run directory -- exactly what the CI gate
+    ``sim/check_record_host_paths.py`` rejects (issue #365). Static check: no
+    PDK or klayout needed.
+    """
+
+    def test_every_generator_renders_out_path_through_display_path(self):
+        generators = sorted(LAYOUT_DIR.glob("*/gen_gds.py"))
+        self.assertEqual(
+            len(generators), 4,
+            f"expected the four cell generators, found {generators} -- if a "
+            "new cell was added, it must render its wrote-line path through "
+            "gen_gds_common.display_path too; update this count once it does",
+        )
+        for gen in generators:
+            self.assertIn(
+                "gen_gds.py: wrote {display_path(out_path)} ",
+                gen.read_text(),
+                f"{gen.relative_to(LAYOUT_DIR)} must interpolate the "
+                "wrote-line path through gen_gds_common.display_path "
+                "(issue #365): run records quote the line verbatim, and an "
+                "absolute host path there fails sim/check_record_host_paths.py",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

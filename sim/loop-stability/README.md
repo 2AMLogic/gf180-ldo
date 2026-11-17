@@ -56,6 +56,31 @@ non-regulating DC solution, and a loop margin measured about it would be a
 meaningless number that looks like a meaningful one. See the deck's
 *"removing the non-physical DC branch"* comment.
 
+## Model binning — `.options wnflag=1`, and why this deck pins it
+
+gf180mcu's device models are binned, and the widest declared bin stops at
+`wmax=100.001 µm` (`sm141064.ngspice`). This deck's pass device `XMpass` is
+`W=2800u nf=40` — 70 µm per finger — so the bin it belongs in exists only if
+ngspice divides `W` by `NF` when selecting a bin. Whether it does is not a
+property of the netlist or the PDK: it is ngspice's `wnflag`, which defaults
+to 1 only in HSPICE/Spectre compatibility mode and to 0 otherwise. On a host
+without `wnflag=1` in `spinit`/`.spiceinit` — which includes every
+fleet-provisioned builder host — this deck dies at parse time with
+`could not find a valid modelname` (`--backend local`, issue #634); the
+`klt`-built decks already pinned it (DR-0025 reached `compose_deck` and
+`klt_batch.py`), which is why only this path broke.
+
+The deck template therefore pins `.options wnflag=1` itself, right after
+`.temp` and before the `.include` of the DUT netlist
+(spec/decision-records/DR-0025-model-bin-selection-binds-on-per-finger-width.md,
+issue #214). On a host that already sets the flag the card is inert — no
+numeric change — so records taken before the card exist on `wnflag=1` hosts
+remain valid (DR-0025 § Decision 4). The card is deliberately the deck's
+first `.options` card: duplicates resolve earliest-wins, silently. The same
+convention is documented at length in
+`sim/soft-start-loop-gain/README.md`'s "Model binning" section; the other
+four `tb_*.spice.in` decks are tracked in issue #607.
+
 ## Sweep resolution — `AC_DEC`, and why it is 400 (issue #58)
 
 Every record through `20260802-171044-db620a6` ran its AC sweep at `dec 50`

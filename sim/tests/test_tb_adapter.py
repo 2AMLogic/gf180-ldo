@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -19,6 +20,7 @@ from harness import klt_batch as kb  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
 from harness import testbench  # noqa: E402
 
+REPO = SIM_DIR.parent
 DUT = SIM_DIR.parent / "design" / "netlist" / "ldo_core.spice"
 
 
@@ -464,6 +466,54 @@ class StagedOutput(unittest.TestCase):
         with self.assertRaises(SystemExit) as cm:
             self._run(["--record-id", existing], lambda repo: None, find_pdk=_no_pdk)
         self.assertIn("append-only", str(cm.exception))
+
+
+class RefuseProtectedOut(unittest.TestCase):
+    """Issue #686: the shared append-only output guard beside
+    ``stage_corner_dir``. Every driver that accepts a caller-chosen output
+    path refuses one resolving inside the protected trees -- including a
+    tree that does not exist yet and a ``..`` route that lands inside one --
+    while scratch (the staging default or a path outside the repo) is still
+    honoured."""
+
+    def test_protected_prefixes_are_derived_not_hand_copied(self):
+        import check_append_only as cao
+        expected = tuple(p[:-2] for p in cao.PROTECTED if p.endswith("/*"))
+        self.assertEqual(ta.PROTECTED_OUT, expected)
+        self.assertIn("layout/records", expected, "layout/records is never scratch either")
+
+    def test_each_protected_tree_refuses_even_before_it_exists(self):
+        for pat in ta.PROTECTED_OUT:
+            with self.assertRaises(SystemExit) as cm:
+                ta.refuse_protected_out(REPO, REPO / pat.replace("*", "20261117-zz-guard"))
+            msg = str(cm.exception)
+            self.assertIn("append-only tree", msg)
+            self.assertIn("stage_corner_dir", msg)
+            self.assertIn("run_store_evidence.py", msg)
+
+    def test_a_dotdot_path_that_resolves_inside_is_refused(self):
+        with self.assertRaises(SystemExit):
+            ta.refuse_protected_out(REPO, REPO / "sim/soft-start/testbench/../corners/20261117-zz")
+
+    def test_the_tree_itself_is_refused_like_a_path_under_it(self):
+        with self.assertRaises(SystemExit):
+            ta.refuse_protected_out(REPO, REPO / "sim/soft-start/corners")
+
+    def test_scratch_is_accepted(self):
+        stage = ta.stage_corner_dir(REPO, "soft-start", "zz-guard")
+        ta.refuse_protected_out(REPO, stage)
+        ta.refuse_protected_out(REPO, REPO / "sim/.work/scratch/zz-guard")
+        with tempfile.TemporaryDirectory() as td:
+            ta.refuse_protected_out(REPO, Path(td) / "outside-repo")
+
+    def test_flag_and_slug_shape_the_refusal_message(self):
+        with self.assertRaises(SystemExit) as cm:
+            ta.refuse_protected_out(REPO, REPO / "sim/soft-start/corners/zz",
+                                    flag="--dest", slug="soft-start")
+        msg = str(cm.exception)
+        self.assertIn("--dest", msg)
+        self.assertIn("'soft-start'", msg)
+        self.assertIn("run_store_evidence.py soft-start", msg)
 
 
 class Grade(unittest.TestCase):

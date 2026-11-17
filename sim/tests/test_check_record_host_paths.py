@@ -8,19 +8,20 @@ paths only; no ngspice, KLayout, or PDK.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location(
+sys.path.insert(0, str(REPO / "sim"))
+from harness.loader import load_script  # noqa: E402
+
+crhp = load_script(
     "check_record_host_paths", REPO / "sim" / "check_record_host_paths.py")
-crhp = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(crhp)
 
 BAD = "log at /home/alice/work/run.log\n"
 GOOD = "log at sim/psrr-dc/run.log\n"

@@ -9,7 +9,8 @@ becomes a claim in an evidence record -- the landing rule, the derived
 injection current, the netlist transforms, the ``device``/``binj`` variant
 A/B, the deck template's substitution, the hand-over metrics, the ``klt sim``
 batch front end, and the fact that the margin semantics are *imported* from
-``sim/loop-stability/`` rather than re-implemented.
+``sim/harness/loop_margin.py`` (the same single source
+``sim/loop-stability/`` reads) rather than re-implemented.
 
 **This module is the only copy of those assertions.** Since issue #593,
 ``sim/soft-start-loop-gain/testbench/selftest.py`` -- the pre-sweep gate
@@ -30,12 +31,13 @@ selftest, which needs ngspice. Nothing here does: no PDK, no simulator.
 from __future__ import annotations
 
 import difflib
-import importlib.util
 import math
 import re
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
+from types import SimpleNamespace
 
 SIM_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = SIM_DIR.parent
@@ -44,12 +46,19 @@ sys.path.insert(0, str(SIM_DIR))
 _TB = SIM_DIR / "soft-start-loop-gain" / "testbench"
 sys.path.insert(0, str(_TB))
 import netlist_variants as nv  # noqa: E402
+from harness import klt_grid  # noqa: E402
+from harness import loop_margin  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
-_spec = importlib.util.spec_from_file_location("ss_loop_gain_sweep", _TB / "sweep.py")
-sweep = importlib.util.module_from_spec(_spec)
-sys.modules["ss_loop_gain_sweep"] = sweep
-_spec.loader.exec_module(sweep)
+sweep = load_script("ss_loop_gain_sweep", _TB / "sweep.py")
+
+# `sim/loop-stability/`'s own driver, loaded the same way its own test file
+# loads it, so the identity assertions below can check BOTH benches read the
+# same harness objects (the driver itself no longer reaches into this bench's
+# process, so there is no shared module object to compare against any more).
+_LS_SWEEP = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
+_ls = load_script("loop_stability_sweep", _LS_SWEEP)
 
 CORE = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
 
@@ -91,26 +100,30 @@ def row(**kw) -> "sweep.Row":
 class TestMarginSemanticsAreNotForked(unittest.TestCase):
     """The whole comparability claim of this experiment rests on this."""
 
-    def test_the_bars_are_loop_stabilitys_own_objects(self):
-        self.assertIs(sweep.PM_MIN_DEG, sweep.ls.PM_MIN_DEG)
-        self.assertIs(sweep.GM_MIN_DB, sweep.ls.GM_MIN_DB)
-        self.assertIs(sweep.RESURGENCE_MAX_DB, sweep.ls.RESURGENCE_MAX_DB)
+    def test_both_benches_read_the_same_harness_bars(self):
+        for mod in (sweep, _ls):
+            self.assertIs(mod.PM_MIN_DEG, loop_margin.PM_MIN_DEG)
+            self.assertIs(mod.GM_MIN_DB, loop_margin.GM_MIN_DB)
+            self.assertIs(mod.RESURGENCE_MAX_DB, loop_margin.RESURGENCE_MAX_DB)
 
-    def test_the_ac_band_and_resolution_are_loop_stabilitys_own(self):
-        self.assertIs(sweep.AC_DEC, sweep.ls.AC_DEC)
-        self.assertIs(sweep.F_START, sweep.ls.F_START)
-        self.assertIs(sweep.F_STOP, sweep.ls.F_STOP)
+    def test_both_benches_read_the_same_harness_ac_band_and_resolution(self):
+        for mod in (sweep, _ls):
+            self.assertIs(mod.AC_DEC, loop_margin.AC_DEC)
+            self.assertIs(mod.F_START, loop_margin.F_START)
+            self.assertIs(mod.F_STOP, loop_margin.F_STOP)
         self.assertEqual(sweep.AC_DEC, "400")
 
     def test_row_inherits_rather_than_restates_the_margin_definitions(self):
-        self.assertTrue(issubclass(sweep.Row, sweep.ls.Row))
+        self.assertIs(_ls.Row, loop_margin.Row)
+        self.assertTrue(issubclass(sweep.Row, loop_margin.Row))
         for name in ("pm_deg", "gm_db", "passes", "resurges"):
-            self.assertIs(getattr(sweep.Row, name), getattr(sweep.ls.Row, name),
+            self.assertIs(getattr(sweep.Row, name), getattr(loop_margin.Row, name),
                           f"{name} is redefined here instead of inherited")
 
-    def test_the_pvt_grid_is_loop_stabilitys_own(self):
-        self.assertIs(sweep.PROCESS_CORNERS, sweep.ls.PROCESS_CORNERS)
-        self.assertIs(sweep.TEMPS_C, sweep.ls.TEMPS_C)
+    def test_both_benches_read_the_same_harness_pvt_grid(self):
+        for mod in (sweep, _ls):
+            self.assertIs(mod.PROCESS_CORNERS, loop_margin.PROCESS_CORNERS)
+            self.assertIs(mod.TEMPS_C, loop_margin.TEMPS_C)
         self.assertEqual(sweep.SUPPLY_TOL, 0.10)
 
 
@@ -739,7 +752,7 @@ class TestOperatingPoints(unittest.TestCase):
 
     def test_all_but_one_config_is_also_a_loop_stability_grid_point(self):
         shared = [(c, e) for c in sweep.CEFFS_F for e in sweep.ESRS_OHM
-                  if c in sweep.ls.CEFFS_F and e in sweep.ls.ESRS_OHM]
+                  if c in _ls.CEFFS_F and e in _ls.ESRS_OHM]
         total = len(sweep.CEFFS_F) * len(sweep.ESRS_OHM)
         self.assertEqual(len(shared), total - len(sweep.CEFFS_F))  # the 0.1 col
 
@@ -1288,6 +1301,132 @@ class TestRecordIsAppendOnly(unittest.TestCase):
         src = (_TB / "sweep.py").read_text()
         self.assertIn("write_markdown_record(record_id, md, records_dir)", src)
         self.assertNotIn(".write_text(md)", src)
+
+
+class TestSharedLocalGridFlags(unittest.TestCase):
+    """The local-grid CLI block comes from ``harness.klt_grid`` (issue #621).
+
+    Static source checks live in ``test_harness.LocalGridCliTests``; this one
+    drives the sweep's *real* parser, so a flag the dedup dropped or renamed
+    fails here rather than at the top of someone's PVT run.
+    """
+
+    def test_every_grid_flag_the_sweep_listed_before_is_still_there(self):
+        args = sweep.build_arg_parser().parse_args([])
+        self.assertEqual(
+            (args.backend, args.in_flight, args.jobs, args.no_write,
+             args.subset_reason, args.supersedes),
+            (None, 6, klt_grid.DEFAULT_JOBS, False, "", ""))
+
+    def test_the_bench_specific_backend_clause_survived_the_move(self):
+        text = " ".join(sweep.build_arg_parser().format_help().split())
+        self.assertIn("each (variant, phase, C_eff, ESR) configuration is a "
+                      "`klt sim` request", text)
+        self.assertIn("the DC hand-over transfer is one `op` request per "
+                      "variant", text)
+
+    def test_the_bench_keeps_its_own_flags_out_of_the_shared_block(self):
+        text = sweep.build_arg_parser().format_help()
+        for flag in ("--variants", "--phases", "--skip-crosscheck",
+                     "--skip-handover", "--explore", "--ac-dec", "--author"):
+            self.assertIn(flag, text)
+
+class TestRenderRecordSmoke(unittest.TestCase):
+    """`render_record` renders a whole record from fabricated inputs (#658).
+
+    This driver mints its published evidence through `render_record`, and no
+    test called it: a wrong key or a bad template splice in it raised only
+    after the entire PVT grid had run, at record-write time -- the most
+    expensive possible place to discover that, and invisible to a green
+    `unittest` run before it. These smoke tests call it with a four-row
+    fabricated device/binj A/B (two ramp states at one corner, one output
+    network cell) and assert on structure only: the `## Environment` block is
+    present with its canonical bullets in order, and the no-klt / klt-local /
+    klt-batch variants all render without raising. Deliberately no golden
+    file -- the record prose evolves (the #609 Champion ruling accepted
+    exactly such a change), so pinning the full text would only make this
+    test churn on every wording edit. The not-run paths are taken for the
+    optional sections (`curves=[]`, `xcheck={"skipped": True}`) so the
+    fixture stays small; those sections have their own tests above.
+
+    Stubbed, and why: `ngspice_version` shells out to the host's ngspice and
+    `ngspice_binary_sha256` hashes that binary. This module's contract is
+    no-ngspice (matching `test_loop_stability.py`, where the same stubbing
+    is reasoned through); a smoke render must not depend on what is (or is
+    not) installed. `socket.gethostname()` is left live -- it is a plain
+    stdlib call with no external dependency.
+    """
+
+    RECORD_ID = "unittest-000000-smoke"
+    COMMAND_BULLET = "- Command: `./sim/soft-start-loop-gain/testbench/run.sh`"
+    PDK_BULLET = "- PDK: gf180mcuD @ open_pdks `unittest`"
+
+    def _render(self, klt_info=None) -> str:
+        # device/binj mates at the same (phase, ramp state, corner, C_eff,
+        # ESR), so `ab_table` has pairs to tabulate and `handover_table` has
+        # a two-state transfer at the tt corner. VOUT follows the intended
+        # 1.5*V(SSR) ramp and FB sits near VREF, which are the physical
+        # relationships the derived columns (I_inj, the hand-over tracking
+        # error) are computed from -- the values only have to be finite and
+        # self-consistent, not measured.
+        rows = [
+            row(variant=variant, ssr_cmd=cmd, ssr_v=v, vout_v=1.5 * v,
+                fb_v=1.1975)
+            for variant in ("device", "binj")
+            for cmd, v in (("0.05", 0.05), ("1.15", 1.15))
+        ]
+        args = SimpleNamespace(ac_dec=int(sweep.AC_DEC), author="unittest",
+                               phases=["ramp"], subset_reason="", supersedes=None)
+        pdk = SimpleNamespace(
+            variant="gf180mcuD", version="unittest",
+            provenance=lambda: {
+                "path": "",
+                "variant": "gf180mcuD",
+                "open_pdks_version": "unittest",
+                "discovered_via": "",
+            })
+        with \
+                unittest.mock.patch.object(sweep, "ngspice_version",
+                                           lambda: "ngspice-46 (stubbed)"), \
+                unittest.mock.patch.object(sweep, "ngspice_binary_sha256",
+                                           lambda: "0" * 64):
+            return sweep.render_record(
+                record_id=self.RECORD_ID, rows=rows, grid=["tt_27c_3.30v"],
+                ceffs=[1e-6], esrs=[0.1], pdk=pdk,
+                prov={"commit": "abc1234", "short": "abc1234",
+                      "branch": "unittest", "dirty": False},
+                args=args, xcheck={"skipped": True}, attribution=[],
+                seeded=(), curves=(), klt_info=klt_info)
+
+    def test_no_klt_renders_the_environment_block_in_order(self):
+        md = self._render()
+        self.assertIn("## Environment", md)
+        self.assertIn(self.COMMAND_BULLET, md)
+        self.assertIn(self.PDK_BULLET, md)
+        # Presence AND order: Environment header, then the provenance bullets
+        # it introduces. Index comparisons, not byte comparison.
+        self.assertLess(md.index("## Environment"),
+                        md.index(self.PDK_BULLET))
+        self.assertLess(md.index(self.PDK_BULLET),
+                        md.index(self.COMMAND_BULLET))
+        self.assertNotIn("- Backend:", md,
+                         "a no-klt record must not claim a klt backend")
+
+    def test_klt_local_renders_the_backend_bullet(self):
+        md = self._render(klt_info={"backend": "local", "requests": 3,
+                                    "klt": "klt (stubbed)"})
+        self.assertIn("## Environment", md)
+        self.assertIn("- Backend: `klt sim`", md)
+        self.assertIn("--backend local", md)
+        self.assertLess(md.index("## Environment"), md.index("- Backend:"))
+
+    def test_klt_batch_renders_the_backend_bullet(self):
+        md = self._render(klt_info={"backend": "batch", "requests": 3,
+                                    "klt": "klt (stubbed)"})
+        self.assertIn("## Environment", md)
+        self.assertIn("- Backend: `klt sim`", md)
+        self.assertIn("--backend batch", md)
+        self.assertLess(md.index("## Environment"), md.index("- Backend:"))
 
 
 if __name__ == "__main__":
