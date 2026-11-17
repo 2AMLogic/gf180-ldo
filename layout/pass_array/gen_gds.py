@@ -103,6 +103,9 @@ import em_budget  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gen_gds_common import (  # noqa: E402
+    CO_1_SIZE_UM,
+    CO_2B_ARRAY_SPACE_UM,
+    CO_4_COMP_ENC_UM,
     DBU_UM,
     L_COMP,
     L_CONTACT,
@@ -173,9 +176,12 @@ GR_GAP_X_UM = 0.32       # cmp2cmp, draw_fet.py
 GR_GAP_Y_UM = 0.26       # ply2gr, draw_fet.py
 NP_ENC_CMP_UM = 0.16     # np_enc_cmp, draw_fet.py
 NW_ENC_NCMP_UM = 0.12    # nwell_enc_ncomp, draw_fet.py
-CONT_UM = 0.22           # CO.1
-CONT_PITCH_UM = 0.50     # CO.1 + CO.2b (0.22 + 0.28)
-CMP2CONT_UM = 0.07       # cmp2cont, draw_fet.py
+# One cut + a 0.28 um space. The arms are single-file rows of cuts -- GR_ARM_UM
+# less 2 * CO_4_COMP_ENC_UM leaves 0.30 um, exactly one 0.22 cut across -- so CO.2a's
+# 0.25 is the rule governing the space; 0.28 sits deliberately above it, the
+# PDK's own draw_fet.py guard-ring pitch (cont2cont = 0.28), which is also the
+# pitch the recorded DRC/LVS evidence was taken on.
+CONT_PITCH_UM = CO_1_SIZE_UM + CO_2B_ARRAY_SPACE_UM
 
 GATE_BUS_W_UM = 0.45     # >= PL.1 (0.28)
 GATE_BUS_OVERLAP_UM = 0.05
@@ -393,7 +399,7 @@ def _guard_ring(top, layout, comp, buses):
         implant_layer=L_NPLUS, implant_enc=NP_ENC_CMP_UM,
         well=(L_NWELL, NW_ENC_NCMP_UM),
         cont_layer=L_CONTACT, cont_pitch=CONT_PITCH_UM,
-        cont_size=CONT_UM, cont_enc=CMP2CONT_UM,
+        cont_size=CO_1_SIZE_UM, cont_enc=CO_4_COMP_ENC_UM,  # == cmp2cont
     )
 
 

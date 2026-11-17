@@ -124,14 +124,16 @@ The deck's Tian/Middlebrook dual injection, its break at
 `ERRAMP_OUT`/`PASS_GATE`, its `meas`-based margin extraction, its DR-0008
 resurgence idiom with the fixed 5%-above-crossing scan start (#69) and its
 `AC_DEC = 400` resolution policy (#58) are character for character
-`tb_loop_stability.spice.in`'s. `sweep.py` **imports** that experiment's driver
-and takes `PM_MIN_DEG`, `GM_MIN_DB`, `RESURGENCE_MAX_DB`, `AC_DEC`, `F_START`,
-`F_STOP` and the PVT grid from it as the same Python objects, and its `Row`
-subclasses that experiment's `Row` so `pm_deg` / `gm_db` / `passes` /
-`resurges` are inherited rather than restated.
-`sim/tests/test_soft_start_loop_gain.py` asserts that identity, and
-`selftest.py` delegates the known-answer validation of the extraction to
-`sim/loop-stability/testbench/selftest.py` rather than re-implementing one.
+`tb_loop_stability.spice.in`'s. `sweep.py` takes `PM_MIN_DEG`, `GM_MIN_DB`,
+`RESURGENCE_MAX_DB`, `AC_DEC`, `F_START`, `F_STOP` and the PVT grid from
+`sim/harness/loop_margin.py` -- the same single definition
+`sim/loop-stability/`'s own driver imports (#630) -- as the same Python
+objects, and its `Row` subclasses that module's `Row` so `pm_deg` / `gm_db` /
+`passes` / `resurges` are inherited rather than restated.
+`sim/tests/test_soft_start_loop_gain.py` asserts that both benches read those
+same objects, and `selftest.py` delegates the known-answer validation of the
+extraction to `sim/loop-stability/testbench/selftest.py` rather than
+re-implementing one.
 
 `selftest.py` applies that same delegate-rather-than-re-implement rule to
 *both* its halves (issue #593): part 1 is `sim/loop-stability/`'s
@@ -323,7 +325,7 @@ pole or zero to attribute and reporting one anyway would be fitting noise.
 
 gf180mcu's device models are binned and the widest bin any of them has is
 `W ≤ 100.01 µm` (`sm141064.ngspice`'s `wmax`). `design/ldo_core.sch`'s pass
-device is `W=2000u nf=40` — 2 mm of width in 40 fingers of 50 µm — so the bin it
+device is `W=2800u nf=40` — 2.8 mm of width in 40 fingers of 70 µm — so the bin it
 belongs in exists **only if the binning divides `W` by `nf`**.
 
 Whether ngspice does that is not a property of the netlist or the PDK: it is

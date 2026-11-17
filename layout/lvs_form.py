@@ -32,9 +32,33 @@ elements the deck's own ``SubcircuitModelsReader`` delegate understands
 (``libs.tech/klayout/tech/lvs/rule_decks/custom_classes.lvs``)::
 
     Rbias NBIAS RBT VSS ppolyf_u_1k l=1000u w=1u m=1
-    Cc    NZ    OUT     cap_mim_2f0_m3m4_noshield l=48u w=48u m=1
+    Cc    NZ    OUT     cap_mim_2f0fF l=48u w=48u m=1
 
-which is the shape the PDK's own LVS regression netlists use.
+For the MIM capacitors the model token is rewritten too, and that is not
+cosmetic: KLayout's compare matches device classes BY NAME. The deck's
+extraction registers ``cap_mim_<n>f<m>fF`` classes
+(``rule_decks/mimcap_extraction.lvs``), while the token an export carries is
+the *symbol* name (``cap_mim_2f0_m3m4_noshield``), so the two names have to
+be reconciled here, keyed on the flavour ``<n>f<m>`` the two spellings
+share (issue #642). This mirrors the
+convention the PDK's own LVS regression netlists follow: the *subcircuit*
+is named after the symbol, the *device* after the extraction class --
+``testing/unit/mimcap_devices/netlist/cap_mim_2f0fF_B_5LM_2p0.cdl`` has
+``.SUBCKT cap_mim_2f0_m4m5_noshield`` whose device lines read
+``C... cap_mim_2f0fF ...``. The deck registers one MIM flavour per run,
+selected by its ``mim_cap`` switch, and ``drclvs.py`` pins that switch
+(``MIMCAP_SWITCH``) -- whose case registers exactly ``cap_mim_2f0fF``
+(``MIMCAP_CLASS``). So 2f0 maps, and every other ``cap_mim_*`` token is a
+hard :class:`LvsFormError`, never a mapped or passed-through token --
+whether neither spelling's regex can parse it into a flavour at all, or it
+parses to a flavour other than the pinned ``MIMCAP_FLAVOUR``: a token
+naming a class the run does not register compares as a well-formed wrong
+verdict with no rule-level diagnosis (issue #680).
+Resistors need no mapping -- on the
+pinned deck the resistor symbols' names are the registered class names
+(``ppolyf_u_1k`` & co) -- and the non-MIM capacitors register their classes
+under the symbol names too (``rule_decks/moscap_extraction.lvs``), so their
+tokens pass through unchanged.
 
 Only ``l`` and ``w`` are carried over, and that is deliberate rather than
 lazy: the delegate registers ``R`` with ``enable_parameter('R', false)`` and
@@ -81,7 +105,13 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["LvsFormError", "rewrite_passives", "unrendered_device_lines"]
+__all__ = [
+    "LvsFormError",
+    "MIMCAP_CLASS",
+    "MIMCAP_SWITCH",
+    "rewrite_passives",
+    "unrendered_device_lines",
+]
 
 
 class LvsFormError(RuntimeError):
@@ -104,6 +134,73 @@ _FAMILIES = (
     ("R", "r_width", "r_length"),
     ("C", "c_width", "c_length"),
 )
+
+# The MIM-capacitor family's *symbol* names are not what the deck's
+# extraction registers as device classes: rule_decks/mimcap_extraction.lvs
+# registers cap_mim_<n>f<m>fF names, while the tokens an xschem export
+# carries -- the PDK symbols' names, and the `model=` overrides this repo's
+# schematics set -- are the symbol spellings:
+# cap_mim_<n>f<m>_<metals>_noshield. KLayout's compare matches device
+# classes BY NAME, so the rendered C line has to carry the class name.
+#
+# The deck registers only ONE MIM flavour per run, picked by its $mim_cap
+# switch, and drclvs.py pins that switch: MIMCAP_SWITCH below is the switch
+# value, whose deck case registers exactly MIMCAP_CLASS. That pairing is
+# transcribed here and nowhere else, so the switch drclvs.py passes and the
+# flavour this renderer accepts cannot drift apart (issue #680). A
+# cap_mim_* token naming any other flavour -- in either spelling -- is a
+# hard LvsFormError (see _mimcap_model_token).
+MIMCAP_SWITCH = "2"
+MIMCAP_FLAVOUR = "2f0"
+MIMCAP_CLASS = f"cap_mim_{MIMCAP_FLAVOUR}fF"
+_MIMCAP_CLASS_RE = re.compile(r"^cap_mim_(\d+f\d+)fF$")
+_MIMCAP_SYMBOL_RE = re.compile(r"^cap_mim_(\d+f\d+)(?:_.+)?$")
+
+
+def _mimcap_model_token(model: str, line: str) -> str:
+    """Map a cap_mim *symbol* name to the device class the run registers.
+
+    Non-``cap_mim_*`` capacitor models are returned unchanged: the deck
+    registers their classes under the symbol names themselves
+    (``rule_decks/moscap_extraction.lvs``: ``cap_nmos_03v3`` & co).
+
+    The MIM run registers exactly one flavour: the ``mim_cap`` switch
+    drclvs.py pins (``MIMCAP_SWITCH``) selects the deck case that registers
+    ``MIMCAP_CLASS``. So a ``cap_mim_*`` token naming any other flavour --
+    in symbol or in class spelling -- is a hard ``LvsFormError``: mapped or
+    passed through, it would name a class the run never registers.
+    """
+    if not model.startswith("cap_mim_"):
+        return model
+    match = _MIMCAP_CLASS_RE.match(model)
+    if match is None:
+        match = _MIMCAP_SYMBOL_RE.match(model)
+    if match is None:
+        raise LvsFormError(
+            f"capacitor model token {model!r} is a cap_mim flavour this module "
+            "cannot parse into a device class the deck's MIM extraction "
+            "registers. Passing it through would compare a class the deck "
+            "never registers: the compare would report a well-formed "
+            "mismatch with no rule-level diagnosis:\n"
+            f"    {line}\n"
+            f"  Set the instance's `model=` to the flavour this flow "
+            f"registers ({MIMCAP_CLASS}, deck switch mim_cap={MIMCAP_SWITCH}), "
+            "or extend the extraction deck for the new flavour."
+        )
+    if match.group(1) != MIMCAP_FLAVOUR:
+        raise LvsFormError(
+            f"capacitor model token {model!r} names the cap_mim flavour "
+            f"{match.group(1)!r}, but this run registers only {MIMCAP_CLASS} "
+            f"(the deck's mim_cap={MIMCAP_SWITCH} case, which drclvs.py "
+            "pins; issue #680). Mapped or passed through, it would compare "
+            "a class the deck never extracts: the compare would report a "
+            "well-formed mismatch with no rule-level diagnosis:\n"
+            f"    {line}\n"
+            f"  Set the instance's `model=` to a {MIMCAP_FLAVOUR} MIM "
+            "capacitor -- the flavour this flow's pinned switch selects -- "
+            "or change the pinned switch and the registered flavour with it."
+        )
+    return MIMCAP_CLASS
 
 
 def _split_params(tokens: list[str]) -> tuple[list[str], list[str]]:
@@ -147,6 +244,8 @@ def _rewrite_line(line: str) -> str | None:
     name = head[0][1:]
     nets = head[1:-1]
     model = head[-1]
+    if letter == "C":
+        model = _mimcap_model_token(model, line)
     if not name:
         raise LvsFormError(f"passive instance has no name after its `X` prefix: {line}")
     if name[:1].upper() != letter:

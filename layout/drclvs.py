@@ -107,7 +107,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import difflib
-import importlib.util
 import json
 import os
 import re
@@ -218,7 +217,14 @@ class CellSpec:
     # apply to this cell's netlist (check_controls_apply, called before any
     # LVS run, turns "this control does nothing here" into a hard error).
     controls: tuple[Control, ...]
-    # The schematic's bulk/substrate port == the LVS deck's lvs_sub switch.
+    # The schematic's bulk/substrate port NAME. Not an LVS deck switch: the
+    # pinned deck dereferences no lvs_sub global (see lvs_switches, issue
+    # #691) and names the substrate itself instead --
+    # rule_decks/substrate_connections.lvs hardcodes
+    # `connect_global(..., 'SUB')`. This field is only the port name the
+    # schematic netlist carries; whether the deck should ever take the
+    # substrate net from the run is a separate decision, deliberately not
+    # made here.
     substrate_net: str = "VSS"
     # The LVS deck's `poly_res` switch: which high-sheet ppolyf_u_* flavour
     # the deck extracts. A `case POLY_RES` in rule_decks/res_extraction.lvs
@@ -226,11 +232,15 @@ class CellSpec:
     # from ppolyf_u_3k units is unextractable -- and mismatches -- under the
     # default. Not a free choice: it is which flavour the cell is drawn in.
     poly_res: str = "1k"
-    # Whether the LVS deck may collapse series/parallel device chains in the
-    # EXTRACTED netlist before comparing (`netlist.simplify`). Harmless for a
-    # cell whose devices cannot be combined; for a unit-resistor string it
-    # erases the very structure the layout exists to prove, so such a cell
-    # sets this False. See run_lvs() for how the deck's switches express it.
+    # Whether the LVS deck may collapse series/parallel device chains before
+    # comparing. Despite the name, this is not an extracted-side-only choice:
+    # the pinned runset has ONE switch for it -- $simplify -- and it gates
+    # BOTH sides, `netlist.simplify` and `schematic.simplify`
+    # (gf180mcu.lvs:427-428), so a True here lets chains fold on the
+    # schematic side too. Harmless for a cell whose devices cannot be
+    # combined; for a unit-resistor string it erases the very structure the
+    # layout exists to prove, so such a cell sets this False. run_lvs()
+    # maps this onto $simplify -- there is no extracted-only switch to set.
     simplify_extracted: bool = True
     # One-line human description, quoted verbatim in --record's run record.
     description: str = ""
@@ -242,8 +252,12 @@ class CellSpec:
     # Extra markdown sections --record appends to the run record: whatever
     # this cell's own verification claim needs stated alongside the verdicts
     # (for a matched array, the as-drawn matching against floorplan.md's
-    # numeric target). Derived, not typed in -- see _divider_record_note().
-    record_notes: str = ""
+    # numeric target). A zero-argument callable, invoked only when --record
+    # writes this cell's record -- NOT evaluated at CellSpec-construction
+    # time, which kept every cell's import paying for the divider's sources
+    # (issue #649). None for a cell with no note; see
+    # layout/divider/record_note.py for the one registered example.
+    record_notes: Callable[[], str] | None = None
 
     def __post_init__(self) -> None:
         # Structural guard, not a convention: a CellSpec that would clobber a
@@ -270,11 +284,13 @@ class CellSpec:
 sys.path.insert(0, str(LAYOUT_DIR))
 from lvs_form import (  # noqa: E402
     LvsFormError,
+    MIMCAP_SWITCH,
     rewrite_passives,
     unrendered_device_lines,
 )
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
+from harness.loader import load_script  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound, find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
     RecordExists,
@@ -900,85 +916,6 @@ def check_controls_apply(spec: CellSpec, text: str) -> dict[str, Control]:
 # the cell registry
 # --------------------------------------------------------------------------
 
-def _load_module(name: str, path: Path):
-    """Import a file by path, under a name of our choosing.
-
-    Used for ``layout/divider/plan.py``, which is also imported -- under
-    KLayout's interpreter, from its own directory -- by the divider's GDS
-    generator. Loading it by path rather than by ``sys.path`` insertion keeps
-    a bare module name like ``plan`` out of this process's import namespace.
-    """
-    module_spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(module_spec)
-    # Register before executing: `@dataclass` resolves its annotations
-    # through `sys.modules[cls.__module__]`, so a module that defines one
-    # raises AttributeError if it is not there yet.
-    sys.modules[name] = module
-    module_spec.loader.exec_module(module)
-    return module
-
-
-def _divider_record_note() -> str:
-    """The divider's as-drawn matching, against floorplan.md's own targets.
-
-    Derived from `layout/divider/plan.py` (the arrangement the generator
-    draws) and `layout/area_estimate.py` (the mismatch arithmetic the area
-    budget was closed with), so a record can never quote a centroid or a
-    sigma the drawing does not have.
-    """
-    plan = _load_module("divider_plan", DIVIDER_DIR / "plan.py")
-    area = _load_module("divider_area_estimate", LAYOUT_DIR / "area_estimate.py")
-    _footprint, sigma3 = area.divider_field()
-    pattern = "".join(
-        "T" if p in plan.TOP_POSITIONS else "B" for p in plan.ACTIVE_POSITIONS
-    )
-    top_k = len(plan.TOP_POSITIONS) * plan.UNIT_KOHM
-    bot_k = len(plan.BOT_POSITIONS) * plan.UNIT_KOHM
-    return f"""## Matching, as drawn
-
-Against `layout/floorplan.md` §4.1's numeric targets. Every figure below is
-read out of `layout/divider/plan.py` -- the constants the generator actually
-draws -- not transcribed from the document, and
-`layout/tests/test_divider_layout.py` re-checks them against §4.1 on every CI
-run.
-
-| Property | §4.1's target | As drawn |
-| --- | --- | --- |
-| Unit | 50 kOhm `ppolyf_u_3k`, W = 2 um, L = 31.8 um | {plan.UNIT_KOHM:g} kOhm, W = {plan.UNIT_W_UM:g} um, L = {plan.UNIT_L_UM:g} um |
-| String | 18 units, 6 up / 12 down | {len(plan.ACTIVE_POSITIONS)} units, {len(plan.TOP_POSITIONS)} up / {len(plan.BOT_POSITIONS)} down |
-| Value | 900 kOhm total, tapped 600 k / 300 k | {top_k + bot_k:g} kOhm, tapped {bot_k:g} k / {top_k:g} k |
-| Arrangement | `B T B B T B B T B B T B B T B B T B` | `{" ".join(pattern)}` |
-| Pitch | 2.4 um (2.0 um strip + PRES.2's 0.4 um) | {plan.PITCH_UM:g} um ({plan.UNIT_W_UM:g} + {plan.PITCH_UM - plan.UNIT_W_UM:g}) |
-| Dummies | one strip at each end | {len(plan.DUMMY_POSITIONS)}, at positions {", ".join(str(p) for p in plan.DUMMY_POSITIONS)} |
-| **Top-leg centroid** | **9.5** | **{plan.centroid(plan.TOP_POSITIONS):g}** |
-| **Bottom-leg centroid** | **9.5** | **{plan.centroid(plan.BOT_POSITIONS):g}** |
-| Divider mismatch | 1.68 mV (3 sigma), vs. #9's budgeted 3.36 mV | {sigma3:.2f} mV (3 sigma) |
-
-Both centroids landing on the same position is the *whole* claim this cell
-exists to support, and it is the one term in the output-accuracy budget that
-**cannot be simulated against this PDK at all**: the resistor subcircuits
-hard-code `mis_r = 0` and the high-sheet `ppolyf_u_*k` cards carry no local
-mismatch term (`sim/devchar/CONCLUSIONS.md` §2). The 3-sigma figure above is
-therefore an arithmetic projection from a *proxy* coefficient (`ppolyf_u`'s
-disabled `par_r = 0.021`, the proxy `README.md` note 3 sanctions), not a
-measured or simulated result -- and it can only be claimed at all because the
-drawn arrangement is the one it assumes, which is what this record's LVS
-verdict establishes.
-
-## What this LVS verdict does not cover
-
-- **Resistance is not a compared parameter.** The deck's `BResistor` class
-  (`rule_decks/custom_classes.lvs`) does `enable_parameter('R', false)` and
-  compares `W` and `L` only. The match above therefore says the drawn
-  *geometry* is the netlisted geometry, not that any resistance value is
-  right. (It also means the deck's own nominal 3.0 kOhm/sq would call each
-  unit 47.7 kOhm rather than 50 kOhm -- the 50 kOhm comes from
-  `sim/devchar`'s measured effective sheet, 3.145 kOhm/sq, and is what the
-  drawn 31.8 um length is sized from.)
-- **Pin order is not checked here**, as for every cell in this flow -- see
-  `layout/README.md`, "What LVS here does *not* check".
-"""
-
 
 TESTCELL_SPEC = CellSpec(
     key="testcell",
@@ -1053,7 +990,9 @@ DIVIDER_SPEC = CellSpec(
         "18 ppolyf_u_3k units (W=2 um, L=31.8 um) + 2 dummies, "
         "common-centroid 6 up / 12 down -- layout/floorplan.md §4.1"
     ),
-    record_notes=_divider_record_note(),
+    record_notes=lambda: load_script(
+        "divider_record_note", DIVIDER_DIR / "record_note.py"
+    ).render(),
 )
 
 # The registry a real block's layout plugs into -- add an entry here (see
@@ -1173,47 +1112,86 @@ def run_pdk_drc(pdk: Pdk, spec: CellSpec, gds: Path, run_dir: Path, log: Path) -
 # stage 5/6 -- LVS
 # --------------------------------------------------------------------------
 
-def run_lvs(
-    pdk: Pdk, spec: CellSpec, gds: Path, netlist: Path, run_dir: Path, log: Path, tag: str
-) -> dict:
-    lvsdb = run_dir / f"{tag}.lvsdb"
-    extracted = run_dir / f"{tag}_extracted.cir"
-    switches = {
+def lvs_switches(
+    pdk: Pdk, spec: CellSpec, gds: Path, netlist: Path, lvsdb: Path, extracted: Path
+) -> dict[str, str]:
+    """The ``-rd`` switch set the LVS stage passes to the PDK's deck.
+
+    The deck is a Ruby script: ``-rd key=value`` only sets a ``$key``
+    global, and a global the deck never dereferences is silently unused --
+    the invocation looks valid while the code claims an intent the deck
+    never carries out (the same silent-ignore failure the DRC driver
+    documents). So every key here is one the pinned deck actually reads:
+    layout/tests/test_lvs_switches.py holds this dict to the deck's
+    dereferenced ``$global`` set and fails loudly on a stale key.
+
+    Deliberately ABSENT (dead on the pinned revision, dropped in issue
+    #691): ``thr`` (no thread pool switch in the LVS deck), ``lvs_sub``
+    (the deck names the substrate itself --
+    rule_decks/substrate_connections.lvs hardcodes ``connect_global``),
+    ``scale`` and ``schematic_simplify`` (never dereferenced; the compare
+    options the deck does take are the explicit per-side switches below).
+    """
+    return {
         "input": str(gds),
         "schematic": str(netlist),
         "report": str(lvsdb),
         "target_netlist": str(extracted),
         "topcell": spec.top_cell,
-        "thr": str(max(1, min(4, os.cpu_count() or 1))),
         "run_mode": "deep",
-        "lvs_sub": spec.substrate_net,
         "verbose": "false",
         "spice_net_names": "true",
         "spice_comments": "false",
-        "scale": "false",
-        "schematic_simplify": "false",
         "net_only": "false",
-        # NOT a stray switch: gf180mcu.lvs derives its own SIMPLIFY as
-        # "net_only, top_lvl_pins, combine, purge and purge_nets are ALL
-        # false" -- i.e. leaving every option off is what *enables*
-        # `netlist.simplify`, which collapses series/parallel device chains
-        # in the extracted netlist (and only there: `schematic.simplify` is
-        # gated separately, and off). For a one-device cell that is
-        # invisible. For a unit-resistor string it is not: it collapses the
-        # 18 drawn units into two lumped resistors, so the compare would
-        # stop being able to tell an 18-unit string from one long strip --
-        # exactly the property DR-0003 asks the divider to have. Turning
-        # `top_lvl_pins` on is what switches SIMPLIFY off, and it is the
-        # option with no other cost here, because creating the top-level
-        # pins is a step `netlist.simplify` was performing anyway.
+        # The pinned runset reads every compare-affecting option as its own
+        # -rd global, each defaulting to FALSE through `bool_check?`
+        # (tech/lvs/gf180mcu.lvs:109): nothing is derived any more. The two
+        # defaults below would silently change what the compare sees, so
+        # both are passed explicitly:
+        #   * SIMPLIFY comes from $simplify alone (gf180mcu.lvs:149) and
+        #     gates BOTH sides -- `netlist.simplify` and `schematic.simplify`
+        #     (gf180mcu.lvs:427-428) collapse series/parallel device chains
+        #     before comparing. For a one-device cell that is invisible. For
+        #     a unit-resistor string it folds the 18 drawn units into two
+        #     lumped resistors, so the compare would stop being able to tell
+        #     an 18-unit string from one long strip -- exactly the property
+        #     DR-0003 asks the divider to preserve. CellSpec's
+        #     simplify_extracted is that choice, so the switch follows it.
+        #   * IMPLICIT_CONNECT comes from $implicit_connect alone
+        #     (gf180mcu.lvs:179) and gates `connect_implicit('*')`
+        #     (gf180mcu.lvs:415). Without it, same-named nets that touch only
+        #     through the extraction stay separate nets: drclvs_passives
+        #     draws no strapping metal (layout/passives/gen_gds.py) precisely
+        #     so that join is what lands its two `S` straps and two `G`
+        #     labels on one net each.
+        "simplify": "true" if spec.simplify_extracted else "false",
+        "implicit_connect": "true",
+        # top_lvl_pins is an independent switch in the pinned runset
+        # (gf180mcu.lvs:159) -- not SIMPLIFY's off-toggle the pre-bump deck
+        # derived. Kept paired with simplify_extracted: this is the
+        # combination the verification probes ran, the divider keeping
+        # top-level pin creation on as it always has.
         "top_lvl_pins": "false" if spec.simplify_extracted else "true",
         "combine": "false",
         "purge": "false",
         "purge_nets": "false",
         "poly_res": spec.poly_res,
-        "mim_cap": "2",
+        # The MIM flavour the deck extracts this run -- and the only flavour
+        # lvs_form.py's renderer lets a C line name. The switch value and
+        # the registered class are one pairing transcribed in one place
+        # (lvs_form.MIMCAP_SWITCH <-> lvs_form.MIMCAP_CLASS), so this
+        # literal and the renderer cannot drift apart (issue #680).
+        "mim_cap": MIMCAP_SWITCH,
         **variant_switches(pdk),
     }
+
+
+def run_lvs(
+    pdk: Pdk, spec: CellSpec, gds: Path, netlist: Path, run_dir: Path, log: Path, tag: str
+) -> dict:
+    lvsdb = run_dir / f"{tag}.lvsdb"
+    extracted = run_dir / f"{tag}_extracted.cir"
+    switches = lvs_switches(pdk, spec, gds, netlist, lvsdb, extracted)
     cmd = ["klayout", "-b", "-r", str(pdk.klayout_dir / "lvs" / "gf180mcu.lvs")]
     for key, value in switches.items():
         cmd += ["-rd", f"{key}={value}"]
@@ -1523,8 +1501,9 @@ xschem's `lvs_netlist` form from `{schematic_rel}`.
   honestly"); the PDK deck's {drc['rule_categories']} categories are the number
   worth quoting.
 """
-    if spec.record_notes:
-        body += "\n" + spec.record_notes.rstrip("\n") + "\n"
+    note = spec.record_notes() if spec.record_notes else ""
+    if note:
+        body += "\n" + note.rstrip("\n") + "\n"
     if warnings:
         body += "\n## LVS deck notes\n\n"
         for warning in warnings:

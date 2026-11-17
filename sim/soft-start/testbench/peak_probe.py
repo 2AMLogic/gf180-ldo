@@ -16,6 +16,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
+from harness import tb_adapter  # noqa: E402
 from harness.corners import CORNERS  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 
@@ -77,7 +78,12 @@ def main():
     ap.add_argument("--extra", action="append", default=[], help="name=expr, appended after the 11 core vectors")
     ap.add_argument("--native", action="store_true", help="dump the solver's own time points (no linearize)")
     a = ap.parse_args()
-    out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    out = Path(a.out)
+    # A waveform dump (wrdata bytes, ngspice logs) is store-bound raw run
+    # bytes (DR-0041, issues #686/#695): an --out resolving inside an
+    # append-only tree is refused before the directory is even created.
+    tb_adapter.refuse_protected_out(REPO, out, slug="soft-start")
+    out.mkdir(parents=True, exist_ok=True)
     pdk = find_pdk()
     for name, dut in (("new", a.dut_new), ("baseline", a.dut_base)):
         csvp = out / f"{name}{a.tag}.dat"

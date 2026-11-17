@@ -246,10 +246,14 @@ this public repo. Evidence already committed is not rewritten or migrated.
   Every other path under `corners/<id>/` in such a record — `summary.csv`, the
   per-corner `<corner>.log`, `dut.spice`, `body.spice`, `request.json` — is a
   manifest `name`, not a file. This covers the ten benches whose `klt_run.py`
-  calls `tb_adapter.main`; the hand-rolled batch drivers (`enable-shutdown`,
-  `soft-start`, `current-limit`, `mc-output-accuracy`) still write the old
-  layout and are tracked in
-  [#596](https://github.com/2AMLogic/gf180-ldo/issues/596). The generator
+  calls `tb_adapter.main`; `enable-shutdown`, `soft-start` and `current-limit`
+  stage the same way but carry no `tb.json`, so `harness.klt_record` does not
+  apply to them — mint a staged run of one of those with
+  `python3 sim/run_store_evidence.py <bench> <run-id> <dir> --summary
+  <summary.md> --kind corners` (the driver prints the exact command;
+  [#646](https://github.com/2AMLogic/gf180-ldo/issues/646)). Only the
+  hand-rolled `mc-output-accuracy` still writes the old layout and is tracked
+  in [#596](https://github.com/2AMLogic/gf180-ldo/issues/596). The generator
   asserts nothing it cannot read: the `Supersedes` line names the newest
   earlier record (or `none`), the staging and PDK-stamp sentences are read
   from the reports' `worker_environment.pdk` fields, and the old-vs-new

@@ -21,8 +21,9 @@ instantiates it, and it says nothing about the regulator.
 THREE DEVICES, DELIBERATELY UNCONNECTED TO EACH OTHER:
 
   R1  ppolyf_u_1k        1 um x 10 um H-poly resistor. 3-terminal: its bulk
-                         is the substrate, which the LVS deck names via its
-                         own connect_global(sub, <lvs_sub>).
+                         is the substrate, which the pinned LVS deck names
+                         itself (rule_decks/substrate_connections.lvs
+                         hardcodes connect_global(..., 'SUB')).
   C1  cap_mim_2f0        20 um x 20 um MIM capacitor. The only device here
                          whose terminals are not on metal1/poly2 -- for the
                          5LM/MIM-option-B stack this repo builds against they
@@ -36,12 +37,16 @@ They share no nets on purpose: interconnect would add routing-DRC and
 extraction variables that have nothing to do with what is under test.
 
 MODEL NAMES ARE NOT FREE CHOICES. KLayout's netlist compare matches device
-classes BY NAME, so each `model=` here has to be the name the LVS deck's own
-extraction registers:
+classes BY NAME, so the name a device is compared under has to be one the
+LVS deck's own extraction registers:
   - `ppolyf_u_1k` because layout/drclvs.py passes poly_res=1k (the deck
     extracts exactly one H-poly flavour per run -- see issue #312);
-  - `cap_mim_2f0_m4m5_noshield` because the deck's MIM branch for
-    mim_option=B + metal_level=5LM + mim_cap=2 registers that name.
+  - the cap's exported token is the symbol name (`cap_mim_2f0_m4m5_
+    noshield`, the spellings the PDK's cap_mim symbols carry); the deck's
+    MIM branch registers the DEVICE CLASS `cap_mim_2f0fF`, and
+    layout/lvs_form.py maps the one to the other when it renders the C
+    line (issue #642). A cap_mim flavour that mapping cannot parse is an
+    export-time error, not an undiagnosed mismatch.
 Changing either switch in layout/drclvs.py means changing the model here.
 
 PARAMETERS ARE THE ELECTRICAL ONES, not the PCell's. The resistor PCell's `w`
@@ -55,8 +60,9 @@ instance order below, and drclvs_passives.sym must list the same order):
 
     RP  RM  CT  CB  D  G  S  VSS
 
-VSS is the FET's bulk AND the substrate net name handed to the LVS deck's
-lvs_sub switch; the resistor's bulk terminal resolves to the same net.} -600 -560 0 0 0.4 0.4 {}
+VSS is the FET's bulk AND the substrate net the pinned LVS deck names itself
+(rule_decks/substrate_connections.lvs hardcodes connect_global(..., 'SUB'));
+the resistor's bulk terminal resolves to the same net.} -600 -560 0 0 0.4 0.4 {}
 C {symbols/ppolyf_u_1k.sym} 0 0 0 0 {name=R1 model=ppolyf_u_1k W=1u L=10u m=1}
 C {symbols/cap_mim_2f0fF.sym} 200 0 0 0 {name=C1 model=cap_mim_2f0_m4m5_noshield W=20u L=20u m=1}
 C {symbols/nfet_03v3.sym} 400 0 0 0 {name=M1 model=nfet_03v3 L=0.28u W=6u nf=2 m=1}

@@ -75,11 +75,12 @@ Two of those are load bearing in ways a single-FET cell never exercises:
   is chosen because it is unambiguous.
 
 The metal stack is not a free choice: for the ``D`` variant this repo builds
-against (5LM, MIM option B), the LVS deck extracts
-``cap_mim_2f0_m4m5_noshield`` from a ``metal4``/``fusetop``/``metal5`` stack,
-so the PCell must be asked for ``metal_level="M5"`` (top plate M5), not
-``"M4"``. Asking for the wrong one yields a cell that is DRC-clean and
-extracts nothing.
+against (5LM, MIM option B), the LVS deck's MIM extraction registers the
+``cap_mim_2f0fF`` device class for a ``metal4``/``fusetop``/``metal5`` stack
+(the symbol-name token ``cap_mim_2f0_m4m5_noshield`` the schematic exports
+maps to it in ``layout/lvs_form.py``, issue #642), so the PCell must be
+asked for ``metal_level="M5"`` (top plate M5), not ``"M4"``. Asking for the
+wrong one yields a cell that is DRC-clean and extracts nothing.
 """
 
 import os
@@ -193,10 +194,11 @@ def build_resistor(layout, library):
 
     The PCell draws THREE metal1 shapes, not two: the two poly-contact straps
     at either end of the body, plus a p+ COMP substrate tap off to the left.
-    The tap is the device's bulk terminal and needs no label -- the LVS deck's
-    ``connect_global(sub, <lvs_sub>)`` already names the substrate -- so the
-    terminals are picked out as the metal1 shapes that land on poly2, which is
-    true of the straps and of nothing else.
+    The tap is the device's bulk terminal and needs no label -- the pinned LVS
+    deck names the substrate itself (rule_decks/substrate_connections.lvs
+    hardcodes ``connect_global(..., 'SUB')``) -- so the terminals are picked
+    out as the metal1 shapes that land on poly2, which is true of the straps
+    and of nothing else.
     """
     cell = _device(
         layout, library, "ppolyf_u_high_Rs_resistor", RES_PARAMS, "RES_UNIT"

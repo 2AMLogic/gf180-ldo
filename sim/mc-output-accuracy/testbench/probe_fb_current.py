@@ -14,6 +14,15 @@ of ``tb.json`` is that difference times 300 kohm.
 Variants: ``new`` (design/netlist/ldo_core.spice), ``baseline`` (the same file at
 ``--baseline-ref``) and ``new-nosoftstart`` (``new`` with the ``Xsoftstart``
 instance deleted, a removal bisection).
+
+Output is store-bound, not committed (DR-0041, DR-0044, issue #647): besides
+``probe.csv`` the probe writes ``<out>/<tag>/<point>/klt-report.json`` and
+``<cid>.log`` per point, so ``--out`` must point at scratch, never at an
+append-only tree -- an ``--out`` inside ``sim/*/corners/`` (or ``records/``,
+``netlist-snapshots/``) is refused. ``--out`` stays required: a probe has no
+record id to default with. The run refuses outright when the evidence store
+is unavailable, and prints the ``run_store_evidence.py --kind corners`` mint
+for turning a probe worth keeping into a record.
 """
 
 from __future__ import annotations
@@ -30,7 +39,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import klt_batch as kb  # noqa: E402
-from harness import pdk  # noqa: E402
+from harness import evidence_store as store  # noqa: E402
+from harness import pdk, tb_adapter  # noqa: E402
 
 BODY = """\
 .param vdd_nom=3.3
@@ -72,14 +82,26 @@ def variants(baseline_ref: str | None, tmp: Path) -> dict[str, Path]:
     return out
 
 
-def main() -> int:
+def main(argv=None, *, preflight=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
     ap.add_argument("--baseline-ref", default=None)
     ap.add_argument("--points", nargs="+", default=["ff,125,3.63", "tt,27,3.30"])
-    a = ap.parse_args()
-    pdk.pin_klt_pdk_root()
+    a = ap.parse_args(argv)
     out = Path(a.out)
+    tb_adapter.refuse_protected_out(REPO, out, slug="mc-output-accuracy")
+    # A probe writes store-bound bytes, so an unavailable store refuses before
+    # anything is written: no broker, no `klt artifact` verb, or an unreachable
+    # broker exits now. There is no commit-the-bytes fallback.
+    try:
+        (preflight or store.preflight)(REPO)
+    except store.StoreError as exc:
+        print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+              "A probe's raw bytes go to the artifact store only (sim/README.md, "
+              '"Stored evidence").',
+              file=sys.stderr)
+        return tb_adapter.EXIT_NOT_STORED
+    pdk.pin_klt_pdk_root()
     out.mkdir(parents=True, exist_ok=True)
     rows = []
     with tempfile.TemporaryDirectory(prefix="fbprobe-") as t:
@@ -106,6 +128,11 @@ def main() -> int:
         w = csv.DictWriter(f, fieldnames=keys, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
+    print(f"staged  : {out} (not evidence yet)")
+    print("mint it : python3 sim/run_store_evidence.py mc-output-accuracy <record-id> "
+          f"{out} --summary <notes.md> --kind corners")
+    print("         (<record-id> names the record; <notes.md> is the probe's Markdown notes; "
+          "the store commits it as sim/mc-output-accuracy/corners/<record-id>.md)")
     return 0
 
 

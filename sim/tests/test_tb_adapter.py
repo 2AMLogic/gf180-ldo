@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
@@ -18,7 +20,9 @@ sys.path.insert(0, str(SIM_DIR))
 from harness import klt_batch as kb  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
 from harness import testbench  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
+REPO = SIM_DIR.parent
 DUT = SIM_DIR.parent / "design" / "netlist" / "ldo_core.spice"
 
 
@@ -474,6 +478,102 @@ class StagedOutput(unittest.TestCase):
         with self.assertRaises(SystemExit) as cm:
             self._run(["--record-id", existing], lambda repo: None, find_pdk=_no_pdk)
         self.assertIn("append-only", str(cm.exception))
+
+
+class RefuseProtectedOut(unittest.TestCase):
+    """Issue #686: the shared append-only output guard beside
+    ``stage_corner_dir``. Every driver that accepts a caller-chosen output
+    path refuses one resolving inside the protected trees -- including a
+    tree that does not exist yet and a ``..`` route that lands inside one --
+    while scratch (the staging default or a path outside the repo) is still
+    honoured."""
+
+    def test_protected_prefixes_are_derived_not_hand_copied(self):
+        import check_append_only as cao
+        expected = tuple(p[:-2] for p in cao.PROTECTED if p.endswith("/*"))
+        self.assertEqual(ta.PROTECTED_OUT, expected)
+        self.assertIn("layout/records", expected, "layout/records is never scratch either")
+
+    def test_each_protected_tree_refuses_even_before_it_exists(self):
+        for pat in ta.PROTECTED_OUT:
+            with self.assertRaises(SystemExit) as cm:
+                ta.refuse_protected_out(REPO, REPO / pat.replace("*", "20261117-zz-guard"))
+            msg = str(cm.exception)
+            self.assertIn("append-only tree", msg)
+            self.assertIn("stage_corner_dir", msg)
+            self.assertIn("run_store_evidence.py", msg)
+
+    def test_a_dotdot_path_that_resolves_inside_is_refused(self):
+        with self.assertRaises(SystemExit):
+            ta.refuse_protected_out(REPO, REPO / "sim/soft-start/testbench/../corners/20261117-zz")
+
+    def test_the_tree_itself_is_refused_like_a_path_under_it(self):
+        with self.assertRaises(SystemExit):
+            ta.refuse_protected_out(REPO, REPO / "sim/soft-start/corners")
+
+    def test_scratch_is_accepted(self):
+        stage = ta.stage_corner_dir(REPO, "soft-start", "zz-guard")
+        ta.refuse_protected_out(REPO, stage)
+        ta.refuse_protected_out(REPO, REPO / "sim/.work/scratch/zz-guard")
+        with tempfile.TemporaryDirectory() as td:
+            ta.refuse_protected_out(REPO, Path(td) / "outside-repo")
+
+    def test_flag_and_slug_shape_the_refusal_message(self):
+        with self.assertRaises(SystemExit) as cm:
+            ta.refuse_protected_out(REPO, REPO / "sim/soft-start/corners/zz",
+                                    flag="--dest", slug="soft-start")
+        msg = str(cm.exception)
+        self.assertIn("--dest", msg)
+        self.assertIn("'soft-start'", msg)
+        self.assertIn("run_store_evidence.py soft-start", msg)
+
+
+class DriverRefusalBeforeMkdir(unittest.TestCase):
+    """Issue #695: the three drivers that still took a caller-chosen output
+    path refuse one resolving inside an append-only tree *before* their
+    ``mkdir`` -- the #692 Judge pass measured ``peak_probe.py`` creating the
+    directory and landing 14.1 MB of raw bytes under ``corners/``. The
+    refusal fires before any PDK, ngspice or fleet resource is consulted, so
+    these are hermetic: no driver gets past its guard."""
+
+    def _driver(self, name, rel):
+        return load_script(name, SIM_DIR / rel)
+
+    def _assert_refused(self, cm, out, flag):
+        msg = str(cm.exception)
+        self.assertIn("append-only tree", msg)
+        self.assertIn(flag, msg)
+        self.assertIn("run_store_evidence.py", msg)
+        self.assertFalse(out.exists(), "the refusal must precede the mkdir")
+
+    def test_peak_probe_refuses_a_protected_out_before_mkdir(self):
+        peak_probe = self._driver("peak_probe_695",
+                                  "soft-start/testbench/peak_probe.py")
+        out = REPO / "sim/soft-start/corners/20261117-zz-695-probe"
+        with mock.patch.object(sys, "argv",
+                               ["peak_probe.py", "--out", str(out)]):
+            with self.assertRaises(SystemExit) as cm:
+                peak_probe.main()
+        self._assert_refused(cm, out, "--out")
+
+    def test_peak_analyze_refuses_a_protected_out_before_mkdir(self):
+        peak_analyze = self._driver("peak_analyze_695",
+                                    "soft-start/testbench/peak_analyze.py")
+        out = REPO / "sim/soft-start/corners/20261117-zz-695-analyze"
+        with self.assertRaises(SystemExit) as cm:
+            peak_analyze.main(["--dat-dir", "/tmp/p351", "--out", str(out)])
+        self._assert_refused(cm, out, "--out")
+
+    def test_ab_loop_stability_refuses_a_protected_out_dir_before_mkdir(self):
+        ab = self._driver("ab_loop_stability_695",
+                          "toolchain-portability/testbench/ab_loop_stability.py")
+        out = REPO / "sim/toolchain-portability/corners/20261117-zz-695-ab"
+        argv = ["ab_loop_stability.py", "--build", "t=/bin/true",
+                "--out-dir", str(out)]
+        with mock.patch.object(sys, "argv", argv):
+            with self.assertRaises(SystemExit) as cm:
+                ab.main()
+        self._assert_refused(cm, out, "--out-dir")
 
 
 class Grade(unittest.TestCase):

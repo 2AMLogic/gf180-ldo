@@ -49,6 +49,8 @@ from .runner import (
     RUNG_NAMES,
     RUNG_UNKNOWN,
     PointResult,
+    ngspice_binary_sha256,
+    ngspice_version,
 )
 from .testbench import Testbench
 
@@ -115,6 +117,50 @@ def allocate_record_id(
         if not (records_dir / f"{record_id}.md").exists():
             return record_id
         when += _dt.timedelta(seconds=1)
+
+
+#: Label column width of the provenance banner every driver prints before a
+#: run. Set by the widest label (``ngspice sha256``), so every line's colon
+#: lands in the same column.
+_BANNER_LABEL_W = 14
+
+
+def print_provenance_banner(
+    pdk: Pdk,
+    record_id: str,
+    *,
+    host: str = "",
+    dirty: bool = False,
+    note: str = "",
+) -> None:
+    """The provenance banner a ``sim/`` driver prints before it runs anything.
+
+    One definition, one padding width -- the four drivers that print this
+    banner had drifted to two different label widths while carrying the same
+    four facts. ``host`` adds the fleet-attribution line (issue #182) for the
+    drivers that report it; ``note`` is appended to the record-id line (e.g.
+    ``" (NOT WRITTEN: --no-write)"``).
+
+    ``dirty`` is not cosmetic. ``git_provenance`` reports whether the working
+    tree had uncommitted changes at run time, and a run taken from a dirty
+    tree is not citable as a clean-tree result: the commit sha in the record
+    id does not describe what was actually simulated. Drivers that render
+    their own record body already say so there; printing it here is what tells
+    an operator writing a record **by hand** that they must.
+    """
+    print(f"{'pdk':<{_BANNER_LABEL_W}}: {pdk.variant} @ {pdk.version}")
+    print(f"{'ngspice':<{_BANNER_LABEL_W}}: {ngspice_version()}")
+    # Issue #182: the version string alone was found to be insufficient --
+    # two differently-built binaries reported the identical banner a month
+    # apart. Print the resolved binary's content hash too, so a future
+    # comparison can tell a rebuild from a real change.
+    print(f"{'ngspice sha256':<{_BANNER_LABEL_W}}: {ngspice_binary_sha256()}")
+    if host:
+        print(f"{'host':<{_BANNER_LABEL_W}}: {host}")
+    print(f"{'record id':<{_BANNER_LABEL_W}}: {record_id}{note}")
+    if dirty:
+        print(f"{'working tree':<{_BANNER_LABEL_W}}: DIRTY at run time; "
+              "not citable as a clean-tree result")
 
 
 def _is_finite(value) -> bool:
@@ -871,6 +917,54 @@ def _ngspice_sha256_line(ngspice_sha256: str | None) -> str:
     )
 
 
+def environment_lines(
+    env: dict,
+    *,
+    command: str | None = None,
+    command_suffix: str = "",
+    extra: list[str] | tuple[str, ...] = (),
+) -> list[str]:
+    """Render the shared ``## Environment`` provenance bullets of a record.
+
+    One wording for every experiment's record (issue #609), rather than a
+    hand-rolled copy per driver that drifts: the ``ngspice`` caveat cites
+    issue #182 (the sha256 line records the resolved binary's hash, falling
+    back to an explicit "not recorded" note when the caller could not supply
+    one), and the ``Harness`` / ``python``
+    line names which harness and interpreter produced the record. ``env`` is
+    the dict :func:`environment` returns. ``command`` renders the
+    experiment's ``- Command:`` bullet; ``extra`` carries caller-specific
+    bullets (sha256s, wall time, a driver's own pinning notes), appended in
+    order after the shared ones. ``command_suffix``, if given, rides on the
+    Command bullet *after* the closing backtick (a driver may annotate the
+    command, e.g. naming the fleet backend its grid ran on).
+    ``render_record`` passes its
+    corner-record-specific bullets through ``extra``; experiment drivers call
+    this directly for their custom record bodies.
+    """
+    pdk = env["pdk"]
+    git = env["git"]
+    lines = [
+        f"- PDK: {pdk.get('variant')} @ open_pdks `{pdk.get('open_pdks_version')}`"
+        f" ({display_pdk_path(pdk.get('path') or '')}, found via"
+        f" {scrub_source(str(pdk.get('discovered_via')))})",
+        f"- ngspice: {env['ngspice']}",
+        f"- ngspice binary sha256: {_ngspice_sha256_line(env.get('ngspice_sha256'))}",
+        f"- Host: `{env.get('host', 'unknown')}` -- issue #182: this repo's evidence is"
+        " produced across a fleet of independently-provisioned builder hosts, each"
+        " with its own locally-installed ngspice; recording which host ran a given"
+        " record is what makes a cross-host toolchain divergence attributable rather"
+        " than looking like unexplained same-netlist drift.",
+        f"- Harness: sim/harness {env['harness_version']}, python {env['python']}",
+        f"- git: `{git['commit']}` on `{git['branch']}`"
+        + (" (dirty)" if git["dirty"] else " (clean)"),
+    ]
+    if command is not None:
+        lines.append(f"- Command: `{command}`" + command_suffix)
+    lines.extend(extra)
+    return lines
+
+
 def render_record(record: dict, experiment: str) -> str:
     """Render the ratified ``records/<record-id>.md`` summary.
 
@@ -883,7 +977,6 @@ def render_record(record: dict, experiment: str) -> str:
     env = record["environment"]
     tb = record["testbench"]
     git = env["git"]
-    pdk = env["pdk"]
 
     # `includes` (#35) lists every design netlist frozen into this record;
     # `dut_netlist` (#12) names which of them is the DUT, and whether it came
@@ -944,29 +1037,18 @@ def render_record(record: dict, experiment: str) -> str:
         "",
         "Everything needed to re-run this record:",
         "",
-        f"- PDK: {pdk.get('variant')} @ open_pdks `{pdk.get('open_pdks_version')}`"
-        f" ({display_pdk_path(pdk.get('path') or '')}, found via"
-        f" {scrub_source(str(pdk.get('discovered_via')))})",
-        f"- ngspice: {env['ngspice']}",
-        f"- ngspice binary sha256: {_ngspice_sha256_line(env.get('ngspice_sha256'))}",
-        f"- Host: `{env.get('host', 'unknown')}` -- issue #182: this repo's evidence is"
-        " produced across a fleet of independently-provisioned builder hosts, each"
-        " with its own locally-installed ngspice; recording which host ran a given"
-        " record is what makes a cross-host toolchain divergence attributable rather"
-        " than looking like unexplained same-netlist drift.",
-        f"- Harness: sim/harness {env['harness_version']}, python {env['python']}",
-        f"- git: `{git['commit']}` on `{git['branch']}`"
-        + (" (dirty)" if git["dirty"] else " (clean)"),
+    ]
+    lines += environment_lines(env, extra=[
         f"- Testbench netlist sha256: `{tb['netlist_sha256']}`",
-    ]
-    if tb.get("dut_netlist_sha256"):
-        lines.append(f"- DUT netlist sha256: `{tb['dut_netlist_sha256']}`")
-    lines += [
+        *(
+            [f"- DUT netlist sha256: `{tb['dut_netlist_sha256']}`"]
+            if tb.get("dut_netlist_sha256") else []
+        ),
         f"- Manifest sha256: `{tb['manifest_sha256']}`",
-    ]
-    for entry in other_includes:
-        lines.append(f"- Included design netlist `{entry['path']}` sha256: `{entry['sha256']}`")
-    lines += [
+        *(
+            f"- Included design netlist `{entry['path']}` sha256: `{entry['sha256']}`"
+            for entry in other_includes
+        ),
         f"- Model binning: deck pins `.options {MODEL_BINNING_OPTION}`"
         " -- gf180mcu bins on the per-finger width W/NF, and the pass device"
         " (`W=2800u nf=40`, i.e. 70 um per finger) resolves to a declared bin"
@@ -975,6 +1057,8 @@ def render_record(record: dict, experiment: str) -> str:
         " this setting or does not exist (issue #214,"
         " spec/decision-records/DR-0025)",
         f"- Wall time: {record['wall_seconds']} s",
+    ])
+    lines += [
         "",
         "Per-corner model sections used:",
         "",

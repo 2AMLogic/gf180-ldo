@@ -7,7 +7,6 @@ variant dir), so no real PDK is needed and these run in CI.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import os
 import sys
@@ -20,6 +19,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from harness import pdk as pdk_mod  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 from harness.pdk import (  # noqa: E402
     PINNED_OPEN_PDKS_REVISION,
     PdkNotFound,
@@ -168,11 +168,7 @@ class PinKltPdkRootTests(unittest.TestCase):
 
 def _load(name: str, rel: str) -> types.ModuleType:
     """Import a testbench script by path (the loader test_summarizers uses)."""
-    spec = importlib.util.spec_from_file_location(name, SIM_DIR / rel)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script(name, SIM_DIR / rel)
 
 
 #: What a stubbed ``find_pdk`` hands back: only ``path.parent`` is consumed.

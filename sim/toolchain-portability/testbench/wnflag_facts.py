@@ -5,8 +5,8 @@ DR-0025 ("gf180mcu model-bin selection binds on the per-finger width `W/NF`")
 established three properties **of the simulator**, all on ngspice-46:
 
 - **F1** -- `.options wnflag=1` makes `design/netlist/ldo_core.spice`'s
-  `W=2000u nf=40` pass-device geometry resolve to the *declared* bin
-  `pfet_03v3.12`, with the instance's `w` left undivided at 2000 um
+  `W=2800u nf=40` pass-device geometry resolve to the *declared* bin
+  `pfet_03v3.12`, with the instance's `w` left undivided at 2800 um
   (DR-0025 E2).
 - **F2** -- with `wnflag=0` (and with no card at all) the deck does not parse:
   `could not find a valid modelname`. There is no silent clamp to a
@@ -64,8 +64,8 @@ TIMEOUT_S = 180
 MODEL_LOOKUP_FAILURE = "could not find a valid modelname"
 
 #: The pass device of `design/netlist/ldo_core.spice` (`XMpass`), verbatim in
-#: the two numbers bin selection turns on: 40 fingers of 50 um.
-PASS_W = "2000u"
+#: the two numbers bin selection turns on: 40 fingers of 70 um.
+PASS_W = "2800u"
 PASS_L = "0.28u"
 PASS_NF = "40"
 PASS_BIN = "pfet_03v3.12"
@@ -276,8 +276,8 @@ def measure(ngspice: Path, pdk: Pdk, keys: tuple[str, ...] = FACT_KEYS) -> list[
              MODEL_LOOKUP_FAILURE not in p.output),
             (f"resolved model is {PASS_BIN}",
              show_field(p.output, "model") == PASS_BIN),
-            ("instance w is 0.002 (undivided 2000 um)",
-             show_field(p.output, "w") == "0.002"),
+            ("instance w is 0.0028 (undivided 2800 um)",
+             show_field(p.output, "w") == "0.0028"),
             (f"instance nf is {PASS_NF}", show_field(p.output, "nf") == PASS_NF),
             (f"{MODEL_BINNING_KEY} read back as 1",
              effective_wnflag(p.output) == "1"),

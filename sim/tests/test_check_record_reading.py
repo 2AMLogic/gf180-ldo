@@ -9,19 +9,20 @@ KLayout, or PDK.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location(
+sys.path.insert(0, str(REPO / "sim"))
+from harness.loader import load_script  # noqa: E402
+
+crr = load_script(
     "check_record_reading", REPO / "sim" / "check_record_reading.py")
-crr = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(crr)
 
 HEAD = "# Run 20261113-223722\n\n## Results\n\n| corner | V |\n|---|---|\n"
 # The placeholder as sim/harness/klt_record.py:219 actually mints it, built

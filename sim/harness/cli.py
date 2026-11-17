@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
-import os
 import shutil
 import sys
 import time
@@ -21,6 +20,7 @@ from pathlib import Path
 
 from . import HARNESS_VERSION, corners as corners_mod, report, runner, testbench as tb_mod
 from . import evidence_store as store_mod
+from . import klt_grid
 from .pdk import PdkNotFound, find_pdk
 from .runner import NgspiceIdentityMismatch, NgspiceMissing
 
@@ -136,7 +136,9 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FRAC",
         help="supply tolerance as a fraction, e.g. 0.10 (0 disables the V axis)",
     )
-    parser.add_argument("-j", "--jobs", type=int, default=0, help="parallel ngspice runs")
+    parser.add_argument(
+        "-j", "--jobs", type=int, default=klt_grid.DEFAULT_JOBS,
+        help="parallel ngspice runs")
     parser.add_argument(
         "--timeout",
         type=int,
@@ -368,7 +370,7 @@ def run(args: argparse.Namespace) -> int:
             )
             return EXIT_NOT_STORED
 
-    jobs = args.jobs or min(8, (os.cpu_count() or 2))
+    jobs = args.jobs
     started = _dt.datetime.now(_dt.timezone.utc)
     # Sample git state *before* the run: the harness writes its own per-corner
     # logs into the tracked evidence tree, so sampling afterwards would mark

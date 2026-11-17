@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "t1-attestation-inventory",
   "t1_item": 9,
-  "description": "Every committed bench under sim/<slug>/testbench/ (decks, tb.json, drivers). Cold start is the harness self-test's single tt/27C/nominal point: one local ngspice run, no grid, no evidence written. Multi-corner and Monte Carlo benches are not cold-start commands (they go to the batch fleet).",
+  "description": "Every committed bench under sim/<slug>/testbench/ (decks, tb.json, drivers), plus the shared bench drivers in sim/harness/ the benches import (the single home of the ratified DR bar constants). Cold start is the harness self-test's single tt/27C/nominal point: one local ngspice run, no grid, no evidence written. Multi-corner and Monte Carlo benches are not cold-start commands (they go to the batch fleet).",
   "testbenches": [
     "sim/amp-openloop/testbench/klt_run.py",
     "sim/amp-openloop/testbench/tb.json",
@@ -22,6 +22,9 @@
     "sim/enable-shutdown/testbench/run.sh",
     "sim/enable-shutdown/testbench/summarize.py",
     "sim/enable-shutdown/testbench/tb_enable_shutdown.spice.in",
+    "sim/harness/klt_tian.py",
+    "sim/harness/loop_margin.py",
+    "sim/harness/record_compare.py",
     "sim/line-regulation/testbench/klt_run.py",
     "sim/line-regulation/testbench/tb.json",
     "sim/line-regulation/testbench/tb_line_reg.spice",

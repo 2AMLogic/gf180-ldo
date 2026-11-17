@@ -24,7 +24,6 @@ one of them so the ordering is asserted, not assumed.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import subprocess
 import sys
@@ -40,13 +39,11 @@ sys.path.insert(0, str(SIM_DIR))
 _LG_TB = SIM_DIR / "soft-start-loop-gain" / "testbench"
 sys.path.insert(0, str(_LG_TB))
 import netlist_variants as nv  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
 # Loaded under a unique name (the file is a script, not an importable module
 # in a package), matching test_soft_start_loop_gain.py's convention.
-_spec = importlib.util.spec_from_file_location("ss_handover_t15", DRIVER)
-handover = importlib.util.module_from_spec(_spec)
-sys.modules["ss_handover_t15"] = handover
-_spec.loader.exec_module(handover)
+handover = load_script("ss_handover_t15", DRIVER)
 
 CORE = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
 

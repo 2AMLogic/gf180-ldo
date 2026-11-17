@@ -22,10 +22,14 @@ over samples of |dVOUT1 - 1.5 dFB| in uV. A sample ``klt`` returns no value
 for (a failed solve) is not in ``n_samples``, so a corner that lost samples
 fails the 1000-sample check instead of reporting a thinner distribution.
 
-Output: sim/mc-output-accuracy/corners/<record-id>/ -- per fleet request
+Output lands in the git-ignored staging tree ``sim/.work/.stage/`` (DR-0044,
+issue #647), never under ``sim/mc-output-accuracy/corners/``: per fleet request
 ``klt-<vin>v-<process>/<new|baseline>/`` (compact report, request, body, the DUT), one
 ``<corner>.log`` per PVT point carrying the ``MCSAMPLE <k> <dv1..dv25>`` lines
-summarize.py reads, and ``summary.csv``.
+summarize.py reads, and ``summary.csv``. A run becomes evidence only when
+``sim/run_store_evidence.py --kind corners`` mints it, committing the manifest,
+the hand-written Markdown record and the ``klt-report.json`` envelopes; an
+unminted run leaves the tree clean.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import klt_batch as kb  # noqa: E402
+from harness import evidence_store as store  # noqa: E402
 from harness import pdk, tb_adapter  # noqa: E402
 from harness import testbench as tbmod  # noqa: E402
 from harness.corners import resolve_corners, supply_points  # noqa: E402
@@ -130,7 +135,7 @@ def compact(report: dict) -> dict:
     return out
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, preflight=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     add_ab_args(ap, REPO)
     ap.add_argument("--samples", type=int, default=SAMPLES, help="Monte Carlo samples per PVT point")
@@ -140,8 +145,24 @@ def main(argv=None) -> int:
                          "simulates its own PDK tree (open_pdks c6d73a3 when this was written); the "
                          "result speaks for that revision, not the pin")
     args = ap.parse_args(argv)
+    dest = tb_adapter.stage_corner_dir(REPO, "mc-output-accuracy", args.record_id)
+    if (HERE.parent / "corners" / args.record_id).exists():
+        raise SystemExit(f"sim/mc-output-accuracy/corners/{args.record_id}/ already exists; "
+                         "append-only evidence is never rewritten -- choose another --record-id")
+    # An evidence run must be storable before any fleet time is spent (DR-0044):
+    # no broker, no `klt artifact` verb, or an unreachable broker refuses now.
+    # There is no commit-the-bytes fallback. An `--only` debug point is not
+    # evidence and needs no store.
+    if args.only is None:
+        try:
+            (preflight or store.preflight)(REPO)
+        except store.StoreError as exc:
+            print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+                  "Evidence bytes go to the artifact store only (sim/README.md, "
+                  '"Stored evidence"); an --only debug point needs no store.',
+                  file=sys.stderr)
+            return tb_adapter.EXIT_NOT_STORED
     pdk.pin_klt_pdk_root()
-    dest = HERE.parent / "corners" / args.record_id
     only = kb.only_axes(args.only)
     supplies = only.get("supplies") or supply_points(TB.nominal_supply_v, TB.supply_tolerance)
     procs = only.get("process") or tuple(c.name for c in resolve_corners(TB.corners))
@@ -185,6 +206,11 @@ def main(argv=None) -> int:
     if got != expected:
         print(f"ERROR: {got} of {expected} PVT points returned samples; the rest lost every sample", file=sys.stderr)
         return 1
+    print(f"staged  : {dest} (not evidence yet)")
+    print(f"mint it : python3 sim/run_store_evidence.py mc-output-accuracy {args.record_id} "
+          f"{dest} --summary <summary.md> --kind corners")
+    print("         (<summary.md> is the run's hand-written Markdown record, not summary.csv; "
+          f"the store commits it as sim/mc-output-accuracy/corners/{args.record_id}.md)")
     return 0
 
 

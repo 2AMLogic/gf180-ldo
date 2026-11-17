@@ -109,6 +109,23 @@
 
 .temp @TEMP_C@
 
+* --- model binning is per-FINGER, and that has to be pinned in-deck --------
+* gf180mcu's device models are binned and the widest declared bin stops at
+* wmax=100.001 um (sm141064.ngspice). XMpass below is W=2800u nf=40 -- 70 um
+* per finger -- so the bin it belongs in exists only if ngspice divides W by
+* NF when selecting a bin. Whether it does is NOT a property of the netlist
+* or the PDK: it is ngspice's `wnflag`, which defaults to 1 only under
+* HSPICE/Spectre compatibility mode and to 0 otherwise. On a host without
+* `wnflag=1` in its spinit/.spiceinit this deck dies at parse time with
+* "could not find a valid modelname"; on one that has it, the card below is
+* inert. DR-0025 (issue #214) ratified pinning it here so a run's outcome is
+* a property of this repo rather than of the host's ngspice startup files,
+* which no record captures -- see sim/soft-start-loop-gain/README.md's
+* "Model binning" section. Keep this the deck's FIRST .options card:
+* duplicate .options cards resolve earliest-wins, so a later duplicate
+* would silently not take effect.
+.options wnflag=1
+
 .include "@LDO_NETLIST@"
 
 * --- stimulus ------------------------------------------------------------

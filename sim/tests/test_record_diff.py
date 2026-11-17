@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 import subprocess
 import sys
@@ -13,10 +12,11 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location(
-    "record_diff", REPO / "signoff" / "record_diff.py")
-rd = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(rd)
+sys.path.insert(0, str(REPO / "sim"))
+
+from harness.loader import load_script  # noqa: E402
+
+rd = load_script("record_diff", REPO / "signoff" / "record_diff.py")
 
 RECORD_PATH = REPO / "signoff" / "records" / "t1-tier-report.json"
 RECORD = json.loads(RECORD_PATH.read_text())
@@ -98,6 +98,28 @@ class ResidualDiffersTests(unittest.TestCase):
         fresh = stale_fixture(10)
         fresh["t1_item_count"] = RECORD["t1_item_count"] + 1
         self.assertTrue(rd.residual_differs(fresh, RECORD, {10}))
+
+    def test_stale_only_difference_with_tier_consequence_is_reattest_only(self):
+        # Issue #655's latent case: the block has reached T1, so the
+        # committed record carries tier="T1"; a stale item then drops a
+        # met count and the derived tier drops to None with it. tier moves
+        # mechanically with per-item statuses, so this stays re-attest-only
+        # and --write is never offered.
+        fresh = stale_fixture(10)
+        fresh["tier"] = None
+        committed = copy.deepcopy(RECORD)
+        committed["tier"] = "T1"
+        self.assertFalse(rd.residual_differs(fresh, committed, {10}))
+
+    def test_tier_change_with_non_stale_cause_still_residual(self):
+        # The honesty control: the same tier drop, but its cause is item 9
+        # unmet for missing_evidence -- not a re-attest item. Scrubbing
+        # tier must not hide it: the residual still reports True.
+        fresh = stale_fixture(9, reason="missing_evidence")
+        fresh["tier"] = None
+        committed = copy.deepcopy(RECORD)
+        committed["tier"] = "T1"
+        self.assertTrue(rd.residual_differs(fresh, committed, set()))
 
 
 class CliTests(unittest.TestCase):

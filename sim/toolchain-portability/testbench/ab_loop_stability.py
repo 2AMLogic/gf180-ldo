@@ -21,7 +21,7 @@ existing same-version comparison used.
         --build ngspice-46-pinned=~/.local/ngspice/bin/ngspice \
         --build ngspice-47=~/.local/ngspice-47/bin/ngspice \
         --loads-ma 0 1 50 --caps-uf 0.33 1.0 4.7 --esrs 0.001 0.2 0.5 \
-        --out-dir sim/toolchain-portability/corners/<record-id>
+        --out-dir sim/.work/.stage/toolchain-portability/sim/toolchain-portability/corners/<record-id>
 
 Each build is selected exactly the way
 `sim/loop-stability/records/20260906-090647-3981d88.md` selected between the
@@ -30,12 +30,22 @@ two ngspice-46 builds on its host: by prepending that install's `bin/` to
 arms. `--no-write` is passed to `sweep.py` throughout -- an A/B arm run on an
 unvalidated major version must not mint a `sim/loop-stability` record, which
 would put a toolchain experiment into the design-evidence trail.
+
+The per-arm console logs and copied per-corner logs this driver writes under
+`--out-dir` are raw run bytes, store-bound (DR-0041, issues #647/#695):
+`--out-dir` must point at scratch -- the staging tree
+`tb_adapter.stage_corner_dir(REPO, "toolchain-portability", <record-id>)`
+under `sim/.work/.stage/` -- never at `sim/toolchain-portability/corners/`;
+an `--out-dir` resolving inside an append-only tree is refused before the
+directory is created. An A/B worth keeping is minted as a record with
+`sim/run_store_evidence.py --kind corners`.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import os
 import re
 import shutil
@@ -48,6 +58,7 @@ SIM_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 
+from harness import klt_grid, tb_adapter  # noqa: E402
 from harness.runner import (  # noqa: E402
     ngspice_major_version,
     ngspice_version_at,
@@ -56,7 +67,15 @@ from harness.runner import (  # noqa: E402
 
 SWEEP = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
 
-_ROW_RE = re.compile(r"^ROW\s+(.*)$")
+# The deck's own driver owns the parser for the deck's own `ROW` lines, and the
+# field tuple it validates against -- imported, not copied, so the two cannot
+# drift (same idiom as `sim/soft-start-loop-gain/testbench/sweep.py`). The
+# script sits under a hyphenated directory, so it is loaded by path.
+_ls_spec = importlib.util.spec_from_file_location("loop_stability_sweep", SWEEP)
+ls = importlib.util.module_from_spec(_ls_spec)
+sys.modules["loop_stability_sweep"] = ls
+_ls_spec.loader.exec_module(ls)
+
 _RECORD_ID_RE = re.compile(r"^record id\s*:\s*(\S+)")
 
 
@@ -102,27 +121,24 @@ def parse_corner_logs(logdir: Path) -> dict[Point, Margin]:
     for log in sorted(logdir.glob("*.log")):
         corner_id = log.stem
         for line in log.read_text(errors="replace").splitlines():
-            match = _ROW_RE.match(line.strip())
-            if not match:
+            if not line.startswith("ROW "):
                 continue
-            fields = {}
-            for tok in match.group(1).split():
-                if "=" in tok:
-                    key, value = tok.split("=", 1)
-                    fields[key] = value
+            # Strict: raises ValueError on a missing, repeated, unknown or
+            # non-`key=value` field instead of absorbing it as "no measurement".
+            f = ls.parse_row_fields(line)
             point = Point(
                 corner_id=corner_id,
-                iload_a=fields.get("iload_a", ""),
-                ceff_f=fields.get("ceff_f", ""),
-                esr_ohm=fields.get("esr_ohm", ""),
+                iload_a=f["iload_a"],
+                ceff_f=f["ceff_f"],
+                esr_ohm=f["esr_ohm"],
             )
-            phase = _float_or_none(fields.get("phase_at_f0_deg", ""))
-            gain = _float_or_none(fields.get("gain_at_f180_db", ""))
+            phase = _float_or_none(f["phase_at_f0_deg"])
+            gain = _float_or_none(f["gain_at_f180_db"])
             out[point] = Margin(
                 pm_deg=None if phase is None else 180.0 + phase,
                 gm_db=None if gain is None else -gain,
-                f0_hz=_float_or_none(fields.get("f0_hz", "")),
-                vout_v=_float_or_none(fields.get("vout_v", "")),
+                f0_hz=_float_or_none(f["f0_hz"]),
+                vout_v=_float_or_none(f["vout_v"]),
             )
     return out
 
@@ -172,7 +188,11 @@ def main() -> int:
     ap.add_argument("--loads-ma", nargs="+", default=None)
     ap.add_argument("--caps-uf", nargs="+", default=None)
     ap.add_argument("--esrs", nargs="+", default=None)
-    ap.add_argument("-j", "--jobs", default="8")
+    ap.add_argument("-j", "--jobs", type=int, default=klt_grid.DEFAULT_JOBS,
+                    help=f"local worker threads passed through to each arm's "
+                         f"sweep.py run (default: {klt_grid.DEFAULT_JOBS}, "
+                         "deliberately not os.cpu_count(): dispatch workers "
+                         "are shared)")
     ap.add_argument(
         "--out-dir",
         required=True,
@@ -205,6 +225,11 @@ def main() -> int:
             sweep_args += [flag, *[str(v) for v in values]]
 
     out_dir = Path(args.out_dir)
+    # The console logs and copied per-corner logs are raw run bytes
+    # (DR-0041, issues #686/#695): an --out-dir resolving inside an
+    # append-only tree is refused before the directory is even created.
+    tb_adapter.refuse_protected_out(REPO_ROOT, out_dir, flag="--out-dir",
+                                    slug="toolchain-portability")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     results: dict[str, dict[Point, Margin]] = {}
