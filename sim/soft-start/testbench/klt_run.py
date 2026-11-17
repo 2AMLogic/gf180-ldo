@@ -18,7 +18,15 @@ t(1.4 V) - t(0.4 V) exactly as summarize.py computes it. Not ported:
 expression in klt's single .control block without also catching the disable
 edge) -- ``dvout_max`` is taken over the whole 9 ms window, which for a rising
 startup is the same maximum. With ``--baseline-ref`` both DUTs run on the
-same backend. Output: ``sim/soft-start/corners/<record-id>/``.
+same backend. Those bytes land in the git-ignored staging tree
+``sim/.work/.stage/soft-start/`` (DR-0044, issue #646), never under
+``sim/soft-start/corners/``: a run becomes evidence only when
+``sim/run_store_evidence.py --kind corners`` mints it, committing the
+manifest, the hand-written Markdown record and the ``klt-report.json``
+envelopes; an unminted run leaves the tree clean. A record sharded with
+``--process`` spans several invocations: every shard accumulates into the
+same staged record, and the mint runs once, after the last shard (the store
+refuses a second mint of the same record id).
 """
 
 from __future__ import annotations
@@ -31,7 +39,9 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import deck  # noqa: E402
+from harness import evidence_store as store  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
+from harness import tb_adapter  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab, write_summary_csv  # noqa: E402
 
 MAIN = [("1u", "0.1", "36")]
@@ -99,7 +109,7 @@ def derive(v: dict, k: int) -> dict:
     return d
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, preflight=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     add_ab_args(ap, REPO)
     ap.add_argument("--part", choices=("main", "extra", "both"), default="both")
@@ -107,9 +117,34 @@ def main(argv=None) -> int:
                     help="shard: run one process corner only (e.g. tt); output goes to <part>-<process>/ "
                          "so each batch job stays under the fleet's 3600 s whole-job ceiling")
     args = ap.parse_args(argv)
-    dest = HERE.parent / "corners" / args.record_id
+    dest = tb_adapter.stage_corner_dir(REPO, "soft-start", args.record_id)
+    if (HERE.parent / "corners" / args.record_id).exists():
+        raise SystemExit(f"sim/soft-start/corners/{args.record_id}/ already exists; "
+                         "append-only evidence is never rewritten -- choose another --record-id")
+    # An evidence run must be storable before any fleet time is spent (DR-0044):
+    # no broker, no `klt artifact` verb, or an unreachable broker refuses now.
+    # There is no commit-the-bytes fallback. An `--only` debug point is not
+    # evidence and needs no store.
+    if args.only is None:
+        try:
+            (preflight or store.preflight)(REPO)
+        except store.StoreError as exc:
+            print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+                  "Evidence bytes go to the artifact store only (sim/README.md, "
+                  '"Stored evidence"); an --only debug point needs no store.',
+                  file=sys.stderr)
+            return tb_adapter.EXIT_NOT_STORED
     parts = [("main", MAIN, {}), ("extra", EXTRA, EXTRA_AXES)]
     parts = [p for p in parts if args.part in (p[0], "both")]
+    # Wrinkle 1 (issue #646): a sharded record is complete only when every
+    # shard of every part has run. Each shard accumulates into the same staged
+    # record below, so the mint runs once, after the last one -- name the
+    # shards this invocation still owes.
+    remaining = []
+    if args.process:
+        for part, _, axes in parts:
+            remaining += [f"--part {part} --process {p}"
+                          for p in axes.get("process", kb.LDO_PROCESS) if p != args.process]
 
     rows = []
     for part, configs, axes in parts:
@@ -128,7 +163,19 @@ def main(argv=None) -> int:
                                  "diagnostics": v.get("_diagnostics")})
     keys = list(dict.fromkeys(k for r in rows for k in r))  # union: a point missing a crossing lacks derived keys
     out = dest / (f"summary-{args.process}.csv" if args.process else "summary.csv")
-    write_summary_csv(rows, out, keys)
+    # Split-part/shard invocations accumulate into one staged record (#646):
+    # merge with any summary a previous one wrote instead of clobbering it (#704).
+    write_summary_csv(rows, out, keys, merge_key=("dut", "corner", "cout", "esr", "rload"))
+    print(f"staged  : {dest} (not evidence yet)")
+    if remaining:
+        print("shards  : still to run for this record -- " + "; ".join(remaining))
+        print("          mint only once, after the last shard (the store refuses a "
+              "second mint of the same record id)")
+    print(f"mint it : python3 sim/run_store_evidence.py soft-start {args.record_id} "
+          f"{dest} --summary <summary.md> --kind corners")
+    print("         (<summary.md> is the run's hand-written Markdown record, not "
+          f"summary{'-' + args.process if args.process else ''}.csv; the store commits "
+          f"it as sim/soft-start/corners/{args.record_id}.md)")
     return 0
 
 

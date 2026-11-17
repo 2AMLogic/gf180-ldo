@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import dataclasses
 import datetime
@@ -1646,6 +1647,151 @@ class RecordIdTests(unittest.TestCase):
             self.assertEqual("keep\n", path.read_text())
 
 
+#: Every ``sim/`` driver that mints its own ``<record-id>``. Each must do it
+#: through ``report.format_record_id`` -- see EveryDriverMintsTheIdOnce below.
+_MINTING_DRIVERS = (
+    "loop-stability/testbench/sweep.py",
+    "soft-start-loop-gain/testbench/sweep.py",
+    "soft-start/testbench/handover_t15.py",
+    "soft-start/testbench/ramp_ab.py",
+)
+
+
+class EveryDriverMintsTheIdOnce(unittest.TestCase):
+    """No driver may hand-roll the record id (issue #618).
+
+    Two of these four drivers used to build the id from ``git rev-parse
+    --short HEAD`` inline. That is not a style complaint: ``--short`` emits
+    however many characters git currently needs for an unambiguous prefix,
+    which is already **eight** at some commits in this repo, whereas
+    ``format_record_id`` takes ``commit[:7]`` unconditionally and
+    ``sim/README.md`` ratifies the seven-character shape. A hand-rolled mint
+    therefore drifts off the ratified shape with no code change at all, the
+    first time git needs a wider prefix -- and nothing in the driver notices.
+
+    The same block also dropped ``git_provenance``'s ``dirty`` flag, so a run
+    from a dirty working tree produced committed logs whose only provenance
+    was a clean-looking commit sha.
+
+    Asserted on source text rather than behaviour because the mint sits
+    inline in each driver's ``main()``, which cannot run without a PDK and
+    ngspice. A source assertion is what keeps a *future* driver from
+    reintroducing the same copy.
+    """
+
+    def _read(self, rel: str) -> str:
+        return (SIM_DIR / rel).read_text()
+
+    def test_no_driver_builds_the_id_from_git_rev_parse_short(self):
+        for rel in _MINTING_DRIVERS:
+            with self.subTest(driver=rel):
+                self.assertNotIn(
+                    '"--short"', self._read(rel),
+                    f"{rel} hand-rolls the record id from `git rev-parse "
+                    "--short`, whose width git chooses; call "
+                    "report.format_record_id instead",
+                )
+
+    def test_every_driver_mints_through_the_harness_helpers(self):
+        for rel in _MINTING_DRIVERS:
+            with self.subTest(driver=rel):
+                text = self._read(rel)
+                self.assertIn("format_record_id", text)
+                self.assertIn("git_provenance", text)
+
+    def test_the_ratified_shape_is_seven_hex_characters(self):
+        """The shape the drivers now inherit, re-asserted against a real sha.
+
+        `git_provenance` truncates to 7 regardless of what `--short` would
+        have chosen, so an eight-character ambiguity window cannot widen the
+        id.
+        """
+        prov = report.git_provenance(SIM_DIR.parent)
+        if prov["commit"] == "unknown":  # pragma: no cover - git is present
+            self.skipTest("not a git checkout")
+        self.assertEqual(len(prov["short"]), 7)
+        minted = report.format_record_id(
+            prov["short"], datetime.datetime.now(datetime.timezone.utc))
+        self.assertRegex(minted, r"^\d{8}-\d{6}-[0-9a-f]{7}$")
+
+    def test_both_by_hand_record_drivers_warn_on_a_dirty_tree(self):
+        """The two drivers whose record body a human writes must say so.
+
+        `sim/loop-stability` and `sim/soft-start-loop-gain` render their own
+        record and put the dirty-tree warning in it. These two print "write
+        .../records/<id>.md by hand", so the only place the warning can reach
+        the person writing that record is stdout.
+        """
+        for rel in ("soft-start/testbench/handover_t15.py",
+                    "soft-start/testbench/ramp_ab.py"):
+            with self.subTest(driver=rel):
+                text = self._read(rel)
+                self.assertIn('prov["dirty"]', text)
+                self.assertIn("DIRTY at run time", text)
+
+
+class ProvenanceBannerTests(unittest.TestCase):
+    """One definition of the banner, one label width (issue #618)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.pdk = fake_pdk(Path(self.tmp.name) / "gf180mcuD")
+        patches = [
+            unittest.mock.patch.object(report, "ngspice_version",
+                                       return_value="ngspice-46"),
+            unittest.mock.patch.object(report, "ngspice_binary_sha256",
+                                       return_value="abc123"),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def banner(self, *args, **kwargs) -> list[str]:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            report.print_provenance_banner(*args, **kwargs)
+        return buf.getvalue().splitlines()
+
+    def test_every_label_colon_lands_in_the_same_column(self):
+        lines = self.banner(self.pdk, "20260729-153000-1a7ef75",
+                            host="a-host", dirty=True, note=" (a note)")
+        columns = {line.index(":") for line in lines}
+        self.assertEqual(len(columns), 1, lines)
+        self.assertEqual(columns, {14})
+
+    def test_the_banner_carries_the_four_provenance_facts(self):
+        lines = self.banner(self.pdk, "20260729-153000-1a7ef75")
+        self.assertEqual(
+            lines,
+            [
+                f"pdk           : {self.pdk.variant} @ {self.pdk.version}",
+                "ngspice       : ngspice-46",
+                "ngspice sha256: abc123",
+                "record id     : 20260729-153000-1a7ef75",
+            ],
+        )
+
+    def test_host_and_note_are_opt_in(self):
+        lines = self.banner(self.pdk, "20260729-153000-1a7ef75",
+                            host="a-host", note=" (NOT WRITTEN: --no-write)")
+        self.assertIn("host          : a-host", lines)
+        self.assertIn(
+            "record id     : 20260729-153000-1a7ef75 (NOT WRITTEN: --no-write)",
+            lines,
+        )
+
+    def test_a_dirty_tree_is_stated_not_implied(self):
+        clean = self.banner(self.pdk, "20260729-153000-1a7ef75", dirty=False)
+        self.assertNotIn("DIRTY", "\n".join(clean))
+        dirty = self.banner(self.pdk, "20260729-153000-1a7ef75", dirty=True)
+        self.assertIn(
+            "working tree  : DIRTY at run time; "
+            "not citable as a clean-tree result",
+            dirty,
+        )
+
+
 class MatrixConformanceTests(unittest.TestCase):
     """sim/README.md requires the full mandated matrix, or a stated reason."""
 
@@ -2870,6 +3016,137 @@ class KltGridTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()) as err:
             self.assertIsNone(klt_grid.select_backend("klt-local", 4))
         self.assertIn("FATAL: --backend klt-local", err.getvalue())
+
+
+class LocalGridCliTests(unittest.TestCase):
+    """One definition of the local-grid CLI block and the #366 cap (issue #621).
+
+    ``--backend``/``--in-flight``/``-j``/``--no-write``/``--subset-reason``/
+    ``--supersedes`` were registered in both loop sweeps, and their help text
+    had drifted apart in four places; ``DEFAULT_JOBS`` was a per-file constant,
+    so #366's cap reached two of the five drivers that fan ngspice out locally
+    and left the other three at 4 and 8. These assertions are what keeps both
+    halves single-definition: a sixth driver (or a re-copied block) fails here
+    rather than quietly running wide on a shared dispatch worker.
+    """
+
+    #: Every driver that fans ngspice out on this host itself, or passes ``-j``
+    #: straight through to one that does. ``harness/cli.py`` is
+    #: ``run_corners.py`` (issue #626): its effective default used to live at
+    #: the resolution site rather than the registration site, so it also
+    #: needs the resolution-site assertions below.
+    LOCAL_DRIVERS = (
+        "loop-stability/testbench/sweep.py",
+        "soft-start-loop-gain/testbench/sweep.py",
+        "soft-start/testbench/handover_t15.py",
+        "soft-start/testbench/ramp_ab.py",
+        "toolchain-portability/testbench/ab_loop_stability.py",
+        "harness/cli.py",
+    )
+
+    #: A ``-j`` registration ends where the driver's next argument begins:
+    #: the testbench drivers add theirs on ``ap``, ``run_corners.py`` on
+    #: ``parser`` (issue #626). Accept both followers, or the guard goes
+    #: vacuous for ``harness/cli.py`` again.
+    JOBS_RE = re.compile(
+        r"""add_argument\(\s*["']-j["']\s*,\s*["']--jobs["'](.*?)\n\s*(?:ap|parser)\.""",
+        re.S)
+
+    GRID_FLAGS = ("--backend", "--in-flight", "--jobs", "--no-write",
+                  "--subset-reason", "--supersedes")
+
+    def test_default_jobs_is_capped_for_shared_dispatch_workers(self):
+        self.assertEqual(klt_grid.DEFAULT_JOBS, min(2, os.cpu_count() or 2))
+        self.assertLessEqual(klt_grid.DEFAULT_JOBS, 2)
+        # ``or 2`` guards a None cpu_count and a 1-core host caps at its own
+        # count: the default is never below 1 (issue #626 edge case).
+        self.assertGreaterEqual(klt_grid.DEFAULT_JOBS, 1)
+
+    def test_add_grid_args_registers_the_whole_shared_block(self):
+        ap = argparse.ArgumentParser()
+        klt_grid.add_grid_args(ap, batch_unit="(load, C_eff, ESR) configuration")
+        args = ap.parse_args([])
+        self.assertEqual(
+            (args.backend, args.in_flight, args.jobs, args.no_write,
+             args.subset_reason, args.supersedes),
+            (None, 6, klt_grid.DEFAULT_JOBS, False, "", ""))
+        for flag in self.GRID_FLAGS:
+            self.assertIn(flag, ap.format_help())
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                ap.parse_args(["--backend", "nonesuch"])
+
+    def test_the_four_drifted_help_strings_have_one_wording(self):
+        ap = argparse.ArgumentParser()
+        klt_grid.add_grid_args(ap, batch_unit="(load, C_eff, ESR) configuration")
+        text = " ".join(ap.format_help().split())
+        # --backend keeps the superset attribution, not either file's half.
+        self.assertIn("where the grid runs (issues #366, #451)", text)
+        self.assertIn("how many configuration requests are submitted at once", text)
+        self.assertIn("if the PVT grid is narrower than the CLAUDE.md-mandated "
+                      "matrix", text)
+        # --supersedes was a bare `default=""` with no help in one copy.
+        self.assertIn("record-id this run supersedes", text)
+
+    def test_batch_unit_and_extra_are_the_only_per_bench_clauses(self):
+        ap = argparse.ArgumentParser()
+        klt_grid.add_grid_args(
+            ap, batch_unit="(variant, phase, C_eff, ESR) configuration",
+            batch_extra=", and the DC hand-over transfer is one `op` request "
+                        "per variant")
+        text = " ".join(ap.format_help().split())
+        self.assertIn("each (variant, phase, C_eff, ESR) configuration is a "
+                      "`klt sim` request", text)
+        self.assertIn("(klt_run.py), and the DC hand-over transfer is one `op` "
+                      "request per variant -- the default", text)
+
+    def test_the_loop_sweeps_register_the_block_through_the_harness(self):
+        for rel in self.LOCAL_DRIVERS[:2]:
+            with self.subTest(driver=rel):
+                src = (SIM_DIR / rel).read_text()
+                self.assertIn("klt_grid.add_grid_args(", src)
+                for flag in self.GRID_FLAGS:
+                    self.assertNotIn(f'ap.add_argument("{flag}"', src)
+
+    def test_every_local_driver_takes_its_jobs_default_from_klt_grid(self):
+        for rel in self.LOCAL_DRIVERS:
+            with self.subTest(driver=rel):
+                src = (SIM_DIR / rel).read_text()
+                self.assertNotRegex(src, r"(?m)^DEFAULT_JOBS\s*=")
+                if "klt_grid.add_grid_args(" in src:
+                    # Registers the whole shared block through the harness;
+                    # its ``-j`` default is asserted behaviorally in
+                    # test_add_grid_args_registers_the_whole_shared_block.
+                    continue
+                # Issue #626: a self-registering driver whose registration
+                # JOBS_RE cannot see would pass this guard vacuously -- and
+                # it did, for harness/cli.py. Require the match.
+                registrations = self.JOBS_RE.findall(src)
+                self.assertTrue(
+                    registrations, f"JOBS_RE matched no -j registration in {rel}")
+                for registration in registrations:
+                    self.assertIn("default=klt_grid.DEFAULT_JOBS", registration)
+                    self.assertIn("type=int", registration)
+
+    def test_run_corners_default_lives_at_registration_not_resolution(self):
+        """``harness/cli.py`` registered ``-j`` with a ``default=0`` sentinel
+        and picked the effective value at the resolution site
+        (``args.jobs or min(8, ...)``, issue #626) -- invisible to a
+        registration-only guard. Both halves must stay gone."""
+        src = (SIM_DIR / "harness/cli.py").read_text()
+        self.assertNotRegex(src, r"min\(8,")
+        self.assertNotIn("args.jobs or", src)
+
+    def test_run_corners_jobs_semantics_after_the_cap(self):
+        """``-j 0`` was the pre-#626 "unset" sentinel (``default=0`` plus an
+        ``or`` fallback made it mean 8-wide). It now reaches
+        ``runner.run_grid``, which runs serially for ``jobs <= 1`` -- a safe
+        landing, asserted deliberately rather than left incidental."""
+        ap = cli.build_parser()
+        self.assertEqual(
+            ap.parse_args(["smoke-bias"]).jobs, klt_grid.DEFAULT_JOBS)
+        self.assertEqual(ap.parse_args(["smoke-bias", "-j", "8"]).jobs, 8)
+        self.assertEqual(ap.parse_args(["smoke-bias", "-j", "0"]).jobs, 0)
 
 
 if __name__ == "__main__":

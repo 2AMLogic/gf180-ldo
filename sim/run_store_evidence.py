@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Store a staged campaign's evidence; commit only its manifest and summary.
+"""Store a staged run's evidence; commit only its manifest, its summary and,
+for a corners run, the kept ``klt-report.json`` envelopes.
 
 Issue #511. The corner runner (``sim/run_corners.py``) stores its own records.
 Everything else that produces evidence -- a ``klt sim`` campaign, a PEX batch,
@@ -15,9 +16,19 @@ files: ``manifests/artifacts/<bench>-<run-id>.manifest.json`` and the summary,
 committed as ``sim/<bench>/<kind>/<run-id>.md`` with a "Stored evidence"
 table appended. Nothing under ``<staged-dir>`` is copied into ``sim/``.
 
+With ``--kind corners`` the DR-0044 split applies (issue #645): each staged
+``klt-report.json`` envelope is not stored but copied into
+``sim/<bench>/corners/<run-id>/`` at the same relative path it had under
+``<staged-dir>``, and stays committed -- ``signoff/block-manifest.json``
+pins those envelopes by ``content_hash`` and CI grades them with no broker.
+Everything else is stored. A kept envelope whose committed destination
+already exists is refused *before* anything is stored, so a refusal commits
+nothing.
+
 Fail closed: no broker (``$KLT_ARTIFACT_BROKER``), no ``klt`` with the
-``artifact`` verb, an unreachable or refusing broker, or any failed put exits
-10 with nothing committed; the staged files are left where they are.
+``artifact`` verb, an unreachable or refusing broker, any failed put, or a
+kept envelope colliding with committed evidence exits 10 with nothing
+committed; the staged files are left where they are.
 
 Exit codes: 0 stored; 1 usage / bad staged directory; 10 not stored.
 """
@@ -81,12 +92,31 @@ def main(argv=None) -> int:
 
     prefix = f"sim/{args.bench}/{args.kind}/{args.run_id}"
     summary_path = REPO_ROOT / "sim" / args.bench / args.kind / f"{args.run_id}.md"
+    kept: list[Path] = []
+    corner_dir = None
     try:
         store_mod.preflight(REPO_ROOT)
-        files = store_mod.stage_files(staged, prefix, exclude=[args.summary])
+        if args.kind == "corners":
+            # DR-0044 (#645): the klt-report.json envelopes stay committed
+            # (pinned by signoff/block-manifest.json), everything else is
+            # stored. Refuse a destination collision *before* storing:
+            # store_files installs the manifest and writes the summary before
+            # returning, so a later refusal would leave both committed while
+            # printing "nothing committed".
+            corner_dir = REPO_ROOT / "sim" / args.bench / args.kind / args.run_id
+            files, kept = store_mod.split_batch_run(staged, prefix,
+                                                    exclude=[args.summary])
+            for dst in store_mod.kept_destinations(kept, staged, corner_dir):
+                if dst.exists():
+                    raise store_mod.StoreError(
+                        f"{dst.relative_to(REPO_ROOT)} already exists; append-only "
+                        "evidence is never rewritten")
+        else:
+            files = store_mod.stage_files(staged, prefix, exclude=[args.summary])
         manifest = store_mod.store_files(
             files, repo_root=REPO_ROOT, bench=args.bench, rid=args.run_id,
             summary_text=summary_text, summary_path=summary_path)
+        installed = store_mod.install_kept(kept, staged, corner_dir) if kept else []
     except store_mod.StoreError as exc:
         print(f"EVIDENCE NOT STORED -- nothing committed (fail closed): {exc}",
               file=sys.stderr)
@@ -94,7 +124,9 @@ def main(argv=None) -> int:
     print(f"stored {len(files)} file(s) from {args.staged}")
     print(f"  manifest: {manifest.relative_to(REPO_ROOT)}")
     print(f"  summary:  {summary_path.relative_to(REPO_ROOT)}")
-    print("commit both; the staged directory can be deleted once "
+    for dst in installed:
+        print(f"  committed: {dst.relative_to(REPO_ROOT)}")
+    print("commit them; the staged directory can be deleted once "
           f"`python3 scripts/check_artifact_manifests.py verify {manifest.relative_to(REPO_ROOT)}` "
           "passes")
     return 0

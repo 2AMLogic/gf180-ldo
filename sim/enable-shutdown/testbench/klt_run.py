@@ -23,7 +23,12 @@ or approximated; the one structural difference is that EN is a behavioural
 source (``v(vin) * v(enctl)``) instead of a source set to the supply value,
 which is the same voltage. With ``--baseline-ref`` both DUTs run on the same
 backend (baseline logs go to ``baseline/``). Raw per-state reports and logs:
-``klt-<state>/<new|baseline>/``. Output: ``sim/enable-shutdown/corners/<record-id>/``.
+``klt-<state>/<new|baseline>/``. Those bytes land in the git-ignored staging
+tree ``sim/.work/.stage/enable-shutdown/`` (DR-0044, issue #646), never under
+``sim/enable-shutdown/corners/``: a run becomes evidence only when
+``sim/run_store_evidence.py --kind corners`` mints it, committing the
+manifest, the hand-written Markdown record and the ``klt-report.json``
+envelopes; an unminted run leaves the tree clean.
 A failed submit raises; this driver never falls back to a local grid.
 """
 
@@ -39,7 +44,9 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import deck  # noqa: E402
+from harness import evidence_store as store  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
+from harness import tb_adapter  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab  # noqa: E402
 
 TRAN_ENCTL = "DC 0 PWL(0 0 100u 0 101u 1 8m 1 8.001m 0)"
@@ -137,11 +144,27 @@ def write_logs(per_state: dict, dest: Path) -> list[str]:
     return problems
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, preflight=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     add_ab_args(ap, REPO)
     args = ap.parse_args(argv)
-    dest = HERE.parent / "corners" / args.record_id
+    dest = tb_adapter.stage_corner_dir(REPO, "enable-shutdown", args.record_id)
+    if (HERE.parent / "corners" / args.record_id).exists():
+        raise SystemExit(f"sim/enable-shutdown/corners/{args.record_id}/ already exists; "
+                         "append-only evidence is never rewritten -- choose another --record-id")
+    # An evidence run must be storable before any fleet time is spent (DR-0044):
+    # no broker, no `klt artifact` verb, or an unreachable broker refuses now.
+    # There is no commit-the-bytes fallback. An `--only` debug point is not
+    # evidence and needs no store.
+    if args.only is None:
+        try:
+            (preflight or store.preflight)(REPO)
+        except store.StoreError as exc:
+            print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+                  "Evidence bytes go to the artifact store only (sim/README.md, "
+                  '"Stored evidence"); an --only debug point needs no store.',
+                  file=sys.stderr)
+            return tb_adapter.EXIT_NOT_STORED
     axes = kb.only_axes(args.only)
 
     def go(state):
@@ -167,6 +190,11 @@ def main(argv=None) -> int:
         rc = subprocess.run([sys.executable, str(HERE / "summarize.py"), str(out), str(out / "summary.csv"),
                              proc, temps, supplies]).returncode
         status = status or rc
+    print(f"staged  : {dest} (not evidence yet)")
+    print(f"mint it : python3 sim/run_store_evidence.py enable-shutdown {args.record_id} "
+          f"{dest} --summary <summary.md> --kind corners")
+    print("         (<summary.md> is the run's hand-written Markdown record, not summary.csv; "
+          f"the store commits it as sim/enable-shutdown/corners/{args.record_id}.md)")
     return status
 
 

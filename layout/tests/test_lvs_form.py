@@ -51,7 +51,7 @@ class RewritePassivesTests(unittest.TestCase):
         )
         self.assertEqual(count, 1)
         self.assertEqual(
-            out, "Cc NZ OUT cap_mim_2f0_m2m3_noshield l=48u w=48u m=1\n"
+            out, "Cc NZ OUT cap_mim_2f0fF l=48u w=48u m=1\n"
         )
 
     def test_length_and_width_are_not_transposed(self):
@@ -87,7 +87,7 @@ class RewritePassivesTests(unittest.TestCase):
         lines = out.splitlines()
         self.assertIn("R1 RM RP VSS ppolyf_u_1k l=10u w=1u m=1", lines)
         self.assertIn(
-            "C1 CT CB cap_mim_2f0_m4m5_noshield l=20u w=20u m=1", lines
+            "C1 CT CB cap_mim_2f0fF l=20u w=20u m=1", lines
         )
         # the FET line and every structural line survive untouched
         self.assertIn("M1 D G S VSS nfet_03v3 L=0.28u W=6u nf=2 m=1", lines)
@@ -144,6 +144,92 @@ class ConservatismTests(unittest.TestCase):
         out, count = lvs_form.rewrite_passives(text)
         self.assertEqual(count, 0)
         self.assertEqual(out, text)
+
+
+class MimcapModelTokenTests(unittest.TestCase):
+    """The model token a rendered C line carries is the class the run registers.
+
+    ``rule_decks/mimcap_extraction.lvs`` registers a MIM-capacitor device
+    class under a ``cap_mim_<n>f<m>fF`` name, while the token an xschem
+    export carries -- the PDK symbols' own names, and the ``model=``
+    overrides this repo's schematics set -- is the *symbol* name:
+    ``cap_mim_<n>f<m>_<metals>_noshield``. KLayout's compare matches device
+    classes BY NAME, so a pass-through token pairs with nothing and the cell
+    mismatches with no rule-level diagnosis (issue #642).
+
+    The deck registers only ONE flavour per run, selected by its ``mim_cap``
+    switch, and ``drclvs.py`` pins that switch to ``2`` -- whose case
+    registers exactly ``cap_mim_2f0fF`` (issue #680). So the renderer maps
+    only that flavour: a ``cap_mim_*`` token naming any other flavour, in
+    either spelling, would compare a class the run never registers -- the
+    same undiagnosed-mismatch end state -- and is a loud error rather than
+    a silently mapped or passed-through token.
+    """
+
+    def test_the_pinned_flavour_maps_to_its_registered_class(self):
+        for symbol in (
+            "cap_mim_2f0_m2m3_noshield",
+            "cap_mim_2f0_m3m4_noshield",
+            "cap_mim_2f0_m4m5_noshield",
+            "cap_mim_2f0",
+        ):
+            with self.subTest(symbol=symbol):
+                out, count = lvs_form.rewrite_passives(
+                    f"XC1 A B {symbol} c_width=5u c_length=5u m=1\n"
+                )
+                self.assertEqual(count, 1)
+                self.assertTrue(out.startswith("C1 A B cap_mim_2f0fF l=5u "), out)
+
+    def test_a_flavour_the_run_does_not_register_is_a_loud_error(self):
+        """The run's ``mim_cap=2`` switch registers only ``cap_mim_2f0fF``.
+        A 1f0/1f5 token would map "successfully" to a class the deck never
+        extracts -- the well-formed WRONG verdict with no rule-level
+        diagnosis the loud error exists to prevent (issue #680) -- in symbol
+        spelling and, equally, in class spelling."""
+        for symbol in (
+            "cap_mim_1f0_m3m4_noshield",
+            "cap_mim_1f5_m4m5_noshield",
+            "cap_mim_1f0fF",
+            "cap_mim_1f5fF",
+        ):
+            with self.subTest(symbol=symbol):
+                with self.assertRaises(lvs_form.LvsFormError) as caught:
+                    lvs_form.rewrite_passives(
+                        f"XC1 A B {symbol} c_width=5u c_length=5u m=1\n"
+                    )
+                self.assertIn(symbol, str(caught.exception))
+
+    def test_a_token_that_is_already_the_class_passes_through(self):
+        out, count = lvs_form.rewrite_passives(
+            "XC1 A B cap_mim_2f0fF c_width=5u c_length=5u m=1\n"
+        )
+        self.assertEqual(count, 1)
+        self.assertEqual(out, "C1 A B cap_mim_2f0fF l=5u w=5u m=1\n")
+
+    def test_a_non_mim_capacitor_needs_no_mapping(self):
+        """``moscap_extraction.lvs`` registers classes named after the
+        symbols themselves (``cap_nmos_03v3`` & co.), so the exported token
+        is already the class name and must not be touched."""
+        out, count = lvs_form.rewrite_passives(
+            "XC1 A B cap_nmos_03v3 c_width=5u c_length=5u m=1\n"
+        )
+        self.assertEqual(count, 1)
+        self.assertEqual(out, "C1 A B cap_nmos_03v3 l=5u w=5u m=1\n")
+
+    def test_an_unmappable_mim_flavour_is_a_loud_error(self):
+        """A ``cap_mim_*`` token the mapping cannot parse would compare an
+        unregistered class: a well-formed WRONG verdict with no rule-level
+        diagnosis -- the exact failure mode issue #642 removes. Fail loudly
+        instead."""
+        for symbol in ("cap_mim_2p0fF", "cap_mim_analog", "cap_mim_2f0f"):
+            with self.subTest(symbol=symbol):
+                with self.assertRaises(lvs_form.LvsFormError) as caught:
+                    lvs_form.rewrite_passives(
+                        f"XC1 A B {symbol} c_width=5u c_length=5u m=1\n"
+                    )
+                message = str(caught.exception)
+                self.assertIn(symbol, message)
+                self.assertIn("cap_mim_", message)
 
 
 class NamingConventionTests(unittest.TestCase):

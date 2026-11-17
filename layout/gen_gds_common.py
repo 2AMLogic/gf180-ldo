@@ -34,6 +34,15 @@ import sys
 
 import pya  # noqa: F401  (provided by the KLayout interpreter)
 
+# A generator's stdout is quoted verbatim in run records (layout/drclvs.py
+# --record), and records are public append-only evidence that must not embed
+# absolute host paths -- the CI gate sim/check_record_host_paths.py fails any
+# PR whose record does. Every path a generator prints therefore goes through
+# sim/harness/paths.py's worktree-aware repo-relative renderer (issue #365).
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sim"))
+from harness.paths import display_path as display_path  # noqa: E402  (re-export)
+
 
 # ---------------------------------------------------------------------------
 # gf180mcu PDK facts (issue #588). All four generators draw for the same

@@ -111,7 +111,14 @@ class Pdk:
 
     @property
     def klayout_dir(self) -> Path:
-        return self.path / "libs.tech" / "klayout"
+        # KLayout material lives under libs.tech/klayout/tech/ in the pinned
+        # open_pdks revision: the DRC driver (tech/drc/gf180mcu.drc + its
+        # tech/drc/rule_decks/*.rb tables), the LVS deck
+        # (tech/lvs/gf180mcu.lvs) and the PCell library (tech/pymacros).
+        # Older revisions nested them directly under libs.tech/klayout/, so a
+        # tree pin-checked against PINNED_OPEN_PDKS_REVISION always has the
+        # tech/ level -- no dual-layout fallback.
+        return self.path / "libs.tech" / "klayout" / "tech"
 
     @property
     def design_include(self) -> Path:

@@ -18,7 +18,7 @@ rather than buried here.
 
 Every geometric constant below is a gf180mcu DRC rule, cited by its rule name as
 it appears in the PDK's own KLayout deck
-(`libs.tech/klayout/drc/rule_decks/`, gf180mcuD). Nothing here is a guess.
+(`libs.tech/klayout/tech/drc/rule_decks/`, gf180mcuD). Nothing here is a guess.
 
 Usage
 -----
@@ -43,8 +43,8 @@ from pathlib import Path
 # `divider_field()` computes can never be the mismatch of a geometry the
 # drawing does not have. `plan.py` imports only the import-free
 # `drc_rules` (issue #603), so it still loads both under plain Python and
-# under `drclvs._load_module`; the DRC rule minimums this file draws against
-# come from that same one transcription.
+# under `sim/harness/loader.py`'s `load_script`; the DRC rule minimums this
+# file draws against come from that same one transcription.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "divider"))
 import plan  # noqa: E402

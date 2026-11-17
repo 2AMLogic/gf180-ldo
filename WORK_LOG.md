@@ -6,8 +6,93 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-17
+
+- **PR #703**: fix(sim): accumulate split-part rows in klt_peak_run's summary.csv
+- **PR #701**: test(sim): enforce the unique-name sibling-load rule across testbench drivers
+- **PR #636**: refactor: load path-imported scripts through one harness.load_script helper
+- **Issue #700** (closed): sim: no structural test enforces the unique-name sibling-load rule across the 16 klt_run.py benches
+- **Issue #687** (closed): sim: klt_peak_run.py's summary.csv is overwritten per --part, so a split-part record stores only the last part's rows
+- **Issue #625** (closed): Define the path-loading idiom once: 21 hand-rolled importlib.util copies, and 10 of them skip the sys.modules step the other 11 take
+- **PR #699**: fix(sim): load ss-loop-gain's klt_run under its unique name, dropping the last bare import
+- **Issue #693** (closed): sim: ss-loop-gain sweep.py's bare `import klt_run` still leaks the name — soft-start's klt_peak_run wins the race, so the driver silently gets the wrong bench's klt_run
+- **PR #692**: sim: hoist the append-only output refusal into tb_adapter and guard bias_acq's explicit --dest
+- **Issue #686** (closed): sim: hoist the probe's append-only --out refusal into tb_adapter and apply it to bias_acq's explicit --dest
+- **Issue #596** (closed): Route the hand-rolled klt_run.py drivers' batch evidence through the artifact store (605 of 913 post-DR-0041 files)
+- **PR #696**: refactor(lvs): extract lvs_switches() and drop four switches the deck never reads
+- **Issue #691** (closed): LVS switch dict passes four globals the pinned deck never reads (lvs_sub, scale, schematic_simplify, thr)
+- **PR #690**: refactor(sim): home the shared loop-margin surface in sim/harness
+- **PR #689**: fix(lvs): gate the MIM renderer to the flavour the run registers
+- **PR #688**: docs: name klt_grid.DEFAULT_JOBS as the -j default in tb_startup.spice header
+- **Issue #685** (closed): tb_startup.spice's -j advisory still names min(8, cpu_count) as the harness default after #626
+- **PR #684**: fix(harness): take run_corners' -j default from klt_grid.DEFAULT_JOBS
+- **PR #683**: sim: stage mc-output-accuracy and soft-start peak/bias drivers instead of committing
+- **Issue #680** (closed): LVS: mapped MIM flavour is not cross-checked against the run's mim_cap switch, and CellSpec.simplify_extracted's comment still describes the pre-bump deck
+- **PR #677**: sim: stage current-limit, enable-shutdown and soft-start klt runs instead of committing
+- **PR #675**: fix(loop-stability): pin .options wnflag=1 so --backend local runs on any host
+- **Issue #647** (closed): sim: route the four latent hand-rolled batch drivers (mc-output-accuracy, soft-start peak/bias_acq) through the store
+- **Issue #646** (closed): sim: stage the current-limit, enable-shutdown and soft-start klt_run.py runs instead of committing them (all 673 hand-rolled-driver files as of 2026-11-15)
+- **Issue #634** (closed): bug: loop-stability --backend local fails with 'could not find a valid modelname' on the pass device
+- **Issue #630** (closed): Give loop-stability's borrowed testbench surface a home in sim/harness/: 40 symbols reached by filesystem path, and the shim shadows this bench's own modules
+- **Issue #626** (closed): run_corners.py is the sixth local driver #366's -j cap never reached: sim/harness/cli.py still resolves -j to min(8, cpu_count())
+
+### 2026-11-16
+
+- **PR #656**: chore(loom): resync installed Loom to v0.19.1302
+- **PR #679**: fix: pass the pinned LVS runset's switches explicitly and emit its MIM-cap device class
+- **Issue #642** (closed): LVS mismatches on pass_array and passives with current toolchain (klayout 0.30.12 + pinned PDK), pre-existing on main
+- **PR #676**: fix: refuse kept-envelope collisions before klt_record commits anything
+- **Issue #662** (closed): sim: klt_record.main commits the record before install_kept's collision check can refuse
+- **PR #672**: fix: soft-start record says ngspice/host bullets are above the Backend bullet
+- **PR #671**: fix: signoff drift message renders the cell's own status instead of 'met'
+- **Issue #668** (closed): signoff/readme_claims.py: _fmt() renders a reason-less 'unmet' table cell as 'met' in the drift message
+- **Issue #667** (closed): soft-start record prose: the klt Backend bullet says the ngspice/host bullets are "below" it; they are above
+- **PR #627**: refactor: define the loop sweeps' local-grid CLI block once in klt_grid.py
+- **Issue #621** (closed): Define the two loop sweeps' local-grid CLI block once in klt_grid.py: the help text drifted in 4 places and #366's -j cap reached 2 of 5 drivers
+- **PR #666**: refactor: read A/B driver ROW lines through the deck's strict parser
+- **PR #665**: test: smoke-cover both drivers' render_record with structural environment assertions
+- **PR #664**: docs: restate DR-0044's netlist-snapshot rationale on stronger-check grounds (#622)
+- **PR #663**: feat: give run_store_evidence.py --kind corners DR-0044's kept-file split
+- **PR #659**: fix: signoff README prose now matches the record; per-item table check added
+- **PR #657**: Remove tracked .loom/manifest.json.tmp atomic-write leftover
+- **PR #624**: refactor: mint the sim record id through the harness in all four drivers
+- **Issue #658** (closed): Neither sweep driver's render_record is covered by any test: 0 call sites in both driver suites vs 14 for the harness path
+- **Issue #645** (closed): sim: give run_store_evidence.py DR-0044's kept-file split so a tb.json-free batch run can be stored
+- **Issue #638** (closed): Remove ab_loop_stability.py's hand-rolled ROW parser: reuse loop-stability sweep.py's own parse_row_fields()
+- **Issue #635** (closed): Remove .loom/manifest.json.tmp: a tracked, truncated atomic-write leftover that .gitignore:95 already covers
+- **Issue #622** (closed): DR-0044 item 5 justifies keeping the netlist snapshot committed with a defect (#597) that is now fixed
+- **Issue #618** (closed): Mint the record id once: handover_t15.py and ramp_ab.py hand-roll it from git rev-parse --short (8 chars at HEAD, vs the ratified 7) and drop the dirty-tree flag
+- **Issue #617** (closed): signoff/README.md: the per-item table and item 8 notes contradict the verdict of record on item 5
+- **PR #654**: fix: drive the PDK's deck driver, whose layout replaced the old decks
+- **PR #652**: fix: diagnose stale attested evidence as a re-attest case in check.sh
+- **PR #650**: refactor: drop dead NgspiceRoot.matches_pin; docstring now states floor semantics
+- **Issue #641** (closed): layout/drclvs.py stage 4 (PDK DRC deck) cannot run against the pinned open_pdks revision: the deck layout changed
+- **Issue #623** (closed): signoff/check.sh: name the stale pinned artifact and offer re-attest, not --write
+- **Issue #619** (closed): Remove NgspiceRoot.matches_pin: dead property left behind by DR-0043's floor rewrite
+- **Issue #612** (closed): klt_record's old-vs-new section asserts a hard-coded backend/PDK delta that is now false on every record
+
+### 2026-11-15
+
+- **PR #653**: feat: limit-check short-circuit power as spec_row Thermal, cite it for T1 item 5
+- **PR #640**: fix: declare --param only in tb_adapter, the wrapper that reads it
+- **PR #620**: refactor(sim): drop six parameters no caller supplies and no body reads
+- **Issue #631** (closed): Stop offering --param on the four klt_run.py benches that never read it: add_ab_args declares it for every wrapper, only tb_adapter consumes it
+- **Issue #616** (closed): current-limit: tag the short-circuit power measurement with spec_row Thermal and cite it for T1 item 5
+- **Issue #613** (closed): Remove six dead function parameters in sim/ that the correctness-only lint gate cannot see
+- **PR #644**: fix: derive klt_record's provenance claims from run data, not frozen prose
+- **PR #614**: docs: roadmap as of 2026-11-13
+- **PR #602**: feat(sim): route klt-batch adapter runs through the artifact store
+- **Issue #604** (closed): Replace klt_record.py's frozen provenance narrative with the report data it already reads
+- **Issue #594** (closed): Remove the klt-batch adapters' commit-the-bytes path: every evidence run since DR-0041 bypassed the artifact store (913 files in git, 0 manifests)
+
 ### 2026-11-14
 
+- **PR #633**: fix: stage models and split the loop-stability klt grid under the job ceiling
+- **PR #632**: refactor: parse README's spec table through the ratified-spec gate's parser
+- **PR #611**: ci: reject added records that still carry klt_record's "(to be written)"
+- **Issue #628** (closed): Remove the second README spec-table parser: build_characterization_report.py forks the ratified parse_table
+- **Issue #615** (closed): loop-stability sweep.py: stage model files and split each klt batch request under the whole-job ceiling
+- **Issue #606** (closed): CI does not reject an added evidence record that still carries klt_record's `(to be written)` placeholder
 - **PR #605**: fix: grade a store-backed record from its own committed netlist hashes
 - **PR #599**: refactor(sim): one harness @TOKEN@ renderer and netlist preflight for eight drivers
 - **Issue #597** (closed): build_characterization_report.py skips store-backed records: latest_record() needs a committed netlist snapshot
@@ -375,51 +460,4 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 - **Issue #219** (closed): spec: propose ratifying DR-0025's per-finger model-bin convention and deck-level wnflag pin
 - **Issue #191** (closed): Soft start: replace the idealized FB-injection source (Binj_ss) with a device-level transconductor
 - **Issue #187** (closed): Soft-start: inrush and current-limit clearance still fail at the 4.7 uF end of DR-0001's capacitor window
-
-### 2026-09-16
-
-- **PR #245**: sim(startup): re-judge tb.json checks against DR-0006's ratified 6 ms bound
-- **PR #244**: fix(sim/harness): catch undefined-vector .let/v(...) as fatal (#242)
-- **PR #243**: fix(sim/soft-start-loop-gain): rewrite device/binj narrative as cap-resize A/B, retire has_gmsum
-- **PR #241**: fix: widen merge-pr.sh closing-keyword regex for colon-adjacent form
-- **PR #240**: fix(sim/soft-start-loop-gain): drop dead acopen-fb-inj/acshort-gmsum attribution rows (#234)
-- **PR #238**: sim(startup): re-run full PVT against current main's DUT, confirm DR-0006's 6 ms bound holds
-- **PR #236**: docs(sim/harness): document -j/--timeout override for Gear-integration benches
-- **PR #233**: fix(soft-start): revert device-level FB transconductor to Binj_ss (issue #231)
-- **Issue #242** (closed): sim/harness: run_ngspice_deck()'s FATAL_LOG_PATTERNS misses ngspice's "no such variable" wording
-- **Issue #239** (closed): sim/soft-start-loop-gain: device/binj is now a DR-0024 cap-resize A/B, not an injection-element A/B (render_record narrative + hand-over GMSUM bug)
-- **Issue #237** (closed): merge-pr.sh champion:hold-state pipefail fix (#224/#230) regressed via resync (64fe646)
-- **Issue #235** (closed): merge-pr.sh's closing-keyword detector misses colon-adjacent `fix: #N` — false-close self-heal gap (recurred on #191)
-- **Issue #234** (closed): sim/soft-start-loop-gain: acopen-fb-inj and acshort-gmsum no longer measure anything after #231's Binj_ss revert
-- **Issue #232** (closed): sim/startup: default -j/--timeout causes mass CPU-contention timeouts on multi-core hosts
-- **Issue #231** (closed): sim/startup regresses: ff/sf high-temp/voltage corners no longer settle within 6 ms (blocks #128)
-- **Issue #220** (closed): sim: DR-0006's 6 ms startup bound may no longer hold — the post-#195/#197 DUT settles 1.455x slower than the netlist it was measured against
-- **Issue #128** (closed): Re-run sim/startup with tb.json's checks at 6 ms once DR-0006 ratifies
-
-### 2026-09-15
-
-- **PR #230**: fix: guard unmatched grep -o in champion:hold-state staleness check (#224)
-- **PR #229**: spec: mark DR-0022's clearance-at-1uF pass-count as stale
-- **PR #226**: ci: run a pass-device-bearing corner in pvt-smoke (verify wnflag=1 on ngspice-42/47)
-- **PR #225**: sim(soft-start): confirm DR-0024's resize is a no-op on Iq and loop-stability
-- **PR #223**: spec: propose 1 uF startup-current budget + ~5x soft-start resize (DR-0024)
-- **PR #222**: spec: pin gf180mcu model-bin selection in the deck and root-cause it (DR-0025)
-- **PR #218**: sim: regenerate CHARACTERIZATION.md and add CI staleness check
-- **PR #215**: spec: propose DR-0023, cascode the soft-start injection mirror
-- **PR #199**: spec: propose ratifying DR-0018's narrowed Stability envelope (+ DR-0007 hold-condition note)
-- **PR #137**: spec: propose ratifying DR-0005's 62-95 mA current-limit window
-- **Issue #227** (closed): spec: DR-0022's clearance-at-1uF evidence is stale against issue #191's fresher regression data
-- **Issue #224** (closed): merge-pr.sh silently exits 1 on every merge when no champion:hold-state comment exists (pipefail bug)
-- **Issue #221** (closed): sim: verify the deck-level '.options wnflag=1' bin pin on ngspice-42 and ngspice-47 (only 46 is covered by DR-0025)
-- **Issue #216** (closed): sim/CHARACTERIZATION.md is stale against main's own netlist — regenerate after the DR-0005/DR-0006 ratifications and re-point note references
-- **Issue #214** (closed): ngspice model-bin resolution for XMpass (pfet_03v3, W=2000u/nf=40) is unverified and build-dependent; every large-W-device sim/ record may rest on an unpinned bin choice
-- **Issue #198** (closed): Cut the DR-0018 ratification PR (narrow Stability envelope to 1 µF nominal + DR-0007 status update)
-- **Issue #105** (closed): Operator decision: ratify, reject, or revise DR-0005 (current-limit window)
-
-### 2026-09-14
-
-- **PR #213**: refactor(sim): consolidate current-limit/enable-shutdown run_point() into a shared harness_run_pvt_point
-- **PR #127**: spec: propose ratifying DR-0006's 6 ms startup settling window
-- **Issue #211** (closed): Remove duplicate run_point() in current-limit/enable-shutdown run.sh: consolidate the PVT-point wrapper
-- **Issue #106** (closed): Operator decision: ratify, reject, or revise DR-0006 (startup settling window)
 

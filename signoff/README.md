@@ -17,10 +17,9 @@ state of the block, not a placeholder. There is no top-level LDO layout yet
 (only the pass-device array and feedback-divider cells are drawn, under #173),
 so no block-level DRC,
 no LVS, no extraction, no post-layout re-simulation and no power-delivery
-evidence exists to cite. Item 5 (corner verification) declares all 16 ratified
-spec rows as gaps, each naming its owner issue, and cites no envelope: the PVT
-corner evidence that *does* exist is not committed in a form `klt signoff` can
-grade. See "Why each item reads the way
+evidence exists to cite. Item 5 (corner verification) cites five ratified
+spec rows from limit-checked `klt sim` envelopes and declares the rest as
+gaps, each naming its owner issue. See "Why each item reads the way
 it does" below.
 
 ## What is here
@@ -123,7 +122,7 @@ requires of the claimant rather than of the tool.
 | 2 | `unmet` / `no_evidence` | **Not met.** There is no top-level LDO layout. `layout/` holds the proven DRC/LVS *flow*, a one-transistor test cell, and two block cells (`pass_array/`, `divider/`; #285, #286); the error amplifier (#284, blocked on #312), current limit (#290), soft start (#291) and top-level assembly (#288) are not drawn. |
 | 3 | `unmet` / `no_evidence` | No `klt drc` envelope for this block exists, because item 2 does not. The test cell's DRC run is evidence about the test cell. |
 | 4 | `unmet` / `no_evidence` | Same: no LVS compare of this block exists to cite. |
-| 5 | `unmet` / `no_evidence` | Corner evidence exists in quantity under `sim/*/records/`, but as Markdown records from this repo's own harness, not `klt sim` JSON envelopes — nothing here is gradeable yet. `sim/CHARACTERIZATION.md` also reads FAIL on PSRR (issue #289 / `DR-0031`), FAIL on Line reg and Output (issue #325's re-mint, same `DR-0031` residual at the same corner family), MIXED on Startup, and, since issue #320's bias-servo netlist change (DR-0037, proposed), marks every testable row's record STALE against the current `design/netlist/*.spice` until the PVT re-mints can run. This item is the block's largest real gap, and it is an `unmet` row rather than a caveat buried in prose. |
+| 5 | `unmet` / `partial_coverage` | Part of the ratified row set is cited from limit-checked `klt sim` envelopes and graded `met`; the rest stay declared gaps, each naming its owner issue. Which rows are cited, which are gaps and why, and the Thermal clause caveat are in "Item 5" above. This item is the block's largest real gap, and it is an `unmet` row rather than a caveat buried in prose. |
 | 6 | `unmet` / `no_evidence` | `sim/mc-output-accuracy/` is a real Monte Carlo campaign, but there is no `klt yield` report — the only kind item 6 accepts. |
 | 7 | `unmet` / `no_evidence` | No layout, so no `klt pex`. Item 7 rejects every other evidence kind, so there is nothing weaker that could stand in. |
 | 8 | **`met`** | Cites `evidence/characterization.generic.json`, a generic envelope wrapping `sim/CHARACTERIZATION.md`. See below. |
@@ -141,10 +140,14 @@ so it cannot drift from the committed evidence.
 
 Item 8 asks for that aggregation artifact to exist and be current. It does
 **not** ask for every row in it to pass, and this `met` verdict must not be
-read as if it did: the report currently reads **FAIL on PSRR**, **FAIL on Line
-reg** (and therefore on **Output**, which counts line regulation inside its
-±2% window), **MIXED on Startup**, and marks half the rows' underlying sim
-record **STALE** against the
+read as if it did: across the report's 16 rows, the current reading is **FAIL
+on four** — PSRR, Line reg (and therefore **Output**, which counts line
+regulation inside its ±2% window), and **Load transient** — **MIXED on two**
+(Startup, and **Iq (excluding load current)**), **N/A on four** (Input, Load,
+Output noise, Area: not independently tested), and **PASS on six** — Dropout
+@ 50 mA, Load reg (0–50 mA), Current limit, Enable / shutdown, Thermal and
+Stability — five of them on fresh records, while **Startup's MIXED and
+Stability's PASS rest on STALE records** (2 of the 16 rows) against the
 current `design/netlist/*.spice`. Those are item 5's subject matter, and item 5
 is `unmet` above. (PSRR went PASS → FAIL on 2026-09-23 when issue #289's
 re-run superseded a stale PASS pair from 2026-09-05; the rollup surfacing a
@@ -154,10 +157,12 @@ and Output went PASS → FAIL on 2026-09-24 the same way: issue #325's re-mint
 superseded a 2026-09-05 record that was stale against DR-0033/DR-0034, and
 `ff_125c_3.30v` now reads 8.2345 mV/V against the ratified < 5 mV/V row —
 the same supply-dependent soft-start injection residual `DR-0031` measures,
-at the same corner family, so it is tracked under issue #302 too.) One green row out of eleven is not a claim about this block's
-performance. (Current limit and Thermal read FAIL here until issue #139's
-re-run restated them against `DR-0005`'s **ratified** 62–95 mA / ≤ 346 mW rows
-rather than the superseded 65–80 mA / ≤ 290 mW ones; no measured number moved.)
+at the same corner family, so it is tracked under issue #302 too.) Six PASS
+rows out of sixteen — five of them fresh, Stability's on a STALE record — is
+not a claim about this block's performance. (Current limit and Thermal read
+FAIL here until issue #139's re-run restated them against `DR-0005`'s
+**ratified** 62–95 mA / ≤ 346 mW rows rather than the superseded 65–80 mA /
+≤ 290 mW ones; no measured number moved.)
 
 Item 8 is also the only T1 item a `generic` envelope may satisfy. Every other
 item rejects `"kind": "generic"` outright, so this hand-rolled wrapper cannot
@@ -215,10 +220,12 @@ done
 That loop skips the `local_only` commands too. To actually run them, use
 `python3 design/netlist.py --check` and `bash sim/selftest.sh --quick
 --require-pdk` directly, or regenerate the envelope without `--check`.
-After any inventoried file changes, regenerate with `--attest N --inventory
-... -o signoff/evidence/itemN.generic.json`, copy
-`provenance.input.content_hash` into the manifest, and run `bash
-signoff/check.sh --write`.
+After any inventoried file changes, regenerate the envelope with `--attest N
+--inventory signoff/inventory-itemN.json -o signoff/evidence/itemN.generic.json`,
+then re-run `bash signoff/check.sh` and follow what it reports: with the
+current inventory-only bindings a hygiene-only change needs nothing further,
+while a changed inventory also needs the new `provenance.input.content_hash`
+copied into the manifest and a `bash signoff/check.sh --write` run.
 
 Item 2 is not a presentation choice: the layout does not exist.
 
@@ -243,9 +250,11 @@ Item 2 is not a presentation choice: the layout does not exist.
 
 In dependency order, not effort order: item 2 (a layout of the block) unblocks
 3, 4, 7 and 11 at once, and is the single largest gap. Independently of it,
-item 5 needs this repo's PVT corner evidence emitted as `klt sim` envelopes
-rather than only as Markdown records, and item 6 needs a `klt yield` report
-over the existing Monte Carlo campaign. Items 1, 9 and 10 are done.
+item 5 needs the rows still declared as gaps to have their PVT corner evidence
+emitted as `klt sim` envelopes rather than only as Markdown records — part of
+the row set is already cited from envelopes (see "Item 5" above) — and item 6
+needs a `klt yield` report over the existing Monte Carlo campaign. Items 1, 9
+and 10 are done.
 
 Filing the tool-side friction this surfaces belongs at
 `2AMLogic/klayout-tools`, per this repo's friction protocol.

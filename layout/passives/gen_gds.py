@@ -75,11 +75,12 @@ Two of those are load bearing in ways a single-FET cell never exercises:
   is chosen because it is unambiguous.
 
 The metal stack is not a free choice: for the ``D`` variant this repo builds
-against (5LM, MIM option B), the LVS deck extracts
-``cap_mim_2f0_m4m5_noshield`` from a ``metal4``/``fusetop``/``metal5`` stack,
-so the PCell must be asked for ``metal_level="M5"`` (top plate M5), not
-``"M4"``. Asking for the wrong one yields a cell that is DRC-clean and
-extracts nothing.
+against (5LM, MIM option B), the LVS deck's MIM extraction registers the
+``cap_mim_2f0fF`` device class for a ``metal4``/``fusetop``/``metal5`` stack
+(the symbol-name token ``cap_mim_2f0_m4m5_noshield`` the schematic exports
+maps to it in ``layout/lvs_form.py``, issue #642), so the PCell must be
+asked for ``metal_level="M5"`` (top plate M5), not ``"M4"``. Asking for the
+wrong one yields a cell that is DRC-clean and extracts nothing.
 """
 
 import os
@@ -106,6 +107,7 @@ from gen_gds_common import (  # noqa: E402
     _load_pdk_pcells,
     _merged_region,
     _rd,
+    display_path,
 )
 
 TOP_CELL = "DRCLVS_PASSIVES"
@@ -297,7 +299,7 @@ def build(out_path, pdk_path):
     layout.write(out_path)
     box = top.dbbox()
     print(
-        f"gen_gds.py: wrote {out_path} "
+        f"gen_gds.py: wrote {display_path(out_path)} "
         f"(top={TOP_CELL}, dbu={layout.dbu}, "
         f"bbox={box.width():.3f}x{box.height():.3f} um)"
     )

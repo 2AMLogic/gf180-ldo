@@ -59,7 +59,6 @@ import argparse
 import concurrent.futures
 import csv
 import datetime as _dt
-import importlib.util
 import math
 import os
 import re
@@ -79,6 +78,7 @@ HANDOVER_TEMPLATE = HERE / "tb_ss_handover.spice.in"
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness import deck, klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
@@ -86,6 +86,7 @@ from harness.report import (  # noqa: E402
     format_record_id,
     git_provenance,
     parse_row_fields as _harness_parse_row_fields,
+    print_provenance_banner,
     write_markdown_record,
 )
 from harness.runner import (  # noqa: E402
@@ -97,54 +98,65 @@ from harness.runner import (  # noqa: E402
 sys.path.insert(0, str(HERE))
 import netlist_variants as nv  # noqa: E402
 
-# --- the loop-stability driver, imported rather than copied -----------------
-# `sim/loop-stability/testbench/sweep.py` is a script under a hyphenated
-# directory, so it is not importable by name; this is the same importlib
-# idiom `sim/tests/test_loop_stability.py` already uses. Importing it (rather
-# than copying its constants over) is deliberate: this experiment's whole
-# claim to comparability with `sim/loop-stability/`'s records rests on the
-# two using the same bars, the same AC band and resolution, and the same
-# margin semantics, and a copy would let those drift silently. The Row class
-# below SUBCLASSES its Row for the same reason -- `pm_deg`, `gm_db`,
-# `passes` and `resurges` are inherited, not restated.
-# `sim/tests/test_soft_start_loop_gain.py` asserts the identity.
+# This bench's own ``klt_run.py`` is loaded by path under its own name rather
+# than imported: this driver is itself loaded by path (tests, other drivers),
+# and a bare ``import klt_run`` would bind the shared module name to whichever
+# bench's sibling got imported first in that process (issue #693) --
+# ``sim/soft-start/testbench/klt_peak_run.py`` occupies the same name, and
+# neither bench's entry points exist on the other's module. The same rule and
+# pattern as ``sim/loop-stability/testbench/sweep.py`` (issue #630).
+klt_run = load_script("ss_loop_gain_klt_run", HERE / "klt_run.py")
+
+# `sim/loop-stability/`'s own driver, invoked as a SUBPROCESS by the anchor
+# cross-check below (run_loop_stability_here) so the same-host comparison runs
+# that bench's unmodified entry point in its own process.
 _LS_PATH = REPO_ROOT / "sim" / "loop-stability" / "testbench" / "sweep.py"
-_spec = importlib.util.spec_from_file_location("loop_stability_sweep", _LS_PATH)
-ls = importlib.util.module_from_spec(_spec)
-sys.modules["loop_stability_sweep"] = ls
-_spec.loader.exec_module(ls)
 
-# `klt_run` is also the name of loop-stability's module (which `ls` has just put
-# in sys.modules), so this bench's own front end for `--backend batch` is
-# loaded by path under a distinct name, like `ls` above (issue #451).
-_spec = importlib.util.spec_from_file_location("ss_loop_gain_klt_run", HERE / "klt_run.py")
-klt_run = importlib.util.module_from_spec(_spec)
-sys.modules["ss_loop_gain_klt_run"] = klt_run
-_spec.loader.exec_module(klt_run)
+# --- the shared loop-margin semantics, imported rather than copied ----------
+# The margin bars, the AC band and resolution, the PVT axes and the ``Row``
+# verdict semantics this experiment shares with `sim/loop-stability/` live in
+# `harness/loop_margin.py` (issue #630) -- the same module that bench's own
+# driver imports. Importing them (rather than copying constants over) is
+# deliberate: this experiment's whole claim to comparability with
+# `sim/loop-stability/`'s records rests on the two using the same bars, the
+# same AC band and resolution, and the same margin semantics, and a copy would
+# let those drift silently. The Row class below SUBCLASSES the harness Row for
+# the same reason -- `pm_deg`, `gm_db`, `passes` and `resurges` are inherited,
+# not restated. `sim/tests/test_soft_start_loop_gain.py` asserts that BOTH
+# benches read these same objects.
+from harness import loop_margin  # noqa: E402
+from harness.loop_margin import (  # noqa: E402
+    AC_DEC,
+    F_START,
+    F_STOP,
+    GM_MIN_DB,
+    NOMINAL_SUPPLY_V,
+    PM_MIN_DEG,
+    PROCESS_CORNERS,
+    RESURGENCE_MAX_DB,
+    SUPPLY_TOL,
+    TEMPS_C,
+    VOUT_NOM_V,
+    VOUT_TOL_FRAC,
+    base_row_kwargs,
+    fmt_esr,
+    fmt_uf,
+    gm_str,
+    nan_or,
+    parse_opt_float,
+    pm_str,
+    print_curve_log,
+    res_str,
+    worst_of,
+    worst_resurgence_of,
+)
 
-PM_MIN_DEG = ls.PM_MIN_DEG            # DR-0001, 45 deg
-GM_MIN_DB = ls.GM_MIN_DB              # DR-0001, 10 dB
-RESURGENCE_MAX_DB = ls.RESURGENCE_MAX_DB   # DR-0008 precondition, 0 dB
-AC_DEC = ls.AC_DEC                    # "400" -- issue #58's resolution policy
-F_START = ls.F_START
-F_STOP = ls.F_STOP
-VOUT_NOM_V = ls.VOUT_NOM_V            # 1.8 V, the design's own divider
 VREF_V = 1.2                          # the deck's reference source
-fmt_uf, fmt_esr, fmt_ma = ls.fmt_uf, ls.fmt_esr, ls.fmt_ma
-gm_str, pm_str, res_str = ls.gm_str, ls.pm_str, ls.res_str
-worst_of, worst_resurgence_of = ls.worst_of, ls.worst_resurgence_of
 
 # --- the grid ---------------------------------------------------------------
-PROCESS_CORNERS = ls.PROCESS_CORNERS       # tt ff ss fs sf res_ff res_ss
-TEMPS_C = ls.TEMPS_C
-NOMINAL_SUPPLY_V = ls.NOMINAL_SUPPLY_V
-
-#: Default local worker count, capped at 2 rather than ``os.cpu_count()``
-#: (issue #366): this driver runs on shared dispatch workers where a grid that
-#: defaults to every core starves other sweeps. Pass ``-j`` on a box you own.
-DEFAULT_JOBS = min(2, os.cpu_count() or 2)
-
-SUPPLY_TOL = ls.SUPPLY_TOL
+# tt ff ss fs sf res_ff res_ss (PROCESS_CORNERS), TEMPS_C, NOMINAL_SUPPLY_V
+# and SUPPLY_TOL come from harness.loop_margin above: loop-stability's own
+# PVT axes, as the same Python objects.
 
 # Output-network configurations, all at the rated 50 mA load point. Two of
 # DR-0001's three C_eff values: the 1 uF / 100 mOhm point `sim/soft-start/`
@@ -308,8 +320,8 @@ VOUT_CEIL_V = VOUT_NOM_V + 0.18
 
 # The anchor phase is a settled point, so it gets loop-stability's own rule
 # ON TOP of the two above -- if the anchor does not land where that bench
-# lands, the cross-check it exists to feed is meaningless.
-VOUT_TOL_FRAC = ls.VOUT_TOL_FRAC
+# lands, the cross-check it exists to feed is meaningless. VOUT_TOL_FRAC comes
+# from harness.loop_margin (the same object loop-stability reads).
 
 # --- cross-check tolerance --------------------------------------------------
 # Issues #182/#185: two runs of the identical command, on the identical
@@ -372,10 +384,11 @@ def _iinj_a(fb_v: float, vout_v: float) -> float:
 
 
 @dataclass
-class Row(ls.Row):
+class Row(loop_margin.Row):
     """One (PVT, variant, phase, SSR, C_eff, ESR) loop-gain point.
 
-    Subclasses `sim/loop-stability/`'s Row so `pm_deg`, `gm_db`, `passes` and
+    Subclasses the harness's loop-margin Row -- the same class
+    `sim/loop-stability/`'s rows are -- so `pm_deg`, `gm_db`, `passes` and
     `resurges` are its definitions, not a second copy of them.
     """
 
@@ -557,10 +570,10 @@ def rows_from_log(pvt, text: str, *, phase: str, variant: str, ceffs, esrs,
             corner_id=pvt.corner_id, corner=pvt.corner.name,
             temp_c=pvt.temp_c, vin_v=pvt.vdd,
             iload_a=PHASES[phase]["iload_a"],
-            **ls.base_row_kwargs(f),
+            **base_row_kwargs(f),
             variant=variant, phase=phase, ssr_cmd=f["ssr_cmd"],
-            ssr_v=ls.nan_or(f["ssr_v"]), fb_v=ls.nan_or(f["fb_v"]),
-            isup_a=ls.nan_or(f["isup_a"]),
+            ssr_v=nan_or(f["ssr_v"]), fb_v=nan_or(f["fb_v"]),
+            isup_a=nan_or(f["isup_a"]),
             load_model=PHASES[phase]["load_model"],
             rload_ohm=PHASES[phase]["rload_ohm"],
         ))
@@ -603,7 +616,7 @@ def run_curve(pvt, pdk, row: Row, netlist: Path, ac_dec, logdir: Path,
         f"* corner={pvt.corner_id} variant={row.variant} phase={row.phase} "
         f"ssr={row.ssr_cmd} ceff={fmt_uf(row.ceff_f)} esr={fmt_esr(row.esr_ohm)}\n"
     )
-    return ls.print_curve_log(text, header, logdir / f"{pvt.corner_id}_{tag}.log",
+    return print_curve_log(text, header, logdir / f"{pvt.corner_id}_{tag}.log",
                               workdir / f"{pvt.corner_id}_{tag}.spice", cwd=workdir)
 
 
@@ -884,12 +897,12 @@ def curve_from_log(pvt, variant: str, text: str, log: Path):
             return None, f"{exc} (see {display_path(log)})"
         pts.append(HovPoint(
             ssr_cmd=float(f["ssr_cmd"]),
-            ssr_v=ls._f(f["ssr_v"]),
-            fb_v=ls._f(f["fb_v"]),
-            vout_v=ls._f(f["vout_v"]),
-            pg_v=ls._f(f["pg_v"]),
-            erramp_v=ls._f(f["erramp_v"]),
-            isup_a=ls._f(f["isup_a"]),
+            ssr_v=parse_opt_float(f["ssr_v"]),
+            fb_v=parse_opt_float(f["fb_v"]),
+            vout_v=parse_opt_float(f["vout_v"]),
+            pg_v=parse_opt_float(f["pg_v"]),
+            erramp_v=parse_opt_float(f["erramp_v"]),
+            isup_a=parse_opt_float(f["isup_a"]),
         ))
     if len(pts) != len(HANDOVER_SSR_V):
         return None, (f"expected {len(HANDOVER_SSR_V)} HOV points, parsed "
@@ -1307,14 +1320,14 @@ def run_loop_stability_here(args, workdir: Path, logdir: Path, corners, temps,
         for line in log.read_text().splitlines():
             if not line.startswith("ROW "):
                 continue
-            f = ls.parse_row_fields(line)
+            f = loop_margin.parse_row_fields(line)
             rows[(corner_id, float(f["ceff_f"]), float(f["esr_ohm"]))] = {
-                "vout_v": ls._f(f["vout_v"]),
-                "f0_hz": ls._f(f["f0_hz"]),
-                "pm_deg": (None if ls._f(f["phase_at_f0_deg"]) is None
-                           else 180.0 + ls._f(f["phase_at_f0_deg"])),
-                "gm_db": (math.inf if ls._f(f["gain_at_f180_db"]) is None
-                          else -ls._f(f["gain_at_f180_db"])),
+                "vout_v": parse_opt_float(f["vout_v"]),
+                "f0_hz": parse_opt_float(f["f0_hz"]),
+                "pm_deg": (None if parse_opt_float(f["phase_at_f0_deg"]) is None
+                           else 180.0 + parse_opt_float(f["phase_at_f0_deg"])),
+                "gm_db": (math.inf if parse_opt_float(f["gain_at_f180_db"]) is None
+                          else -parse_opt_float(f["gain_at_f180_db"])),
             }
     if not rows:
         return None, "the re-run produced no ROW lines"
@@ -1394,32 +1407,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help=f"AC points per decade (default {AC_DEC}, "
                          "sim/loop-stability's own resolution policy, issue "
                          "#58 -- running below it needs --subset-reason)")
-    ap.add_argument("--backend", choices=("local", "batch", "klt-local"), default=None,
-                    help="where the grid runs (issues #366, #451). `batch`: "
-                         "each (variant, phase, C_eff, ESR) is a `klt sim` "
-                         "request over the PVT grid, submitted to the Spot "
-                         "batch fleet (klt_run.py), and the DC hand-over "
-                         "transfer is one `op` request per variant -- the "
-                         "default for any grid of more than one PVT point, as "
-                         "the dispatch-worker rule requires. `local` fans "
-                         "ngspice out on THIS host and must be passed "
-                         "explicitly for more than one PVT point. `klt-local` "
-                         "runs the same `klt sim` requests as `batch` but "
-                         "locally, one at a time, for a single-PVT-point "
-                         "batch-vs-local check only. A single-PVT run (e.g. "
-                         "--explore) is `local` without the flag. A failed "
-                         "batch submit is an error; it never falls back to a "
-                         "local grid.")
-    ap.add_argument("--in-flight", type=int, default=6,
-                    help="with --backend batch, how many requests are "
-                         "submitted at once (default: 6; the fleet's own "
-                         "concurrency cap re-queues the rest)")
-    ap.add_argument("-j", "--jobs", type=int, default=DEFAULT_JOBS,
-                    help=f"local worker threads (default: {DEFAULT_JOBS}, "
-                         "deliberately not os.cpu_count(): dispatch workers "
-                         "are shared). Only meaningful with --backend local.")
-    ap.add_argument("--no-write", action="store_true",
-                    help="run and report, write no record (debugging)")
+    klt_grid.add_grid_args(
+        ap, batch_unit="(variant, phase, C_eff, ESR) configuration",
+        batch_extra=", and the DC hand-over transfer is one `op` request per "
+                    "variant")
     ap.add_argument("--explore", action="store_true",
                     help="tt/27C/3.3V only; implies --no-write")
     ap.add_argument("--skip-crosscheck", action="store_true",
@@ -1429,10 +1420,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="do not run the dense DC hand-over transfer sweep "
                          "(implies the record cannot report the injection "
                          "element's transfer, only its margins)")
-    ap.add_argument("--subset-reason", default="",
-                    help="required (and copied into the record) if the grid is "
-                         "narrower than the CLAUDE.md-mandated PVT matrix")
-    ap.add_argument("--supersedes", default="")
     ap.add_argument("--author",
                     default=os.environ.get("SS_LOOP_GAIN_AUTHOR",
                                            "agent-builder (issue #196)"))
@@ -1624,12 +1611,9 @@ def main() -> int:
         print(f"FATAL: {exc}", file=sys.stderr)
         return 3
 
-    print(f"pdk           : {pdk.variant} @ {pdk.version}")
-    print(f"ngspice       : {ngspice_version()}")
-    print(f"ngspice sha256: {ngspice_binary_sha256()}")
-    print(f"host          : {socket.gethostname()}")
-    print(f"record id     : {record_id}"
-          f"{' (NOT WRITTEN: --no-write)' if args.no_write else ''}")
+    print_provenance_banner(
+        pdk, record_id, host=socket.gethostname(), dirty=prov["dirty"],
+        note=" (NOT WRITTEN: --no-write)" if args.no_write else "")
     n_states = sum(1 if PHASES[p]["ssr"] is None else len(PHASES[p]["ssr"])
                    for p in args.phases)
     print(f"grid          : {len(grid)} PVT x {len(args.variants)} variant x "
@@ -2747,7 +2731,7 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
             f"#451). The per-corner logs are `ROW`/`HOV` lines of values "
             f"`klt` returned (each request's report JSON is under "
             f"`corners/{record_id}/klt-reports/`), so the ngspice version/hash "
-            f"and host below describe only the local attribution and curve "
+            f"and host above describe only the local attribution and curve "
             f"re-runs, not the grid; the grid ran on the engine and host "
             f"named in those reports. Crossings are `klt`'s log-frequency "
             f"interpolation, not the deck's `meas ... when`.\n")

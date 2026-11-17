@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from harness import evidence_store as es  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
 REPO = "owner/repo"
 
@@ -337,15 +338,14 @@ class Probe(unittest.TestCase):
             es.probe_broker("http://u:p@127.0.0.1:1", REPO)
 
 
-class CampaignCli(unittest.TestCase):
-    """``sim/run_store_evidence.py``: the store path for campaign outputs."""
+class _StagedCli(unittest.TestCase):
+    """Shared scaffolding for ``sim/run_store_evidence.py`` CLI tests: the
+    module imported by path with ``REPO_ROOT`` on a tempdir, a staged tree,
+    and a ``main`` that patches preflight/``put_files`` with a fake ``klt``."""
 
     def setUp(self):
-        import importlib.util
         path = Path(__file__).resolve().parents[1] / "run_store_evidence.py"
-        spec = importlib.util.spec_from_file_location("run_store_evidence", path)
-        self.mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.mod)
+        self.mod = load_script("run_store_evidence", path)
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         self.root = Path(td.name).resolve()
@@ -357,16 +357,26 @@ class CampaignCli(unittest.TestCase):
         self.summary.write_text("# campaign\n")
         self.mod.REPO_ROOT = self.root
 
-    def main(self, staged=None, preflight_exc=None):
+    def main(self, staged=None, preflight_exc=None, kind=None, rid="20261022-abc",
+             put_fail=None):
         from unittest import mock
         store = {}
+        self.store = store
         real_put = es.put_files
         with mock.patch.object(es, "preflight", side_effect=preflight_exc), \
              mock.patch.object(es, "put_files",
-                               side_effect=lambda f, r: real_put(f, r, run=fake_klt(store))), \
+                               side_effect=lambda f, r: real_put(
+                                   f, r, run=fake_klt(store, fail=put_fail))), \
              mock.patch("sys.stdout"), mock.patch("sys.stderr"):
-            return self.mod.main(["bench", "20261022-abc", str(staged or self.staged),
-                                  "--summary", str(self.summary)])
+            argv = ["bench", rid, str(staged or self.staged),
+                    "--summary", str(self.summary)]
+            if kind is not None:
+                argv += ["--kind", kind]
+            return self.mod.main(argv)
+
+
+class CampaignCli(_StagedCli):
+    """``sim/run_store_evidence.py``: the store path for campaign outputs."""
 
     def test_stores_and_commits_manifest_and_summary(self):
         self.assertEqual(self.main(), 0)
@@ -388,6 +398,137 @@ class CampaignCli(unittest.TestCase):
         (inside / "a.json").write_text("{}\n")
         self.assertEqual(self.main(staged=inside), 1)
         self.assertFalse((self.root / "manifests").exists())
+
+
+class KeptSplit(unittest.TestCase):
+    """DR-0044's kept-file helpers in their home beside ``split_batch_run``
+    (moved out of ``klt_record``, issue #645, so a tb-free caller shares them)."""
+
+    def setUp(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        self.root = Path(td.name).resolve()
+        self.stage = self.root / "stage"
+        (self.stage / "klt-3.30v/new").mkdir(parents=True)
+        (self.stage / "klt-3.30v/new/klt-report.json").write_text('{"corner_count": 1}\n')
+        (self.stage / "klt-3.30v/new/tt.log").write_text("log tt\n")
+        self.corner = self.root / "sim/b/corners/r1"
+        self.kept = sorted(self.stage.rglob("klt-report.json"))
+
+    def test_destinations_keep_the_staged_relative_path(self):
+        self.assertEqual(es.kept_destinations(self.kept, self.stage, self.corner),
+                         [self.corner / "klt-3.30v/new/klt-report.json"])
+
+    def test_install_kept_copies_the_same_layout(self):
+        installed = es.install_kept(self.kept, self.stage, self.corner)
+        self.assertEqual(installed, [self.corner / "klt-3.30v/new/klt-report.json"])
+        self.assertEqual((self.corner / "klt-3.30v/new/klt-report.json").read_text(),
+                         '{"corner_count": 1}\n')
+
+    def test_install_kept_never_overwrites(self):
+        dst = self.corner / "klt-3.30v/new/klt-report.json"
+        dst.parent.mkdir(parents=True)
+        dst.write_text("prior run's envelope\n")
+        with self.assertRaisesRegex(es.StoreError, "already exists"):
+            es.install_kept(self.kept, self.stage, self.corner)
+        self.assertEqual(dst.read_text(), "prior run's envelope\n")
+
+    def test_split_batch_run_unions_the_kept_and_extra_excludes(self):
+        summary = self.stage / "summary.md"
+        summary.write_text("# run\n")
+        files, kept = es.split_batch_run(self.stage, "sim/b/corners/r1", exclude=[summary])
+        self.assertEqual(kept, [self.stage / "klt-3.30v/new/klt-report.json"])
+        self.assertEqual([name for _, name in files],
+                         ["sim/b/corners/r1/klt-3.30v/new/tt.log"])
+
+
+class CornersCli(_StagedCli):
+    """``run_store_evidence.py --kind corners``: DR-0044's split for a
+    tb.json-free batch run (issue #645) -- the ``klt-report.json`` envelopes
+    stay committed, everything else is stored, and a destination collision
+    refuses before anything is stored or committed."""
+
+    def setUp(self):
+        super().setUp()
+        (self.staged / "klt-3.30v/new").mkdir(parents=True)
+        (self.staged / "klt-3.30v/new/klt-report.json").write_text('{"corner_count": 1}\n')
+        (self.staged / "klt-3.30v/new/tt.log").write_text("log tt\n")
+        (self.staged / "dut.spice").write_text("* dut\n")
+        (self.staged / "body.spice").write_text("* body\n")
+        (self.staged / "request.json").write_text('{"engine": "ngspice"}\n')
+        (self.staged / "summary.csv").write_text("dut,corner,status\n")
+
+    def test_envelopes_are_committed_and_everything_else_is_stored(self):
+        self.assertEqual(self.main(kind="corners"), 0)
+        m = json.loads((self.root / "manifests/artifacts/bench-20261022-abc.manifest.json")
+                       .read_text())
+        # No entry names a file that stays in git: the envelope is absent.
+        self.assertEqual([e["name"] for e in m["entries"]], [
+            "sim/bench/corners/20261022-abc/a.json",
+            "sim/bench/corners/20261022-abc/body.spice",
+            "sim/bench/corners/20261022-abc/dut.spice",
+            "sim/bench/corners/20261022-abc/klt-3.30v/new/tt.log",
+            "sim/bench/corners/20261022-abc/request.json",
+            "sim/bench/corners/20261022-abc/summary.csv",
+        ])
+        # Mirror CampaignCli's negative assertion the other way: the kept
+        # envelope IS committed, at its staged relative path, and the summary
+        # and envelope are the only files under sim/bench/.
+        self.assertEqual(sorted(p.relative_to(self.root).as_posix()
+                                for p in (self.root / "sim/bench").rglob("*") if p.is_file()),
+                         ["sim/bench/corners/20261022-abc.md",
+                          "sim/bench/corners/20261022-abc/klt-3.30v/new/klt-report.json"])
+        self.assertEqual(
+            (self.root / "sim/bench/corners/20261022-abc/klt-3.30v/new/klt-report.json")
+            .read_text(), '{"corner_count": 1}\n')
+
+    def test_non_corners_kinds_store_the_envelope_and_commit_nothing(self):
+        rids = {"campaigns": "20261022-a1", "records": "20261022-a2",
+                "reports": "20261022-a3"}
+        for kind, rid in rids.items():
+            with self.subTest(kind=kind):
+                self.assertEqual(self.main(kind=kind, rid=rid), 0)
+                self.assertFalse((self.root / "sim/bench" / kind / rid).exists())
+                m = json.loads((self.root / "manifests/artifacts"
+                                / f"bench-{rid}.manifest.json").read_text())
+                names = [e["name"] for e in m["entries"]]
+                self.assertEqual(len(names), 7)  # every staged file, envelope included
+                self.assertIn(f"sim/bench/{kind}/{rid}/klt-3.30v/new/klt-report.json", names)
+
+    def test_a_store_failure_commits_nothing_and_keeps_the_staged_bytes(self):
+        self.assertEqual(self.main(kind="corners", put_fail="broker_unreachable"), 10)
+        self.assertFalse((self.root / "manifests").exists())
+        self.assertEqual([p for p in (self.root / "sim/bench").rglob("*") if p.is_file()], [])
+        self.assertTrue((self.staged / "dut.spice").is_file())
+
+    def test_a_kept_envelope_collision_refuses_before_storing_anything(self):
+        envelope = self.root / "sim/bench/corners/20261022-abc/klt-3.30v/new/klt-report.json"
+        envelope.parent.mkdir(parents=True)
+        envelope.write_text("prior run's envelope\n")
+        self.assertEqual(self.main(kind="corners"), 10)
+        self.assertEqual(envelope.read_text(), "prior run's envelope\n")  # never rewritten
+        self.assertEqual(self.store, {})  # refused before any put
+        self.assertFalse((self.root / "manifests").exists())  # and before any commit
+        self.assertFalse((self.root / "sim/bench/corners/20261022-abc.md").exists())
+        self.assertTrue((self.staged / "klt-3.30v/new/klt-report.json").is_file())
+
+    def test_a_staged_tree_with_no_envelope_stores_everything(self):
+        for p in self.staged.rglob("klt-report.json"):
+            p.unlink()
+        self.assertEqual(self.main(kind="corners"), 0)
+        m = json.loads((self.root / "manifests/artifacts/bench-20261022-abc.manifest.json")
+                       .read_text())
+        self.assertEqual(len(m["entries"]), 6)  # a valid batch run with nothing kept
+        self.assertEqual([p.relative_to(self.root).as_posix()
+                          for p in (self.root / "sim/bench").rglob("*") if p.is_file()],
+                         ["sim/bench/corners/20261022-abc.md"])
+
+    def test_an_empty_staged_directory_is_refused(self):
+        empty = self.root / "sim/.work/empty"
+        empty.mkdir()
+        self.assertEqual(self.main(kind="corners", staged=empty), 10)
+        self.assertFalse((self.root / "manifests").exists())
+        self.assertEqual([p for p in (self.root / "sim/bench").rglob("*") if p.is_file()], [])
 
 
 if __name__ == "__main__":
