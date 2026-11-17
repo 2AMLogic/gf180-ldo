@@ -8,6 +8,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-17
 
+- **PR #734**: signoff: narrow item 9 description to DR-bar harness modules
+- **Issue #694** (closed): signoff: inventory-item9's new description promises every sim/harness/ module the benches import, but lists only 3 of 11
 - **PR #731**: fix: restore PDK_ROOT in the probe _main test helper
 - **Issue #728** (closed): test_mc_klt_run's probe _main helper leaks PDK_ROOT into the environment (cross-suite)
 - **PR #730**: refactor(sim): split soft-start-loop-gain sweep.py into model/record siblings
