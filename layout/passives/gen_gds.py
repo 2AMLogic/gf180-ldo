@@ -194,10 +194,11 @@ def build_resistor(layout, library):
 
     The PCell draws THREE metal1 shapes, not two: the two poly-contact straps
     at either end of the body, plus a p+ COMP substrate tap off to the left.
-    The tap is the device's bulk terminal and needs no label -- the LVS deck's
-    ``connect_global(sub, <lvs_sub>)`` already names the substrate -- so the
-    terminals are picked out as the metal1 shapes that land on poly2, which is
-    true of the straps and of nothing else.
+    The tap is the device's bulk terminal and needs no label -- the pinned LVS
+    deck names the substrate itself (rule_decks/substrate_connections.lvs
+    hardcodes ``connect_global(..., 'SUB')``) -- so the terminals are picked
+    out as the metal1 shapes that land on poly2, which is true of the straps
+    and of nothing else.
     """
     cell = _device(
         layout, library, "ppolyf_u_high_Rs_resistor", RES_PARAMS, "RES_UNIT"
