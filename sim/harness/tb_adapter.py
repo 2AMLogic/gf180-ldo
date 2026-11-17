@@ -46,10 +46,12 @@ manifest's own ``checks`` bounds.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+import check_append_only
 from . import klt_batch as kb
 from . import testbench as tbmod
 
@@ -87,6 +89,46 @@ def stage_experiment_dir(repo: Path, slug: str) -> Path:
 def stage_corner_dir(repo: Path, slug: str, record_id: str) -> Path:
     """Where one staged run's raw bytes land, before they are stored."""
     return stage_experiment_dir(repo, slug) / "corners" / record_id
+
+
+#: Directory prefixes whose contents are append-only evidence (DR-0041),
+#: derived from :mod:`check_append_only`'s ``PROTECTED`` -- its ``/*``
+#: directory globs with the suffix stripped -- so this refusal cannot drift
+#: from what the PR-level guard protects. (``manifests/artifacts/*.manifest.json``
+#: is a file glob, not a directory, and is skipped.)
+PROTECTED_OUT = tuple(p[:-2] for p in check_append_only.PROTECTED if p.endswith("/*"))
+
+
+def refuse_protected_out(repo: Path, out: Path, flag: str = "--out", slug: str | None = None) -> None:
+    """Raise :class:`SystemExit` when ``out`` resolves inside an append-only tree.
+
+    Raw run bytes (per-corner logs, ``klt-report.json`` envelopes) are
+    store-bound (DR-0041, DR-0044): evidence records are minted, never written
+    in place -- the committed ``20261021-fb-injection-probe`` record is the
+    hole this closes. A path outside ``repo`` is caller-chosen scratch and is
+    honoured, and so is anything under the git-ignored ``sim/.work/`` staging
+    tree (fnmatch's ``*`` crosses ``/``, so the staged ``.../sim/<slug>/corners``
+    layout would otherwise look protected). ``flag`` and ``slug`` shape only
+    the refusal message -- the stage dir and ``run_store_evidence.py`` mint it
+    points at.
+    """
+    try:
+        rel = out.resolve().relative_to(repo.resolve())
+    except ValueError:
+        return  # outside the repo: caller-chosen scratch is fine
+    for anc in (rel, *rel.parents):
+        if anc.parts[:2] == ("sim", ".work"):
+            continue  # the staging tree is scratch by design (DR-0044)
+        if any(fnmatch.fnmatchcase(anc.as_posix(), pat) for pat in PROTECTED_OUT):
+            hint = (f"tb_adapter.stage_corner_dir(REPO, {slug!r}, <record-id>)" if slug
+                    else "tb_adapter.stage_corner_dir(REPO, '<bench-slug>', <record-id>)")
+            raise SystemExit(
+                f"{flag} {out} resolves inside the append-only tree {anc.as_posix()}/; "
+                "raw run bytes (per-corner logs, klt-report.json envelopes) are "
+                f"store-bound, not evidence. Point {flag} at scratch -- e.g. {hint} "
+                "under sim/.work/.stage/ -- and mint a record worth keeping with "
+                f"`python3 sim/run_store_evidence.py {slug or '<bench-slug>'} <record-id> "
+                '<out> --summary <notes.md> --kind corners`')
 
 _ANALYSIS_KINDS = ("op", "dc", "ac", "tran", "noise", "tf", "sens", "pz", "disto")
 _M_REF = re.compile(r"\bm_([A-Za-z0-9_]+)")
