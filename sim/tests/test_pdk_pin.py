@@ -180,11 +180,13 @@ class StageWiringPinsPdkRootTests(unittest.TestCase):
 
     ``klt_batch``/``klt_ab`` never pin -- the pin is per caller -- so this is
     asserted per script, with the submit stubbed so nothing is sent anywhere
-    and ``klt_version``-style host dependencies never load. The ambient
-    ``/stale/root`` proves assignment: a ``setdefault`` would leave it standing.
-    ``sim/tests/test_tb_adapter.py`` covers ``tb_adapter.main`` (which fronts 11
-    of the 16 ``klt_run.py`` scripts) and ``test_loop_stability.py``'s
-    ``TestRunGridKltWiring`` covers ``run_grid_klt``.
+    and ``klt_version``-style host dependencies never load, and with the
+    evidence-store preflight stubbed too (a driver main refuses to spend fleet
+    time before any store check, and these tests run where no broker exists).
+    The ambient ``/stale/root`` proves assignment: a ``setdefault`` would leave
+    it standing. ``sim/tests/test_tb_adapter.py`` covers ``tb_adapter.main``
+    (which fronts 11 of the 16 ``klt_run.py`` scripts) and
+    ``test_loop_stability.py``'s ``TestRunGridKltWiring`` covers ``run_grid_klt``.
     """
 
     def setUp(self) -> None:
@@ -215,7 +217,7 @@ class StageWiringPinsPdkRootTests(unittest.TestCase):
         seen: dict = {}
         self._capture_submit(mc, seen)
         with mock.patch.dict(os.environ, {"PDK_ROOT": "/stale/root"}):
-            rc = mc.main(["--record-id", "zz-pin-wiring"])
+            rc = mc.main(["--record-id", "zz-pin-wiring"], preflight=lambda repo: None)
         self.assertEqual("/pinned/root", seen.get("pdk_root"))
         # The stubbed submits return nothing, so the run reports lost points;
         # the pin-before-submit ordering is what is under test here.
@@ -248,7 +250,7 @@ class StageWiringPinsPdkRootTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"PDK_ROOT": "/stale/root"}), \
                 mock.patch.object(sys, "argv", argv), \
                 contextlib.redirect_stdout(io.StringIO()):
-            rc = probe.main()
+            rc = probe.main(preflight=lambda repo: None)
         self.assertEqual(0, rc)
         self.assertEqual("/pinned/root", seen.get("pdk_root"))
 
@@ -258,7 +260,7 @@ class StageWiringPinsPdkRootTests(unittest.TestCase):
         seen: dict = {}
         self._capture_submit(cl, seen)
         with mock.patch.dict(os.environ, {"PDK_ROOT": "/stale/root"}):
-            rc = cl.main(["--record-id", "zz-pin-wiring"])
+            rc = cl.main(["--record-id", "zz-pin-wiring"], preflight=lambda repo: None)
         self.assertEqual(0, rc)
         self.assertEqual("/pinned/root", seen.get("pdk_root"))
 
@@ -267,7 +269,7 @@ class StageWiringPinsPdkRootTests(unittest.TestCase):
         seen: dict = {}
         self._capture_submit(es, seen)
         with mock.patch.dict(os.environ, {"PDK_ROOT": "/stale/root"}):
-            rc = es.main(["--record-id", "zz-pin-wiring"])
+            rc = es.main(["--record-id", "zz-pin-wiring"], preflight=lambda repo: None)
         self.assertEqual(0, rc)
         self.assertEqual("/pinned/root", seen.get("pdk_root"))
 
