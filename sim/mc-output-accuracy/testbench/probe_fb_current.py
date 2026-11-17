@@ -14,12 +14,22 @@ of ``tb.json`` is that difference times 300 kohm.
 Variants: ``new`` (design/netlist/ldo_core.spice), ``baseline`` (the same file at
 ``--baseline-ref``) and ``new-nosoftstart`` (``new`` with the ``Xsoftstart``
 instance deleted, a removal bisection).
+
+Output is store-bound, not committed (DR-0041, DR-0044, issue #647): besides
+``probe.csv`` the probe writes ``<out>/<tag>/<point>/klt-report.json`` and
+``<cid>.log`` per point, so ``--out`` must point at scratch, never at an
+append-only tree -- an ``--out`` inside ``sim/*/corners/`` (or ``records/``,
+``netlist-snapshots/``) is refused. ``--out`` stays required: a probe has no
+record id to default with. The run refuses outright when the evidence store
+is unavailable, and prints the ``run_store_evidence.py --kind corners`` mint
+for turning a probe worth keeping into a record.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import fnmatch
 import re
 import subprocess
 import sys
@@ -30,7 +40,13 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import klt_batch as kb  # noqa: E402
-from harness import pdk  # noqa: E402
+from harness import evidence_store as store  # noqa: E402
+from harness import pdk, tb_adapter  # noqa: E402
+
+#: The directory prefixes whose contents are append-only evidence -- the sim
+#: trees ``sim/check_append_only.py`` protects (its ``PROTECTED``). A probe's
+#: raw bytes are store-bound, so an ``--out`` inside one of them is refused.
+PROTECTED_OUT = ("sim/*/records", "sim/*/corners", "sim/*/netlist-snapshots")
 
 BODY = """\
 .param vdd_nom=3.3
@@ -72,15 +88,51 @@ def variants(baseline_ref: str | None, tmp: Path) -> dict[str, Path]:
     return out
 
 
-def main() -> int:
+def refuse_protected_out(out: Path) -> None:
+    """Raise :class:`SystemExit` when ``out`` resolves inside an append-only tree.
+
+    The committed ``20261021-fb-injection-probe`` record is the hole this
+    closes: a probe pointed into ``sim/mc-output-accuracy/corners/`` committed
+    raw per-corner logs and a ``klt-report.json`` envelope -- bytes DR-0041
+    keeps out of git. Evidence records are minted, never written in place.
+    """
+    try:
+        rel = out.resolve().relative_to(REPO)
+    except ValueError:
+        return  # outside the repo: caller-chosen scratch is fine
+    for anc in (rel, *rel.parents):
+        if any(fnmatch.fnmatchcase(anc.as_posix(), pat) for pat in PROTECTED_OUT):
+            raise SystemExit(
+                f"--out {out} resolves inside the append-only tree {anc.as_posix()}/; "
+                "a probe's raw bytes (per-corner logs, klt-report.json envelopes) are "
+                "store-bound, not evidence. Point --out at scratch -- e.g. "
+                "tb_adapter.stage_corner_dir(REPO, 'mc-output-accuracy', <record-id>) "
+                "under sim/.work/.stage/ -- and mint a record worth keeping with "
+                "`python3 sim/run_store_evidence.py mc-output-accuracy <record-id> "
+                "<out> --summary <notes.md> --kind corners`")
+
+
+def main(argv=None, *, preflight=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True)
     ap.add_argument("--baseline-ref", default=None)
     ap.add_argument("--points", nargs="+", default=["ff,125,3.63", "tt,27,3.30"])
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
+    out = Path(a.out)
+    refuse_protected_out(out)
+    # A probe writes store-bound bytes, so an unavailable store refuses before
+    # anything is written: no broker, no `klt artifact` verb, or an unreachable
+    # broker exits now. There is no commit-the-bytes fallback.
+    try:
+        (preflight or store.preflight)(REPO)
+    except store.StoreError as exc:
+        print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+              "A probe's raw bytes go to the artifact store only (sim/README.md, "
+              '"Stored evidence").',
+              file=sys.stderr)
+        return tb_adapter.EXIT_NOT_STORED
     import os
     os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
-    out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     rows = []
     with tempfile.TemporaryDirectory(prefix="fbprobe-") as t:
@@ -107,6 +159,11 @@ def main() -> int:
         w = csv.DictWriter(f, fieldnames=keys, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
+    print(f"staged  : {out} (not evidence yet)")
+    print("mint it : python3 sim/run_store_evidence.py mc-output-accuracy <record-id> "
+          f"{out} --summary <notes.md> --kind corners")
+    print("         (<record-id> names the record; <notes.md> is the probe's Markdown notes; "
+          "the store commits it as sim/mc-output-accuracy/corners/<record-id>.md)")
     return 0
 
 
