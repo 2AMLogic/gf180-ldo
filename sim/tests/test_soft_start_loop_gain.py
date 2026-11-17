@@ -1428,6 +1428,16 @@ class TestRenderRecordSmoke(unittest.TestCase):
         self.assertIn("--backend batch", md)
         self.assertLess(md.index("## Environment"), md.index("- Backend:"))
 
+    def test_environment_block_carries_the_binning_disclosure(self):
+        # DR-0025: every new record must record the model-binning pin; this
+        # driver's disclosure is the pinned-`.spiceinit` bullet (the deck
+        # carries the `.options` card itself). Presence, not wording -- the
+        # same guard as test_loop_stability's binning-line test (#648
+        # review), shaped for where this driver pins the setting.
+        md = self._render()
+        self.assertIn("wnflag=1", md)
+        self.assertIn("model binning", md)
+
 
 if __name__ == "__main__":
     unittest.main()

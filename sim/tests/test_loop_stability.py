@@ -780,6 +780,15 @@ class TestRenderRecordSmoke(unittest.TestCase):
         self.assertIn("--backend batch", md)
         self.assertLess(md.index("## Environment"), md.index("- Backend:"))
 
+    def test_environment_block_carries_the_dr0025_binning_line(self):
+        # DR-0025, Consequences: "New records carry a model-binning line in
+        # their Environment section." Presence, not wording -- the #609
+        # refactor dropped this bullet from every loop-stability record while
+        # the suite stayed green, because nothing asserted it (#648 review).
+        md = self._render()
+        self.assertIn("- Model binning:", md)
+        self.assertIn(sweep.MODEL_BINNING_OPTION, md)
+
 
 if __name__ == "__main__":
     unittest.main()

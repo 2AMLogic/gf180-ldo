@@ -115,7 +115,7 @@ from harness.report import (  # noqa: E402
     write_markdown_record,
 )
 from harness.runner import (  # noqa: E402
-    MODEL_BINNING_OPTION,  # noqa: F401  (re-export: sim/tests assert sweep.MODEL_BINNING_OPTION)
+    MODEL_BINNING_OPTION,
     ngspice_binary_sha256,
     ngspice_version,
     run_ngspice_deck,
@@ -1044,6 +1044,18 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
             env,
             command="./sim/loop-stability/testbench/run.sh",
             command_suffix=klt_md,
+            # DR-0025, Consequences: "New records carry a model-binning line
+            # in their Environment section." The harness canonical wording,
+            # so every record path renders one wording of the same pin.
+            extra=[
+                f"- Model binning: deck pins `.options {MODEL_BINNING_OPTION}`"
+                " -- gf180mcu bins on the per-finger width W/NF, and the pass device"
+                " (`W=2800u nf=40`, i.e. 70 um per finger) resolves to a declared bin"
+                " only with it; without it"
+                " ngspice hard-errors rather than clamping, so a record either carries"
+                " this setting or does not exist (issue #214,"
+                " spec/decision-records/DR-0025)",
+            ],
         )
     )
     subset = args.subset_reason.strip()

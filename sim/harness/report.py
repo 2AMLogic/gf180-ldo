@@ -928,7 +928,9 @@ def environment_lines(
 
     One wording for every experiment's record (issue #609), rather than a
     hand-rolled copy per driver that drifts: the ``ngspice`` caveat cites
-    ``sim/README.md``'s actual section title, and the ``Harness`` / ``python``
+    issue #182 (the sha256 line records the resolved binary's hash, falling
+    back to an explicit "not recorded" note when the caller could not supply
+    one), and the ``Harness`` / ``python``
     line names which harness and interpreter produced the record. ``env`` is
     the dict :func:`environment` returns. ``command`` renders the
     experiment's ``- Command:`` bullet; ``extra`` carries caller-specific
