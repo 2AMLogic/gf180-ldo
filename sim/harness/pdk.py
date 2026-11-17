@@ -172,6 +172,32 @@ def check_pin(pdk: Pdk) -> Pdk:
     )
 
 
+def pin_klt_pdk_root(pdk: Pdk | None = None) -> str:
+    """Point ``klt``'s own PDK search at the tree ``check_pin()`` approved.
+
+    ``klt`` decides *which* local install to stage model files from on its own:
+    it searches the usual prefixes first-match-wins and, when several provide
+    the variant, warns on stderr and proceeds. ``$PDK_ROOT`` is the only
+    client-side pin the ``batch`` backend accepts, so every
+    ``stage_model_inputs=True`` submission must have ``$PDK_ROOT`` naming the
+    install ``find_pdk()`` has already run ``check_pin()`` on -- otherwise a
+    record minted from the run cannot honestly claim the pin.
+
+    That install's variant-directory parent is the tree (``sim/env.sh``'s
+    ``PDK_ROOT`` convention); without an argument, ``find_pdk()`` resolves it.
+    Assigned, never ``setdefault``-ed: ``find_pdk()`` resolves
+    ``$GF180_PDK_PATH`` ahead of ``$PDK_ROOT``, so an ambient ``$PDK_ROOT`` can
+    name a *different*, un-pin-checked tree while ``find_pdk()`` correctly
+    returns the ``$GF180_PDK_PATH`` one -- leaving the ambient value in place
+    would send klt there, silently. Returns the value exported.
+    """
+    if pdk is None:
+        pdk = find_pdk()
+    root = str(pdk.path.parent)
+    os.environ["PDK_ROOT"] = root
+    return root
+
+
 def _is_valid_variant_dir(path: Path) -> bool:
     return (path / "libs.tech" / "ngspice" / "sm141064.ngspice").is_file()
 

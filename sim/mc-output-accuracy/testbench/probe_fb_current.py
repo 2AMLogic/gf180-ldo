@@ -101,8 +101,7 @@ def main(argv=None, *, preflight=None) -> int:
               '"Stored evidence").',
               file=sys.stderr)
         return tb_adapter.EXIT_NOT_STORED
-    import os
-    os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
+    pdk.pin_klt_pdk_root()
     out.mkdir(parents=True, exist_ok=True)
     rows = []
     with tempfile.TemporaryDirectory(prefix="fbprobe-") as t:

@@ -6,7 +6,7 @@ stages into ``sim/.work/.stage/`` instead of committing under
 fleet time, a committed record id is never rewritten, the driver prints the
 ``--kind corners`` mint, and minting commits only the manifest, the summary
 and the ``klt-report.json`` envelopes. No PDK, ngspice, klt or fleet
-required; ``run_ab`` and the store's ``klt`` calls are faked.
+required; ``run_ab``, ``find_pdk``, and the store's ``klt`` calls are faked.
 
     python3 -m unittest sim/tests/test_klt_run_drivers.py -v
 """
@@ -32,6 +32,7 @@ REPO = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 
 from harness import evidence_store as es  # noqa: E402
+from harness import pdk as pdk_mod  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
 from harness.loader import load_script  # noqa: E402
 from harness.klt_ab import write_summary_csv  # noqa: E402
@@ -106,6 +107,23 @@ class _DriverCase:
         real = self.mod.run_ab
         self.mod.run_ab = self._run_ab
         self.addCleanup(lambda: setattr(self.mod, "run_ab", real))
+        # The staging drivers pin $PDK_ROOT before their first submit
+        # (issue #639), resolving the tree through find_pdk() -- a host
+        # dependency this file does not require, so stub the tree; the
+        # assigned variable is saved/restored so it never leaks into a
+        # later suite in the same process.
+        saved_root = os.environ.get("PDK_ROOT")
+
+        def _restore_root():
+            if saved_root is None:
+                os.environ.pop("PDK_ROOT", None)
+            else:
+                os.environ["PDK_ROOT"] = saved_root
+        self.addCleanup(_restore_root)
+        patcher = mock.patch.object(pdk_mod, "find_pdk", return_value=types.SimpleNamespace(
+            path=Path("/pinned/root/gf180mcuD")))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         with contextlib.redirect_stdout(self.stdout), \
                 contextlib.redirect_stderr(self.stderr), \
                 mock.patch("subprocess.run", side_effect=self._summarize):

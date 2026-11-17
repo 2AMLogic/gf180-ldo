@@ -46,6 +46,7 @@ sys.path.insert(0, str(REPO / "sim"))
 from harness import deck  # noqa: E402
 from harness import evidence_store as store  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
+from harness import pdk  # noqa: E402
 from harness import tb_adapter  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab  # noqa: E402
 
@@ -166,6 +167,9 @@ def main(argv=None, *, preflight=None) -> int:
                   file=sys.stderr)
             return tb_adapter.EXIT_NOT_STORED
     axes = kb.only_axes(args.only)
+    # stage_model_inputs=True below stages model files: point klt's own PDK
+    # search at the pin-checked tree before the first submit (issue #639).
+    pdk.pin_klt_pdk_root()
 
     def go(state):
         return state, run_ab(lambda n, d, s=state: job(s, n, d, axes), Path(args.dut), args.baseline_ref,

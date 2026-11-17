@@ -499,7 +499,6 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
     by the tests.
     """
     import argparse
-    import os
     import sys
 
     from . import evidence_store as store
@@ -549,11 +548,10 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
     # Resolved last, immediately before the first request: every refusal above
     # is cheap and PDK-free, so the fail-closed gates hold on a host with no
     # PDK install (the lane CI calls "no PDK required"). Only the fleet request
-    # needs it. Pin klt's PDK search to the harness-resolved, pin-checked tree:
-    # with two installs of the variant on the host klt otherwise takes the
-    # first match, and the client-side stamp it compares the worker's against
-    # is unavailable.
-    os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
+    # needs it. pdk.pin_klt_pdk_root() pins klt's own PDK search to the
+    # harness-resolved, pin-checked tree; see its docstring for why that is an
+    # assignment rather than a setdefault.
+    pdk.pin_klt_pdk_root()
     if not chained and supply_in_waveform(tb):
         results = _run_supplies(tb, args, dest, repo, dut_rel, job_opts)
     elif not chained:

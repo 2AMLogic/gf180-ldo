@@ -37,7 +37,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -163,7 +162,7 @@ def main(argv=None, *, preflight=None) -> int:
                   '"Stored evidence"); an --only debug point needs no store.',
                   file=sys.stderr)
             return tb_adapter.EXIT_NOT_STORED
-    os.environ.setdefault("PDK_ROOT", str(pdk.find_pdk().path.parent))
+    pdk.pin_klt_pdk_root()
     only = kb.only_axes(args.only)
     supplies = only.get("supplies") or supply_points(TB.nominal_supply_v, TB.supply_tolerance)
     procs = only.get("process") or tuple(c.name for c in resolve_corners(TB.corners))

@@ -31,6 +31,7 @@ REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import evidence_store as store  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
+from harness import pdk  # noqa: E402
 from harness import tb_adapter  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab, write_summary_csv  # noqa: E402
 # summarize.py is loaded by path under a unique name, never a bare
@@ -126,6 +127,9 @@ def main(argv=None, *, preflight=None) -> int:
                   '"Stored evidence"); an --only debug point needs no store.',
                   file=sys.stderr)
             return tb_adapter.EXIT_NOT_STORED
+    # stage_model_inputs=True below stages model files: point klt's own PDK
+    # search at the pin-checked tree before the first submit (issue #639).
+    pdk.pin_klt_pdk_root()
     results = run_ab(lambda n, d: job(n, d, args.only), Path(args.dut), args.baseline_ref, dest, REPO, backend=args.backend)
 
     rows = []
