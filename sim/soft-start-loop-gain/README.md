@@ -325,7 +325,7 @@ pole or zero to attribute and reporting one anyway would be fitting noise.
 
 gf180mcu's device models are binned and the widest bin any of them has is
 `W ≤ 100.01 µm` (`sm141064.ngspice`'s `wmax`). `design/ldo_core.sch`'s pass
-device is `W=2000u nf=40` — 2 mm of width in 40 fingers of 50 µm — so the bin it
+device is `W=2800u nf=40` — 2.8 mm of width in 40 fingers of 70 µm — so the bin it
 belongs in exists **only if the binning divides `W` by `nf`**.
 
 Whether ngspice does that is not a property of the netlist or the PDK: it is
