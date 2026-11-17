@@ -363,6 +363,40 @@ class WriteSummaryCsvMerge(unittest.TestCase):
         self.assertEqual(rows[0]["icap_peak_ma"], "")
         self.assertEqual(rows[1]["slope_vpms"], "")
 
+    def test_string_key_rerun_replaces_not_appends(self):
+        # The headline merge contract (#704): a re-run of the same string key
+        # replaces its old row instead of appending a duplicate.
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "summary.csv"
+            self._write([{"dut": "new", "corner": "c1", "icap_peak_ma": "1.0"}], path)
+            self._write([{"dut": "new", "corner": "c1", "icap_peak_ma": "2.0"}], path)
+            with open(path, newline="") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual(len(rows), 1, "same string key: replace, not append")
+        self.assertEqual(rows[0]["icap_peak_ma"], "2.0")
+
+    def test_non_str_key_value_raises_instead_of_duplicating(self):
+        # A non-str key cell (a float like 1e-6, say) never equals the str the
+        # CSV round-trip wrote, so the old row would survive and a duplicate be
+        # appended silently -- refuse loudly instead (#710).
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "summary.csv"
+            self._write([{"dut": "new", "corner": "c1"}], path)
+            with self.assertRaises(SystemExit):
+                self._write([{"dut": "new", "corner": 1e-6}], path)
+            with open(path, newline="") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual([r["corner"] for r in rows], ["c1"], "refusal leaves the file untouched")
+
+    def test_none_key_value_raises_too(self):
+        # A row missing a merge_key column reads as None -- same string-key
+        # ambiguity, same refusal (#710).
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "summary.csv"
+            self._write([{"dut": "new", "corner": "c1"}], path)
+            with self.assertRaises(SystemExit):
+                self._write([{"dut": "new", "icap_peak_ma": "1.5"}], path)
+
     def test_default_call_stays_truncate(self):
         # No merge_key -> the historical clobber, byte for byte: callers that
         # never opted in keep their behaviour (#704).
