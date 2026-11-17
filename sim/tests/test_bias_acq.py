@@ -289,6 +289,18 @@ class Routing(unittest.TestCase):
             self.assertTrue((dest / "manifest.json").is_file())
             self.assertFalse(self._staged().exists())
 
+    def test_an_explicit_dest_inside_the_append_only_tree_is_refused(self):
+        fresh = self._committed().with_name(self.rid + "-fresh")
+        self.assertFalse(fresh.exists())
+        with self.assertRaises(SystemExit) as cm:
+            self._main(["--record-id", self.rid, "--scenario", "op",
+                        "--dest", str(fresh)], lambda repo: None)
+        msg = str(cm.exception)
+        self.assertIn("append-only tree", msg)
+        self.assertIn("soft-start", msg)
+        self.assertFalse(fresh.exists(), "the refusal must precede dest.mkdir")
+        self.assertFalse(self._staged().exists())
+
     def test_an_only_debug_point_needs_no_store(self):
         def explode(repo):
             raise AssertionError("--only must not probe the store")

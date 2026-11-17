@@ -58,7 +58,8 @@ issue #647), never under ``sim/soft-start/corners/``: a run becomes evidence
 only when ``sim/run_store_evidence.py --kind corners`` mints it, committing
 the manifest, the hand-written Markdown record and the per-scenario
 ``klt-report.json`` envelopes. An explicit ``--dest`` still wins over the
-staging default.
+staging default; one resolving inside the append-only evidence tree is
+refused before anything is written (issue #686).
 """
 
 from __future__ import annotations
@@ -511,6 +512,11 @@ def main(argv=None, *, preflight=None) -> int:
     if (HERE.parent / "corners" / args.record_id).exists():
         raise SystemExit(f"sim/soft-start/corners/{args.record_id}/ already exists; "
                          "append-only evidence is never rewritten -- choose another --record-id")
+    if args.dest:
+        # An explicit --dest still wins (#647), but one resolving inside the
+        # append-only evidence tree is the one destination raw bytes may never
+        # take (DR-0041, issue #686): refused before the store is even probed.
+        tb_adapter.refuse_protected_out(REPO, Path(args.dest), flag="--dest", slug="soft-start")
     # An evidence run must be storable before any fleet time is spent (DR-0044):
     # no broker, no `klt artifact` verb, or an unreachable broker refuses now.
     # There is no commit-the-bytes fallback. An `--only` debug point is not
