@@ -8,6 +8,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-17
 
+- **Issue #609** (closed): Render the record Environment block once: three copies have already drifted, one cites a sim/README.md section that does not exist
+- **PR #648**: refactor: render the record Environment block from one harness helper
 - **Issue #721** (closed): Two live `.spice.in` deck templates still quote the pre-DR-0034 pass-device width W=2000u (#714's grep was py/md-only)
 - **PR #725**: fix: quote post-DR-0034 pass width W=2800u in soft-start deck templates
 - **Issue #723** (closed): test_load_script_sites: a locally-deleted tracked .py reports as a UTF-8 failure (and a null-byte file reports line `None`)
