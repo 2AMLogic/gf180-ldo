@@ -14,7 +14,7 @@ required; ``run_ab`` and the store's ``klt`` calls are faked.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
+import csv
 import io
 import json
 import os
@@ -33,13 +33,13 @@ sys.path.insert(0, str(SIM_DIR))
 
 from harness import evidence_store as es  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
+from harness.loader import load_script  # noqa: E402
+from harness.klt_ab import write_summary_csv  # noqa: E402
 
 # fake_klt is shared with the store's own tests rather than duplicated: both
 # files fake the same `klt artifact put` contract.
-_spec = importlib.util.spec_from_file_location(
+_tes = load_script(
     "test_evidence_store", Path(__file__).resolve().parent / "test_evidence_store.py")
-_tes = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_tes)
 fake_klt = _tes.fake_klt
 
 _GIT_ENV = {
@@ -55,11 +55,9 @@ _DRIVERS: dict[str, object] = {}
 def _driver(slug: str):
     """The ``klt_run.py`` of ``sim/<slug>/testbench``, imported by path."""
     if slug not in _DRIVERS:
-        spec = importlib.util.spec_from_file_location(
-            f"klt_run_{slug.replace('-', '_')}", SIM_DIR / slug / "testbench" / "klt_run.py")
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        _DRIVERS[slug] = mod
+        _DRIVERS[slug] = load_script(
+            f"klt_run_{slug.replace('-', '_')}",
+            SIM_DIR / slug / "testbench" / "klt_run.py")
     return _DRIVERS[slug]
 
 
@@ -184,10 +182,8 @@ class _DriverCase:
         """Mint this run's staged tree into a scratch repo root, with the
         store's ``klt artifact put`` calls faked. Returns (rc, root, the
         sorted list of committed repo-relative paths)."""
-        spec = importlib.util.spec_from_file_location(
+        store_cli = load_script(
             "run_store_evidence_drivers", SIM_DIR / "run_store_evidence.py")
-        store_cli = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(store_cli)
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         base = Path(td.name).resolve()
@@ -215,10 +211,9 @@ class _DriverCase:
 
     def _check_manifests(self, root: Path) -> int:
         """``check_artifact_manifests.py check`` over the minted scratch repo."""
-        spec = importlib.util.spec_from_file_location(
-            "check_artifact_manifests_drivers", REPO / "scripts" / "check_artifact_manifests.py")
-        chk = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(chk)
+        chk = load_script(
+            "check_artifact_manifests_drivers",
+            REPO / "scripts" / "check_artifact_manifests.py")
         for cmd in (["git", "-C", str(root), "init", "-q", "-b", "main"],
                     ["git", "-C", str(root), "add", "-A"],
                     ["git", "-C", str(root), "commit", "-q", "-m", "t"]):
@@ -266,6 +261,57 @@ class EnableShutdownDriver(_DriverCase, unittest.TestCase):
 class SoftStartDriver(_DriverCase, unittest.TestCase):
     SLUG = "soft-start"
 
+    def _summary_rows(self, name: str) -> tuple[list[str], list[dict]]:
+        path = self._staged() / name
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            return list(reader.fieldnames or []), list(reader)
+
+    def test_split_parts_accumulate_into_one_summary_csv(self):
+        # Issue #704: --part main then --part extra roll up into one
+        # summary.csv (the 1 + 5 shape) instead of extra clobbering main.
+        rc = self._main(["--record-id", self.rid, "--part", "main"], lambda repo: None)
+        self.assertEqual(rc, 0)
+        _, rows = self._summary_rows("summary.csv")
+        self.assertEqual(len(rows), 1, f"main alone: header + 1 row, got {rows}")
+        rc = self._main(["--record-id", self.rid, "--part", "extra"], lambda repo: None)
+        self.assertEqual(rc, 0)
+        _, rows = self._summary_rows("summary.csv")
+        self.assertEqual(len(rows), 6, f"header + main's 1 + extra's 5, got {rows}")
+        self.assertEqual([r["cout"] for r in rows],
+                         ["1u", "0.33u", "0.33u", "4.7u", "4.7u", "1u"],
+                         "main's row must survive the extra write")
+        self.assertEqual(sorted(p.name for p in self._staged().iterdir()),
+                         ["extra", "main", "summary.csv"])
+
+    def test_split_part_shards_at_one_process_accumulate_into_summary_tt(self):
+        # Both parts at a fixed --process resolve to one summary-<process>.csv;
+        # the second must merge, not clobber (#704).
+        rc = self._main(["--record-id", self.rid, "--part", "main", "--process", "tt"],
+                        lambda repo: None)
+        self.assertEqual(rc, 0)
+        _, rows = self._summary_rows("summary-tt.csv")
+        self.assertEqual(len(rows), 1)
+        rc = self._main(["--record-id", self.rid, "--part", "extra", "--process", "tt"],
+                        lambda repo: None)
+        self.assertEqual(rc, 0)
+        _, rows = self._summary_rows("summary-tt.csv")
+        self.assertEqual(len(rows), 6, f"main's row must survive, got {rows}")
+        self.assertEqual(sorted(p.name for p in self._staged().iterdir()),
+                         ["extra-tt", "main-tt", "summary-tt.csv"],
+                         "one shard file per --process, no unwritten summary.csv")
+
+    def test_rerunning_the_same_part_replaces_its_rows_not_duplicates(self):
+        rc = self._main(["--record-id", self.rid, "--part", "main"], lambda repo: None)
+        self.assertEqual(rc, 0)
+        rc = self._main(["--record-id", self.rid, "--part", "extra"], lambda repo: None)
+        self.assertEqual(rc, 0)
+        rc = self._main(["--record-id", self.rid, "--part", "extra"], lambda repo: None)
+        self.assertEqual(rc, 0)
+        _, rows = self._summary_rows("summary.csv")
+        self.assertEqual(len(rows), 6,
+                         f"extra's re-run replaces its own rows; main keeps its one: got {rows}")
+
     def test_shards_accumulate_into_one_record_and_mint_once_after_the_last(self):
         rc = self._main(["--record-id", self.rid, "--part", "main", "--process", "tt"],
                         lambda repo: None)
@@ -290,6 +336,78 @@ class SoftStartDriver(_DriverCase, unittest.TestCase):
             f"sim/{self.SLUG}/corners/{self.rid}/main-ff/new/klt-report.json",
             f"sim/{self.SLUG}/corners/{self.rid}/main-tt/new/klt-report.json",
         ]))
+
+
+class WriteSummaryCsvMerge(unittest.TestCase):
+    """The opt-in merge in ``harness.klt_ab.write_summary_csv`` (#704): rows
+    keyed by ``merge_key`` replace their old row, headers union across
+    invocations, a cell a row lacks is blank."""
+
+    def _write(self, rows, path):
+        with contextlib.redirect_stdout(io.StringIO()):
+            write_summary_csv(rows, path, merge_key=("dut", "corner"))
+
+    def test_differing_field_lists_union_with_missing_cells_blank(self):
+        # klt_run's field list legitimately differs across parts ("a point
+        # missing a crossing lacks derived keys") -- a verbatim strict-header
+        # refusal would refuse valid runs (#704).
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "summary.csv"
+            self._write([{"dut": "new", "corner": "c1", "slope_vpms": "2.0"}], path)
+            self._write([{"dut": "new", "corner": "c2", "icap_peak_ma": "1.5"}], path)
+            with open(path, newline="") as f:
+                reader = csv.DictReader(f)
+                fields = list(reader.fieldnames or [])
+                rows = list(reader)
+        self.assertEqual(fields, ["corner", "dut", "icap_peak_ma", "slope_vpms"])
+        self.assertEqual(rows[0]["icap_peak_ma"], "")
+        self.assertEqual(rows[1]["slope_vpms"], "")
+
+    def test_string_key_rerun_replaces_not_appends(self):
+        # The headline merge contract (#704): a re-run of the same string key
+        # replaces its old row instead of appending a duplicate.
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "summary.csv"
+            self._write([{"dut": "new", "corner": "c1", "icap_peak_ma": "1.0"}], path)
+            self._write([{"dut": "new", "corner": "c1", "icap_peak_ma": "2.0"}], path)
+            with open(path, newline="") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual(len(rows), 1, "same string key: replace, not append")
+        self.assertEqual(rows[0]["icap_peak_ma"], "2.0")
+
+    def test_non_str_key_value_raises_instead_of_duplicating(self):
+        # A non-str key cell (a float like 1e-6, say) never equals the str the
+        # CSV round-trip wrote, so the old row would survive and a duplicate be
+        # appended silently -- refuse loudly instead (#710).
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "summary.csv"
+            self._write([{"dut": "new", "corner": "c1"}], path)
+            with self.assertRaises(SystemExit):
+                self._write([{"dut": "new", "corner": 1e-6}], path)
+            with open(path, newline="") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual([r["corner"] for r in rows], ["c1"], "refusal leaves the file untouched")
+
+    def test_none_key_value_raises_too(self):
+        # A row missing a merge_key column reads as None -- same string-key
+        # ambiguity, same refusal (#710).
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "summary.csv"
+            self._write([{"dut": "new", "corner": "c1"}], path)
+            with self.assertRaises(SystemExit):
+                self._write([{"dut": "new", "icap_peak_ma": "1.5"}], path)
+
+    def test_default_call_stays_truncate(self):
+        # No merge_key -> the historical clobber, byte for byte: callers that
+        # never opted in keep their behaviour (#704).
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "summary.csv"
+            with contextlib.redirect_stdout(io.StringIO()):
+                write_summary_csv([{"dut": "new", "corner": "c1"}], path)
+                write_summary_csv([{"dut": "new", "corner": "c2"}], path)
+            with open(path, newline="") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual([r["corner"] for r in rows], ["c2"], "no merge_key: clobber as before")
 
 
 if __name__ == "__main__":

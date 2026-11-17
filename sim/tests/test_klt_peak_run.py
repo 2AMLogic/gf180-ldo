@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import contextlib
 import csv
-import importlib.util
 import io
 import shutil
 import sys
@@ -27,15 +26,17 @@ SIM_DIR = Path(__file__).resolve().parents[1]
 REPO = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-_spec = importlib.util.spec_from_file_location(
-    "ss_klt_peak_run", SIM_DIR / "soft-start" / "testbench" / "klt_peak_run.py")
-kpr = importlib.util.module_from_spec(_spec)
+
+from harness.loader import load_script  # noqa: E402
+
 # No sys.modules pop/restore guard needed here either: nothing in this
 # process binds the ambiguous bare klt_run name -- klt_peak_run loads its
 # own sibling by path under a unique name (soft_start_klt_run), like every
 # other driver (ss_loop_gain_klt_run, loop_stability_klt_run; issue #693,
-# enforced tree-wide by sim/tests/test_sibling_import_names.py, issue #700).
-_spec.loader.exec_module(kpr)
+# enforced tree-wide by sim/tests/test_sibling_import_names.py, issue #700),
+# and load_script handles the sys.modules registration itself.
+kpr = load_script(
+    "ss_klt_peak_run", SIM_DIR / "soft-start" / "testbench" / "klt_peak_run.py")
 
 from harness import evidence_store as es  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402

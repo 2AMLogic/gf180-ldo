@@ -347,7 +347,7 @@ XCHECK_F0_TOL_FRAC = 0.02
 # silent, per-host, unrecorded input to the evidence:
 #
 #   wnflag=1      model binning divides W by nf. gf180mcu's widest model bin
-#                 is W <= 100.01 um and the pass device is W=2000u nf=40, so
+#                 is W <= 100.01 um and the pass device is W=2800u nf=40, so
 #                 with wnflag=0 the deck does not even parse ("could not find
 #                 a valid modelname"). ngspice only defaults this to 1 in
 #                 HSPICE/Spectre compatibility mode. Also set as a `.options`
@@ -3184,8 +3184,9 @@ Everything needed to re-run this record:
 - ngspice startup settings, pinned by this driver rather than left to the host
   (a generated `.spiceinit` in the run's work directory, which is the cwd of
   every ngspice invocation this record made, including the cross-check's):
-  `set wnflag=1` (model binning divides W by nf -- without it the W=2000u
-  pass device has no model bin and no deck in this repo parses) and
+  `set wnflag=1` (model binning divides W by nf -- without it the pass
+  device (`W=2800u nf=40`, i.e. 70 um per finger) has no model bin and no
+  deck in this repo parses) and
   `set num_threads=1`. `wnflag` is also set as a `.options` card inside the
   deck itself.
 - AC sweep: `dec {args.ac_dec} {F_START} {F_STOP}` per injection, two injections

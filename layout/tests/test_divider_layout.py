@@ -18,6 +18,7 @@ netlist; these tests are what prove the netlist is still the *plan*.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -256,9 +257,39 @@ class CellSpecTests(unittest.TestCase):
         """Otherwise the compare cannot tell 18 units from one long strip."""
         self.assertFalse(drclvs.DIVIDER_SPEC.simplify_extracted)
 
+    def test_importing_drclvs_does_not_load_the_divider_modules(self):
+        """The note is derived only when --record asks for it, not at import.
+
+        issue #649 moved the note out of drclvs.py precisely so that
+        importing the driver -- any cell's flow, --check-env, this test
+        module -- no longer pays for divider/plan.py and area_estimate.py
+        (and a failure in either no longer breaks every cell's flow). Held
+        in a subprocess because render() itself registers those module
+        names in sys.modules: an in-process assertion would depend on test
+        order.
+        """
+        probe = (
+            "import sys, drclvs; "
+            "assert 'divider_plan' not in sys.modules, 'plan.py at import'; "
+            "assert 'divider_area_estimate' not in sys.modules, "
+            "'area_estimate.py at import'"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True,
+            text=True,
+            cwd=str(LAYOUT_DIR),
+            check=False,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            "import drclvs pulled in the divider modules:\n" + result.stderr,
+        )
+
     def test_the_run_record_states_the_matching_against_the_floorplan(self):
         """A record must carry the claim, not just the DRC/LVS verdicts."""
-        note = drclvs.DIVIDER_SPEC.record_notes
+        note = drclvs.DIVIDER_SPEC.record_notes()
         self.assertIn("Matching, as drawn", note)
         self.assertIn("floorplan.md", note)
         self.assertEqual(

@@ -34,9 +34,10 @@ PORTS (the .subckt port order, from fb_divider.sym):
 
 VOUT_S is the Kelvin SENSE net, not the force net (floorplan.md section 5):
 the divider's ~2 uA is the only current it carries. VSS is the resistors'
-bulk terminal AND the substrate net handed to the LVS deck's lvs_sub switch,
-so the layout's guard ring resolves to the same net as this schematic's VSS
-port.
+bulk terminal AND the substrate net: the pinned LVS deck names the substrate
+itself (rule_decks/substrate_connections.lvs hardcodes
+connect_global(..., 'SUB')), so the layout's guard ring resolves to the same
+net as this schematic's VSS port.
 
 WHY EACH INSTANCE CARRIES ITS OWN lvs_format: the PDK's ppolyf_u_3k symbol
 has a `format` (an ngspice subcircuit call, `XR1 ... r_width=.. r_length=..`)

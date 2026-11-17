@@ -882,7 +882,7 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
     # here:
     #
     #   `.options wnflag=1` then `.options wnflag=0` -> wnflag reads 1;
-    #       a `W=2000u nf=40` pfet_03v3 resolves to `pfet_03v3.12` and runs.
+    #       a `W=2800u nf=40` pfet_03v3 resolves to `pfet_03v3.12` and runs.
     #   `.options wnflag=0` then `.options wnflag=1` -> wnflag reads 0;
     #       the same device dies with "could not find a valid modelname".
     #

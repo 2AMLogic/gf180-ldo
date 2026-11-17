@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Reduce peak_probe.py .dat dumps to the committed evidence tables (issue #351).
+"""Reduce peak_probe.py .dat dumps to summary tables (issue #351).
 
-    python3 peak_analyze.py --dat-dir /tmp/p351 --out sim/soft-start/corners/<id> \\
+    python3 peak_analyze.py --dat-dir /tmp/p351 \\
+        --out sim/.work/.stage/soft-start/sim/soft-start/corners/<id> \\
         --conv 100n,20n,5n,2n,1n --win-tag _x --extra-names co,clg,i2,vth,isns
 
 Writes ``convergence.csv`` (peak Icap / dV/dt / time vs solver max step, both
@@ -9,9 +10,22 @@ DUTs, from files ``<dut>_c<tmax>.dat``), ``native_1u.csv`` (the solver's own
 steps, as klt_run.py takes them, from ``<dut>_nat1u.dat``) and, from
 ``<dut><win-tag>.dat``, ``event_<dut>.csv``: 100 ns .. 20 ns-spaced waveforms
 across the event window.
+
+The tables are a derived summary, not raw run bytes, but they are store-bound
+all the same (DR-0041, issues #647/#695): ``--out`` must point at scratch --
+the staging tree ``tb_adapter.stage_corner_dir(REPO, "soft-start", <record-id>)``
+under ``sim/.work/.stage/`` -- never at ``sim/soft-start/corners/``; an ``--out``
+resolving inside an append-only tree is refused before anything is written.
+Tables worth keeping are minted as a record with
+``sim/run_store_evidence.py --kind corners``.
 """
-import argparse, csv
+import argparse, csv, sys
 from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[2]
+sys.path.insert(0, str(REPO / "sim"))
+from harness import tb_adapter  # noqa: E402
 
 CORE = ["vout", "pg", "en", "bg", "fb", "ssr", "hg", "enb", "icap", "ivin", "iload"]
 
@@ -51,7 +65,12 @@ def main(argv=None):
     ap.add_argument("--win-tag", default="_x"); ap.add_argument("--extra-names", default="co,clg,i2,vth,isns")
     ap.add_argument("--win", default="151.5,152.0")
     a = ap.parse_args(argv)
-    d, out = Path(a.dat_dir), Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    d, out = Path(a.dat_dir), Path(a.out)
+    # The reduced tables are store-bound (DR-0041, issue #695) even though
+    # they are derived: writing them straight into an append-only tree would
+    # mint nothing and bypass the manifest. Refused before out.mkdir.
+    tb_adapter.refuse_protected_out(REPO, out, slug="soft-start")
+    out.mkdir(parents=True, exist_ok=True)
     with open(out / "convergence.csv", "w", newline="") as f:
         w = csv.writer(f); w.writerow(["tmax", "dut", "icap_peak_ma", "t_peak_us", "dvout_max_vpms"])
         for tag, label in [("_nat1u", "native-1u(9ms)")] + [(f"_c{x}", x) for x in a.conv.split(",")]:

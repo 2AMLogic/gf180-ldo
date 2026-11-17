@@ -671,7 +671,7 @@ class TestDeckTemplate(unittest.TestCase):
                 self.assertIn(idiom, self.TEXT)
 
     def test_the_template_pins_the_model_binning_flag(self):
-        # Without it the W=2000u pass device has no model bin on an ngspice
+        # Without it the W=2800u pass device has no model bin on an ngspice
         # that is not in HSPICE compatibility mode, and no deck in this repo
         # parses. Recorded in the record's Environment section too.
         self.assertIn(".options wnflag=1", self.TEXT)

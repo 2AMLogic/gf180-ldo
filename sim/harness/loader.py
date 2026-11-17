@@ -68,5 +68,13 @@ def load_script(name: str, path: str | os.PathLike) -> types.ModuleType:
     # Register before executing -- see the docstring: `@dataclass` resolves
     # its annotations through `sys.modules[cls.__module__]`.
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    # ...and drop that registration again if execution fails, matching
+    # CPython's own importlib._bootstrap._load: a module that raised mid-exec
+    # is half-initialized, and leaving it behind under the caller's name
+    # would turn a clean ImportError into a poisoned one (issue #706).
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
     return module
