@@ -163,7 +163,9 @@ def main(argv=None, *, preflight=None) -> int:
                                  "diagnostics": v.get("_diagnostics")})
     keys = list(dict.fromkeys(k for r in rows for k in r))  # union: a point missing a crossing lacks derived keys
     out = dest / (f"summary-{args.process}.csv" if args.process else "summary.csv")
-    write_summary_csv(rows, out, keys)
+    # Split-part/shard invocations accumulate into one staged record (#646):
+    # merge with any summary a previous one wrote instead of clobbering it (#704).
+    write_summary_csv(rows, out, keys, merge_key=("dut", "corner", "cout", "esr", "rload"))
     print(f"staged  : {dest} (not evidence yet)")
     if remaining:
         print("shards  : still to run for this record -- " + "; ".join(remaining))
