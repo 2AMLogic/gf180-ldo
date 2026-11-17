@@ -74,12 +74,13 @@ class _DriverCase:
 
     def setUp(self):
         self.mod = _driver(self.SLUG)
-        # The drivers resolve their repo from __file__, so a staged run lands
-        # in this repo's own git-ignored sim/.work/. Clear it afterwards so
-        # the tests leave no scratch behind.
-        self.addCleanup(shutil.rmtree, SIM_DIR / ".work" / ".stage" / self.SLUG,
-                        ignore_errors=True)
         self.rid = "20261116-zz-driver-test"
+        # The drivers resolve their repo from __file__, so a staged run lands
+        # in this repo's own git-ignored sim/.work/. Clear this record's
+        # stage afterwards so the tests leave no scratch behind, but nothing
+        # wider: a bench's other staged records (a soft-start shard parked
+        # mid-workflow, say) must survive the test run.
+        self.addCleanup(shutil.rmtree, self._staged(), ignore_errors=True)
         self.dests: list[Path] = []
         self.stdout = io.StringIO()
         self.stderr = io.StringIO()
