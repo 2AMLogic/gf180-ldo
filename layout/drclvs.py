@@ -252,8 +252,12 @@ class CellSpec:
     # Extra markdown sections --record appends to the run record: whatever
     # this cell's own verification claim needs stated alongside the verdicts
     # (for a matched array, the as-drawn matching against floorplan.md's
-    # numeric target). Derived, not typed in -- see _divider_record_note().
-    record_notes: str = ""
+    # numeric target). A zero-argument callable, invoked only when --record
+    # writes this cell's record -- NOT evaluated at CellSpec-construction
+    # time, which kept every cell's import paying for the divider's sources
+    # (issue #649). None for a cell with no note; see
+    # layout/divider/record_note.py for the one registered example.
+    record_notes: Callable[[], str] | None = None
 
     def __post_init__(self) -> None:
         # Structural guard, not a convention: a CellSpec that would clobber a
@@ -912,71 +916,6 @@ def check_controls_apply(spec: CellSpec, text: str) -> dict[str, Control]:
 # the cell registry
 # --------------------------------------------------------------------------
 
-def _divider_record_note() -> str:
-    """The divider's as-drawn matching, against floorplan.md's own targets.
-
-    Derived from `layout/divider/plan.py` (the arrangement the generator
-    draws) and `layout/area_estimate.py` (the mismatch arithmetic the area
-    budget was closed with), so a record can never quote a centroid or a
-    sigma the drawing does not have.
-    """
-    # Loaded by path rather than by `sys.path` insertion: `plan.py` is also
-    # imported -- under KLayout's interpreter, from its own directory -- by the
-    # divider's GDS generator, and a path load keeps a bare module name like
-    # `plan` out of this process's import namespace.
-    plan = load_script("divider_plan", DIVIDER_DIR / "plan.py")
-    area = load_script("divider_area_estimate", LAYOUT_DIR / "area_estimate.py")
-    _footprint, sigma3 = area.divider_field()
-    pattern = "".join(
-        "T" if p in plan.TOP_POSITIONS else "B" for p in plan.ACTIVE_POSITIONS
-    )
-    top_k = len(plan.TOP_POSITIONS) * plan.UNIT_KOHM
-    bot_k = len(plan.BOT_POSITIONS) * plan.UNIT_KOHM
-    return f"""## Matching, as drawn
-
-Against `layout/floorplan.md` §4.1's numeric targets. Every figure below is
-read out of `layout/divider/plan.py` -- the constants the generator actually
-draws -- not transcribed from the document, and
-`layout/tests/test_divider_layout.py` re-checks them against §4.1 on every CI
-run.
-
-| Property | §4.1's target | As drawn |
-| --- | --- | --- |
-| Unit | 50 kOhm `ppolyf_u_3k`, W = 2 um, L = 31.8 um | {plan.UNIT_KOHM:g} kOhm, W = {plan.UNIT_W_UM:g} um, L = {plan.UNIT_L_UM:g} um |
-| String | 18 units, 6 up / 12 down | {len(plan.ACTIVE_POSITIONS)} units, {len(plan.TOP_POSITIONS)} up / {len(plan.BOT_POSITIONS)} down |
-| Value | 900 kOhm total, tapped 600 k / 300 k | {top_k + bot_k:g} kOhm, tapped {bot_k:g} k / {top_k:g} k |
-| Arrangement | `B T B B T B B T B B T B B T B B T B` | `{" ".join(pattern)}` |
-| Pitch | 2.4 um (2.0 um strip + PRES.2's 0.4 um) | {plan.PITCH_UM:g} um ({plan.UNIT_W_UM:g} + {plan.PITCH_UM - plan.UNIT_W_UM:g}) |
-| Dummies | one strip at each end | {len(plan.DUMMY_POSITIONS)}, at positions {", ".join(str(p) for p in plan.DUMMY_POSITIONS)} |
-| **Top-leg centroid** | **9.5** | **{plan.centroid(plan.TOP_POSITIONS):g}** |
-| **Bottom-leg centroid** | **9.5** | **{plan.centroid(plan.BOT_POSITIONS):g}** |
-| Divider mismatch | 1.68 mV (3 sigma), vs. #9's budgeted 3.36 mV | {sigma3:.2f} mV (3 sigma) |
-
-Both centroids landing on the same position is the *whole* claim this cell
-exists to support, and it is the one term in the output-accuracy budget that
-**cannot be simulated against this PDK at all**: the resistor subcircuits
-hard-code `mis_r = 0` and the high-sheet `ppolyf_u_*k` cards carry no local
-mismatch term (`sim/devchar/CONCLUSIONS.md` §2). The 3-sigma figure above is
-therefore an arithmetic projection from a *proxy* coefficient (`ppolyf_u`'s
-disabled `par_r = 0.021`, the proxy `README.md` note 3 sanctions), not a
-measured or simulated result -- and it can only be claimed at all because the
-drawn arrangement is the one it assumes, which is what this record's LVS
-verdict establishes.
-
-## What this LVS verdict does not cover
-
-- **Resistance is not a compared parameter.** The deck's `BResistor` class
-  (`rule_decks/custom_classes.lvs`) does `enable_parameter('R', false)` and
-  compares `W` and `L` only. The match above therefore says the drawn
-  *geometry* is the netlisted geometry, not that any resistance value is
-  right. (It also means the deck's own nominal 3.0 kOhm/sq would call each
-  unit 47.7 kOhm rather than 50 kOhm -- the 50 kOhm comes from
-  `sim/devchar`'s measured effective sheet, 3.145 kOhm/sq, and is what the
-  drawn 31.8 um length is sized from.)
-- **Pin order is not checked here**, as for every cell in this flow -- see
-  `layout/README.md`, "What LVS here does *not* check".
-"""
-
 
 TESTCELL_SPEC = CellSpec(
     key="testcell",
@@ -1051,7 +990,9 @@ DIVIDER_SPEC = CellSpec(
         "18 ppolyf_u_3k units (W=2 um, L=31.8 um) + 2 dummies, "
         "common-centroid 6 up / 12 down -- layout/floorplan.md §4.1"
     ),
-    record_notes=_divider_record_note(),
+    record_notes=lambda: load_script(
+        "divider_record_note", DIVIDER_DIR / "record_note.py"
+    ).render(),
 )
 
 # The registry a real block's layout plugs into -- add an entry here (see
@@ -1560,8 +1501,9 @@ xschem's `lvs_netlist` form from `{schematic_rel}`.
   honestly"); the PDK deck's {drc['rule_categories']} categories are the number
   worth quoting.
 """
-    if spec.record_notes:
-        body += "\n" + spec.record_notes.rstrip("\n") + "\n"
+    note = spec.record_notes() if spec.record_notes else ""
+    if note:
+        body += "\n" + note.rstrip("\n") + "\n"
     if warnings:
         body += "\n## LVS deck notes\n\n"
         for warning in warnings:
