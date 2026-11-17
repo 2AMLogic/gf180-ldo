@@ -27,18 +27,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 _spec = importlib.util.spec_from_file_location(
     "ss_klt_peak_run", SIM_DIR / "soft-start" / "testbench" / "klt_peak_run.py")
 kpr = importlib.util.module_from_spec(_spec)
-# klt_peak_run imports its sibling by bare name (`import klt_run`), and under
-# discovery another bench's klt_run may already own sys.modules["klt_run"]
-# (loop-stability's sweep.py imports its own sibling the same way). Load ours
-# with the cache cleared and put the previous occupant back afterwards.
-_saved_klt_run = sys.modules.pop("klt_run", None)
-try:
-    _spec.loader.exec_module(kpr)
-finally:
-    if _saved_klt_run is not None:
-        sys.modules["klt_run"] = _saved_klt_run
-    else:
-        sys.modules.pop("klt_run", None)
+# No sys.modules["klt_run"] pop/restore guard here: klt_peak_run imports its
+# sibling by bare name, and this is the only bare binding left in the tree --
+# every other driver loads its own klt_run.py by path under a unique name
+# (ss_loop_gain_klt_run, loop_stability_klt_run; issue #693).
+_spec.loader.exec_module(kpr)
 
 from harness import evidence_store as es  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
