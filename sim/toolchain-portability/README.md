@@ -54,7 +54,7 @@ Exits `0` only if all three facts reproduce:
 
 | | fact | DR-0025 evidence |
 |---|---|---|
-| **F1** | `.options wnflag=1` resolves `W=2000u nf=40` to the declared bin `pfet_03v3.12`, `w` undivided | E2 / E5 |
+| **F1** | `.options wnflag=1` resolves `W=2800u nf=40` to the declared bin `pfet_03v3.12`, `w` undivided | E2 / E5 |
 | **F2** | `wnflag=0` (and no card at all) fails to parse — `could not find a valid modelname`, never a silent clamp | E4 / E5 |
 | **F3** | two `.options` cards naming the same key resolve to the **first**; the later one is silently discarded | "A testbench manifest cannot override the pin" |
 
