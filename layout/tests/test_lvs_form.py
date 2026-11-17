@@ -147,36 +147,57 @@ class ConservatismTests(unittest.TestCase):
 
 
 class MimcapModelTokenTests(unittest.TestCase):
-    """The model token a rendered C line carries is the deck's device class.
+    """The model token a rendered C line carries is the class the run registers.
 
-    ``rule_decks/mimcap_extraction.lvs`` registers the MIM-capacitor device
-    classes as ``cap_mim_<n>f<m>fF`` (on the pinned revision:
-    ``cap_mim_1f0fF``, ``cap_mim_1f5fF``, ``cap_mim_2f0fF``), while the token
-    an xschem export carries -- the PDK symbols' own names, and the ``model=``
+    ``rule_decks/mimcap_extraction.lvs`` registers a MIM-capacitor device
+    class under a ``cap_mim_<n>f<m>fF`` name, while the token an xschem
+    export carries -- the PDK symbols' own names, and the ``model=``
     overrides this repo's schematics set -- is the *symbol* name:
     ``cap_mim_<n>f<m>_<metals>_noshield``. KLayout's compare matches device
     classes BY NAME, so a pass-through token pairs with nothing and the cell
-    mismatches with no rule-level diagnosis (issue #642). The flavour is the
-    ``<n>f<m>`` group both spellings share, so one regex maps the whole
-    family; anything in the family it cannot parse is a loud error rather
-    than a silently passed-through token.
+    mismatches with no rule-level diagnosis (issue #642).
+
+    The deck registers only ONE flavour per run, selected by its ``mim_cap``
+    switch, and ``drclvs.py`` pins that switch to ``2`` -- whose case
+    registers exactly ``cap_mim_2f0fF`` (issue #680). So the renderer maps
+    only that flavour: a ``cap_mim_*`` token naming any other flavour, in
+    either spelling, would compare a class the run never registers -- the
+    same undiagnosed-mismatch end state -- and is a loud error rather than
+    a silently mapped or passed-through token.
     """
 
-    def test_every_flavour_of_the_family_maps_to_its_registered_class(self):
-        for symbol, klass in (
-            ("cap_mim_1f0_m3m4_noshield", "cap_mim_1f0fF"),
-            ("cap_mim_1f5_m4m5_noshield", "cap_mim_1f5fF"),
-            ("cap_mim_2f0_m2m3_noshield", "cap_mim_2f0fF"),
-            ("cap_mim_2f0_m3m4_noshield", "cap_mim_2f0fF"),
-            ("cap_mim_2f0_m4m5_noshield", "cap_mim_2f0fF"),
-            ("cap_mim_2f0", "cap_mim_2f0fF"),
+    def test_the_pinned_flavour_maps_to_its_registered_class(self):
+        for symbol in (
+            "cap_mim_2f0_m2m3_noshield",
+            "cap_mim_2f0_m3m4_noshield",
+            "cap_mim_2f0_m4m5_noshield",
+            "cap_mim_2f0",
         ):
             with self.subTest(symbol=symbol):
                 out, count = lvs_form.rewrite_passives(
                     f"XC1 A B {symbol} c_width=5u c_length=5u m=1\n"
                 )
                 self.assertEqual(count, 1)
-                self.assertTrue(out.startswith(f"C1 A B {klass} l=5u "), out)
+                self.assertTrue(out.startswith("C1 A B cap_mim_2f0fF l=5u "), out)
+
+    def test_a_flavour_the_run_does_not_register_is_a_loud_error(self):
+        """The run's ``mim_cap=2`` switch registers only ``cap_mim_2f0fF``.
+        A 1f0/1f5 token would map "successfully" to a class the deck never
+        extracts -- the well-formed WRONG verdict with no rule-level
+        diagnosis the loud error exists to prevent (issue #680) -- in symbol
+        spelling and, equally, in class spelling."""
+        for symbol in (
+            "cap_mim_1f0_m3m4_noshield",
+            "cap_mim_1f5_m4m5_noshield",
+            "cap_mim_1f0fF",
+            "cap_mim_1f5fF",
+        ):
+            with self.subTest(symbol=symbol):
+                with self.assertRaises(lvs_form.LvsFormError) as caught:
+                    lvs_form.rewrite_passives(
+                        f"XC1 A B {symbol} c_width=5u c_length=5u m=1\n"
+                    )
+                self.assertIn(symbol, str(caught.exception))
 
     def test_a_token_that_is_already_the_class_passes_through(self):
         out, count = lvs_form.rewrite_passives(
