@@ -6,8 +6,28 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-17
+
+- **PR #696**: refactor(lvs): extract lvs_switches() and drop four switches the deck never reads
+- **Issue #691** (closed): LVS switch dict passes four globals the pinned deck never reads (lvs_sub, scale, schematic_simplify, thr)
+- **PR #690**: refactor(sim): home the shared loop-margin surface in sim/harness
+- **PR #689**: fix(lvs): gate the MIM renderer to the flavour the run registers
+- **PR #688**: docs: name klt_grid.DEFAULT_JOBS as the -j default in tb_startup.spice header
+- **Issue #685** (closed): tb_startup.spice's -j advisory still names min(8, cpu_count) as the harness default after #626
+- **PR #684**: fix(harness): take run_corners' -j default from klt_grid.DEFAULT_JOBS
+- **PR #683**: sim: stage mc-output-accuracy and soft-start peak/bias drivers instead of committing
+- **Issue #680** (closed): LVS: mapped MIM flavour is not cross-checked against the run's mim_cap switch, and CellSpec.simplify_extracted's comment still describes the pre-bump deck
+- **PR #677**: sim: stage current-limit, enable-shutdown and soft-start klt runs instead of committing
+- **PR #675**: fix(loop-stability): pin .options wnflag=1 so --backend local runs on any host
+- **Issue #647** (closed): sim: route the four latent hand-rolled batch drivers (mc-output-accuracy, soft-start peak/bias_acq) through the store
+- **Issue #646** (closed): sim: stage the current-limit, enable-shutdown and soft-start klt_run.py runs instead of committing them (all 673 hand-rolled-driver files as of 2026-11-15)
+- **Issue #634** (closed): bug: loop-stability --backend local fails with 'could not find a valid modelname' on the pass device
+- **Issue #630** (closed): Give loop-stability's borrowed testbench surface a home in sim/harness/: 40 symbols reached by filesystem path, and the shim shadows this bench's own modules
+- **Issue #626** (closed): run_corners.py is the sixth local driver #366's -j cap never reached: sim/harness/cli.py still resolves -j to min(8, cpu_count())
+
 ### 2026-11-16
 
+- **PR #656**: chore(loom): resync installed Loom to v0.19.1302
 - **PR #679**: fix: pass the pinned LVS runset's switches explicitly and emit its MIM-cap device class
 - **Issue #642** (closed): LVS mismatches on pass_array and passives with current toolchain (klayout 0.30.12 + pinned PDK), pre-existing on main
 - **PR #676**: fix: refuse kept-envelope collisions before klt_record commits anything
