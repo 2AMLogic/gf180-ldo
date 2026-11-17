@@ -8,6 +8,31 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-17
 
+- **Issue #723** (closed): test_load_script_sites: a locally-deleted tracked .py reports as a UTF-8 failure (and a null-byte file reports line `None`)
+- **PR #724**: fix: give read_calls per-failure reasons; drop a None line number
+- **Issue #716** (closed): test_load_script_sites guard: scope enumeration to tracked files and handle unparseable ones
+- **PR #722**: fix: scope load-script-sites guard to tracked files, guarded parse
+- **Issue #714** (closed): Record prose still quotes the pre-DR-0034 pass-device width W=2000u; the netlist is W=2800u
+- **PR #718**: fix: quote the DR-0034 pass-device width W=2800u in record prose and probes
+- **Issue #710** (closed): sim/harness: write_summary_csv's merge_key silently duplicates rows when a key column is not a string
+- **PR #720**: fix(sim): refuse a non-str merge_key cell instead of silently duplicating rows
+- **Issue #717** (closed): Cite CO.6a/CO.6b, not CO.6, for the 0.06 um Metal1 overlap of contact
+- **PR #719**: docs(layout): cite CO.6a/CO.6b for the 0.06 um Metal1 contact overlap
+- **PR #711**: chore(loom): resync installed Loom to v0.19.1306
+- **Issue #603** (closed): Remove the per-file copies of the gf180mcu DRC rule minimums: define each rule once, as #588 did for the layer table
+- **PR #643**: refactor: transcribe the gf180mcu DRC rule minimums once, in layout/drc_rules.py
+- **Issue #695** (closed): sim: apply tb_adapter.refuse_protected_out to the three remaining caller-chosen output paths
+- **PR #715**: fix(sim): refuse caller-chosen output paths inside append-only trees in three drivers
+- **Issue #706** (closed): Re-consolidate 16 path-load sites that regrew after #625, and add the anti-regrowth guard
+- **PR #712**: fix: route path loads through load_script and guard the idiom tree-wide
+- **Issue #697** (closed): gen_gds.py's resistor docstring still cites a `lvs_sub` deck switch that does not exist
+- **PR #713**: docs: cite the deck's hardcoded substrate net, not the dead lvs_sub switch
+- **Issue #704** (closed): sim: klt_run.py's summary.csv is clobbered per --part, same bug #687 fixed in klt_peak_run.py
+- **PR #708**: fix(sim): merge split-part rows in soft-start klt_run's summary.csv
+- **Issue #649** (closed): Relocate divider-specific record note out of generic drclvs.py (import-time cost, 60 LOC)
+- **PR #709**: refactor(layout): move the divider's --record note into layout/divider/, rendered lazily
+- **Issue #655** (closed): record_diff.py: scrub status-derived 'tier' so a stale-evidence-only diff is not reported as a residual
+- **PR #705**: fix(signoff): scrub derived top-level tier so a stale-evidence-only diff is not a residual
 - **PR #703**: fix(sim): accumulate split-part rows in klt_peak_run's summary.csv
 - **PR #701**: test(sim): enforce the unique-name sibling-load rule across testbench drivers
 - **PR #636**: refactor: load path-imported scripts through one harness.load_script helper
