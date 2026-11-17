@@ -48,10 +48,27 @@ def driver_args(params: dict[str, str]) -> str:
     return "".join(f" --param {k}={v}" for k, v in params.items())
 
 
-def write_summary_csv(rows: list[dict], path: Path, keys: list[str] | None = None) -> None:
-    """Write ``rows`` to ``path``; default columns are the sorted union, ``dut`` and ``corner`` first."""
+def write_summary_csv(rows: list[dict], path: Path, keys: list[str] | None = None,
+                      merge_key: tuple[str, ...] | None = None) -> None:
+    """Write ``rows`` to ``path``; default columns are the sorted union, ``dut`` and ``corner`` first.
+
+    With ``merge_key`` (the tuple of columns identifying a row), rows already
+    in ``path`` whose key matches one of this run's rows are replaced instead
+    of clobbered -- split-part/shard invocations accumulate into one staged
+    record (issue #687, #704). Headers union across invocations (a point
+    missing a crossing lacks derived keys); a cell a row lacks is written
+    blank. Without ``merge_key`` the write truncates as before.
+    """
     if keys is None:
         keys = sorted({k for r in rows for k in r}, key=lambda k: (k not in ("dut", "corner"), k))
+    if merge_key is not None and path.exists():
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            old_fields = list(reader.fieldnames or [])
+            old_rows = list(reader)
+        produced = {tuple(r.get(k) for k in merge_key) for r in rows}
+        rows = [r for r in old_rows if tuple(r.get(k) for k in merge_key) not in produced] + rows
+        keys = list(dict.fromkeys(list(keys) + old_fields))
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=keys)
         w.writeheader()
