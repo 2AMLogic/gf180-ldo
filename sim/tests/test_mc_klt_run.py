@@ -249,9 +249,14 @@ class ProbeFbCurrentRouting(unittest.TestCase):
         real_run, real_find = probe.kb.run, probe.pdk.find_pdk
         probe.kb.run = lambda req, outdir, backend=None: {"corners": []}
         probe.pdk.find_pdk = lambda variant=None: types.SimpleNamespace(path=Path("/nonexistent-pdk"))
+        saved_root = os.environ.get("PDK_ROOT")
 
         def restore():
             probe.kb.run, probe.pdk.find_pdk = real_run, real_find
+            if saved_root is None:
+                os.environ.pop("PDK_ROOT", None)
+            else:
+                os.environ["PDK_ROOT"] = saved_root
         self.addCleanup(restore)
         with contextlib.redirect_stdout(self.stdout), contextlib.redirect_stderr(self.stderr):
             return probe.main(argv, preflight=preflight)
