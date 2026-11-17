@@ -24,10 +24,10 @@ from pathlib import Path
 
 _SIGNOFF_DIR = Path(__file__).resolve().parent
 
-# t1_met_count moves mechanically with per-item statuses, so it is not an
-# independent difference: a met -> unmet transition changes it even when
-# nothing else did.
-_DERIVED_COUNT_KEYS = ("t1_met_count",)
+# tier and t1_met_count both move mechanically with per-item statuses, so
+# neither is an independent difference: a met -> unmet transition changes
+# both even when nothing else did.
+_DERIVED_KEYS = ("t1_met_count", "tier")
 
 
 def stale_members(item: dict) -> list[dict]:
@@ -52,13 +52,14 @@ def reattest_items(fresh: dict) -> dict[int, list[dict]]:
 def residual_differs(fresh: dict, committed: dict, ids: set[int]) -> bool:
     """True if the documents differ outside the given re-attest items.
 
-    The re-attest items and the count derived from item statuses are dropped
-    from both sides before comparing; anything left over -- another item, a
-    count, the checklist itself -- is a difference re-attesting cannot fix.
+    The re-attest items and the fields derived from item statuses (the met
+    count and the top-level tier) are dropped from both sides before
+    comparing; anything left over -- another item, a field, the checklist
+    itself -- is a difference re-attesting cannot fix.
     """
 
     def scrub(doc: dict) -> dict:
-        out = {k: v for k, v in doc.items() if k not in _DERIVED_COUNT_KEYS}
+        out = {k: v for k, v in doc.items() if k not in _DERIVED_KEYS}
         out["items"] = [it for it in doc.get("items") or []
                         if it.get("id") not in ids]
         return out

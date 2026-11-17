@@ -8,6 +8,12 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-17
 
+- **PR #703**: fix(sim): accumulate split-part rows in klt_peak_run's summary.csv
+- **PR #701**: test(sim): enforce the unique-name sibling-load rule across testbench drivers
+- **PR #636**: refactor: load path-imported scripts through one harness.load_script helper
+- **Issue #700** (closed): sim: no structural test enforces the unique-name sibling-load rule across the 16 klt_run.py benches
+- **Issue #687** (closed): sim: klt_peak_run.py's summary.csv is overwritten per --part, so a split-part record stores only the last part's rows
+- **Issue #625** (closed): Define the path-loading idiom once: 21 hand-rolled importlib.util copies, and 10 of them skip the sys.modules step the other 11 take
 - **PR #699**: fix(sim): load ss-loop-gain's klt_run under its unique name, dropping the last bare import
 - **Issue #693** (closed): sim: ss-loop-gain sweep.py's bare `import klt_run` still leaks the name — soft-start's klt_peak_run wins the race, so the driver silently gets the wrong bench's klt_run
 - **PR #692**: sim: hoist the append-only output refusal into tb_adapter and guard bias_acq's explicit --dest
