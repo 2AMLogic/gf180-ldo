@@ -1385,12 +1385,16 @@ class TestRenderRecordSmoke(unittest.TestCase):
                 "open_pdks_version": "unittest",
                 "discovered_via": "",
             })
+        # Since the #608 split, `render_record` lives in `record.py` (loaded
+        # by sweep as the `sweep.record` module object), so the stubs patch
+        # THAT module's globals -- patching `sweep` itself would no longer
+        # reach the code under test.
         with \
-                unittest.mock.patch.object(sweep, "ngspice_version",
+                unittest.mock.patch.object(sweep.record, "ngspice_version",
                                            lambda: "ngspice-46 (stubbed)"), \
-                unittest.mock.patch.object(sweep, "ngspice_binary_sha256",
+                unittest.mock.patch.object(sweep.record, "ngspice_binary_sha256",
                                            lambda: "0" * 64):
-            return sweep.render_record(
+            return sweep.record.render_record(
                 record_id=self.RECORD_ID, rows=rows, grid=["tt_27c_3.30v"],
                 ceffs=[1e-6], esrs=[0.1], pdk=pdk,
                 prov={"commit": "abc1234", "short": "abc1234",
