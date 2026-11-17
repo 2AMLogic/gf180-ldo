@@ -99,6 +99,28 @@ class ResidualDiffersTests(unittest.TestCase):
         fresh["t1_item_count"] = RECORD["t1_item_count"] + 1
         self.assertTrue(rd.residual_differs(fresh, RECORD, {10}))
 
+    def test_stale_only_difference_with_tier_consequence_is_reattest_only(self):
+        # Issue #655's latent case: the block has reached T1, so the
+        # committed record carries tier="T1"; a stale item then drops a
+        # met count and the derived tier drops to None with it. tier moves
+        # mechanically with per-item statuses, so this stays re-attest-only
+        # and --write is never offered.
+        fresh = stale_fixture(10)
+        fresh["tier"] = None
+        committed = copy.deepcopy(RECORD)
+        committed["tier"] = "T1"
+        self.assertFalse(rd.residual_differs(fresh, committed, {10}))
+
+    def test_tier_change_with_non_stale_cause_still_residual(self):
+        # The honesty control: the same tier drop, but its cause is item 9
+        # unmet for missing_evidence -- not a re-attest item. Scrubbing
+        # tier must not hide it: the residual still reports True.
+        fresh = stale_fixture(9, reason="missing_evidence")
+        fresh["tier"] = None
+        committed = copy.deepcopy(RECORD)
+        committed["tier"] = "T1"
+        self.assertTrue(rd.residual_differs(fresh, committed, set()))
+
 
 class CliTests(unittest.TestCase):
     def test_identical_documents_pass(self):
