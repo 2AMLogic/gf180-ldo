@@ -59,6 +59,7 @@ import argparse
 import concurrent.futures
 import csv
 import datetime as _dt
+import importlib.util
 import math
 import os
 import re
@@ -96,7 +97,19 @@ from harness.runner import (  # noqa: E402
 
 sys.path.insert(0, str(HERE))
 import netlist_variants as nv  # noqa: E402
-import klt_run  # noqa: E402  (sibling module; sweep.py runs as a script)
+
+# This bench's own ``klt_run.py`` is loaded by path under its own name rather
+# than imported: this driver is itself loaded by path (tests, other drivers),
+# and a bare ``import klt_run`` would bind the shared module name to whichever
+# bench's sibling got imported first in that process (issue #693) --
+# ``sim/soft-start/testbench/klt_peak_run.py`` occupies the same name, and
+# neither bench's entry points exist on the other's module. The same rule and
+# pattern as ``sim/loop-stability/testbench/sweep.py`` (issue #630).
+_klt_run_spec = importlib.util.spec_from_file_location(
+    "ss_loop_gain_klt_run", HERE / "klt_run.py")
+klt_run = importlib.util.module_from_spec(_klt_run_spec)
+sys.modules["ss_loop_gain_klt_run"] = klt_run
+_klt_run_spec.loader.exec_module(klt_run)
 
 # `sim/loop-stability/`'s own driver, invoked as a SUBPROCESS by the anchor
 # cross-check below (run_loop_stability_here) so the same-host comparison runs
