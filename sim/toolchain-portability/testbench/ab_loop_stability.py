@@ -21,7 +21,7 @@ existing same-version comparison used.
         --build ngspice-46-pinned=~/.local/ngspice/bin/ngspice \
         --build ngspice-47=~/.local/ngspice-47/bin/ngspice \
         --loads-ma 0 1 50 --caps-uf 0.33 1.0 4.7 --esrs 0.001 0.2 0.5 \
-        --out-dir sim/toolchain-portability/corners/<record-id>
+        --out-dir sim/.work/.stage/toolchain-portability/sim/toolchain-portability/corners/<record-id>
 
 Each build is selected exactly the way
 `sim/loop-stability/records/20260906-090647-3981d88.md` selected between the
@@ -30,6 +30,15 @@ two ngspice-46 builds on its host: by prepending that install's `bin/` to
 arms. `--no-write` is passed to `sweep.py` throughout -- an A/B arm run on an
 unvalidated major version must not mint a `sim/loop-stability` record, which
 would put a toolchain experiment into the design-evidence trail.
+
+The per-arm console logs and copied per-corner logs this driver writes under
+`--out-dir` are raw run bytes, store-bound (DR-0041, issues #647/#695):
+`--out-dir` must point at scratch -- the staging tree
+`tb_adapter.stage_corner_dir(REPO, "toolchain-portability", <record-id>)`
+under `sim/.work/.stage/` -- never at `sim/toolchain-portability/corners/`;
+an `--out-dir` resolving inside an append-only tree is refused before the
+directory is created. An A/B worth keeping is minted as a record with
+`sim/run_store_evidence.py --kind corners`.
 """
 
 from __future__ import annotations
@@ -49,7 +58,7 @@ SIM_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 
-from harness import klt_grid  # noqa: E402
+from harness import klt_grid, tb_adapter  # noqa: E402
 from harness.runner import (  # noqa: E402
     ngspice_major_version,
     ngspice_version_at,
@@ -216,6 +225,11 @@ def main() -> int:
             sweep_args += [flag, *[str(v) for v in values]]
 
     out_dir = Path(args.out_dir)
+    # The console logs and copied per-corner logs are raw run bytes
+    # (DR-0041, issues #686/#695): an --out-dir resolving inside an
+    # append-only tree is refused before the directory is even created.
+    tb_adapter.refuse_protected_out(REPO_ROOT, out_dir, flag="--out-dir",
+                                    slug="toolchain-portability")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     results: dict[str, dict[Point, Margin]] = {}
