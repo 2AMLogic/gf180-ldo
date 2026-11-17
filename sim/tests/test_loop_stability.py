@@ -716,6 +716,7 @@ class TestRenderRecordSmoke(unittest.TestCase):
 
     RECORD_ID = "unittest-000000-smoke"
     COMMAND_BULLET = "- Command: `./sim/loop-stability/testbench/run.sh`"
+    PDK_BULLET = "- PDK: gf180mcuD @ open_pdks `unittest`"
 
     def _render(self, klt_info=None) -> str:
         rows = [
@@ -724,7 +725,14 @@ class TestRenderRecordSmoke(unittest.TestCase):
         ]
         args = SimpleNamespace(ac_dec=int(sweep.AC_DEC), author="unittest",
                                subset_reason="", supersedes=None)
-        pdk = SimpleNamespace(variant="gf180mcuD", version="unittest")
+        pdk = SimpleNamespace(
+            variant="gf180mcuD", version="unittest",
+            provenance=lambda: {
+                "path": "",
+                "variant": "gf180mcuD",
+                "open_pdks_version": "unittest",
+                "discovered_via": "",
+            })
         with \
                 unittest.mock.patch.object(sweep, "ngspice_version",
                                            lambda: "ngspice-46 (stubbed)"), \
@@ -736,19 +744,20 @@ class TestRenderRecordSmoke(unittest.TestCase):
                 resurging=[], grid=["tt_27c_3.30v"], iloads=[1e-3],
                 ceffs=[1e-6], esrs=[0.05], pdk=pdk, dirty=False, args=args,
                 curve_log=sweep.REPO_ROOT / "sim" / "loop-stability" / "testbench" / "sweep.py",
-                prov={"short": "abc1234", "branch": "unittest"},
+                prov={"commit": "abc1234", "short": "abc1234",
+                      "branch": "unittest", "dirty": False},
                 klt_info=klt_info)
 
     def test_no_klt_renders_the_environment_block_in_order(self):
         md = self._render()
         self.assertIn("## Environment", md)
         self.assertIn(self.COMMAND_BULLET, md)
-        self.assertIn("- PDK: gf180mcuD @ unittest", md)
+        self.assertIn(self.PDK_BULLET, md)
         # Presence AND order: Environment header, then the provenance bullets
         # it introduces. Index comparisons, not byte comparison.
         self.assertLess(md.index("## Environment"),
-                        md.index("- PDK: gf180mcuD @ unittest"))
-        self.assertLess(md.index("- PDK: gf180mcuD @ unittest"),
+                        md.index(self.PDK_BULLET))
+        self.assertLess(md.index(self.PDK_BULLET),
                         md.index(self.COMMAND_BULLET))
         self.assertNotIn("- Backend:", md,
                          "a no-klt record must not claim a klt backend")
@@ -770,6 +779,15 @@ class TestRenderRecordSmoke(unittest.TestCase):
         self.assertIn("- Backend: `klt sim`", md)
         self.assertIn("--backend batch", md)
         self.assertLess(md.index("## Environment"), md.index("- Backend:"))
+
+    def test_environment_block_carries_the_dr0025_binning_line(self):
+        # DR-0025, Consequences: "New records carry a model-binning line in
+        # their Environment section." Presence, not wording -- the #609
+        # refactor dropped this bullet from every loop-stability record while
+        # the suite stayed green, because nothing asserted it (#648 review).
+        md = self._render()
+        self.assertIn("- Model binning:", md)
+        self.assertIn(sweep.MODEL_BINNING_OPTION, md)
 
 
 if __name__ == "__main__":

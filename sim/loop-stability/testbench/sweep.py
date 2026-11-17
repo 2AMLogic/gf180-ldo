@@ -107,6 +107,8 @@ from harness.paths import display_home, display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
     allocate_record_id,
+    environment as harness_environment,
+    environment_lines,
     format_record_id,
     git_provenance,
     print_provenance_banner,
@@ -1030,6 +1032,32 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
         )
     else:
         klt_md = ""
+    env = harness_environment(
+        pdk=pdk,
+        ngspice=ngspice_version(),
+        repo_root=REPO_ROOT,
+        git=prov,
+        ngspice_sha256=ngspice_binary_sha256(),
+    )
+    env_md = "\n".join(
+        environment_lines(
+            env,
+            command="./sim/loop-stability/testbench/run.sh",
+            command_suffix=klt_md,
+            # DR-0025, Consequences: "New records carry a model-binning line
+            # in their Environment section." The harness canonical wording,
+            # so every record path renders one wording of the same pin.
+            extra=[
+                f"- Model binning: deck pins `.options {MODEL_BINNING_OPTION}`"
+                " -- gf180mcu bins on the per-finger width W/NF, and the pass device"
+                " (`W=2800u nf=40`, i.e. 70 um per finger) resolves to a declared bin"
+                " only with it; without it"
+                " ngspice hard-errors rather than clamping, so a record either carries"
+                " this setting or does not exist (issue #214,"
+                " spec/decision-records/DR-0025)",
+            ],
+        )
+    )
     subset = args.subset_reason.strip()
     subset_md = (f"\n  - **Subset reason**: {subset}\n" if subset else "")
     if seeded:
@@ -1232,25 +1260,7 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
 
 Everything needed to re-run this record:
 
-- PDK: {pdk.variant} @ {pdk.version}
-- ngspice: {ngspice_version()}
-- ngspice binary sha256: `{ngspice_binary_sha256()}` (issue #182: the version
-  string alone does not guarantee the resolved binary's content is
-  unchanged between two evidence-gathering runs -- see `sim/README.md`'s
-  reproducibility note)
-- Model binning: deck pins `.options {MODEL_BINNING_OPTION}` -- gf180mcu
-  bins on the per-finger width W/NF, and XMpass (`W=2800u nf=40`, 70 um
-  per finger) resolves to a declared bin only with it; without it ngspice
-  hard-errors rather than clamping, so a record minted from this path
-  either carries this setting or does not exist (issue #214,
-  spec/decision-records/DR-0025)
-- Host: `{socket.gethostname()}` (issue #182: this repo's evidence is
-  produced across a fleet of independently-provisioned builder hosts, each
-  with its own locally-installed ngspice -- recording the host is what
-  makes a cross-host toolchain divergence attributable)
-- git: `{prov['short']}` on `{prov['branch']}`
-  ({'DIRTY' if dirty else 'clean'} at generation time)
-- Command: `./sim/loop-stability/testbench/run.sh`{klt_md}
+{env_md}
 - AC sweep: `dec {args.ac_dec} {F_START} {F_STOP}` per injection, two injections
   per point{'' if args.ac_dec == int(AC_DEC) else f' (**not** the default `dec {AC_DEC}` -- see Subset reason)'}.
   The resolution is part of this measurement, not a performance setting

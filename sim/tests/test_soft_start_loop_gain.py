@@ -1359,6 +1359,7 @@ class TestRenderRecordSmoke(unittest.TestCase):
 
     RECORD_ID = "unittest-000000-smoke"
     COMMAND_BULLET = "- Command: `./sim/soft-start-loop-gain/testbench/run.sh`"
+    PDK_BULLET = "- PDK: gf180mcuD @ open_pdks `unittest`"
 
     def _render(self, klt_info=None) -> str:
         # device/binj mates at the same (phase, ramp state, corner, C_eff,
@@ -1376,7 +1377,14 @@ class TestRenderRecordSmoke(unittest.TestCase):
         ]
         args = SimpleNamespace(ac_dec=int(sweep.AC_DEC), author="unittest",
                                phases=["ramp"], subset_reason="", supersedes=None)
-        pdk = SimpleNamespace(variant="gf180mcuD", version="unittest")
+        pdk = SimpleNamespace(
+            variant="gf180mcuD", version="unittest",
+            provenance=lambda: {
+                "path": "",
+                "variant": "gf180mcuD",
+                "open_pdks_version": "unittest",
+                "discovered_via": "",
+            })
         with \
                 unittest.mock.patch.object(sweep, "ngspice_version",
                                            lambda: "ngspice-46 (stubbed)"), \
@@ -1385,7 +1393,8 @@ class TestRenderRecordSmoke(unittest.TestCase):
             return sweep.render_record(
                 record_id=self.RECORD_ID, rows=rows, grid=["tt_27c_3.30v"],
                 ceffs=[1e-6], esrs=[0.1], pdk=pdk,
-                prov={"short": "abc1234", "branch": "unittest", "dirty": False},
+                prov={"commit": "abc1234", "short": "abc1234",
+                      "branch": "unittest", "dirty": False},
                 args=args, xcheck={"skipped": True}, attribution=[],
                 seeded=(), curves=(), klt_info=klt_info)
 
@@ -1393,12 +1402,12 @@ class TestRenderRecordSmoke(unittest.TestCase):
         md = self._render()
         self.assertIn("## Environment", md)
         self.assertIn(self.COMMAND_BULLET, md)
-        self.assertIn("- PDK: gf180mcuD @ unittest", md)
+        self.assertIn(self.PDK_BULLET, md)
         # Presence AND order: Environment header, then the provenance bullets
         # it introduces. Index comparisons, not byte comparison.
         self.assertLess(md.index("## Environment"),
-                        md.index("- PDK: gf180mcuD @ unittest"))
-        self.assertLess(md.index("- PDK: gf180mcuD @ unittest"),
+                        md.index(self.PDK_BULLET))
+        self.assertLess(md.index(self.PDK_BULLET),
                         md.index(self.COMMAND_BULLET))
         self.assertNotIn("- Backend:", md,
                          "a no-klt record must not claim a klt backend")
@@ -1418,6 +1427,16 @@ class TestRenderRecordSmoke(unittest.TestCase):
         self.assertIn("- Backend: `klt sim`", md)
         self.assertIn("--backend batch", md)
         self.assertLess(md.index("## Environment"), md.index("- Backend:"))
+
+    def test_environment_block_carries_the_binning_disclosure(self):
+        # DR-0025: every new record must record the model-binning pin; this
+        # driver's disclosure is the pinned-`.spiceinit` bullet (the deck
+        # carries the `.options` card itself). Presence, not wording -- the
+        # same guard as test_loop_stability's binning-line test (#648
+        # review), shaped for where this driver pins the setting.
+        md = self._render()
+        self.assertIn("wnflag=1", md)
+        self.assertIn("model binning", md)
 
 
 if __name__ == "__main__":

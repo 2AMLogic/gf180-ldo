@@ -83,6 +83,8 @@ from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
     allocate_record_id,
+    environment as harness_environment,
+    environment_lines,
     format_record_id,
     git_provenance,
     parse_row_fields as _harness_parse_row_fields,
@@ -2738,6 +2740,22 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
     else:
         klt_md = ""
 
+    env = harness_environment(
+        pdk=pdk,
+        ngspice=ngspice_version(),
+        repo_root=REPO_ROOT,
+        git=prov,
+        ngspice_sha256=ngspice_binary_sha256(),
+    )
+    env_extra = [klt_md.rstrip("\n")] if klt_md else []
+    env_md = "\n".join(
+        environment_lines(
+            env,
+            command="./sim/soft-start-loop-gain/testbench/run.sh",
+            extra=env_extra,
+        )
+    )
+
     st_tbl = state_table(rows)
     ab_tbl, pairs = ab_table(rows)
     ho_tbl = handover_table(rows, "tt_27c_3.30v")
@@ -3160,13 +3178,10 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
 
 ## Environment
 
-- PDK: {pdk.variant} @ {pdk.version}
-- ngspice: {ngspice_version()}
-- ngspice binary sha256: `{ngspice_binary_sha256()}` (issue #182: the version
-  string alone does not pin the resolved binary's content -- see
-  `sim/README.md`'s reproducibility caveat)
-- Host: `{socket.gethostname()}`
-{klt_md}- ngspice startup settings, pinned by this driver rather than left to the host
+Everything needed to re-run this record:
+
+{env_md}
+- ngspice startup settings, pinned by this driver rather than left to the host
   (a generated `.spiceinit` in the run's work directory, which is the cwd of
   every ngspice invocation this record made, including the cross-check's):
   `set wnflag=1` (model binning divides W by nf -- without it the pass
@@ -3174,9 +3189,6 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   deck in this repo parses) and
   `set num_threads=1`. `wnflag` is also set as a `.options` card inside the
   deck itself.
-- git: `{prov['short']}` on `{prov['branch']}`
-  ({'DIRTY' if dirty else 'clean'} at generation time)
-- Command: `./sim/soft-start-loop-gain/testbench/run.sh`
 - AC sweep: `dec {args.ac_dec} {F_START} {F_STOP}` per injection, two injections
   per point -- `sim/loop-stability/`'s resolution policy (issue #58), imported
   from its driver rather than restated here, so the two experiments cannot
