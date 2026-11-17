@@ -42,8 +42,9 @@ re-scaling Msense moves the current limit by the same factor.
 
 NO VSS PORT. The pass device is a PMOS in an n-well tied to VIN; the only bulk
 terminal in this cell is that n-well. The p-substrate is the LVS deck's global
-substrate net (lvs_sub=VSS in layout/drclvs.py) and nothing here connects to
-it, so it is not a port.
+substrate net (rule_decks/substrate_connections.lvs hardcodes
+connect_global(..., 'SUB')) and nothing here connects to it, so it is not a
+port.
 
 PORTS (order is the .subckt port order -- it comes from the iopin/ipin instance
 order below, and pass_array.sym must list the same order):
