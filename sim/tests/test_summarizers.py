@@ -36,7 +36,6 @@ never invoked.
 from __future__ import annotations
 
 import csv
-import importlib.util
 import json
 import re
 import sys
@@ -49,24 +48,17 @@ from pathlib import Path
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
+from harness.loader import load_script  # noqa: E402
 
-def _load(name: str, rel: str) -> types.ModuleType:
-    """Import a script by path under a unique module name (several are all
-    called ``summarize.py`` / ``klt_run.py``)."""
-    spec = importlib.util.spec_from_file_location(name, SIM_DIR / rel)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-mc = _load("mc_summarize", "mc-output-accuracy/summarize.py")
-ss = _load("ss_summarize", "soft-start/testbench/summarize.py")
-pa = _load("ss_peak_analyze", "soft-start/testbench/peak_analyze.py")
-cl = _load("cl_summarize", "current-limit/testbench/summarize.py")
-es = _load("es_summarize", "enable-shutdown/testbench/summarize.py")
-ss_klt = _load("ss_klt_run", "soft-start/testbench/klt_run.py")
-cl_klt = _load("cl_klt_run", "current-limit/testbench/klt_run.py")
+# Each under a unique module name: several of these files are all called
+# ``summarize.py`` / ``klt_run.py``.
+mc = load_script("mc_summarize", SIM_DIR / "mc-output-accuracy/summarize.py")
+ss = load_script("ss_summarize", SIM_DIR / "soft-start/testbench/summarize.py")
+pa = load_script("ss_peak_analyze", SIM_DIR / "soft-start/testbench/peak_analyze.py")
+cl = load_script("cl_summarize", SIM_DIR / "current-limit/testbench/summarize.py")
+es = load_script("es_summarize", SIM_DIR / "enable-shutdown/testbench/summarize.py")
+ss_klt = load_script("ss_klt_run", SIM_DIR / "soft-start/testbench/klt_run.py")
+cl_klt = load_script("cl_klt_run", SIM_DIR / "current-limit/testbench/klt_run.py")
 from harness import klt_batch as kb  # noqa: E402
 from harness import tb_adapter, testbench  # noqa: E402
 

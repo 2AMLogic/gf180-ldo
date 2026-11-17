@@ -59,7 +59,6 @@ import argparse
 import concurrent.futures
 import csv
 import datetime as _dt
-import importlib.util
 import math
 import os
 import re
@@ -79,6 +78,7 @@ HANDOVER_TEMPLATE = HERE / "tb_ss_handover.spice.in"
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness import deck, klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
 from harness.report import (  # noqa: E402
@@ -105,11 +105,7 @@ import netlist_variants as nv  # noqa: E402
 # ``sim/soft-start/testbench/klt_peak_run.py`` occupies the same name, and
 # neither bench's entry points exist on the other's module. The same rule and
 # pattern as ``sim/loop-stability/testbench/sweep.py`` (issue #630).
-_klt_run_spec = importlib.util.spec_from_file_location(
-    "ss_loop_gain_klt_run", HERE / "klt_run.py")
-klt_run = importlib.util.module_from_spec(_klt_run_spec)
-sys.modules["ss_loop_gain_klt_run"] = klt_run
-_klt_run_spec.loader.exec_module(klt_run)
+klt_run = load_script("ss_loop_gain_klt_run", HERE / "klt_run.py")
 
 # `sim/loop-stability/`'s own driver, invoked as a SUBPROCESS by the anchor
 # cross-check below (run_loop_stability_here) so the same-host comparison runs

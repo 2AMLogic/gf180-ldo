@@ -14,7 +14,6 @@ store; and ``summarize.py`` takes a directory as well as a record id.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import json
 import math
@@ -31,18 +30,15 @@ SIM_DIR = Path(__file__).resolve().parents[1]
 REPO = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-_spec = importlib.util.spec_from_file_location(
+from harness.loader import load_script  # noqa: E402
+
+mc = load_script(
     "mc_klt_run", SIM_DIR / "mc-output-accuracy" / "testbench" / "klt_run.py")
-mc = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(mc)
-_probe_spec = importlib.util.spec_from_file_location(
-    "mc_probe_fb_current", SIM_DIR / "mc-output-accuracy" / "testbench" / "probe_fb_current.py")
-probe = importlib.util.module_from_spec(_probe_spec)
-_probe_spec.loader.exec_module(probe)
-_summ_spec = importlib.util.spec_from_file_location(
+probe = load_script(
+    "mc_probe_fb_current",
+    SIM_DIR / "mc-output-accuracy" / "testbench" / "probe_fb_current.py")
+mc_summarize = load_script(
     "mc_summarize_cli", SIM_DIR / "mc-output-accuracy" / "summarize.py")
-mc_summarize = importlib.util.module_from_spec(_summ_spec)
-_summ_spec.loader.exec_module(mc_summarize)
 
 from harness import evidence_store as es  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402

@@ -31,7 +31,6 @@ selftest, which needs ngspice. Nothing here does: no PDK, no simulator.
 from __future__ import annotations
 
 import difflib
-import importlib.util
 import math
 import re
 import sys
@@ -50,23 +49,16 @@ import netlist_variants as nv  # noqa: E402
 from harness import klt_grid  # noqa: E402
 from harness import loop_margin  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
-_spec = importlib.util.spec_from_file_location("ss_loop_gain_sweep", _TB / "sweep.py")
-sweep = importlib.util.module_from_spec(_spec)
-sys.modules["ss_loop_gain_sweep"] = sweep
-_spec.loader.exec_module(sweep)
+sweep = load_script("ss_loop_gain_sweep", _TB / "sweep.py")
 
 # `sim/loop-stability/`'s own driver, loaded the same way its own test file
 # loads it, so the identity assertions below can check BOTH benches read the
 # same harness objects (the driver itself no longer reaches into this bench's
 # process, so there is no shared module object to compare against any more).
 _LS_SWEEP = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
-_ls = sys.modules.get("loop_stability_sweep")
-if _ls is None:
-    _ls_spec = importlib.util.spec_from_file_location("loop_stability_sweep", _LS_SWEEP)
-    _ls = importlib.util.module_from_spec(_ls_spec)
-    sys.modules["loop_stability_sweep"] = _ls
-    _ls_spec.loader.exec_module(_ls)
+_ls = load_script("loop_stability_sweep", _LS_SWEEP)
 
 CORE = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
 

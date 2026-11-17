@@ -19,7 +19,6 @@ from __future__ import annotations
 import ast
 import csv
 import hashlib
-import importlib.util
 import json
 import re
 import shutil
@@ -30,13 +29,11 @@ import unittest
 from pathlib import Path
 
 SIM_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SIM_DIR))
+from harness.loader import load_script  # noqa: E402
+
 _REPORT_PATH = SIM_DIR / "build_characterization_report.py"
-_spec = importlib.util.spec_from_file_location(
-    "build_characterization_report", _REPORT_PATH
-)
-bcr = importlib.util.module_from_spec(_spec)
-sys.modules["build_characterization_report"] = bcr
-_spec.loader.exec_module(bcr)
+bcr = load_script("build_characterization_report", _REPORT_PATH)
 
 # The pre-#251 extractor: one bold run per `**Overall...**`, terminated by
 # the next `*`. Kept here as the regression oracle -- every verdict it finds
@@ -1391,11 +1388,9 @@ class TestSpecTableParsedByTheRatifiedGate(unittest.TestCase):
 
     def test_the_parser_is_the_one_backing_the_ratified_lock(self):
         """Same module object the lock's own checker uses, not a copy."""
-        lock_spec = importlib.util.spec_from_file_location(
+        oracle = load_script(
             "cst_oracle", bcr.REPO_ROOT / "spec" / "check_spec_table.py"
         )
-        oracle = importlib.util.module_from_spec(lock_spec)
-        lock_spec.loader.exec_module(oracle)
         readme = (bcr.REPO_ROOT / "README.md").read_text()
         self.assertEqual(
             bcr.check_spec_table.parse_table(readme), oracle.parse_table(readme)

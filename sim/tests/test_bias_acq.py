@@ -14,7 +14,6 @@ never grade as ``ACQUIRED``.
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import io
 import json
 import math
@@ -30,10 +29,9 @@ REPO = SIM_DIR.parent
 DRIVER = SIM_DIR / "soft-start" / "testbench" / "bias_acq.py"
 sys.path.insert(0, str(SIM_DIR))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-_spec = importlib.util.spec_from_file_location("ss_bias_acq", DRIVER)
-ba = importlib.util.module_from_spec(_spec)
-sys.modules["ss_bias_acq"] = ba
-_spec.loader.exec_module(ba)
+from harness.loader import load_script  # noqa: E402
+
+ba = load_script("ss_bias_acq", DRIVER)
 
 from harness import evidence_store as es  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402

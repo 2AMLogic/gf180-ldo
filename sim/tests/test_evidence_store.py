@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from harness import evidence_store as es  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 
 REPO = "owner/repo"
 
@@ -343,11 +344,8 @@ class _StagedCli(unittest.TestCase):
     and a ``main`` that patches preflight/``put_files`` with a fake ``klt``."""
 
     def setUp(self):
-        import importlib.util
         path = Path(__file__).resolve().parents[1] / "run_store_evidence.py"
-        spec = importlib.util.spec_from_file_location("run_store_evidence", path)
-        self.mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.mod)
+        self.mod = load_script("run_store_evidence", path)
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
         self.root = Path(td.name).resolve()

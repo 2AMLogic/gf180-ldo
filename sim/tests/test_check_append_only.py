@@ -3,15 +3,15 @@
 
 from __future__ import annotations
 
-import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location(
-    "check_append_only", REPO / "sim" / "check_append_only.py")
-cao = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(cao)
+sys.path.insert(0, str(REPO / "sim"))
+from harness.loader import load_script  # noqa: E402
+
+cao = load_script("check_append_only", REPO / "sim" / "check_append_only.py")
 
 REC = "sim/psrr-dc/records/20260101-000000-abc1234.md"
 LOG = "sim/psrr-dc/corners/20260101-000000-abc1234/tt_27c_3.3v.log"
