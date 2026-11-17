@@ -39,20 +39,21 @@ cosmetic: KLayout's compare matches device classes BY NAME. The deck's
 extraction registers ``cap_mim_<n>f<m>fF`` classes
 (``rule_decks/mimcap_extraction.lvs``), while the token an export carries is
 the *symbol* name (``cap_mim_2f0_m3m4_noshield``), so the two names have to
-be reconciled here -- the flavour ``<n>f<m>`` is common to both spellings,
-and one regex maps the whole family (issue #642). This mirrors the
+be reconciled here, keyed on the flavour ``<n>f<m>`` the two spellings
+share (issue #642). This mirrors the
 convention the PDK's own LVS regression netlists follow: the *subcircuit*
 is named after the symbol, the *device* after the extraction class --
 ``testing/unit/mimcap_devices/netlist/cap_mim_2f0fF_B_5LM_2p0.cdl`` has
 ``.SUBCKT cap_mim_2f0_m4m5_noshield`` whose device lines read
-``C... cap_mim_2f0fF ...``. A ``cap_mim_*`` token naming a flavour this
-flow does not register is a hard :class:`LvsFormError`, never a mapped or
-passed-through token: a token naming a class the run does not register
-compares as a well-formed wrong verdict with no rule-level diagnosis. The
-deck registers one MIM flavour per run, selected by its ``mim_cap`` switch,
-and ``drclvs.py`` pins that switch (``MIMCAP_SWITCH``) -- whose case
-registers exactly ``cap_mim_2f0fF`` (``MIMCAP_CLASS``) -- so 2f0 maps and
-every other flavour, in symbol or class spelling, is rejected (issue #680).
+``C... cap_mim_2f0fF ...``. The deck registers one MIM flavour per run,
+selected by its ``mim_cap`` switch, and ``drclvs.py`` pins that switch
+(``MIMCAP_SWITCH``) -- whose case registers exactly ``cap_mim_2f0fF``
+(``MIMCAP_CLASS``). So 2f0 maps, and every other ``cap_mim_*`` token is a
+hard :class:`LvsFormError`, never a mapped or passed-through token --
+whether neither spelling's regex can parse it into a flavour at all, or it
+parses to a flavour other than the pinned ``MIMCAP_FLAVOUR``: a token
+naming a class the run does not register compares as a well-formed wrong
+verdict with no rule-level diagnosis (issue #680).
 Resistors need no mapping -- on the
 pinned deck the resistor symbols' names are the registered class names
 (``ppolyf_u_1k`` & co) -- and the non-MIM capacitors register their classes
