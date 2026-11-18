@@ -300,7 +300,37 @@ class SoftStartDriver(_DriverCase, unittest.TestCase):
                          ["1u", "0.33u", "0.33u", "4.7u", "4.7u", "1u"],
                          "main's row must survive the extra write")
         self.assertEqual(sorted(p.name for p in self._staged().iterdir()),
-                         ["extra", "main", "summary.csv"])
+                         ["extra-c1", "extra-c2", "extra-c3", "extra-c4", "extra-c5",
+                          "main", "summary.csv"])
+
+    def test_extra_expands_to_one_request_per_config_in_distinct_subdirs(self):
+        # Issue #738: a 5-instance extra deck cannot fit the fleet's per-unit
+        # ceiling, so --part extra submits five 1-instance requests, each
+        # staged into its own extra-c<k>/ subdir (run_ab writes the envelope
+        # un-suffixed into dest/<tag>); main stays one request as before.
+        seen = []
+
+        def _record(job_factory, dut, baseline_ref, dest, repo, **kw):
+            job = job_factory("new", Path(dut))
+            Path(dest).mkdir(parents=True, exist_ok=True)
+            seen.append((Path(dest).name, job))
+            return {"new": {"tt_27c_3.30v": {"m_x": 1.0, "_status": "pass", "_diagnostics": ""}}}
+
+        self._run_ab = _record  # instance attr: _main patches run_ab to it
+        rc = self._main(["--record-id", self.rid, "--part", "both"], lambda repo: None)
+        self.assertEqual(rc, 0)
+        self.assertEqual([name for name, _ in seen],
+                         ["main"] + [f"extra-c{k}" for k in range(1, 6)])
+        inst = "Xdut1 VIN1 VOUT1 EN 0 EOUT1 PG1 VREF ldo_core"
+        for name, job in seen:
+            insts = [ln.strip() for ln in job.body.splitlines() if ln.strip().startswith("Xdut")]
+            self.assertEqual(insts, [inst], f"{name}: a 1-instance deck")
+            self.assertEqual(len(job.measurements), 13)
+            self.assertTrue(all(m["name"].endswith("_1") for m in job.measurements),
+                            f"{name}: measurement names read as instance 1")
+        main_job = dict(seen)["main"]
+        self.assertEqual(main_job.measurements, self.mod.measurements(1),
+                         "main's request is unchanged: the same 1-instance measurement set")
 
     def test_split_part_shards_at_one_process_accumulate_into_summary_tt(self):
         # Both parts at a fixed --process resolve to one summary-<process>.csv;
@@ -313,10 +343,15 @@ class SoftStartDriver(_DriverCase, unittest.TestCase):
         rc = self._main(["--record-id", self.rid, "--part", "extra", "--process", "tt"],
                         lambda repo: None)
         self.assertEqual(rc, 0)
+        self.assertIn("--part extra --process ff", self.stdout.getvalue(),
+                      "the shard hint keeps the un-split part name (#738): one "
+                      "`--part extra --process p` run covers all five requests")
+        self.assertEqual(rc, 0)
         _, rows = self._summary_rows("summary-tt.csv")
         self.assertEqual(len(rows), 6, f"main's row must survive, got {rows}")
         self.assertEqual(sorted(p.name for p in self._staged().iterdir()),
-                         ["extra-tt", "main-tt", "summary-tt.csv"],
+                         ["extra-c1-tt", "extra-c2-tt", "extra-c3-tt", "extra-c4-tt",
+                          "extra-c5-tt", "main-tt", "summary-tt.csv"],
                          "one shard file per --process, no unwritten summary.csv")
 
     def test_rerunning_the_same_part_replaces_its_rows_not_duplicates(self):

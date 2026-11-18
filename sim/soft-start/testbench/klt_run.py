@@ -4,12 +4,16 @@
     python3 sim/soft-start/testbench/klt_run.py --record-id <id> \\
         [--dut design/netlist/ldo_core.spice] [--baseline-ref origin/main] [--only tt,27,3.30]
 
-Two requests per DUT, covering the same 163 points run.sh does:
+Requests per DUT, covering the same 163 points run.sh does:
 
 * ``main``  -- 1 uF / 100 mohm / 36 ohm over the 63-point matrix;
-* ``extra`` -- the five run.sh EXTRA_CAPS configurations, as five independent
-  instances in one transient (klt_body.spice.in), over the 20-point
-  bracketing subset {tt ff ss res_ff res_ss} x {-40, 125 C} x {2.97, 3.63 V}.
+* ``extra`` -- the five run.sh EXTRA_CAPS configurations, each submitted as
+  its own 1-instance request over the 20-point bracketing subset
+  {tt ff ss res_ff res_ss} x {-40, 125 C} x {2.97, 3.63 V} and staged into
+  ``extra-c<k>/``. Five instances in one 9 ms transient cannot fit the
+  fleet's per-unit ceiling (one such unit measured 3127 s against a 3480 s
+  ``timeout_s`` that is already the 1-unit maximum -- issue #738), so the
+  deck shape is one instance per request, not five in one transient.
 
 Measurement definitions are tb_soft_start.spice.in's own ``meas`` lines,
 moved to top-level ``.meas`` cards; ``slope_vpms`` is 1.0 V over
@@ -145,9 +149,22 @@ def main(argv=None, *, preflight=None) -> int:
         for part, _, axes in parts:
             remaining += [f"--part {part} --process {p}"
                           for p in axes.get("process", kb.LDO_PROCESS) if p != args.process]
+    # Issue #738: a 5-instance extra deck cannot fit the fleet's per-unit
+    # ceiling, so the extra part submits one request per configuration -- each
+    # into its own extra-c<k>/ subdirectory, because klt_ab.run_ab writes
+    # klt-report.json/body.spice/request.json un-suffixed into dest/<tag> and
+    # five requests through one would overwrite each other's envelopes.
+    # `remaining` above keeps the un-split part names: `--part extra
+    # --process p` still runs a whole part-shard, across all five requests.
+    requests = []
+    for part, configs, axes in parts:
+        if part == "extra":
+            requests += [(f"extra-c{k}", [cfg], axes) for k, cfg in enumerate(configs, 1)]
+        else:
+            requests.append((part, configs, axes))
 
     rows = []
-    for part, configs, axes in parts:
+    for part, configs, axes in requests:
         ax = kb.only_axes(args.only) or dict(axes)
         sub = part
         if args.process:
