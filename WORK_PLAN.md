@@ -34,12 +34,13 @@ Issues currently being built (`loom:building`).
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#465**: sim: re-qualify loop-stability and soft-start reference records at open_pdks f6eeac7 (part of #430)
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
+- **#738**: sim(soft-start): split the extra-part klt deck per config -- a 5-instance unit cannot fit the fleet per-unit ceiling
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
-_None._
+- **#739**: sim(soft-start): split the extra part into one request per config
 
 ## Approved (Awaiting Merge)
 
@@ -65,6 +66,7 @@ Issues carrying `loom:curated`.
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)* *(held)*
 - **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)* *(held)*
+- **#738**: sim(soft-start): split the extra-part klt deck per config -- a 5-instance unit cannot fit the fleet per-unit ceiling *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -86,10 +88,10 @@ _None._
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`, net of holds/building/merge-pending) | 2 |
-| In Progress (`loom:building`) | 3 |
-| PRs awaiting review | 0 |
+| In Progress (`loom:building`) | 4 |
+| PRs awaiting review | 1 |
 | Approved PRs awaiting merge | 0 |
-| Curated | 14 |
+| Curated | 15 |
 | Architect / Hermit proposals | 5 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
