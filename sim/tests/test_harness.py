@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -1728,6 +1729,78 @@ class EveryDriverMintsTheIdOnce(unittest.TestCase):
                 text = self._read(rel)
                 self.assertIn('prov["dirty"]', text)
                 self.assertIn("DIRTY at run time", text)
+
+
+class GitProvenanceDirtyFlagTests(unittest.TestCase):
+    """``dirty`` ignores a not-yet-minted record's staging tree (PR #745).
+
+    A resumed campaign's previous-session output sits untracked under
+    ``corners/<record-id>/`` (and ``netlist-snapshots/<record-id>/``) until
+    the record is minted under ``records/``. Counting it ``dirty`` either
+    brands the completing record uncitable or forces committing half-finished
+    output into append-only evidence space. Once a record with the id exists,
+    the same paths are evidence and count again.
+    """
+
+    MINTED = "20260729-153000-1a7ef75"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / "repo"
+        self.root.mkdir()
+        self.git("init", "-q")
+        self.git("config", "user.email", "t@example.invalid")
+        self.git("config", "user.name", "t")
+        bench = self.root / "sim" / "loop-stability"
+        (bench / "records").mkdir(parents=True)
+        (bench / "records" / f"{self.MINTED}.md").write_text("# record\n")
+        (bench / "corners" / self.MINTED).mkdir(parents=True)
+        (bench / "corners" / self.MINTED / "tt_27c.log").write_text("log\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+
+    def git(self, *args: str) -> None:
+        subprocess.run(["git", "-C", str(self.root), *args], check=True)
+
+    def stage(self, rel: str) -> Path:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("untracked\n")
+        return path
+
+    def dirty(self) -> bool:
+        return report.git_provenance(self.root)["dirty"]
+
+    def test_unminted_corners_staging_is_not_dirty(self):
+        self.stage("sim/loop-stability/corners/20260730-090000-bbb0002/"
+                   "klt-reports/il0.json")
+        self.assertFalse(self.dirty())
+
+    def test_unminted_netlist_snapshot_staging_is_not_dirty(self):
+        self.stage("sim/soft-start/netlist-snapshots/20260730-090000-bbb0002/"
+                   "new/klt-report.json")
+        self.assertFalse(self.dirty())
+
+    def test_new_files_in_a_minted_records_corners_are_dirty(self):
+        self.stage(f"sim/loop-stability/corners/{self.MINTED}/extra.log")
+        self.assertTrue(self.dirty())
+
+    def test_untracked_files_elsewhere_are_still_dirty(self):
+        self.stage("sim/loop-stability/testbench/scratch.py")
+        self.assertTrue(self.dirty())
+
+    def test_edits_to_committed_minted_evidence_are_still_dirty(self):
+        log = (self.root / "sim" / "loop-stability" / "corners"
+               / self.MINTED / "tt_27c.log")
+        log.write_text("edited\n")
+        self.assertTrue(self.dirty())
+
+    def test_a_records_artifact_mints_the_id_for_staging_purposes(self):
+        (self.root / "sim" / "loop-stability" / "records"
+         / "20260730-090000-bbb0002-matrix.csv").write_text("csv\n")
+        self.stage("sim/loop-stability/corners/20260730-090000-bbb0002/ff.log")
+        self.assertTrue(self.dirty())
 
 
 class ProvenanceBannerTests(unittest.TestCase):
