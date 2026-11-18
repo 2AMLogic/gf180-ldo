@@ -76,21 +76,23 @@ def _git(*args: str, cwd: Path) -> str:
         return ""
 
 
-#: ``sim/<slug>/corners|netlist-snapshots/<record-id>/...`` -- the staging
-#: trees a run fills before its record mints (see
-#: ``_is_unminted_record_staging``).
+#: ``sim/<slug>/corners/<record-id>/...`` -- the staging tree a run fills
+#: before its record mints (see ``_is_unminted_record_staging``). The trailing
+#: ``/`` anchors ``<record-id>`` as a directory component, so a flat file such
+#: as ``corners/notes.txt`` is not staging. ``netlist-snapshots/`` is not
+#: exempt: snapshots are written only at mint, beside the non-exempt record.
 _STAGING_DIR_RE = re.compile(
-    rf"^sim/(?P<slug>[^/]+)/(?:{CORNERS_DIR}|{SNAPSHOT_DIR})/(?P<rid>[^/]+)"
+    rf"^sim/(?P<slug>[^/]+)/{CORNERS_DIR}/(?P<rid>[^/]+)/"
 )
 
 
 def _is_unminted_record_staging(repo_root: Path, path: str) -> bool:
     """True when *path* is staging output of a record that has not minted yet.
 
-    ``sim/<slug>/corners/<record-id>/`` (and its ``netlist-snapshots/<record-id>/``
-    twin) hold a run's collected output from the moment the first corner lands
-    until the record is minted under ``sim/<slug>/records/``. While no record
-    with that id exists, that tree is scratch by definition -- nothing in git
+    ``sim/<slug>/corners/<record-id>/`` holds a run's collected output from
+    the moment the first corner lands until the record is minted under
+    ``sim/<slug>/records/``. While no record with that id exists, that tree is
+    scratch by definition -- nothing in git
     references it -- so for ``git_provenance``'s ``dirty`` flag it is not a
     modification of the committed tree. Counting it dirty is what once forced a
     resumed campaign to commit half-finished output into append-only evidence

@@ -1735,11 +1735,13 @@ class GitProvenanceDirtyFlagTests(unittest.TestCase):
     """``dirty`` ignores a not-yet-minted record's staging tree (PR #745).
 
     A resumed campaign's previous-session output sits untracked under
-    ``corners/<record-id>/`` (and ``netlist-snapshots/<record-id>/``) until
-    the record is minted under ``records/``. Counting it ``dirty`` either
-    brands the completing record uncitable or forces committing half-finished
-    output into append-only evidence space. Once a record with the id exists,
-    the same paths are evidence and count again.
+    ``corners/<record-id>/`` until the record is minted under ``records/``.
+    Counting it ``dirty`` either brands the completing record uncitable or
+    forces committing half-finished output into append-only evidence space.
+    Once a record with the id exists, the same paths are evidence and count
+    again. ``netlist-snapshots/`` is not exempt (issue #750): its snapshots
+    are flat ``<record-id>.spice`` files written only at mint, beside the
+    non-exempt record.
     """
 
     MINTED = "20260729-153000-1a7ef75"
@@ -1777,10 +1779,18 @@ class GitProvenanceDirtyFlagTests(unittest.TestCase):
                    "klt-reports/il0.json")
         self.assertFalse(self.dirty())
 
-    def test_unminted_netlist_snapshot_staging_is_not_dirty(self):
-        self.stage("sim/soft-start/netlist-snapshots/20260730-090000-bbb0002/"
-                   "new/klt-report.json")
-        self.assertFalse(self.dirty())
+    def test_flat_netlist_snapshot_is_dirty_when_unminted(self):
+        self.stage("sim/loop-stability/netlist-snapshots/"
+                   "20260730-090000-bbb0002.spice")
+        self.assertTrue(self.dirty())
+
+    def test_flat_netlist_snapshot_is_dirty_when_minted(self):
+        self.stage(f"sim/loop-stability/netlist-snapshots/{self.MINTED}.spice")
+        self.assertTrue(self.dirty())
+
+    def test_flat_file_directly_under_corners_is_dirty(self):
+        self.stage("sim/loop-stability/corners/notes.txt")
+        self.assertTrue(self.dirty())
 
     def test_new_files_in_a_minted_records_corners_are_dirty(self):
         self.stage(f"sim/loop-stability/corners/{self.MINTED}/extra.log")
