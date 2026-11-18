@@ -1735,11 +1735,13 @@ class GitProvenanceDirtyFlagTests(unittest.TestCase):
     """``dirty`` ignores a not-yet-minted record's staging tree (PR #745).
 
     A resumed campaign's previous-session output sits untracked under
-    ``corners/<record-id>/`` (and ``netlist-snapshots/<record-id>/``) until
-    the record is minted under ``records/``. Counting it ``dirty`` either
-    brands the completing record uncitable or forces committing half-finished
-    output into append-only evidence space. Once a record with the id exists,
-    the same paths are evidence and count again.
+    ``corners/<record-id>/`` until the record is minted under ``records/``.
+    Counting it ``dirty`` either brands the completing record uncitable or
+    forces committing half-finished output into append-only evidence space.
+    Once a record with the id exists, the same paths are evidence and count
+    again. ``netlist-snapshots/`` is not exempt (issue #750): its snapshots
+    are flat ``<record-id>.spice`` files written only at mint, beside the
+    non-exempt record.
     """
 
     MINTED = "20260729-153000-1a7ef75"
