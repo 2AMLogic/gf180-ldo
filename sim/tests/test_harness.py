@@ -24,7 +24,7 @@ from pathlib import Path
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
-from harness import cli, corners, deck, klt_grid, paths, report, runner, testbench  # noqa: E402
+from harness import cli, corners, deck, klt_grid, klt_ab, klt_batch, paths, report, runner, testbench  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
     parse_meas_lines,
@@ -3309,3 +3309,138 @@ class NetlistFreshnessPreflightTests(unittest.TestCase):
         self.assertIn("design/netlist/*.spice", result)
         self.assertIn("design/*.sch", result)
         self.assertNotIn("design/ldo_core.sch", result)
+
+
+class TestKltBatchRunResume(unittest.TestCase):
+    """``kb.run``'s resume flag and the values/collect split (issue #465).
+
+    A grid that outlives a dispatch session must continue, not repeat: the
+    resume flag is what makes klt re-attach to a sharded request's retained
+    shard map, and ``values`` is what lets a resumed driver read a saved
+    report whose original per-corner logs are gone.
+    """
+
+    def _report(self):
+        return {"corners": [{
+            "process": "tt", "temperature_c": 27, "supply_v": {"vin": 3.3},
+            "measurements": [{"name": "vout_settled", "value": 1.8}],
+            "status": "ok", "diagnostics": [],
+        }]}
+
+    def _run_kb(self, tmp: Path, *, resume: bool):
+        proc = unittest.mock.Mock(returncode=0,
+                                  stdout=json.dumps(self._report()), stderr="")
+        req = Path(tmp) / "request.json"
+        req.write_text("{}")
+        with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+            klt_batch.run(req, Path(tmp) / "out", backend="batch", resume=resume)
+        return run.call_args.args[0]
+
+    def test_resume_appends_klts_resume_flag(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            argv = self._run_kb(Path(tmpdir), resume=True)
+        self.assertIn("--resume", argv)
+
+    def test_the_default_does_not_resume(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            argv = self._run_kb(Path(tmpdir), resume=False)
+        self.assertNotIn("--resume", argv)
+
+    def test_values_matches_collect(self):
+        job = klt_batch.Job(name="t", body="* b", dut_netlist=Path("d.spice"),
+                            analysis={"kind": "ac", "args": "dec 10 1k 10k"},
+                            measurements=[])
+        report = self._report()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # No artifact logs exist under the report's paths, so collect
+            # copies nothing and the two must still agree on the values.
+            collected = klt_batch.collect(report, job, Path(tmpdir))
+        self.assertEqual(collected, klt_batch.values(report, job))
+        self.assertEqual({"tt_27c_3.30v": {"vout_settled": 1.8, "_status": "ok",
+                                           "_diagnostics": ""}}, collected)
+
+
+class TestRunAbResume(unittest.TestCase):
+    """``run_ab``'s run_root: persistent staging, skip-if-done, --resume.
+
+    With a run_root the staged request and the run dir survive the session,
+    so re-invoking the same driver command only submits what is still
+    missing; a tag that already reported -- with an identical request -- is
+    not re-submitted at all (issue #465).
+    """
+
+    @staticmethod
+    def _factory(dut: Path):
+        def factory(tag, dut_path):
+            return klt_batch.Job(name=tag, body=f"* body {tag}\n", dut_netlist=dut_path,
+                                 analysis={"kind": "ac", "args": "dec 10 1k 10k"},
+                                 measurements=[], process=("tt",), temps=(27.0,),
+                                 supplies=(3.3,))
+        return factory
+
+    def _report(self):
+        return {"corners": [{
+            "process": "tt", "temperature_c": 27, "supply_v": {"vin": 3.3},
+            "measurements": [{"name": "vout_settled", "value": 1.8}],
+            "status": "ok", "diagnostics": [],
+        }]}
+
+    def test_a_completed_tag_is_not_resubmitted(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest, run_root = tmp / "dest", tmp / "run"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            sub = dest / "new"
+            sub.mkdir(parents=True)
+            (sub / "klt-report.json").write_text(json.dumps(self._report()))
+            job = self._factory(dut)("new", dut)
+            req = klt_batch.stage(job, run_root / "new" / "stage")
+            (sub / "request.json").write_bytes(req.read_bytes())
+            with unittest.mock.patch.object(klt_batch, "run") as run:
+                res = klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                                    backend="batch", run_root=run_root)
+            run.assert_not_called()
+        self.assertEqual({"tt_27c_3.30v": {"vout_settled": 1.8, "_status": "ok",
+                                           "_diagnostics": ""}}, res["new"])
+
+    def test_a_mismatched_saved_request_is_rerun_not_trusted(self):
+        """A saved report from a different request (other grid flags) must
+        never be read as this run's result."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest, run_root = tmp / "dest", tmp / "run"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            sub = dest / "new"
+            sub.mkdir(parents=True)
+            (sub / "klt-report.json").write_text(json.dumps(self._report()))
+            (sub / "request.json").write_text("{}")  # not what stage() writes
+            proc = unittest.mock.Mock(returncode=0,
+                                      stdout=json.dumps(self._report()), stderr="")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+                klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                              backend="batch", run_root=run_root)
+            run.assert_called()
+            self.assertIn("--resume", run.call_args.args[0])
+
+    def test_a_fresh_batch_run_resumes_and_stages_under_run_root(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest, run_root = tmp / "dest", tmp / "run"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            proc = unittest.mock.Mock(returncode=0,
+                                      stdout=json.dumps(self._report()), stderr="")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+                res = klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                                    backend="batch", run_root=run_root)
+            argv = run.call_args.args[0]
+            self.assertIn("--resume", argv)
+            req_arg = argv[2]  # klt sim <request> -o <outdir> ... --resume
+            self.assertTrue(str(req_arg).startswith(str(run_root)))
+            staged_req = run_root / "new" / "stage" / "request.json"
+            self.assertTrue(staged_req.is_file())
+            out_arg = Path(argv[argv.index("-o") + 1])
+            self.assertTrue(str(out_arg).startswith(str(run_root)))
+        self.assertIn("new", res)

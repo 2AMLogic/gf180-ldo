@@ -171,7 +171,8 @@ def main(argv=None, *, preflight=None) -> int:
             ax["process"] = (args.process,)
             sub = f"{part}-{args.process}"
         res = run_ab(lambda n, d, c=configs, a=ax: job(n, d, c, a), Path(args.dut), args.baseline_ref,
-                     dest / sub, REPO, backend=args.backend)
+                     dest / sub, REPO, backend=args.backend,
+                     run_root=REPO / "sim" / ".work" / "soft-start" / args.record_id / sub)
         for tag, vals in res.items():
             for cid, v in sorted(vals.items()):
                 for k, (cout, esr, rload) in enumerate(configs, 1):
