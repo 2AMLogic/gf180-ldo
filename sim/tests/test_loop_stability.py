@@ -875,3 +875,16 @@ class TestRunConfigsResume(unittest.TestCase):
             results, problems, bad, calls, _ = self._run(tmp, ac_dec=200)
             self.assertEqual(1, len(calls))
         self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
+
+    def test_a_saved_report_with_no_sidecar_request_is_rerun(self):
+        """A ``klt-reports/`` dir whose report has no ``.request.json``
+        beside it -- how pre-#465 code left every report dir -- is re-run,
+        not crashed on with FileNotFoundError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            self._run(tmp)
+            (tmp / "logs" / "klt-reports"
+             / "il0.001_ce1e-06_es0.05.request.json").unlink()
+            results, problems, bad, calls, _ = self._run(tmp)
+            self.assertEqual(1, len(calls))
+        self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])

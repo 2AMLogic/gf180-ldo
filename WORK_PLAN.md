@@ -27,6 +27,7 @@ Human-approved issues (`loom:issue`) ready for implementation — excluding held
 - **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 - **#465**: sim: re-qualify loop-stability and soft-start reference records at open_pdks f6eeac7 (part of #430)
+- **#743**: Merge queue: add the merge_group trigger and adapt the PR-metadata gates
 
 ## In Progress
 
@@ -65,6 +66,7 @@ Issues carrying `loom:curated`.
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)* *(held)*
 - **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)* *(held)*
+- **#743**: Merge queue: add the merge_group trigger and adapt the PR-metadata gates *(curated)*
 
 ## Proposed (Architect / Hermit)
 
@@ -85,11 +87,11 @@ _None._
 | Operator merge-risk holds | 0 |
 | Very important | 1 |
 | Important | 2 |
-| Ready (`loom:issue`, net of holds/building/merge-pending) | 3 |
+| Ready (`loom:issue`, net of holds/building/merge-pending) | 4 |
 | In Progress (`loom:building`) | 2 |
 | PRs awaiting review | 0 |
 | Approved PRs awaiting merge | 0 |
-| Curated | 14 |
+| Curated | 15 |
 | Architect / Hermit proposals | 5 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->

@@ -3445,6 +3445,47 @@ class TestRunAbResume(unittest.TestCase):
             self.assertTrue(str(out_arg).startswith(str(run_root)))
         self.assertIn("new", res)
 
+    def test_the_default_no_run_root_path_still_runs(self):
+        """``run_root=None`` keeps the old session-tempdir behaviour for
+        every pre-#465 caller (regression: the dual-typed context handle
+        made ``tmp / tag`` a ``str / str`` TypeError before any staging)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest = tmp / "dest"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            proc = unittest.mock.Mock(returncode=0,
+                                      stdout=json.dumps(self._report()), stderr="")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+                res = klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                                    backend="batch")
+            run.assert_called()
+            argv = run.call_args.args[0]
+            self.assertNotIn("--resume", argv)
+            req_arg = Path(argv[2])
+            self.assertNotIn(str(dest), str(req_arg.parent))
+        self.assertEqual({"tt_27c_3.30v": {"vout_settled": 1.8, "_status": "ok",
+                                           "_diagnostics": ""}}, res["new"])
+
+    def test_a_saved_report_with_no_sidecar_request_is_rerun_not_trusted(self):
+        """A ``klt-report.json`` without its ``request.json`` sidecar --
+        a run interrupted between collect and the sidecar copy, or a dest
+        written before #465 saved sidecars -- is re-run, never read."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest, run_root = tmp / "dest", tmp / "run"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            sub = dest / "new"
+            sub.mkdir(parents=True)
+            (sub / "klt-report.json").write_text(json.dumps(self._report()))
+            proc = unittest.mock.Mock(returncode=0,
+                                      stdout=json.dumps(self._report()), stderr="")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+                res = klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                                    backend="batch", run_root=run_root)
+            run.assert_called()
+        self.assertIn("new", res)
 
 class TestKltBatchRunOutdirLockedRetry(unittest.TestCase):
     """``kb.run`` waits out klt's ``outdir_locked`` instead of failing (issue #465).
