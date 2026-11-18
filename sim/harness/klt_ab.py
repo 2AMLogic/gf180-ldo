@@ -119,6 +119,7 @@ def run_ab(job_factory, dut: Path, baseline_ref: str | None, dest: Path, repo: P
             check=True, capture_output=True).stdout)
         duts["baseline"] = base
     with tempfile.TemporaryDirectory(prefix="klt-ab-") if run_root is None else contextlib.nullcontext(run_root) as tmp:
+        tmp = Path(tmp)
         staged = {}
         for tag, path in duts.items():
             job = job_factory(tag, path)
@@ -130,8 +131,10 @@ def run_ab(job_factory, dut: Path, baseline_ref: str | None, dest: Path, repo: P
             job, req = staged[tag]
             sub = dest / tag
             saved = sub / "klt-report.json"
+            req_saved = sub / "request.json"
             if run_root is not None and saved.is_file() \
-                    and (sub / "request.json").read_bytes() == req.read_bytes():
+                    and req_saved.is_file() \
+                    and req_saved.read_bytes() == req.read_bytes():
                 return tag, kb.values(json.loads(saved.read_text()), job)
             out = (tmp / tag / "out") if run_root is not None else (tmp / f"{tag}-out")
             report = kb.run(req, out, backend=backend, log=log,

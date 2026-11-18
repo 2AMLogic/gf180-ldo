@@ -147,13 +147,15 @@ def run_configs(configs, dut: Path, ac_dec: int, f_start: str, f_stop: str, axes
         j = job(tag, cfg, dut, ac_dec, f_start, f_stop, axes, dc_seed)
         req = kb.stage(j, workdir / "stage" / tag)
         saved = vals_dir / f"{tag}.json"
+        req_saved = vals_dir / f"{tag}.request.json"
         if saved.is_file() \
-                and (vals_dir / f"{tag}.request.json").read_bytes() == req.read_bytes():
+                and req_saved.is_file() \
+                and req_saved.read_bytes() == req.read_bytes():
             vals, probs = collect_values(json.loads(saved.read_text()), SUPPLY_PARAM)
             return cfg, vals, [(tag, c, p) for c, p in probs]
         report = kb.run(req, workdir / "run" / tag, backend=backend, log=log,
                         resume=backend == "batch")
-        (vals_dir / f"{tag}.request.json").write_bytes(req.read_bytes())
+        req_saved.write_bytes(req.read_bytes())
         saved.write_text(
             json.dumps(kb.redact(report), indent=1, sort_keys=True) + "\n")
         vals, probs = collect_values(report, SUPPLY_PARAM)
