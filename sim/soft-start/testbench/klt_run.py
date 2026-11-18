@@ -98,9 +98,16 @@ def measurements(n: int) -> list:
 
 
 def job(name, dut, configs, axes) -> kb.Job:
+    # stage_model_inputs: a record that claims the pinned open_pdks revision
+    # (sim/harness/pdk.py) must show `worker_environment.pdk.models_staged:
+    # true` (sim/README.md) -- the ship-this-host's-models route, not a trust
+    # me about /opt/pdk. The 20261118 re-qualification first ran without it:
+    # the fleet image happened to carry the pin, but the envelope must prove
+    # the models, not the image's current mood.
     return kb.Job(name=name, body=body(configs), dut_netlist=dut,
                   analysis={"kind": "tran", "args": "1u 9m"},
-                  measurements=measurements(len(configs)), timeout_s=3480, **axes)
+                  measurements=measurements(len(configs)), timeout_s=3480,
+                  stage_model_inputs=True, **axes)
 
 
 def derive(v: dict, k: int) -> dict:
