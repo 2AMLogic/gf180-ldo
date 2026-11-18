@@ -52,6 +52,11 @@ MAIN = [("1u", "0.1", "36")]
 EXTRA = [("0.33u", "0.001", "36"), ("0.33u", "0.5", "36"), ("4.7u", "0.001", "36"),
          ("4.7u", "0.5", "36"), ("1u", "0.1", "1e9")]
 EXTRA_AXES = {"process": ("tt", "ff", "ss", "res_ff", "res_ss"), "temps": (-40, 125), "supplies": (2.97, 3.63)}
+#: Wait out a Spot capacity refusal instead of failing the shard (the
+#: dispatch-worker rule). With ``run_root`` set, a re-invoked shard also
+#: resumes: klt re-attaches to the retained shard map and only the unfinished
+#: units re-run.
+BATCH_WAIT = {"capacity_wait_s": 600}
 
 
 def body(configs) -> str:
@@ -93,9 +98,16 @@ def measurements(n: int) -> list:
 
 
 def job(name, dut, configs, axes) -> kb.Job:
+    # stage_model_inputs: a record that claims the pinned open_pdks revision
+    # (sim/harness/pdk.py) must show `worker_environment.pdk.models_staged:
+    # true` (sim/README.md) -- the ship-this-host's-models route, not a trust
+    # me about /opt/pdk. The 20261118 re-qualification first ran without it:
+    # the fleet image happened to carry the pin, but the envelope must prove
+    # the models, not the image's current mood.
     return kb.Job(name=name, body=body(configs), dut_netlist=dut,
                   analysis={"kind": "tran", "args": "1u 9m"},
-                  measurements=measurements(len(configs)), timeout_s=3480, **axes)
+                  measurements=measurements(len(configs)), timeout_s=3480,
+                  stage_model_inputs=True, **axes)
 
 
 def derive(v: dict, k: int) -> dict:
@@ -138,7 +150,8 @@ def main(argv=None, *, preflight=None) -> int:
                   '"Stored evidence"); an --only debug point needs no store.',
                   file=sys.stderr)
             return tb_adapter.EXIT_NOT_STORED
-    parts = [("main", MAIN, {}), ("extra", EXTRA, EXTRA_AXES)]
+    parts = [("main", MAIN, {"batch": BATCH_WAIT}),
+             ("extra", EXTRA, {**EXTRA_AXES, "batch": BATCH_WAIT})]
     parts = [p for p in parts if args.part in (p[0], "both")]
     # Wrinkle 1 (issue #646): a sharded record is complete only when every
     # shard of every part has run. Each shard accumulates into the same staged
@@ -171,7 +184,8 @@ def main(argv=None, *, preflight=None) -> int:
             ax["process"] = (args.process,)
             sub = f"{part}-{args.process}"
         res = run_ab(lambda n, d, c=configs, a=ax: job(n, d, c, a), Path(args.dut), args.baseline_ref,
-                     dest / sub, REPO, backend=args.backend)
+                     dest / sub, REPO, backend=args.backend,
+                     run_root=REPO / "sim" / ".work" / "soft-start" / args.record_id / sub)
         for tag, vals in res.items():
             for cid, v in sorted(vals.items()):
                 for k, (cout, esr, rload) in enumerate(configs, 1):

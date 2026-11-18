@@ -691,6 +691,12 @@ def main() -> int:
                          "needs --subset-reason, exactly as a narrowed PVT grid "
                          "does.")
     klt_grid.add_grid_args(ap, batch_unit="(load, C_eff, ESR) configuration")
+    ap.add_argument("--resume-record", default="",
+                    help="continue an interrupted batch run: reuse this record "
+                         "id and its corners/ staging, skipping configurations "
+                         "that already reported (issue #465). Pass the same "
+                         "grid flags as the interrupted run; the record is "
+                         "minted under the same id when the grid completes.")
     ap.add_argument("--explore", action="store_true",
                     help="tt/27C/3.3V only across load x cap x ESR; implies --no-write "
                          "(DR-0001's recommended first pass to locate the worst triple)")
@@ -761,7 +767,15 @@ def main() -> int:
     prov = git_provenance(REPO_ROOT)
     dirty = prov["dirty"]
     if not args.no_write:
-        record_id = allocate_record_id(REPO_ROOT, EXPDIR / "records", git=prov)
+        if args.resume_record:
+            record_id = args.resume_record
+            if (EXPDIR / "records" / f"{record_id}.md").is_file():
+                print(f"FATAL: record {record_id} is already minted; append-only "
+                      "evidence is never rewritten -- start a new record.",
+                      file=sys.stderr)
+                return 3
+        else:
+            record_id = allocate_record_id(REPO_ROOT, EXPDIR / "records", git=prov)
     else:
         record_id = format_record_id(prov["short"], _dt.datetime.now(_dt.timezone.utc))
     logdir = EXPDIR / "corners" / record_id

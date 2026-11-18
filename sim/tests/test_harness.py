@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -24,7 +25,7 @@ from pathlib import Path
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
-from harness import cli, corners, deck, klt_grid, paths, report, runner, testbench  # noqa: E402
+from harness import cli, corners, deck, klt_grid, klt_ab, klt_batch, paths, report, runner, testbench  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
     parse_meas_lines,
@@ -1730,6 +1731,78 @@ class EveryDriverMintsTheIdOnce(unittest.TestCase):
                 self.assertIn("DIRTY at run time", text)
 
 
+class GitProvenanceDirtyFlagTests(unittest.TestCase):
+    """``dirty`` ignores a not-yet-minted record's staging tree (PR #745).
+
+    A resumed campaign's previous-session output sits untracked under
+    ``corners/<record-id>/`` (and ``netlist-snapshots/<record-id>/``) until
+    the record is minted under ``records/``. Counting it ``dirty`` either
+    brands the completing record uncitable or forces committing half-finished
+    output into append-only evidence space. Once a record with the id exists,
+    the same paths are evidence and count again.
+    """
+
+    MINTED = "20260729-153000-1a7ef75"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name) / "repo"
+        self.root.mkdir()
+        self.git("init", "-q")
+        self.git("config", "user.email", "t@example.invalid")
+        self.git("config", "user.name", "t")
+        bench = self.root / "sim" / "loop-stability"
+        (bench / "records").mkdir(parents=True)
+        (bench / "records" / f"{self.MINTED}.md").write_text("# record\n")
+        (bench / "corners" / self.MINTED).mkdir(parents=True)
+        (bench / "corners" / self.MINTED / "tt_27c.log").write_text("log\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+
+    def git(self, *args: str) -> None:
+        subprocess.run(["git", "-C", str(self.root), *args], check=True)
+
+    def stage(self, rel: str) -> Path:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("untracked\n")
+        return path
+
+    def dirty(self) -> bool:
+        return report.git_provenance(self.root)["dirty"]
+
+    def test_unminted_corners_staging_is_not_dirty(self):
+        self.stage("sim/loop-stability/corners/20260730-090000-bbb0002/"
+                   "klt-reports/il0.json")
+        self.assertFalse(self.dirty())
+
+    def test_unminted_netlist_snapshot_staging_is_not_dirty(self):
+        self.stage("sim/soft-start/netlist-snapshots/20260730-090000-bbb0002/"
+                   "new/klt-report.json")
+        self.assertFalse(self.dirty())
+
+    def test_new_files_in_a_minted_records_corners_are_dirty(self):
+        self.stage(f"sim/loop-stability/corners/{self.MINTED}/extra.log")
+        self.assertTrue(self.dirty())
+
+    def test_untracked_files_elsewhere_are_still_dirty(self):
+        self.stage("sim/loop-stability/testbench/scratch.py")
+        self.assertTrue(self.dirty())
+
+    def test_edits_to_committed_minted_evidence_are_still_dirty(self):
+        log = (self.root / "sim" / "loop-stability" / "corners"
+               / self.MINTED / "tt_27c.log")
+        log.write_text("edited\n")
+        self.assertTrue(self.dirty())
+
+    def test_a_records_artifact_mints_the_id_for_staging_purposes(self):
+        (self.root / "sim" / "loop-stability" / "records"
+         / "20260730-090000-bbb0002-matrix.csv").write_text("csv\n")
+        self.stage("sim/loop-stability/corners/20260730-090000-bbb0002/ff.log")
+        self.assertTrue(self.dirty())
+
+
 class ProvenanceBannerTests(unittest.TestCase):
     """One definition of the banner, one label width (issue #618)."""
 
@@ -3309,3 +3382,233 @@ class NetlistFreshnessPreflightTests(unittest.TestCase):
         self.assertIn("design/netlist/*.spice", result)
         self.assertIn("design/*.sch", result)
         self.assertNotIn("design/ldo_core.sch", result)
+
+
+class TestKltBatchRunResume(unittest.TestCase):
+    """``kb.run``'s resume flag and the values/collect split (issue #465).
+
+    A grid that outlives a dispatch session must continue, not repeat: the
+    resume flag is what makes klt re-attach to a sharded request's retained
+    shard map, and ``values`` is what lets a resumed driver read a saved
+    report whose original per-corner logs are gone.
+    """
+
+    def _report(self):
+        return {"corners": [{
+            "process": "tt", "temperature_c": 27, "supply_v": {"vin": 3.3},
+            "measurements": [{"name": "vout_settled", "value": 1.8}],
+            "status": "ok", "diagnostics": [],
+        }]}
+
+    def _run_kb(self, tmp: Path, *, resume: bool):
+        proc = unittest.mock.Mock(returncode=0,
+                                  stdout=json.dumps(self._report()), stderr="")
+        req = Path(tmp) / "request.json"
+        req.write_text("{}")
+        with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+            klt_batch.run(req, Path(tmp) / "out", backend="batch", resume=resume)
+        return run.call_args.args[0]
+
+    def test_resume_appends_klts_resume_flag(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            argv = self._run_kb(Path(tmpdir), resume=True)
+        self.assertIn("--resume", argv)
+
+    def test_the_default_does_not_resume(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            argv = self._run_kb(Path(tmpdir), resume=False)
+        self.assertNotIn("--resume", argv)
+
+    def test_values_matches_collect(self):
+        job = klt_batch.Job(name="t", body="* b", dut_netlist=Path("d.spice"),
+                            analysis={"kind": "ac", "args": "dec 10 1k 10k"},
+                            measurements=[])
+        report = self._report()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # No artifact logs exist under the report's paths, so collect
+            # copies nothing and the two must still agree on the values.
+            collected = klt_batch.collect(report, job, Path(tmpdir))
+        self.assertEqual(collected, klt_batch.values(report, job))
+        self.assertEqual({"tt_27c_3.30v": {"vout_settled": 1.8, "_status": "ok",
+                                           "_diagnostics": ""}}, collected)
+
+
+class TestRunAbResume(unittest.TestCase):
+    """``run_ab``'s run_root: persistent staging, skip-if-done, --resume.
+
+    With a run_root the staged request and the run dir survive the session,
+    so re-invoking the same driver command only submits what is still
+    missing; a tag that already reported -- with an identical request -- is
+    not re-submitted at all (issue #465).
+    """
+
+    @staticmethod
+    def _factory(dut: Path):
+        def factory(tag, dut_path):
+            return klt_batch.Job(name=tag, body=f"* body {tag}\n", dut_netlist=dut_path,
+                                 analysis={"kind": "ac", "args": "dec 10 1k 10k"},
+                                 measurements=[], process=("tt",), temps=(27.0,),
+                                 supplies=(3.3,))
+        return factory
+
+    def _report(self):
+        return {"corners": [{
+            "process": "tt", "temperature_c": 27, "supply_v": {"vin": 3.3},
+            "measurements": [{"name": "vout_settled", "value": 1.8}],
+            "status": "ok", "diagnostics": [],
+        }]}
+
+    def test_a_completed_tag_is_not_resubmitted(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest, run_root = tmp / "dest", tmp / "run"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            sub = dest / "new"
+            sub.mkdir(parents=True)
+            (sub / "klt-report.json").write_text(json.dumps(self._report()))
+            job = self._factory(dut)("new", dut)
+            req = klt_batch.stage(job, run_root / "new" / "stage")
+            (sub / "request.json").write_bytes(req.read_bytes())
+            with unittest.mock.patch.object(klt_batch, "run") as run:
+                res = klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                                    backend="batch", run_root=run_root)
+            run.assert_not_called()
+        self.assertEqual({"tt_27c_3.30v": {"vout_settled": 1.8, "_status": "ok",
+                                           "_diagnostics": ""}}, res["new"])
+
+    def test_a_mismatched_saved_request_is_rerun_not_trusted(self):
+        """A saved report from a different request (other grid flags) must
+        never be read as this run's result."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest, run_root = tmp / "dest", tmp / "run"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            sub = dest / "new"
+            sub.mkdir(parents=True)
+            (sub / "klt-report.json").write_text(json.dumps(self._report()))
+            (sub / "request.json").write_text("{}")  # not what stage() writes
+            proc = unittest.mock.Mock(returncode=0,
+                                      stdout=json.dumps(self._report()), stderr="")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+                klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                              backend="batch", run_root=run_root)
+            run.assert_called()
+            self.assertIn("--resume", run.call_args.args[0])
+
+    def test_a_fresh_batch_run_resumes_and_stages_under_run_root(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest, run_root = tmp / "dest", tmp / "run"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            proc = unittest.mock.Mock(returncode=0,
+                                      stdout=json.dumps(self._report()), stderr="")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+                res = klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                                    backend="batch", run_root=run_root)
+            argv = run.call_args.args[0]
+            self.assertIn("--resume", argv)
+            req_arg = argv[2]  # klt sim <request> -o <outdir> ... --resume
+            self.assertTrue(str(req_arg).startswith(str(run_root)))
+            staged_req = run_root / "new" / "stage" / "request.json"
+            self.assertTrue(staged_req.is_file())
+            out_arg = Path(argv[argv.index("-o") + 1])
+            self.assertTrue(str(out_arg).startswith(str(run_root)))
+        self.assertIn("new", res)
+
+    def test_the_default_no_run_root_path_still_runs(self):
+        """``run_root=None`` keeps the old session-tempdir behaviour for
+        every pre-#465 caller (regression: the dual-typed context handle
+        made ``tmp / tag`` a ``str / str`` TypeError before any staging)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest = tmp / "dest"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            proc = unittest.mock.Mock(returncode=0,
+                                      stdout=json.dumps(self._report()), stderr="")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+                res = klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                                    backend="batch")
+            run.assert_called()
+            argv = run.call_args.args[0]
+            self.assertNotIn("--resume", argv)
+            req_arg = Path(argv[2])
+            self.assertNotIn(str(dest), str(req_arg.parent))
+        self.assertEqual({"tt_27c_3.30v": {"vout_settled": 1.8, "_status": "ok",
+                                           "_diagnostics": ""}}, res["new"])
+
+    def test_a_saved_report_with_no_sidecar_request_is_rerun_not_trusted(self):
+        """A ``klt-report.json`` without its ``request.json`` sidecar --
+        a run interrupted between collect and the sidecar copy, or a dest
+        written before #465 saved sidecars -- is re-run, never read."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            dest, run_root = tmp / "dest", tmp / "run"
+            dut = tmp / "dut.spice"
+            dut.write_text("* dut\n")
+            sub = dest / "new"
+            sub.mkdir(parents=True)
+            (sub / "klt-report.json").write_text(json.dumps(self._report()))
+            proc = unittest.mock.Mock(returncode=0,
+                                      stdout=json.dumps(self._report()), stderr="")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+                res = klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
+                                    backend="batch", run_root=run_root)
+            run.assert_called()
+        self.assertIn("new", res)
+
+class TestKltBatchRunOutdirLockedRetry(unittest.TestCase):
+    """``kb.run`` waits out klt's ``outdir_locked`` instead of failing (issue #465).
+
+    A resumed run's outdir can still be held by a killed-but-dying earlier
+    owner; the lock frees the moment the process tree is reaped, so the
+    correct response is a bounded wait, not losing the grid.
+    """
+
+    @staticmethod
+    def _error(code="outdir_locked"):
+        return {"schema_version": 1,
+                "error": {"command": "sim", "code": code,
+                          "message": "output directory '...' is owned by "
+                                     "another run (pid 999 since 2026-11-18)"}}
+
+    def test_a_locked_outdir_is_retried_then_succeeds(self):
+        report = {"corners": []}
+        procs = [unittest.mock.Mock(returncode=1,
+                                    stdout=json.dumps(self._error()), stderr=""),
+                 unittest.mock.Mock(returncode=1,
+                                    stdout=json.dumps(self._error()), stderr=""),
+                 unittest.mock.Mock(returncode=0, stdout=json.dumps(report),
+                                    stderr="")]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            req = tmp / "request.json"
+            req.write_text("{}")
+            with unittest.mock.patch("subprocess.run", return_value=procs[0]) as run, \
+                    unittest.mock.patch.object(klt_batch.time, "sleep") as sleep, \
+                    unittest.mock.patch.object(klt_batch.random, "uniform",
+                                               return_value=0.0):
+                run.side_effect = procs
+                out = klt_batch.run(req, tmp / "out", backend="batch",
+                                    max_cap_wait_s=600)
+        self.assertEqual(3, run.call_count)
+        self.assertEqual(report, out)
+        sleep.assert_called()
+
+    def test_a_permanently_locked_outdir_raises_within_the_deadline(self):
+        proc = unittest.mock.Mock(returncode=1, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            req = tmp / "request.json"
+            req.write_text("{}")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run, \
+                    unittest.mock.patch.object(klt_batch.time, "sleep"), \
+                    unittest.mock.patch.object(klt_batch.random, "uniform",
+                                               return_value=0.0), \
+                    self.assertRaises(klt_batch.KltError):
+                run.side_effect = [proc] * 50
+                klt_batch.run(req, tmp / "out", backend="batch",
+                              max_cap_wait_s=1)

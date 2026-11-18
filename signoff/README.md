@@ -146,9 +146,13 @@ regulation inside its ±2% window), and **Load transient** — **MIXED on two**
 (Startup, and **Iq (excluding load current)**), **N/A on four** (Input, Load,
 Output noise, Area: not independently tested), and **PASS on six** — Dropout
 @ 50 mA, Load reg (0–50 mA), Current limit, Enable / shutdown, Thermal and
-Stability — five of them on fresh records, while **Startup's MIXED and
-Stability's PASS rest on STALE records** (2 of the 16 rows) against the
-current `design/netlist/*.spice`. Those are item 5's subject matter, and item 5
+Stability — five of them on fresh records, while **Stability's PASS rests on
+a STALE record** (1 of the 16 rows, pending #465's loop-stability
+re-qualification) against the
+current `design/netlist/*.spice`. Startup's MIXED now cites a fresh record
+(`20261118-pdk-f6eeac7-ss`, #465's soft-start re-qualification), which carries
+the standing DR-0006 grading forward rather than re-grading the ratified
+clauses on the servo DUT. Those are item 5's subject matter, and item 5
 is `unmet` above. (PSRR went PASS → FAIL on 2026-09-23 when issue #289's
 re-run superseded a stale PASS pair from 2026-09-05; the rollup surfacing a
 real design gap rather than concealing it is the property item 8 grades. Root

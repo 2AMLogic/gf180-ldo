@@ -30,6 +30,7 @@ import datetime as _dt
 import getpass
 import math
 import platform
+import re
 import socket
 import subprocess
 import sys
@@ -75,9 +76,50 @@ def _git(*args: str, cwd: Path) -> str:
         return ""
 
 
+#: ``sim/<slug>/corners|netlist-snapshots/<record-id>/...`` -- the staging
+#: trees a run fills before its record mints (see
+#: ``_is_unminted_record_staging``).
+_STAGING_DIR_RE = re.compile(
+    rf"^sim/(?P<slug>[^/]+)/(?:{CORNERS_DIR}|{SNAPSHOT_DIR})/(?P<rid>[^/]+)"
+)
+
+
+def _is_unminted_record_staging(repo_root: Path, path: str) -> bool:
+    """True when *path* is staging output of a record that has not minted yet.
+
+    ``sim/<slug>/corners/<record-id>/`` (and its ``netlist-snapshots/<record-id>/``
+    twin) hold a run's collected output from the moment the first corner lands
+    until the record is minted under ``sim/<slug>/records/``. While no record
+    with that id exists, that tree is scratch by definition -- nothing in git
+    references it -- so for ``git_provenance``'s ``dirty`` flag it is not a
+    modification of the committed tree. Counting it dirty is what once forced a
+    resumed campaign to commit half-finished output into append-only evidence
+    space just to keep the completing record citable (PR #745). Once the record
+    is minted the same paths are evidence and count again.
+    """
+    m = _STAGING_DIR_RE.match(path)
+    if not m:
+        return False
+    records_dir = repo_root / "sim" / m["slug"] / RECORDS_DIR
+    minted = records_dir.is_dir() and any(
+        p.name.startswith(m["rid"]) for p in records_dir.iterdir()
+    )
+    return not minted
+
+
 def git_provenance(repo_root: Path) -> dict:
     commit = _git("rev-parse", "HEAD", cwd=repo_root)
-    dirty = bool(_git("status", "--porcelain", cwd=repo_root))
+    # --untracked-files=all so untracked output is reported per file: the
+    # staging test needs the <record-id> path segment, which git collapses
+    # away when it prints a whole untracked directory as a single line.
+    entries = _git(
+        "status", "--porcelain", "--untracked-files=all", cwd=repo_root
+    ).splitlines()
+    dirty = any(
+        not (e.startswith("?? ")
+             and _is_unminted_record_staging(repo_root, e[3:]))
+        for e in entries
+    )
     return {
         "commit": commit or "unknown",
         "short": (commit[:7] if commit else "unknown"),

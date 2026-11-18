@@ -65,6 +65,7 @@ DESIGN_PARAMS = (
 WNFLAG = ".options wnflag=1"
 
 _CAP_REFUSAL = "exceeds BATCH_MAX_CONCURRENT_INSTANCES"
+_OUTDIR_LOCKED = "outdir_locked"
 
 
 class KltError(RuntimeError):
@@ -182,16 +183,32 @@ def stage(job: Job, workdir: Path) -> Path:
 
 
 def run(req: Path, outdir: Path, backend: str | None = None,
-        max_cap_wait_s: float = 4 * 3600, log=print) -> dict:
+        max_cap_wait_s: float = 4 * 3600, log=print,
+        resume: bool = False) -> dict:
     """Run ``klt sim`` on ``req``; return the parsed report.
 
     ``backend=None`` leaves the choice to ``klt`` (request field, then
-    ``$KLT_SIM_BACKEND``). Re-submits only on the fleet concurrency-cap
-    refusal, within ``max_cap_wait_s``; any other failure raises.
+    ``$KLT_SIM_BACKEND``). Re-submits on two transient conditions, within
+    ``max_cap_wait_s``: the fleet concurrency-cap refusal, and klt's
+    ``outdir_locked`` -- a resumed run's outdir can still be held by a
+    killed-but-dying earlier owner (its ``flock`` frees the moment the
+    process tree is reaped, and the pid in the message is diagnostic only),
+    so waiting is the correct response to that refusal; any other failure
+    raises.
+
+    ``resume`` passes klt's ``--resume``: a sharded batch request re-attaches
+    to the shard map retained under ``outdir`` -- shards whose fleet jobs
+    already finished are collected, only the unfinished ones are submitted
+    again -- so re-invoking a driver after an interruption continues that
+    request instead of repeating it. It needs the same staged ``req`` and
+    ``outdir`` as the interrupted run, so a caller that wants resumability
+    must keep both out of any tempdir that dies with the session (issue #465).
     """
     cmd = klt_cmd() + ["sim", str(req), "-o", str(outdir), "--format", "json"]
     if backend:
         cmd += ["--backend", backend]
+    if resume:
+        cmd += ["--resume"]
     deadline = time.monotonic() + max_cap_wait_s
     delay = 60.0
     while True:
@@ -203,9 +220,15 @@ def run(req: Path, outdir: Path, backend: str | None = None,
         if report is not None and "error" not in report:
             return report
         message = (report or {}).get("error", {}).get("message", "") + proc.stderr
-        if _CAP_REFUSAL in message and time.monotonic() + delay < deadline:
+        code = (report or {}).get("error", {}).get("code", "")
+        transient = _CAP_REFUSAL in message or code == _OUTDIR_LOCKED
+        if transient and time.monotonic() + delay < deadline:
             wait = delay * random.uniform(0.5, 1.0)
-            log(f"  fleet at its concurrency cap; re-submitting {req.parent.name} in {wait:.0f}s")
+            if code == _OUTDIR_LOCKED:
+                log(f"  {req.parent.name}'s outdir is locked by another run; "
+                    f"retrying in {wait:.0f}s")
+            else:
+                log(f"  fleet at its concurrency cap; re-submitting {req.parent.name} in {wait:.0f}s")
             time.sleep(wait)
             delay = min(delay * 2, 600.0)
             continue
@@ -228,17 +251,29 @@ def redact(report: dict) -> dict:
     return out
 
 
+def values(report: dict, job: Job) -> dict[str, dict]:
+    """``{corner_id: {meas: value}}`` parsed from a report, no side effects.
+
+    The value-parsing half of :func:`collect`, separate so a resumed run can
+    read values back out of a saved ``klt-report.json`` whose artifact paths
+    (the original run's per-corner logs) no longer exist.
+    """
+    out: dict[str, dict] = {}
+    for c in report.get("corners", []):
+        cid = corner_id(c, job.supply_key, job.supplies[0] if getattr(job, "supply_in_body", False) else None)
+        out[cid] = {m["name"]: m.get("value") for m in c.get("measurements", [])}
+        out[cid]["_status"] = c.get("status")
+        out[cid]["_diagnostics"] = ";".join(d.get("code", "") for d in c.get("diagnostics", []))
+    return out
+
+
 def collect(report: dict, job: Job, dest: Path, tag: str = "") -> dict[str, dict]:
     """Copy per-corner logs into ``dest`` and return {corner_id: {meas: value}}."""
     dest.mkdir(parents=True, exist_ok=True)
     (dest / f"klt-report{tag}.json").write_text(json.dumps(redact(report), indent=1, sort_keys=True) + "\n")
-    values: dict[str, dict] = {}
     for c in report.get("corners", []):
         cid = corner_id(c, job.supply_key, job.supplies[0] if getattr(job, "supply_in_body", False) else None)
-        values[cid] = {m["name"]: m.get("value") for m in c.get("measurements", [])}
-        values[cid]["_status"] = c.get("status")
-        values[cid]["_diagnostics"] = ";".join(d.get("code", "") for d in c.get("diagnostics", []))
         log = (c.get("artifacts") or {}).get("log")
         if log and Path(log).is_file():
             shutil.copyfile(log, dest / f"{cid}{tag}.log")
-    return values
+    return values(report, job)

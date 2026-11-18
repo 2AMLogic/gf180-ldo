@@ -12,8 +12,10 @@ netlist it measured, ``dut.spice``, beside its logs.
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import hashlib
+import json
 import shutil
 import subprocess
 import tempfile
@@ -95,7 +97,19 @@ def _sha256(p: Path) -> str:
 
 def run_ab(job_factory, dut: Path, baseline_ref: str | None, dest: Path, repo: Path,
            backend: str | None = None, log=print,
-           dut_rel: str = "design/netlist/ldo_core.spice") -> dict[str, dict]:
+           dut_rel: str = "design/netlist/ldo_core.spice",
+           run_root: Path | None = None) -> dict[str, dict]:
+    """Run each DUT variant's request; ``{tag: {corner_id: fields}}``.
+
+    ``run_root``: when set (a persistent, git-ignored path -- never under
+    ``dest``, whose bytes the evidence store stages wholesale), the staged
+    request and the ``klt sim`` run dir live there instead of a session-local
+    tempdir, each batch request is submitted with klt's ``--resume``, and a
+    tag whose ``klt-report.json`` is already under ``dest`` from an earlier
+    invocation -- with an identical request -- is not re-submitted at all.
+    Together these make a sharded record resumable across sessions: re-run
+    the same command and only what is still missing runs (issue #465).
+    """
     dest.mkdir(parents=True, exist_ok=True)
     duts = {"new": Path(dut)}
     if baseline_ref:
@@ -104,17 +118,27 @@ def run_ab(job_factory, dut: Path, baseline_ref: str | None, dest: Path, repo: P
             ["git", "-C", str(repo), "show", f"{baseline_ref}:{dut_rel}"],
             check=True, capture_output=True).stdout)
         duts["baseline"] = base
-    with tempfile.TemporaryDirectory(prefix="klt-ab-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="klt-ab-") if run_root is None else contextlib.nullcontext(run_root) as tmp:
+        tmp = Path(tmp)
         staged = {}
         for tag, path in duts.items():
             job = job_factory(tag, path)
-            staged[tag] = (job, kb.stage(job, Path(tmp) / tag))
+            stage_dir = (tmp / tag / "stage") if run_root is not None else (tmp / tag)
+            staged[tag] = (job, kb.stage(job, stage_dir))
             log(f"{tag}: DUT sha256 {_sha256(path)}")
 
         def go(tag):
             job, req = staged[tag]
-            report = kb.run(req, Path(tmp) / f"{tag}-out", backend=backend, log=log)
             sub = dest / tag
+            saved = sub / "klt-report.json"
+            req_saved = sub / "request.json"
+            if run_root is not None and saved.is_file() \
+                    and req_saved.is_file() \
+                    and req_saved.read_bytes() == req.read_bytes():
+                return tag, kb.values(json.loads(saved.read_text()), job)
+            out = (tmp / tag / "out") if run_root is not None else (tmp / f"{tag}-out")
+            report = kb.run(req, out, backend=backend, log=log,
+                            resume=run_root is not None and backend == "batch")
             vals = kb.collect(report, job, sub)
             shutil.copyfile(path_of(tag), sub / "dut.spice")
             shutil.copyfile(req.parent / "body.spice", sub / "body.spice")

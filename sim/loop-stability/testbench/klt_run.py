@@ -67,7 +67,6 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -126,22 +125,44 @@ def run_configs(configs, dut: Path, ac_dec: int, f_start: str, f_stop: str, axes
     ``backend="local"`` runs one request at a time. Raw reports go under
     ``outdir/klt-reports/`` (redacted for this public repo), with the request
     JSON next to them so a record's Links point at what was submitted.
+
+    Everything a batch submission needs is staged persistently under
+    ``workdir`` (``stage/<tag>/`` request, ``run/<tag>/`` run dir) instead of
+    a session-local tempdir, and batch requests are submitted with klt's
+    ``--resume``: an interrupted run re-attaches to the retained shard map and
+    re-submits only unfinished shards. A configuration whose report is already
+    collected -- with an identical request -- is not re-submitted at all, so
+    re-invoking ``sweep.py --resume-record <id>`` continues a partial grid
+    instead of repeating it (issue #465).
     """
     results: dict = {}
     problems: list[str] = []
     bad: set[str] = set()
     suffix = "_dcseed" if dc_seed else ""
+    vals_dir = outdir / "klt-reports"
+    vals_dir.mkdir(parents=True, exist_ok=True)
 
     def go(cfg):
         tag = f"il{fmt_num(cfg[0])}_ce{fmt_num(cfg[1])}_es{fmt_num(cfg[2])}{suffix}"
         j = job(tag, cfg, dut, ac_dec, f_start, f_stop, axes, dc_seed)
-        with tempfile.TemporaryDirectory(prefix="klt-ls-") as tmp:
-            req = kb.stage(j, Path(tmp) / tag)
-            report = kb.run(req, Path(tmp) / "out", backend=backend, log=log)
-            vals_dir = outdir / "klt-reports"
-            vals_dir.mkdir(parents=True, exist_ok=True)
-            (vals_dir / f"{tag}.json").write_text(
-                json.dumps(kb.redact(report), indent=1, sort_keys=True) + "\n")
+        req = kb.stage(j, workdir / "stage" / tag)
+        saved = vals_dir / f"{tag}.json"
+        req_saved = vals_dir / f"{tag}.request.json"
+        if saved.is_file() \
+                and req_saved.is_file() \
+                and req_saved.read_bytes() == req.read_bytes():
+            vals, probs = collect_values(json.loads(saved.read_text()), SUPPLY_PARAM)
+            return cfg, vals, [(tag, c, p) for c, p in probs]
+        report = kb.run(req, workdir / "run" / tag, backend=backend, log=log,
+                        resume=backend == "batch")
+        # Payload first, identity marker last: the sidecar vouches for the
+        # report beside it, so it may only exist once that report is fully
+        # written. Marker-first would let a crash between the two writes
+        # leave a new marker beside an OLD report from a different request,
+        # and the guard above would trust it (issue #465, PR #745 review 3).
+        saved.write_text(
+            json.dumps(kb.redact(report), indent=1, sort_keys=True) + "\n")
+        req_saved.write_bytes(req.read_bytes())
         vals, probs = collect_values(report, SUPPLY_PARAM)
         return cfg, vals, [(tag, c, p) for c, p in probs]
 

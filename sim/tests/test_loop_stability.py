@@ -792,3 +792,130 @@ class TestRenderRecordSmoke(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRunConfigsResume(unittest.TestCase):
+    """``klt_run.run_configs`` stages persistently and resumes (#465).
+
+    The batch path stages its request under ``workdir`` (never a tempdir),
+    submits with klt's ``--resume``, and skips a configuration whose report
+    is already collected with an identical request -- so re-invoking the
+    sweep with ``--resume-record`` continues a partial grid instead of
+    repeating hours of fleet work.
+    """
+
+    CFGS = [(1e-3, 1.0e-6, 0.05)]
+
+    @staticmethod
+    def _report(vout=1.8):
+        return {"corners": [{
+            "process": "tt", "temperature_c": 27, "params": {"vsup": 3.3},
+            "measurements": [{"name": "vout_v", "value": vout}],
+            "status": "ok", "passes": [], "diagnostics": [],
+        }]}
+
+    @staticmethod
+    def _load_klt_run():
+        from harness.loader import load_script
+        return load_script(
+            "loop_stability_klt_run",
+            SIM_DIR / "loop-stability" / "testbench" / "klt_run.py")
+
+    def _run(self, tmp: Path, *, ac_dec=400, axes=None):
+        """One run_configs call over the single config, kb.run faked."""
+        klt_run = self._load_klt_run()
+        calls = []
+
+        def fake_run(req, outdir, backend=None, log=print, resume=False):
+            calls.append({"req": req, "outdir": outdir,
+                          "backend": backend, "resume": resume})
+            return self._report()
+
+        dut = tmp / "dut.spice"
+        dut.write_text("* dut\n")
+        axes = axes or {"process": ("tt",), "temps": (27.0,), "supplies": (3.3,),
+                        "stage_model_inputs": True, "batch": {"capacity_wait_s": 600}}
+        with unittest.mock.patch.object(klt_run.kb, "run", fake_run), \
+                contextlib.redirect_stdout(io.StringIO()):
+            results, problems, bad = klt_run.run_configs(
+                self.CFGS, dut, ac_dec, "10k", "10MEG", axes,
+                tmp / "work", tmp / "logs", "batch", 2)
+        return results, problems, bad, calls, klt_run
+
+    def test_a_fresh_batch_run_resumes_and_persists_its_staging(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            results, problems, bad, calls, _ = self._run(tmp)
+            self.assertEqual(1, len(calls))
+            self.assertTrue(calls[0]["resume"])
+            self.assertEqual("batch", calls[0]["backend"])
+            self.assertTrue(calls[0]["req"].is_file())
+            self.assertTrue(str(calls[0]["req"]).startswith(str(tmp / "work")))
+            # the collected report and the request that produced it both land
+            # next to each other, so a resume can byte-compare them
+            vals_dir = tmp / "logs" / "klt-reports"
+            self.assertTrue((vals_dir / "il0.001_ce1e-06_es0.05.json").is_file())
+            self.assertTrue((vals_dir / "il0.001_ce1e-06_es0.05.request.json").is_file())
+        self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
+
+    def test_a_collected_config_with_a_matching_request_is_not_resubmitted(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            self._run(tmp)
+            results, problems, bad, calls, _ = self._run(tmp)
+            self.assertEqual([], calls)
+        self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
+
+    def test_a_saved_report_from_a_different_request_is_rerun(self):
+        """A report collected under other grid flags is not this run's
+        result; the byte-compare must send it back through klt."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            self._run(tmp, ac_dec=400)
+            results, problems, bad, calls, _ = self._run(tmp, ac_dec=200)
+            self.assertEqual(1, len(calls))
+        self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
+
+    def test_a_saved_report_with_no_sidecar_request_is_rerun(self):
+        """A ``klt-reports/`` dir whose report has no ``.request.json``
+        beside it -- how pre-#465 code left every report dir -- is re-run,
+        not crashed on with FileNotFoundError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            self._run(tmp)
+            (tmp / "logs" / "klt-reports"
+             / "il0.001_ce1e-06_es0.05.request.json").unlink()
+            results, problems, bad, calls, _ = self._run(tmp)
+            self.assertEqual(1, len(calls))
+        self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
+
+    def test_the_identity_sidecar_is_written_after_the_report_it_vouches_for(self):
+        """Torn-write ordering (PR #745 review 3): the sidecar that
+        establishes identity may only exist once the report beside it is
+        fully written -- marker-first would let a crash between the two
+        writes pair a NEW marker with an OLD report from a different
+        request, which the resume guard would then trust."""
+        from pathlib import Path as _Path
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = _Path(tmpdir)
+            calls = []
+            real_wt, real_wb = _Path.write_text, _Path.write_bytes
+
+            def fake_wt(self, *a, **k):
+                calls.append(("payload", self.name))
+                return real_wt(self, *a, **k)
+
+            def fake_wb(self, *a, **k):
+                calls.append(("marker", self.name))
+                return real_wb(self, *a, **k)
+
+            with unittest.mock.patch.object(_Path, "write_text", fake_wt), \
+                    unittest.mock.patch.object(_Path, "write_bytes", fake_wb):
+                self._run(tmp)
+        payload = [i for i, (kind, name) in enumerate(calls)
+                   if kind == "payload" and name.endswith("es0.05.json")]
+        marker = [i for i, (kind, name) in enumerate(calls)
+                  if kind == "marker" and "es0.05.request.json" in name]
+        self.assertEqual(1, len(payload))
+        self.assertEqual(1, len(marker))
+        self.assertLess(payload[0], marker[0])
