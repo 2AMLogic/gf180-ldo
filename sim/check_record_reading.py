@@ -25,7 +25,11 @@ hand-written records such as
 ``## Verdict`` / ``## Coverage`` / ``## Results`` instead.
 
 Only files added or modified between <base>...HEAD are inspected, so
-historical append-only evidence is never rewritten. Stdlib + git only.
+historical append-only evidence is never rewritten. CI passes
+origin/<github.base_ref> or, on a merge-queue run, the event's
+github.event.merge_group.base_sha (issue #743); an empty or unavailable
+base fails explicitly -- an empty base would otherwise diff nothing and
+silently pass. Stdlib + git only.
 """
 
 from __future__ import annotations
@@ -129,9 +133,20 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--base", required=True)
     args = ap.parse_args(argv)
-    bad = offenders(changed_files(args.base))
+    if not args.base.strip():
+        print("::error::--base is empty (a merge_group run whose "
+              "github.event.merge_group.base_sha is empty?): refusing to "
+              "claim the Reading-section check was run")
+        return 2
+    try:
+        files = changed_files(args.base)
+    except subprocess.CalledProcessError as exc:
+        print(f"::error::git diff failed against base {args.base!r} "
+              f"(unavailable in this checkout?): {(exc.stderr or '').strip()}")
+        return 2
+    bad = offenders(files)
     if bad:
-        print("::error::records added or modified in this PR have an unwritten "
+        print("::error::records added or modified in this diff have an unwritten "
               "Reading section: " + " ".join(bad)
               + " -- write what the grid actually shows over the "
                 "'(to be written)' placeholder minted by "

@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -111,6 +114,30 @@ class AllowlistParseTests(unittest.TestCase):
         p = cao.DEFAULT_ALLOWLIST
         if p.exists():
             cao.parse_allowlist(p.read_text())
+
+
+class MainBaseTests(unittest.TestCase):
+    """main()'s fail-closed --base handling (merge-queue runs, issue #743).
+
+    ci.yml passes github.event.merge_group.base_sha on merge_group runs; a
+    missing or unavailable base must fail explicitly, never silently pass.
+    """
+
+    def run_main(self, base):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = cao.main(["--base", base, "--allowlist", os.devnull])
+        return rc, out.getvalue()
+
+    def test_merge_group_with_no_base_fails_explicitly(self):
+        rc, out = self.run_main("")
+        self.assertEqual(rc, 2)
+        self.assertIn("merge_group", out)
+
+    def test_merge_group_with_unavailable_base_fails_explicitly(self):
+        rc, out = self.run_main("origin/nonesuch-merge-queue-base")
+        self.assertEqual(rc, 2)
+        self.assertIn("git diff", out)
 
 
 if __name__ == "__main__":

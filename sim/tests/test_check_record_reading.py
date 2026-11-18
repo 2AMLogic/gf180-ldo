@@ -164,6 +164,28 @@ class ReadingSectionGuardTests(unittest.TestCase):
         listed = self.git("ls-files", "--", *crr.PATHSPECS).split()
         self.assertIn(LAYOUT, listed)
 
+    # --- merge-queue bases (issue #743, sky130-comparator@8e33733d) -----
+    def test_merge_group_shaped_base_passes(self):
+        # ci.yml passes github.event.merge_group.base_sha on merge_group
+        # runs: a bare SHA, the same shape self.base already is above.
+        self.assertEqual(self.run_guard({SIM: WRITTEN}), 0)
+
+    def test_merge_group_with_no_base_fails_explicitly(self):
+        # github.event.merge_group.base_sha empty: fail closed, never skip.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(crr.main(["--base", ""]), 2)
+        self.assertIn("::error::", out.getvalue())
+        self.assertIn("merge_group", out.getvalue())
+
+    def test_merge_group_with_unavailable_base_fails_explicitly(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(
+                crr.main(["--base", "0123456789abcdef0123456789abcdef01234567"]),
+                2)
+        self.assertIn("git diff", out.getvalue())
+
 
 class PlaceholderConstantTests(unittest.TestCase):
     def test_constant_matches_what_klt_record_actually_mints(self):

@@ -16,6 +16,10 @@ Usage (CI):
 
 which runs `git diff --name-status -M origin/main...HEAD` and classifies it.
 
+On a merge-queue run CI passes github.event.merge_group.base_sha instead
+(issue #743); an empty or unavailable base fails explicitly -- an empty
+base would otherwise diff nothing and silently pass.
+
 Exceptions: sim/append-only-allowlist.txt, one per line,
     <path>  DR-NNNN   # why
 The DR must exist under spec/decision-records/. The path is matched exactly
@@ -120,11 +124,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.from_file:
         text = args.from_file.read_text()
     else:
+        if not args.base.strip():
+            print("::error::--base is empty (a merge_group run whose "
+                  "github.event.merge_group.base_sha is empty?): refusing "
+                  "to claim append-only was verified")
+            return 2
         r = subprocess.run(
             ["git", "diff", "--name-status", "-M", f"{args.base}...HEAD"],
             cwd=REPO, capture_output=True, text=True)
         if r.returncode != 0:
-            print(f"::error::git diff failed: {r.stderr.strip()}")
+            print(f"::error::git diff failed against base {args.base!r} "
+                  f"(unavailable in this checkout?): {r.stderr.strip()}")
             return 2
         text = r.stdout
 

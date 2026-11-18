@@ -244,6 +244,14 @@ class BaseTests(Base):
         self.r.bootstrap()
         self.bad("--check", "--base", "nope", msg="git")
 
+    def test_empty_base_fails_closed(self):
+        # A merge_group run whose github.event.merge_group.base_sha is
+        # empty (issue #743): fail, never fall back to the weaker
+        # current-tree check that a missing --base would select.
+        self.r.bootstrap()
+        self.branch()
+        self.bad("--check", "--base", "", msg="base ref is empty")
+
     def test_table_and_lock_edit_with_old_dr_fails(self):
         self.r.bootstrap()
         self.branch()

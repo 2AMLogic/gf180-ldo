@@ -42,8 +42,10 @@ identical, so it cannot hide a simultaneous note edit. Once a base lock is
 version 2 the candidate must be version 2 too (no notes-lock deletion or
 downgrade).
 
-Any Git failure (missing ref, unreadable object) or malformed input fails; it
-never falls back to a current-tree check. Stdlib only; no PDK, no network.
+An empty base (a merge-queue run without github.event.merge_group.base_sha,
+issue #743), any Git failure (missing ref, unreadable object) or malformed
+input fails; it never falls back to a current-tree check. Stdlib only; no
+PDK, no network.
 """
 
 from __future__ import annotations
@@ -333,6 +335,10 @@ def read_candidate(root: Path) -> tuple[str, str | None, dict[int, dict[str, str
 
 
 def read_base(root: Path, ref: str) -> dict:
+    if not ref.strip():
+        raise CheckError(
+            "base ref is empty (a merge_group run whose merge_group.base_sha "
+            "is empty?): refusing to fall back to a current-tree check")
     commit = git(root, "merge-base", ref, "HEAD").strip()
     if not commit:
         raise CheckError("no merge-base between %s and HEAD" % ref)
