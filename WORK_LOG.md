@@ -8,6 +8,7 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-18
 
+- **PR #748**: ci: run the PR-metadata gates on merge_group commits
 - **PR #739**: sim(soft-start): split the extra part into one request per config
 - **Issue #738** (closed): sim(soft-start): split the extra-part klt deck per config -- a 5-instance unit cannot fit the fleet per-unit ceiling
 
