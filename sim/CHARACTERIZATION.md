@@ -26,7 +26,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 | PSRR | FAIL | fresh | `sim/psrr-dc/records/20261021-023703-7d3b2a0.md` (+ 2 more, see detail) |
 | Iq (excluding load current) | MIXED | fresh | `sim/quiescent-current/records/20261020-pdk-f6eeac7-iq.md` (+ 1 more, see detail) |
 | Current limit | PASS | fresh | `sim/current-limit/records/20261020-pdk-f6eeac7-ilim.md` |
-| Startup | MIXED | STALE | `sim/startup/records/20261021-pdk-f6eeac7-startup.md` (+ 1 more, see detail) |
+| Startup | MIXED | fresh | `sim/startup/records/20261021-pdk-f6eeac7-startup.md` (+ 1 more, see detail) |
 | Enable / shutdown | PASS | fresh | `sim/enable-shutdown/records/20261020-pdk-f6eeac7-en.md` |
 | Thermal | PASS | fresh | `sim/current-limit/records/20261020-pdk-f6eeac7-ilim.md` |
 | Output noise | N/A | N/A | see note below |
@@ -135,12 +135,12 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 **Ratified target**: monotonic into any load 0–50 mA and any C_eff in the stability window; controlled ramp ≤ 5 V/ms, so inrush ≤ 5 mA and startup at full rated load stays ≥ 10 mA below the current limit, both at C_eff = 1 µF (nominal) — above 1 µF both clauses are characterized, not bound, up to DR-0001's 4.7 µF ceiling (note 5a); inside ±2% within 1.8 ms of enable (note 8); overshoot ≤ +2% of the final value
 
-**Verdict**: MIXED  **Fresh**: STALE
+**Verdict**: MIXED  **Fresh**: fresh
 
 - `startup`: `sim/startup/records/20261021-pdk-f6eeac7-startup.md` — **PASS**, fresh (matches current `ldo_core`)
   - Overall: PASS
-- `soft-start`: `sim/soft-start/records/20260918-190207-8a59d23.md` — **MIXED**, stale
-  - Overall (Startup, ratified row, DR-0006): FAIL on ramp rate … and FAIL on inrush and current-limit clearance … PASS on the ratified ≤ 6 ms settling clause at 163/163 … PASS on the ratified ±2% settled-accuracy allocation at 161/163 / Overall (Startup, DR-0024 proposed bounds, not yet ratified): PASS on ramp rate (163/163 ≤ 5 V/ms) and settling (163/163 ≤ 1.8 ms) … FAIL on inrush, current-limit clearance, monotonicity and peak dV_out/dt / Overall (issue #246's own targets, `design/softstart_injection_ compensation.md` §3): T5 PASS at 63/63 … and T6/T7 PASS re-measured against the cascoded element … T1, T2, T3 and T4 FAIL / Overall (the named `softstart_injection_compensation.md` §4 experiment): conclusive.
+- `soft-start`: `sim/soft-start/records/20261118-pdk-f6eeac7-ss.md` — **MIXED**, fresh (matches current `ldo_core`)
+  - Overall (Startup, ratified row, DR-0006, standing grading carried forward): FAIL on ramp rate, inrush and current-limit clearance as graded by `20260918-190207-8a59d23` / Overall (soft-start PVT matrix, servo DUT, #465 re-qualification at `f6eeac7…`): PASS
 
 ### Enable / shutdown
 
@@ -185,7 +185,7 @@ Current DUT netlist sha256: `design/netlist/ldo_core.spice` = `4f99a1a9dcf681be3
 
 16 ratified rows: 12 testable (6 PASS, 4 FAIL, 2 MIXED, 0 UNKNOWN), 4 N/A.
 
-Freshness among the 12 testable rows: 10 fresh, 2 stale, 0 unknown.
+Freshness among the 12 testable rows: 11 fresh, 1 stale, 0 unknown.
 
 A row is only a true current PASS if its Verdict column reads PASS **and** its Fresh column reads fresh — a stale PASS reflects a design state this repo has since moved past, not a claim about `design/netlist/ldo_core.spice` as committed today.
 

@@ -478,10 +478,11 @@ pass/fail verdict differs from the same-DUT record at `c6d73a3…`:
 | `quiescent-current` | `20261020-pdk-f6eeac7-iq` | `20261015-iq-320-pvt` | no (81/81 points identical) |
 | `current-limit` | `20261020-pdk-f6eeac7-ilim` | `20261015-ilim-320-pvt` | no (63/63 points identical) |
 | `enable-shutdown` | `20261020-pdk-f6eeac7-en` | none (older DUT only) | not separable; all checks pass |
+| `soft-start` | `20261118-pdk-f6eeac7-ss` | `20261015-ss-320-pvt` (+ `20261016-ss-320-pvt-main` supplement) | envelope intact: ramp/startup/settled unchanged to ≤ 2.3e-5, inrush envelope 377.1 vs 378.5 mA — but per-corner inrush-peak and peak-dV/dt values move (#746) |
 
 The `tb.json` benches are re-qualified in the section below (#464, #467, #468). The
-remaining benches (`loop-stability`, `soft-start`) are not yet re-qualified and
-still speak for `c6d73a3…` only; they are tracked in #465.
+remaining bench (`loop-stability`) is not yet re-qualified and
+still speaks for `c6d73a3…` only; it is tracked in #465.
 
 ## Re-qualification at the pinned open_pdks through `klt sim` (#464, #467, #468)
 
