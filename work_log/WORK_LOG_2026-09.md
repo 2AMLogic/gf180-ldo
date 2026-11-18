@@ -2,6 +2,24 @@
 
 Sections moved byte-for-byte from [WORK_LOG.md](../WORK_LOG.md) by `loom-daemon work-docs archive`.
 
+### 2026-09-18
+
+- **PR #258**: spec: propose DR-0026, make the soft-start injection accurate by local feedback rather than by scaling the divider
+- **PR #256**: fix: render every bold clause of a split Overall verdict in the rollup
+- **PR #255**: spec: ratify DR-0025's per-finger model-bin convention and deck-level wnflag pin
+- **PR #252**: fix: make the ngspice identity check pin-aware, not brew-prefix-aware
+- **PR #250**: soft-start: cascode the FB-injection mirror per DR-0023, with full PVT evidence (#246)
+- **PR #228**: spec: propose ratifying DR-0024's 1 uF startup-current budget + 1.8 ms settling window
+- **PR #217**: spec: propose ratifying DR-0023's cascoded soft-start injection mirror topology
+- **Issue #251** (closed): sim: CHARACTERIZATION.md drops every FAIL clause of a record whose Overall verdict spans more than one bold run
+- **Issue #249** (closed): spec: decide the R4 lever for the soft-start injection element's absolute accuracy (T1-T4 unreachable by cascoding alone)
+- **Issue #248** (closed): sim: the ngspice toolchain-identity check is inverted once Homebrew moves past the pinned 46_1
+- **Issue #247** (closed): sim: the ngspice toolchain-identity check is inverted once Homebrew moves past the pinned 46_1
+- **Issue #246** (closed): Implement DR-0023's cascoded soft-start injection mirror (Mgmo_ss/Mgmr_ss) and re-run sim/soft-start
+- **Issue #219** (closed): spec: propose ratifying DR-0025's per-finger model-bin convention and deck-level wnflag pin
+- **Issue #191** (closed): Soft start: replace the idealized FB-injection source (Binj_ss) with a device-level transconductor
+- **Issue #187** (closed): Soft-start: inrush and current-limit clearance still fail at the 4.7 uF end of DR-0001's capacitor window
+
 ### 2026-09-16
 
 - **PR #245**: sim(startup): re-judge tb.json checks against DR-0006's ratified 6 ms bound
