@@ -1777,10 +1777,18 @@ class GitProvenanceDirtyFlagTests(unittest.TestCase):
                    "klt-reports/il0.json")
         self.assertFalse(self.dirty())
 
-    def test_unminted_netlist_snapshot_staging_is_not_dirty(self):
-        self.stage("sim/soft-start/netlist-snapshots/20260730-090000-bbb0002/"
-                   "new/klt-report.json")
-        self.assertFalse(self.dirty())
+    def test_flat_netlist_snapshot_is_dirty_when_unminted(self):
+        self.stage("sim/loop-stability/netlist-snapshots/"
+                   "20260730-090000-bbb0002.spice")
+        self.assertTrue(self.dirty())
+
+    def test_flat_netlist_snapshot_is_dirty_when_minted(self):
+        self.stage(f"sim/loop-stability/netlist-snapshots/{self.MINTED}.spice")
+        self.assertTrue(self.dirty())
+
+    def test_flat_file_directly_under_corners_is_dirty(self):
+        self.stage("sim/loop-stability/corners/notes.txt")
+        self.assertTrue(self.dirty())
 
     def test_new_files_in_a_minted_records_corners_are_dirty(self):
         self.stage(f"sim/loop-stability/corners/{self.MINTED}/extra.log")
