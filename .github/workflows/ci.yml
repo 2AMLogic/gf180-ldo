@@ -23,18 +23,22 @@ name: CI
 #   - scripts/check_artifact_manifests.py (stored-evidence manifests: schema,
 #                                       artifact: URIs only, no committed
 #                                       duplicate bytes; offline, issue #511)
-#   - sim/check_append_only.py        (PR-only: fails if a PR modifies/deletes/
+#   - sim/check_append_only.py        (PR + merge-queue: fails if a PR or
+#                                       queued merge modifies/deletes/
 #                                       renames committed evidence under
 #                                       sim/*/records, sim/*/corners,
 #                                       sim/*/netlist-snapshots, or
-#                                       layout/records; issues #371, #378)
-#   - sim/check_record_host_paths.py  (PR-only: fails if records added/modified
-#                                       under sim/*/records, signoff/records or
-#                                       layout/records embed /home/<user> paths;
-#                                       tests in sim/tests, issues #365/#413)
-#   - sim/check_record_reading.py    (PR-only, same pathspecs: fails if a
-#                                       record added/modified in the PR still
-#                                       carries klt_record's "(to be written)"
+#                                       layout/records; issues #371, #378,
+#                                       #743)
+#   - sim/check_record_host_paths.py  (PR + merge-queue: fails if records
+#                                       added/modified under sim/*/records,
+#                                       signoff/records or layout/records
+#                                       embed /home/<user> paths; tests in
+#                                       sim/tests, issues #365/#413/#743)
+#   - sim/check_record_reading.py    (PR + merge-queue, same pathspecs:
+#                                       fails if a record added/modified in
+#                                       the diff still carries klt_record's
+#                                       "(to be written)"
 #                                       placeholder, or has a `## Reading`
 #                                       heading with an empty body. A record
 #                                       with no `## Reading` section at all
@@ -97,6 +101,14 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, labeled]
+  # Merge queue (issue #743): run the required checks on the queue's
+  # trial-merge commit, so `repo-ruleset-policy.py --merge-queue-repo` can
+  # enable the queue (2AMLogic/2am#7605). No branches/paths filters -- a
+  # filtered merge_group trigger refuses the queue. The PR-metadata gates
+  # below take their base from github.event.merge_group.base_sha there
+  # (pattern ported from sky130-comparator@8e33733d, PR #332); an empty or
+  # unavailable base fails those gates, never silently passes.
+  merge_group:
   schedule:
     # Nightly PDK-backed smoke run — see the pvt-smoke job below.
     - cron: "0 7 * * *"
@@ -174,22 +186,37 @@ jobs:
         # waiting for a human to notice.
 
       - name: Verify new/modified records carry no absolute host paths
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request' ||
+          github.event_name == 'merge_group'
+        env:
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
-          python3 sim/check_record_host_paths.py \
-            --base "${{ github.event.pull_request.base.sha }}"
-        # Scoped to files added/modified in the PR so the existing append-only
-        # records (which predate this check) do not break CI; they are not
-        # rewritten here (issue #365). Needs full history for the base diff.
-        # Pathspecs live in sim/check_record_host_paths.py (incl. top-level
-        # layout/records/, issue #413); tests: sim/tests/test_check_record_host_paths.py
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then BASE="$MG_BASE"; fi
+          python3 sim/check_record_host_paths.py --base "$BASE"
+        # Scoped to files added/modified in the diff (PR or the queue's
+        # trial merge) so the existing append-only records (which predate
+        # this check) do not break CI; they are not rewritten here (issue
+        # #365). Merge queue (issue #743): the base is the event's
+        # merge_group.base_sha (empty on other events, unused there), and
+        # the script fails closed on an empty or unavailable base --
+        # sky130-comparator@8e33733d pattern. PR behavior is unchanged.
+        # Needs full history for the base diff. Pathspecs live in
+        # sim/check_record_host_paths.py (incl. top-level layout/records/,
+        # issue #413); tests: sim/tests/test_check_record_host_paths.py
         # (discovered by sim/selftest.sh).
 
       - name: Verify new/modified records have a written Reading section
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request' ||
+          github.event_name == 'merge_group'
+        env:
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
-          python3 sim/check_record_reading.py \
-            --base "origin/${{ github.base_ref }}"
+          BASE="origin/${{ github.base_ref }}"
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then BASE="$MG_BASE"; fi
+          python3 sim/check_record_reading.py --base "$BASE"
         # sim/harness/klt_record.py mints every record with a literal
         # "(to be written)" under `## Reading` for the agent to replace; until
         # issue #606 nothing checked that it did, and PR #602 reached fully
@@ -218,26 +245,48 @@ jobs:
         # sim/selftest.sh above. No PDK needed.
 
       - name: Verify the ratified spec table matches its lock (current tree)
-        if: github.event_name != 'pull_request'
+        if: >-
+          github.event_name != 'pull_request' &&
+          github.event_name != 'merge_group'
         run: python3 spec/check_spec_table.py --check
         # Push/schedule/manual: table <-> spec/spec-table-lock.json consistency.
-        # The authorization diff is supplied by the PR run below (issue #397).
+        # The authorization diff is supplied by the PR run below (issue #397)
+        # and by the merge-queue run below (issue #743) -- a merge_group
+        # checkout is GitHub's trial merge, the same shape as a PR checkout.
 
-      - name: Verify spec-table changes carry fresh decision-record amendments (PR only)
-        if: github.event_name == 'pull_request'
-        run: python3 spec/check_spec_table.py --check --base "${{ github.event.pull_request.base.sha }}"
-        # The PR checkout is GitHub's merge commit: that is the candidate being
-        # validated, compared against the merge-base with the PR's base SHA
-        # (full history from fetch-depth: 0). Structural audit trail only; it
-        # is not operator ratification. Tests: sim/tests/test_check_spec_table.py.
+      - name: Verify spec-table changes carry fresh decision-record amendments (PR and merge queue)
+        if: >-
+          github.event_name == 'pull_request' ||
+          github.event_name == 'merge_group'
+        env:
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then BASE="$MG_BASE"; fi
+          python3 spec/check_spec_table.py --check --base "$BASE"
+        # The PR/merge-queue checkout is GitHub's merge commit: that is the
+        # candidate being validated, compared against the merge-base with
+        # the event's base SHA (full history from fetch-depth: 0). An empty
+        # base fails closed instead of falling back to the current-tree
+        # check (issue #743). Structural audit trail only; it is not
+        # operator ratification. Tests: sim/tests/test_check_spec_table.py.
 
-      - name: Verify evidence is append-only (PR only)
-        if: github.event_name == 'pull_request'
-        run: python3 sim/check_append_only.py --base "origin/${{ github.base_ref }}"
-        # Fails if a PR modifies, deletes, or renames anything under
-        # sim/*/records/, sim/*/corners/, sim/*/netlist-snapshots/, or
-        # layout/records/ (only additions pass). Exceptions need a DR + sim/append-only-allowlist.txt entry.
-        # Classifier tests: sim/tests/test_check_append_only.py (issue #371).
+      - name: Verify evidence is append-only (PR and merge queue)
+        if: >-
+          github.event_name == 'pull_request' ||
+          github.event_name == 'merge_group'
+        env:
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then BASE="$MG_BASE"; fi
+          python3 sim/check_append_only.py --base "$BASE"
+        # Fails if a PR or queued merge modifies, deletes, or renames
+        # anything under sim/*/records/, sim/*/corners/,
+        # sim/*/netlist-snapshots/, or layout/records/ (only additions
+        # pass). Exceptions need a DR + sim/append-only-allowlist.txt entry.
+        # Classifier tests: sim/tests/test_check_append_only.py (issue #371);
+        # merge-queue base handling: issue #743.
 
       - name: Report evidence growth under sim/ (PR only, non-blocking)
         if: github.event_name == 'pull_request'
