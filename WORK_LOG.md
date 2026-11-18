@@ -6,6 +6,11 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-18
+
+- **PR #739**: sim(soft-start): split the extra part into one request per config
+- **Issue #738** (closed): sim(soft-start): split the extra-part klt deck per config -- a 5-instance unit cannot fit the fleet per-unit ceiling
+
 ### 2026-11-17
 
 - **PR #734**: signoff: narrow item 9 description to DR-bar harness modules
@@ -479,22 +484,4 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 - **Issue #257** (closed): sim: build_characterization_report.py leaves sim/soft-start-loop-gain unmapped — its records appear in neither the rollup nor the appendix
 - **Issue #254** (closed): spec: revisit DR-0025's `wnflag` bin-pin validation on ngspice majors other than 46 (#221's un-performed scope)
 - **Issue #253** (closed): sim: `selftest.sh --quick` always FAILs stage 3 on a spread check a single point cannot satisfy
-
-### 2026-09-18
-
-- **PR #258**: spec: propose DR-0026, make the soft-start injection accurate by local feedback rather than by scaling the divider
-- **PR #256**: fix: render every bold clause of a split Overall verdict in the rollup
-- **PR #255**: spec: ratify DR-0025's per-finger model-bin convention and deck-level wnflag pin
-- **PR #252**: fix: make the ngspice identity check pin-aware, not brew-prefix-aware
-- **PR #250**: soft-start: cascode the FB-injection mirror per DR-0023, with full PVT evidence (#246)
-- **PR #228**: spec: propose ratifying DR-0024's 1 uF startup-current budget + 1.8 ms settling window
-- **PR #217**: spec: propose ratifying DR-0023's cascoded soft-start injection mirror topology
-- **Issue #251** (closed): sim: CHARACTERIZATION.md drops every FAIL clause of a record whose Overall verdict spans more than one bold run
-- **Issue #249** (closed): spec: decide the R4 lever for the soft-start injection element's absolute accuracy (T1-T4 unreachable by cascoding alone)
-- **Issue #248** (closed): sim: the ngspice toolchain-identity check is inverted once Homebrew moves past the pinned 46_1
-- **Issue #247** (closed): sim: the ngspice toolchain-identity check is inverted once Homebrew moves past the pinned 46_1
-- **Issue #246** (closed): Implement DR-0023's cascoded soft-start injection mirror (Mgmo_ss/Mgmr_ss) and re-run sim/soft-start
-- **Issue #219** (closed): spec: propose ratifying DR-0025's per-finger model-bin convention and deck-level wnflag pin
-- **Issue #191** (closed): Soft start: replace the idealized FB-injection source (Binj_ss) with a device-level transconductor
-- **Issue #187** (closed): Soft-start: inrush and current-limit clearance still fail at the 4.7 uF end of DR-0001's capacitor window
 
