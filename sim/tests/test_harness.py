@@ -3444,3 +3444,57 @@ class TestRunAbResume(unittest.TestCase):
             out_arg = Path(argv[argv.index("-o") + 1])
             self.assertTrue(str(out_arg).startswith(str(run_root)))
         self.assertIn("new", res)
+
+
+class TestKltBatchRunOutdirLockedRetry(unittest.TestCase):
+    """``kb.run`` waits out klt's ``outdir_locked`` instead of failing (issue #465).
+
+    A resumed run's outdir can still be held by a killed-but-dying earlier
+    owner; the lock frees the moment the process tree is reaped, so the
+    correct response is a bounded wait, not losing the grid.
+    """
+
+    @staticmethod
+    def _error(code="outdir_locked"):
+        return {"schema_version": 1,
+                "error": {"command": "sim", "code": code,
+                          "message": "output directory '...' is owned by "
+                                     "another run (pid 999 since 2026-11-18)"}}
+
+    def test_a_locked_outdir_is_retried_then_succeeds(self):
+        report = {"corners": []}
+        procs = [unittest.mock.Mock(returncode=1,
+                                    stdout=json.dumps(self._error()), stderr=""),
+                 unittest.mock.Mock(returncode=1,
+                                    stdout=json.dumps(self._error()), stderr=""),
+                 unittest.mock.Mock(returncode=0, stdout=json.dumps(report),
+                                    stderr="")]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            req = tmp / "request.json"
+            req.write_text("{}")
+            with unittest.mock.patch("subprocess.run", return_value=procs[0]) as run, \
+                    unittest.mock.patch.object(klt_batch.time, "sleep") as sleep, \
+                    unittest.mock.patch.object(klt_batch.random, "uniform",
+                                               return_value=0.0):
+                run.side_effect = procs
+                out = klt_batch.run(req, tmp / "out", backend="batch",
+                                    max_cap_wait_s=600)
+        self.assertEqual(3, run.call_count)
+        self.assertEqual(report, out)
+        sleep.assert_called()
+
+    def test_a_permanently_locked_outdir_raises_within_the_deadline(self):
+        proc = unittest.mock.Mock(returncode=1, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            req = tmp / "request.json"
+            req.write_text("{}")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run, \
+                    unittest.mock.patch.object(klt_batch.time, "sleep"), \
+                    unittest.mock.patch.object(klt_batch.random, "uniform",
+                                               return_value=0.0), \
+                    self.assertRaises(klt_batch.KltError):
+                run.side_effect = [proc] * 50
+                klt_batch.run(req, tmp / "out", backend="batch",
+                              max_cap_wait_s=1)

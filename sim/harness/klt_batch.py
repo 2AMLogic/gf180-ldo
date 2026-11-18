@@ -65,6 +65,7 @@ DESIGN_PARAMS = (
 WNFLAG = ".options wnflag=1"
 
 _CAP_REFUSAL = "exceeds BATCH_MAX_CONCURRENT_INSTANCES"
+_OUTDIR_LOCKED = "outdir_locked"
 
 
 class KltError(RuntimeError):
@@ -187,8 +188,13 @@ def run(req: Path, outdir: Path, backend: str | None = None,
     """Run ``klt sim`` on ``req``; return the parsed report.
 
     ``backend=None`` leaves the choice to ``klt`` (request field, then
-    ``$KLT_SIM_BACKEND``). Re-submits only on the fleet concurrency-cap
-    refusal, within ``max_cap_wait_s``; any other failure raises.
+    ``$KLT_SIM_BACKEND``). Re-submits on two transient conditions, within
+    ``max_cap_wait_s``: the fleet concurrency-cap refusal, and klt's
+    ``outdir_locked`` -- a resumed run's outdir can still be held by a
+    killed-but-dying earlier owner (its ``flock`` frees the moment the
+    process tree is reaped, and the pid in the message is diagnostic only),
+    so waiting is the correct response to that refusal; any other failure
+    raises.
 
     ``resume`` passes klt's ``--resume``: a sharded batch request re-attaches
     to the shard map retained under ``outdir`` -- shards whose fleet jobs
@@ -214,9 +220,15 @@ def run(req: Path, outdir: Path, backend: str | None = None,
         if report is not None and "error" not in report:
             return report
         message = (report or {}).get("error", {}).get("message", "") + proc.stderr
-        if _CAP_REFUSAL in message and time.monotonic() + delay < deadline:
+        code = (report or {}).get("error", {}).get("code", "")
+        transient = _CAP_REFUSAL in message or code == _OUTDIR_LOCKED
+        if transient and time.monotonic() + delay < deadline:
             wait = delay * random.uniform(0.5, 1.0)
-            log(f"  fleet at its concurrency cap; re-submitting {req.parent.name} in {wait:.0f}s")
+            if code == _OUTDIR_LOCKED:
+                log(f"  {req.parent.name}'s outdir is locked by another run; "
+                    f"retrying in {wait:.0f}s")
+            else:
+                log(f"  fleet at its concurrency cap; re-submitting {req.parent.name} in {wait:.0f}s")
             time.sleep(wait)
             delay = min(delay * 2, 600.0)
             continue
