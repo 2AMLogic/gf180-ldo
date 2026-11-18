@@ -155,9 +155,14 @@ def run_configs(configs, dut: Path, ac_dec: int, f_start: str, f_stop: str, axes
             return cfg, vals, [(tag, c, p) for c, p in probs]
         report = kb.run(req, workdir / "run" / tag, backend=backend, log=log,
                         resume=backend == "batch")
-        req_saved.write_bytes(req.read_bytes())
+        # Payload first, identity marker last: the sidecar vouches for the
+        # report beside it, so it may only exist once that report is fully
+        # written. Marker-first would let a crash between the two writes
+        # leave a new marker beside an OLD report from a different request,
+        # and the guard above would trust it (issue #465, PR #745 review 3).
         saved.write_text(
             json.dumps(kb.redact(report), indent=1, sort_keys=True) + "\n")
+        req_saved.write_bytes(req.read_bytes())
         vals, probs = collect_values(report, SUPPLY_PARAM)
         return cfg, vals, [(tag, c, p) for c, p in probs]
 

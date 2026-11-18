@@ -888,3 +888,34 @@ class TestRunConfigsResume(unittest.TestCase):
             results, problems, bad, calls, _ = self._run(tmp)
             self.assertEqual(1, len(calls))
         self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
+
+    def test_the_identity_sidecar_is_written_after_the_report_it_vouches_for(self):
+        """Torn-write ordering (PR #745 review 3): the sidecar that
+        establishes identity may only exist once the report beside it is
+        fully written -- marker-first would let a crash between the two
+        writes pair a NEW marker with an OLD report from a different
+        request, which the resume guard would then trust."""
+        from pathlib import Path as _Path
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = _Path(tmpdir)
+            calls = []
+            real_wt, real_wb = _Path.write_text, _Path.write_bytes
+
+            def fake_wt(self, *a, **k):
+                calls.append(("payload", self.name))
+                return real_wt(self, *a, **k)
+
+            def fake_wb(self, *a, **k):
+                calls.append(("marker", self.name))
+                return real_wb(self, *a, **k)
+
+            with unittest.mock.patch.object(_Path, "write_text", fake_wt), \
+                    unittest.mock.patch.object(_Path, "write_bytes", fake_wb):
+                self._run(tmp)
+        payload = [i for i, (kind, name) in enumerate(calls)
+                   if kind == "payload" and name.endswith("es0.05.json")]
+        marker = [i for i, (kind, name) in enumerate(calls)
+                  if kind == "marker" and "es0.05.request.json" in name]
+        self.assertEqual(1, len(payload))
+        self.assertEqual(1, len(marker))
+        self.assertLess(payload[0], marker[0])
