@@ -66,71 +66,22 @@ F_STOP = "1e9"
 #
 # --- AC_DEC: the sweep resolution, and why it is 400 (issue #58) -----------
 #
-# Every record through `20260802-171044-db620a6` was taken at `dec 50` -- 4.7%
-# frequency steps. That is fine for a smooth low-Q Bode response and blind to
-# a sharp one, and the blindness is not graceful: a resonance narrow enough to
-# fall between two grid points is not merely reported inaccurately, it can be
-# invisible. `resurgence_db` (issue #59, DR-0008's precondition check) is
-# computed off this same grid, so the detector inherits the blindness of the
-# sample it is computed from.
+# The resolution is part of the measurement, not a performance knob: a
+# resonance narrow enough to fall between two grid points is not merely
+# reported inaccurately, it can be invisible, and `resurgence_db` (issue #59,
+# DR-0008's precondition check) inherits the blindness of the grid it is
+# computed from. At 400 points per decade, the worst-case sampling error --
+# a resonance peak landing exactly midway between two samples -- stays within
+# 1 dB through approximately Q = 88, a tenth of DR-0001's 10 dB gain-margin
+# bar; the pre-#58 `dec 50` default held that only out to Q ~ 11. This is a
+# stated capability, not a proof of sufficiency: no finite grid resolves an
+# arbitrarily sharp feature.
 #
-# The bound is closed-form. Sampling a resonance of quality factor Q on a log
-# grid of `dec` points per decade, the worst case is the peak landing exactly
-# midway between two samples, an offset of d = 10^(1/(2*dec)) - 1 in relative
-# frequency. A second-order resonance detuned by d reads
-#
-#     miss(Q, dec) = 20*log10( sqrt( (2*Q*d)^2 + 1 ) )   dB below its peak
-#
-# and the largest Q resolved to within a stated error E is therefore
-#
-#     Qmax(E, dec) = sqrt(10^(E/10) - 1) / (2*d)
-#
-#     dec | step   | miss at Q=80 | Qmax at 1 dB | Qmax at 0.1 dB
-#     ----+--------+--------------+--------------+---------------
-#      50 | 4.713% |    11.73 dB  |       10.9   |       3.3
-#     100 | 2.329% |     6.47 dB  |       22.0   |       6.6
-#     200 | 1.158% |     2.68 dB  |       44.1   |      13.2
-#     400 | 0.577% |     0.84 dB  |       88.3   |      26.5
-#     800 | 0.288% |     0.22 dB  |      176.7   |      53.0
-#
-# `dec 400` is chosen as the smallest power-of-two step from the old default
-# that holds the worst-case miss under 1 dB -- a tenth of DR-0001's 10 dB
-# gain-margin bar -- out to Q ~ 88. `dec 50` held that only out to Q ~ 11.
-# This is a *stated capability*, not a proof of sufficiency: no finite grid
-# resolves an arbitrarily sharp feature, and the honest claim is a bound where
-# previously there was none.
-#
-# sim/loop-stability/testbench/selftest.py's third reference loop exercises
-# the bound rather than asserting it: a Q = 80 resonance placed at the
-# worst-case sampling offset for `dec 400` itself. At `dec 50` the extraction
-# reports `resurgence_db = -0.79 dB` -- a clean, confident PASS on the DR-0008
-# bar -- for a loop whose true continuous peak above its first 0 dB crossing
-# is +3.90 dB. At `dec 400` the same extraction reports +3.11 dB, correctly
-# failing it; the 0.79 dB residual is the analytic 0.84 dB worst-case miss
-# above, measured. (Figures measured with the fixed-5%-offset scan start,
-# issue #69; this resonance sits far enough above crossover that the offset's
-# exact value barely changes them.)
-#
-# The same self-test answers the other question issue #58 raised -- whether
-# `cph()` picks the wrong 360 deg branch across an under-sampled resonance.
-# It does not, at either resolution (-269.97 deg against a -270 deg asymptote
-# both times), and the reason is structural: a minimum-phase pole PAIR has
-# 180 deg of total phase variation, so no sampling of one can produce the
-# >180 deg sample-to-sample step `cph()` unwraps on. The resolution-sensitive
-# quantity is the magnitude, not the branch.
-#
-# WHY NOT A TWO-PASS COARSE-THEN-REFINE SWEEP (the other option #58 offered):
-#   1. It cannot fix this failure mode. A refine pass re-sweeps a window
-#      centred on the coarse pass's own answer, so it inherits whatever the
-#      coarse pass missed. On the self-test loop above there is nothing to
-#      centre on: at `dec 50` the resonance does not appear at all.
-#   2. It optimises a cost that is not being paid. The saving assumes runtime
-#      scales with AC point count. Measured on this design at -j 1, one PVT
-#      corner's 72-configuration sweep costs 72.1 s CPU at `dec 50` and
-#      92.3 s at `dec 400` -- 1.28x for 8x the frequency points, because the
-#      cost is dominated by the 72 DC operating-point solves and the model
-#      setup around them, not by the AC points. See "Sweep resolution" in
-#      sim/loop-stability/README.md.
+# The derivation, the sampling-error table, the Q = 80 self-test that
+# exercises this bound, the phase-unwrap analysis, and the measured runtime
+# comparison that rejects the two-pass coarse-then-refine alternative live in
+# the "Sweep resolution" section of sim/loop-stability/README.md; update that
+# section together with this constant.
 AC_DEC = "400"
 
 

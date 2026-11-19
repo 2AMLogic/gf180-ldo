@@ -698,10 +698,11 @@ def main() -> int:
     ap.add_argument("--ac-dec", type=int, default=int(AC_DEC),
                     help=f"AC points per decade (default: {AC_DEC}). The sweep "
                          "resolution is part of the measurement, not a "
-                         "performance knob -- see the AC_DEC comment in "
-                         "harness/loop_margin.py for "
-                         "how the default is derived. Running BELOW the default "
-                         "needs --subset-reason, exactly as a narrowed PVT grid "
+                         "performance knob -- see the \"Sweep resolution\" "
+                         "section of sim/loop-stability/README.md for how the "
+                         "default is derived and what sampling error it "
+                         "bounds. Running BELOW the default needs "
+                         "--subset-reason, exactly as a narrowed PVT grid "
                          "does.")
     klt_grid.add_grid_args(ap, batch_unit="(load, C_eff, ESR) configuration")
     ap.add_argument("--resume-record", default="",
