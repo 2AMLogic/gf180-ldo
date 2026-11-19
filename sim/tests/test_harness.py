@@ -3273,8 +3273,21 @@ class HostPathRedactionTests(unittest.TestCase):
     def test_diagnostic_paths_are_repo_relative_or_basename(self):
         inside = paths.REPO_ROOT / "sim" / "x" / "corners" / "r" / "tt.log"
         self.assertEqual(paths.display_path(inside), "sim/x/corners/r/tt.log")
+        home = Path(self.FAKE_HOME)
+        layouts = (
+            ("standalone", home / "repo"),
+            ("legacy worktree", home / "loom" / ".loom" / "worktrees" / "issue-1"),
+            ("namespaced worktree",
+             home / "loom" / ".loom" / "worktrees" / "gf180-ldo" / "pr-761"),
+        )
+        for layout, checkout in layouts:
+            log = checkout / "sim" / "x" / "corners" / "r" / "tt.log"
+            with self.subTest(layout=layout), \
+                    unittest.mock.patch.object(paths, "REPO_ROOT", checkout):
+                self.assertEqual(paths.display_path(log), "sim/x/corners/r/tt.log")
         wt = Path(self.FAKE_HOME) / "repo" / ".loom" / "worktrees" / "issue-1" / "sim" / "a.log"
         self.assertEqual(paths.display_path(wt), "sim/a.log")
+        self.assertEqual(paths.display_path("sim/a.log"), "sim/a.log")
         self.assertEqual(paths.display_path(self.FAKE_HOME + "/elsewhere/b.log"), "<abs>/b.log")
 
 
