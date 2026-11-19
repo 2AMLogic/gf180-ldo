@@ -621,35 +621,36 @@ well as at the five MOS corners, and the matrix's worst point is still
 
 ### Where this stands
 
-The current record is **`20260801-140530-d6d47f5`**, a **FAIL** against
-DR-0001, but a substantially narrower one than the previous record: adding a
-feedforward compensation zero (`Cff`, `design/ldo_core.sch`, issue #42)
-improves the worst-corner phase margin from **−12.89°** to **−1.26°** and gain
-margin from **−28.87 dB** to **−2.50 dB**, and raises passing points from
-64/3240 to **150/3240**. It still does not clear the ≥ 45° / ≥ 10 dB bar. This
-is the **real** loop — transistor-level `design/error_amp.sch` (untouched by
-`Cff`) and the real `design/ldo_ilimit.sch` — so it is a property of this
-compensation, not of a stand-in.
+This section deliberately does not name a "current record": name an id here
+and it goes stale on the next re-run (that is exactly how it read before
+issue #769 — three generations superseded). The head record is the **newest
+record under `records/`**; walk each record's **Supersedes** field to trace
+the chain back, and see § *Evidence* above for the latest re-qualification's
+point-by-point comparison. Every sweep record in that chain to date is a
+**FAIL** against DR-0001. The compensation steps each moved the matrix —
+the `Cff` feedforward zero (issue #42, record `20260801-140530-d6d47f5`:
+worst PM −1.26° / GM −2.50 dB, 150/3240 passing, up from −12.89° /
+−28.87 dB and 64/3240 at `20260801-050406-65416d2`), then the Type-II
+gain-shelf recompensation that closed the 0.1 mA column (above) — but none
+has cleared the ≥ 45° / ≥ 10 dB bar at every point of its matrix. (Verdicts
+from before `20260802-095235-c828e73` carry the DR-0008 precondition above.)
 
-That does not contradict the amplifier's own records: the amplifier was sized
-against the offset, PSRR and Iq budgets, and closing the LDO loop around it is
-a separate requirement nothing has yet been sized against. Read the record's
-*"Structure of the result"* and *"What this record asks of the next design
-step"* before touching the compensation further — it documents, with the
-empirical rescaling experiments that ruled other levers out, why a
-feedforward-only fix cannot close the remaining gap: the amplifier's own
-Miller-set pole and the load-dependent output pole are structurally many
-decades below crossover at the DC loop gain the load-regulation/PSRR rows
-require, for any on-chip-scale `XCc`/`XRz` in `design/error_amp.sch`.
+What every record from `20260801-050406-65416d2` onward measures is the
+**real** loop — transistor-level `design/error_amp.sch` and the real
+`design/ldo_ilimit.sch`, whose one standing idealization, the `Fbias` CCCS,
+the #320 / DR-0037 servo swap removed from the newest records (§ *Evidence*
+above) — so no behavioural amplifier stands in for anything: the failure is
+a property of this compensation as designed, not of a stand-in. That does
+not contradict the amplifier's own records: the amplifier was sized against
+the offset, PSRR and Iq budgets, and closing the LDO loop around it is a
+separate requirement nothing has yet been sized against. Before touching
+the compensation further, read the head record's *"Structure of the
+result"* and *"What this record asks of the next design step"* — that is
+where each record hands its measured requirement to the compensation step,
+and the earlier versions of it (e.g. `20260801-140530-d6d47f5`) document
+the empirical rescaling experiments that ruled a feedforward-only fix out.
 
-It supersedes `20260801-050406-65416d2` (issue #10's original measurement,
-worst PM −12.89°/GM −28.87 dB, 64/3240 passing), which in turn superseded
-`20260801-002833-b8ce7d0`, measured against the *placeholder* error amplifier
-PR #35 deleted. Both older records stay on disk — evidence here is
-append-only — but the placeholder-amp record's numbers should never be cited:
-the amplifier it describes no longer exists.
-
-The failure is still broad rather than concentrated at one load point: the
-a-priori worst configuration (light load, minimum C_eff, no ESR zero) fails
-too, at 1.18°. See the record's *"Structure of the result"* for which axis
-actually drives the verdict.
+One citation rule is permanent: `20260801-002833-b8ce7d0` was measured
+against the *placeholder* error amplifier PR #35 deleted, and its numbers
+should never be cited — the amplifier it describes no longer exists. The
+record itself stays on disk: evidence here is append-only.
