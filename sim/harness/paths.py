@@ -16,11 +16,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _repo_root_for(path: Path) -> Path | None:
-    """The checkout root holding *path*: this repo, or a worktree of it."""
+    """The checkout root holding *path*: this repo, or a worktree of it.
+
+    The ``worktrees/<dir>/`` prefix match is the checkout root only in the
+    legacy layout; namespaced worktrees (``worktrees/<repo>/<branch>/``)
+    nest it one level deeper, so the known checkout root wins when it sits
+    inside the matched prefix and holds *path*.
+    """
     parts = path.parts
     for i in range(len(parts) - 2):
         if parts[i] == ".loom" and parts[i + 1] == "worktrees":
-            return Path(*parts[: i + 3])
+            scanned = Path(*parts[: i + 3])
+            try:
+                path.relative_to(REPO_ROOT)
+                REPO_ROOT.relative_to(scanned)
+            except ValueError:
+                return scanned
+            return REPO_ROOT
     try:
         path.relative_to(REPO_ROOT)
     except ValueError:
