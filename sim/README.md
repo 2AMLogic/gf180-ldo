@@ -479,7 +479,7 @@ pass/fail verdict differs from the same-DUT record at `c6d73a3…`:
 | `current-limit` | `20261020-pdk-f6eeac7-ilim` | `20261015-ilim-320-pvt` | no (63/63 points identical) |
 | `enable-shutdown` | `20261020-pdk-f6eeac7-en` | none (older DUT only) | not separable; all checks pass |
 | `soft-start` | `20261118-pdk-f6eeac7-ss` | `20261015-ss-320-pvt` (+ `20261016-ss-320-pvt-main` supplement) | envelope intact: ramp/startup/settled unchanged to ≤ 2.3e-5, inrush envelope 377.1 vs 378.5 mA — but per-corner inrush-peak and peak-dV/dt values move (#746) |
-| `loop-stability` | `20261119-155956-0076e52` | `20260923-132038-a992b52` | DR-0018 envelope unchanged: PASS 630/630 both runs (worst PM 48.65→48.68 deg, GM 11.21→11.20 dB, resurgence flagged 0/630); full matrix 2790→2789/4536, median PM/GM movement 0.000 with p99 1.28 deg / 0.51 dB — 7 borderline PM points crossed the 45 deg bar (#737) |
+| `loop-stability` | `20261119-155956-0076e52` | none post-servo at `c6d73a3`; nearest is `20260923-132038-a992b52`, a pre-#320-servo DUT, so this delta crosses a DUT change too | DR-0018 envelope unchanged: PASS 630/630 both runs (worst PM 48.65→48.68 deg, GM 11.21→11.20 dB, resurgence flagged 0/630); full matrix 2790→2789/4536, median PM/GM movement 0.000 with p99 1.28 deg / 0.51 dB — 7 borderline PM points crossed the 45 deg bar, 4 PASS→FAIL / 3 FAIL→PASS, all outside the envelope (#737; details in sim/loop-stability/README.md) |
 
 The `tb.json` benches are re-qualified in the section below (#464, #467, #468).
 With `loop-stability` re-qualified (#465), every bench in this table now

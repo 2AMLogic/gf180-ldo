@@ -428,6 +428,72 @@ why that record's multiple-0 dB-crossing note reports 14 points instead of
 401. The driver now refuses a `ROW` line whose field list does not match the
 deck's rather than absorbing it as a plausible number.
 
+### The `f6eeac7` re-qualification: 7 borderline flips, none in the envelope (#737)
+
+[`records/20261119-155956-0076e52.md`](records/20261119-155956-0076e52.md)
+(issue #465) supersedes
+[`records/20260923-132038-a992b52.md`](records/20260923-132038-a992b52.md),
+and the point-by-point old-vs-new comparison lives in
+[`records/20261119-155956-0076e52-delta.csv`](records/20261119-155956-0076e52-delta.csv)
+(the record itself does not link it). Read that delta with one caveat the
+records cannot state themselves: **this is not a same-DUT pair.** Three
+things differ at once, and no run isolates any one of them:
+
+- **DUT**: `a992b52` predates issue #320 / DR-0037 — its `ldo_ilimit`
+  snapshot still biases through the idealized `Fbias` CCCS; `0076e52`'s
+  carries the real VREF-forcing V-to-I servo (`XMconv`…`XMst`; no `Fbias`
+  anywhere in the snapshot). This bench was not re-minted at #320, so **no
+  post-servo baseline exists at `c6d73a3`**. `0076e52`'s provenance
+  paragraph still names `Fbias` inside `ldo_ilimit` as a standing
+  idealization — prose carried over from the record it supersedes; its own
+  committed snapshot is the servo DUT. Both records stay as written
+  (append-only); this note is the correction's home.
+- **PDK**: `c6d73a3…` → `f6eeac7…` (models staged with every fleet job).
+- **Toolchain/host**: one builder host's local ngspice-46 → the fleet's
+  ngspice-47.
+
+The amp-openloop re-qualification (#430,
+`sim/amp-openloop/records/20261021-023703-7d3b2a0.md`) measured the same
+class of residual on a pair whose DUT *was* identical — `pm_deg` up to
+1.18° — and ran a single-corner PDK control that returned identical
+crossings at `c6d73a3` and `f6eeac7`, leaving the ngspice build as the
+likeliest source. That attribution does **not** transfer cleanly to this
+pair: here the DUT moved too, so the residual below cannot be split between
+the servo swap and the environment from this evidence alone.
+
+**The movement**: over the common 4536-point matrix, |ΔPM| median 0.000°,
+p99 1.28°, max 1.88° (`sf_125c_2.97v` / 1 mA / 0.33 µF / 0.5 Ω); |ΔGM| p99
+0.51 dB, max 0.85 dB. DR-0008 resurgence is flagged at 0 points in both
+records, worst movement 0.089 dB — inside the 1.75 dB comparability budget
+(issue #69), so the resurgence verdicts are comparable, not drifted.
+
+**Seven points change verdict — 4 PASS→FAIL, 3 FAIL→PASS (net −1:
+2790 → 2789 of 4536).** Every one is a borderline crossing within 1.4° of
+the 45° bar on both readings:
+
+| corner | I_load | C_eff | ESR | PM old | PM new | flip |
+|---|---|---|---|---|---|---|
+| `ff_27c_3.30v` | 0.1 mA | 4.7 µF | 1 mΩ | 45.23 | 44.92 | PASS→FAIL |
+| `fs_27c_3.30v` | 1 mA | 0.33 µF | 50 mΩ | 45.05 | 44.00 | PASS→FAIL |
+| `sf_27c_2.97v` | 1 mA | 0.33 µF | 1 mΩ | 45.42 | 44.30 | PASS→FAIL |
+| `ss_125c_3.63v` | 1 mA | 0.33 µF | 50 mΩ | 46.18 | 44.85 | PASS→FAIL |
+| `ff_125c_3.30v` | 1 mA | 0.33 µF | 1 mΩ | 44.85 | 46.21 | FAIL→PASS |
+| `ff_27c_2.97v` | 1 mA | 0.33 µF | 1 mΩ | 44.79 | 45.94 | FAIL→PASS |
+| `sf_125c_3.30v` | 1 mA | 0.33 µF | 1 mΩ | 44.49 | 45.87 | FAIL→PASS |
+
+All seven sit **outside** the DR-0018 envelope the CHARACTERIZATION
+Stability row grades (0.1–50 mA, C_eff = 1 µF, ESR ≥ 200 mΩ) — six are
+0.33 µF caps (four at 1 mΩ, two at 50 mΩ), one is 4.7 µF / 1 mΩ — and the
+envelope verdict is unchanged at **630/630 pass** in both records (worst
+PM 48.65° → 48.68°, worst GM 11.21 → 11.20 dB). The wider DR-0001 matrix
+was FAIL before and after (1746 → 1747 failing of 4536); its res_ss
+corners fail hard (PM down to −17°) and are untouched by this movement. So
+nothing the Stability row grades moved, and no bar was moved to re-pass
+anything — the flips are recorded here rather than chased as a regression.
+The open question they do leave is the DUT-vs-environment split above,
+which only a controlled A/B (servo DUT at `c6d73a3`, or `Fbias` DUT at
+`f6eeac7`) could answer.
+
 ### PRECONDITION: this experiment's numbers are only a stability test when
 ### the loop gain has no right-half-plane poles
 
