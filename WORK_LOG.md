@@ -8,6 +8,18 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-19
 
+- **PR #767**: docs: note soft-start per-corner peaks are not toolchain-comparable
+- **Issue #746** (closed): soft-start inrush-peak and peak-dV/dt per-corner values move at the f6eeac7 re-pin (envelope intact)
+- **PR #768**: docs(sim): disclose the loop-stability f6eeac7 re-qualification's 7 verdict flips
+- **Issue #737** (closed): loop-stability at f6eeac7: 7 borderline PM points crossed the 45 deg bar vs the c6d73a3 record (DR-0018 envelope unchanged)
+- **PR #766**: docs: replace the AC_DEC derivation comment with the bound and a README pointer
+- **Issue #765** (closed): Keep the AC sweep-resolution derivation in the loop-stability README
+- **Issue #430** (closed): Re-qualify reference records under open_pdks f6eeac7 and mark c6d73a3 superseded (phase 2 of #428)
+- **Issue #428** (closed): Re-pin open_pdks to f6eeac7 (ciel) — fleet retires volare c6d73a3
+- **PR #760**: sim(loop-stability): re-qualify the stability matrix at open_pdks f6eeac7
+- **Issue #465** (closed): sim: re-qualify loop-stability and soft-start reference records at open_pdks f6eeac7 (part of #430)
+- **PR #763**: fix: render harness diagnostics checkout-relative in namespaced worktrees
+- **Issue #762** (closed): Harness diagnostics include the worktree name in paths from namespaced Loom worktrees
 - **PR #761**: fix: run harness unittests after all test classes are defined
 - **Issue #759** (closed): Move the harness unittest entry point below the 25 tests it skips
 
