@@ -186,18 +186,22 @@ id `20261015-ss-320-pvt`, ngspice-46) with `records/20261118-pdk-f6eeac7-ss.md`
 (`f6eeac7…`, ngspice-47) over the 63-point main matrix — same DUT, same bench,
 so PDK and simulator effects are confounded in the comparison —
 `icap_peak_ma` / `isup_peak_ma` move beyond 5 mA at 31 of 63 corners and the
-peak-dV/dt metric `dvout_max_vpms` at 53 of 63 (up to 488.3 → 77.3 V/ms at
-`res_ff_-40c_3.30v`), while ramp slope, t_startup, settled output, overshoot
-and post-disable residual are unmoved (0/63 points beyond a 1 mV / 0.05 V-ms
-band) and the inrush envelope does not grow: 70.9 … 377.1 mA against
+peak-dV/dt metric `dvout_max_vpms` by more than 0.05 V/ms at 53 of 63 (up to
+488.3 → 77.3 V/ms at `res_ff_-40c_3.30v`), while ramp slope, t_startup,
+settled output, overshoot and post-disable residual are unmoved (0/63 points
+beyond a 1 mV / 0.05 V/ms band; t_startup's observed maximum difference is
+0.00001 ms) and the inrush envelope does not grow: 70.9 … 377.1 mA against
 70.9 … 378.5 mA, worst corner `sf_-40c_3.30v` in both.
 
 The rule that follows: the **envelope** and the **ramp / settled clauses** are
 comparable across a PDK or ngspice-major change; **per-corner peak rankings
 are not**. Both moving quantities are peaks sampled on a sharp transient edge
-at 1 µs resolution — the measurement class `DR-0027`'s toolchain-portability
-work flags as simulator-sensitive. Records carry the ngspice version in their
-environment block, so a reader can see which comparisons carry the confound.
+at 1 µs resolution, and the variation is attributed to the two soft-start runs
+compared above, not to any toolchain-portability verdict: as their records
+state, the open_pdks re-pin and the ngspice major (46 → 47) changed together,
+so the comparison cannot separate PDK from simulator effects. Records carry
+the ngspice version in their environment block, so a reader can see which
+comparisons carry the confound.
 
 ## One `corners/` directory here is a control arm, not a characterization
 
