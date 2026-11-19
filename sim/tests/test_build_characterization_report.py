@@ -638,10 +638,12 @@ class TestStabilityRowUsesEnvelopeVerdict(unittest.TestCase):
         self.assertIn("DR-0018", stability_section)
         self.assertIn("630/630", stability_section)
         # Tracks whichever loop-stability record is currently head, so it moves
-        # with the design: 2974/4536 at the 2 mm pass device, 2790/4536 since
-        # issue #294 / DR-0034 widened it to 2.8 mm (the wider DR-0001 window
-        # is outside DR-0018's ratified envelope and is not graded here).
-        self.assertIn("2790/4536", stability_section)
+        # with the design: 2974/4536 at the 2 mm pass device, 2790/4536 after
+        # issue #294 / DR-0034 widened it to 2.8 mm, 2789/4536 at the pinned
+        # open_pdks f6eeac7 re-qualification (record 20261119-155956-0076e52,
+        # issue #465; the wider DR-0001 window is outside DR-0018's ratified
+        # envelope and is not graded here).
+        self.assertIn("2789/4536", stability_section)
 
 
 class TestLatestSubstantiveRecordPrefersCurrentDut(unittest.TestCase):

@@ -146,10 +146,10 @@ regulation inside its ±2% window), and **Load transient** — **MIXED on two**
 (Startup, and **Iq (excluding load current)**), **N/A on four** (Input, Load,
 Output noise, Area: not independently tested), and **PASS on six** — Dropout
 @ 50 mA, Load reg (0–50 mA), Current limit, Enable / shutdown, Thermal and
-Stability — five of them on fresh records, while **Stability's PASS rests on
-a STALE record** (1 of the 16 rows, pending #465's loop-stability
-re-qualification) against the
-current `design/netlist/*.spice`. Startup's MIXED now cites a fresh record
+Stability — all six of them on fresh records; Stability's PASS was the last
+to move off a STALE record, re-qualified at the pinned open_pdks `f6eeac7…`
+by #465 (`20261119-155956-0076e52`, DR-0018 envelope unchanged), so every
+testable row now reads fresh. Startup's MIXED now cites a fresh record
 (`20261118-pdk-f6eeac7-ss`, #465's soft-start re-qualification), which carries
 the standing DR-0006 grading forward rather than re-grading the ratified
 clauses on the servo DUT. Those are item 5's subject matter, and item 5
@@ -162,8 +162,9 @@ superseded a 2026-09-05 record that was stale against DR-0033/DR-0034, and
 `ff_125c_3.30v` now reads 8.2345 mV/V against the ratified < 5 mV/V row —
 the same supply-dependent soft-start injection residual `DR-0031` measures,
 at the same corner family, so it is tracked under issue #302 too.) Six PASS
-rows out of sixteen — five of them fresh, Stability's on a STALE record — is
-not a claim about this block's performance. (Current limit and Thermal read
+rows out of sixteen — all six now on fresh records, Stability's re-qualified
+at the pinned PDK by #465 — is still not a blanket claim about this block's
+performance; each PASS holds only inside its row's stated envelope. (Current limit and Thermal read
 FAIL here until issue #139's re-run restated them against `DR-0005`'s
 **ratified** 62–95 mA / ≤ 346 mW rows rather than the superseded 65–80 mA /
 ≤ 290 mW ones; no measured number moved.)
