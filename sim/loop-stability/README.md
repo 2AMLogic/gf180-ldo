@@ -532,8 +532,7 @@ agree, rather than the amplifier's local loop hiding one from the other.
 
 **So: do not cite a record here as evidence for DR-0001's stability row
 unless the `sim/amp-selfosc/` record taken against the same `design/`
-netlist shows a quiet loop at the load in question.** Everything in "Where
-this stands" below is preserved as written, but the verdicts of records
+netlist shows a quiet loop at the load in question.** The verdicts of records
 before `20260802-095235-c828e73` are subject to this precondition —
 including the "2160/2160 at 1–50 mA" reading of the pre-#53 head-of-chain
 record, which DR-0008 argues is not a stability result, and which the first
