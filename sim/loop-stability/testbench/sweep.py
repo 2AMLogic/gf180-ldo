@@ -201,10 +201,16 @@ KLT_MAX_UNITS_PER_JOB = 29
 KLT_MAX_CONCURRENT_JOBS = 3
 
 #: ``request.batch.capacity_wait_s``: wait out a Spot capacity refusal with
-#: backoff instead of failing the submit. This is the request-level form of the
-#: ``klt sim --wait-for-capacity 600`` the dispatch-host rules require of every
-#: batch submit.
-KLT_CAPACITY_WAIT_S = 600
+#: backoff instead of failing the submit. This is the request-level form of
+#: ``klt sim --wait-for-capacity`` the dispatch-host rules require of every
+#: batch submit (600 s there is the minimum, not a cap). 600 s was exhausted
+#: after 5-6 launch attempts during the 2026-11-19 saturation burst (#465):
+#: the shared spot quota sat at the BATCH_MAX_VCPU ceiling for over half an
+#: hour, every shard of 4 of the 72 requests came back ``lost_shard``, and
+#: since a lost shard fails its corners terminally the whole grid died. 1800 s
+#: rides out bursts of that length; shards are lost only when the quota is
+#: truly gone for ~30 min.
+KLT_CAPACITY_WAIT_S = 1800
 
 
 # ---------------------------------------------------------------------------
