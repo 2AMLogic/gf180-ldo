@@ -3232,10 +3232,6 @@ class LocalGridCliTests(unittest.TestCase):
         self.assertEqual(ap.parse_args(["smoke-bias", "-j", "0"]).jobs, 0)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class HostPathRedactionTests(unittest.TestCase):
     """Issue #365: published records must not embed absolute host paths."""
 
@@ -3622,3 +3618,7 @@ class TestKltBatchRunOutdirLockedRetry(unittest.TestCase):
                 run.side_effect = [proc] * 50
                 klt_batch.run(req, tmp / "out", backend="batch",
                               max_cap_wait_s=1)
+
+
+if __name__ == "__main__":
+    unittest.main()
