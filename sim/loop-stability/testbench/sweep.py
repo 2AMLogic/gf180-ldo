@@ -165,15 +165,22 @@ KLT_JOB_OVERHEAD_S = 120
 #: ``request.batch.max_units_per_job``: klt splits the request into
 #: ``ceil(units / N)`` balanced fleet jobs, so no one job's bound reaches the
 #: ceiling above. The grid request is 63 units (7 process x 3 temps x
-#: 3 supplies), so N = 3 gives 21 jobs per load/C_eff/ESR configuration.
+#: 3 supplies), so N = 29 gives 3 jobs per load/C_eff/ESR configuration.
 #:
-#: **3 is the largest N that fits, not a preference.** ``klt_run.job()``
-#: submits ``timeout_s=900``, and klt's own auto-sizing form of this cap
-#: (``job_ceiling_check: "split"``) would compute exactly
-#: ``floor((KLT_JOB_CEILING_S - KLT_JOB_OVERHEAD_S) / timeout_s)``
-#: ``= floor(3480/900) = 3``. Raising N therefore means lowering ``timeout_s``
-#: first, which needs a measured per-unit runtime for this bench -- none
-#: exists yet (issue #465's probe never got a clean timing sample).
+#: **29 is the largest N that fits, not a preference.** klt's own auto-sizing
+#: form of this cap (``job_ceiling_check: "split"``) computes exactly
+#: ``floor((KLT_JOB_CEILING_S - KLT_JOB_OVERHEAD_S) / timeout_s)``. The
+#: ``timeout_s=900`` this bench's ``klt_run.job()`` originally submitted
+#: forced ``floor(3480/900) = 3`` -- 21 jobs per configuration, 1512 fleet
+#: jobs across the grid, which is the capacity problem issue #465 was parked
+#: on. The measured per-unit runtime that resize was waiting for now exists:
+#: issue #465's 2026-11-17 fleet probe ran the whole 63-corner PVT grid at
+#: the pinned open_pdks ``f6eeac7`` on the batch runner (ngspice-47) -- mean
+#: 1.39 s, max 1.95 s per unit. ``klt_run.job()`` therefore submits
+#: ``timeout_s=120`` (a >60x margin on the measured worst unit) and N sizes
+#: itself to ``floor(3480/120) = 29``; ``test_loop_stability.py`` derives N
+#: from the built request's own ``timeout_s`` with ``==``, so the two cannot
+#: drift apart silently.
 #:
 #: An explicit cap is *honored* rather than refused when its bound still
 #: exceeds the ceiling (klayout-tools#4982 -- the bound is a fully-serial
@@ -184,20 +191,26 @@ KLT_JOB_OVERHEAD_S = 120
 #: later ``timeout_s`` bump in ``klt_run.py`` fail a test rather than silently
 #: hand the fleet jobs it will kill. Do not combine this cap with
 #: ``job_ceiling_check: "enforce"``; klt rejects that combination.
-KLT_MAX_UNITS_PER_JOB = 3
+KLT_MAX_UNITS_PER_JOB = 29
 
 #: ``request.batch.max_concurrent_jobs``: once a request is split, the shards
 #: that the fleet's instance cap refuses come back ``lost_shard`` and are NOT
 #: retried (``sim/harness/klt_batch.py``); ``kb.run``'s own re-submit loop only
 #: covers a cap refusal of the whole submit. Bounding this request's jobs in
-#: flight keeps its 21 shards from provoking that refusal in the first place.
+#: flight keeps its 3 shards from provoking that refusal in the first place.
 KLT_MAX_CONCURRENT_JOBS = 3
 
 #: ``request.batch.capacity_wait_s``: wait out a Spot capacity refusal with
-#: backoff instead of failing the submit. This is the request-level form of the
-#: ``klt sim --wait-for-capacity 600`` the dispatch-host rules require of every
-#: batch submit.
-KLT_CAPACITY_WAIT_S = 600
+#: backoff instead of failing the submit. This is the request-level form of
+#: ``klt sim --wait-for-capacity`` the dispatch-host rules require of every
+#: batch submit (600 s there is the minimum, not a cap). 600 s was exhausted
+#: after 5-6 launch attempts during the 2026-11-19 saturation burst (#465):
+#: the shared spot quota sat at the BATCH_MAX_VCPU ceiling for over half an
+#: hour, every shard of 4 of the 72 requests came back ``lost_shard``, and
+#: since a lost shard fails its corners terminally the whole grid died. 1800 s
+#: rides out bursts of that length; shards are lost only when the quota is
+#: truly gone for ~30 min.
+KLT_CAPACITY_WAIT_S = 1800
 
 
 # ---------------------------------------------------------------------------

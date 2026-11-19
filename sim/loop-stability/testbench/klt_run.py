@@ -101,9 +101,17 @@ def body(iload: float, ceff: float, esr: float, dc_seed: str = "") -> str:
 
 def job(name: str, cfg: tuple, dut: Path, ac_dec: int, f_start: str, f_stop: str,
         axes: dict, dc_seed: str = "") -> kb.Job:
+    # timeout_s=120: issue #465's 2026-11-17 fleet probe measured the whole
+    # 63-corner PVT grid at the pinned open_pdks revision on the batch runner
+    # (ngspice-47) at mean 1.39 s / max 1.95 s per unit, so 120 s is a >60x
+    # margin on the measured worst unit -- and it lets sweep.py's
+    # KLT_MAX_UNITS_PER_JOB size itself to floor(3480/120) = 29, i.e. 3 fleet
+    # jobs per configuration instead of the 21 (1512 across the grid) the
+    # original timeout_s=900 forced. Do not raise this without re-measuring:
+    # sweep.py's split is derived from it.
     return kb.Job(name=name, body=body(*cfg, dc_seed=dc_seed), dut_netlist=dut,
                   analysis=analysis(ac_dec, f_start, f_stop), measurements=measurements(),
-                  timeout_s=900, supply_param=SUPPLY_PARAM, **axes)
+                  timeout_s=120, supply_param=SUPPLY_PARAM, **axes)
 
 
 def row_line(cfg: tuple, f: dict) -> str:
