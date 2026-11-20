@@ -5,7 +5,7 @@
 
 Only **ratified** records are in force. Everything else is a proposal or a held/negative-result write-up awaiting the operator. Status is read from each record's `Status` line (see `TEMPLATE.md`); CI fails if this file is stale or a record's status cannot be classified.
 
-42 records: 12 ratified, 29 proposed, 1 held, 0 superseded.
+43 records: 12 ratified, 30 proposed, 1 held, 0 superseded.
 
 | DR | Title | Status | Superseded by |
 |---|---|---|---|
@@ -51,6 +51,7 @@ Only **ratified** records are in force. Everything else is a proposal or a held/
 | [DR-0041](DR-0041-new-evidence-bytes-go-to-the-artifact-store-git-keeps-manifests.md) | new evidence bytes go to the fleet artifact store; git keeps a manifest and the Markdown record | proposed | - |
 | [DR-0043](DR-0043-ngspice-pin-is-a-major-version-floor-not-an-exact-version.md) | the ngspice pin is a major-version floor (at least ngspice-46), not an exact version | proposed | - |
 | [DR-0044](DR-0044-batch-adapter-evidence-store-split.md) | a `klt`-batch adapter run stores its bytes, and keeps the report envelope and the netlist snapshot in git | proposed | - |
+| [DR-0045](DR-0045-error-amp-slot-offset-divider-noise-answers.md) | The amplifier slot's committed answers for `gf180-opamp` — offset share, divider ratio and VCM, noise position | proposed | - |
 
 ## Design citations of unratified records
 
