@@ -8,6 +8,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-20
 
+- **PR #781**: fix: share one corner-id formatter between the PVT grid and klt report rows
+- **Issue #780** (closed): Use one corner-ID formatter so loop-stability can find fractional-temperature results
 - **PR #777**: refactor(sim): import the shared ROW parser directly in the A/B reader
 - **Issue #775** (closed): Import the shared ROW parser directly in the toolchain A/B reader
 
