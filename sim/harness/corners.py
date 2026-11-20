@@ -150,6 +150,22 @@ def supply_points(
     ]
 
 
+def format_corner_id(process: str, temp_c: float, vdd: float) -> str:
+    """The one ``<process>_<temp>c_<supply>v`` corner-id formatter (issue #780).
+
+    The grid point (:attr:`PvtPoint.corner_id`) and the ``klt`` report row
+    (:func:`harness.klt_batch.corner_id`) join on this id, so both must spell
+    the same point the same way or the lookup silently drops the measurement.
+    Whole degrees are integers (``27.0`` -> ``27``, so ``-0.0`` normalizes to
+    ``0``), fractional temperature precision is preserved (``27.123456`` stays
+    ``27.123456``, not the six-significant-digit ``27.1235``), and the supply
+    keeps its two-decimal spelling (``3.3`` -> ``3.30``).
+    """
+    t = float(temp_c)
+    t = int(t) if t.is_integer() else t
+    return f"{process}_{t}c_{vdd:.2f}v"
+
+
 @dataclass(frozen=True)
 class PvtPoint:
     """One point in the PVT grid -- exactly one ngspice invocation."""
@@ -172,7 +188,7 @@ class PvtPoint:
         rather than as a grid axis; a testbench that genuinely needs a
         load sweep composes it into its own netlist/measure set.
         """
-        return f"{self.corner.name}_{self.temp_c:g}c_{self.vdd:.2f}v"
+        return format_corner_id(self.corner.name, self.temp_c, self.vdd)
 
     def as_dict(self) -> dict:
         return {

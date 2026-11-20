@@ -10,7 +10,55 @@ from pathlib import Path
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
+from harness import corners  # noqa: E402
 from harness import klt_batch as kb  # noqa: E402
+
+
+class CornerId(unittest.TestCase):
+    """One corner-id spelling on both sides of the report join (issue #780).
+
+    The sweep keys its grid points by :attr:`harness.corners.PvtPoint.corner_id`
+    and looks the klt report's rows up by :func:`klt_batch.corner_id`; when the
+    two formatters disagreed (six-significant-digit grid vs full-precision
+    report) a measurement the report contained was reported as a missing row.
+    """
+
+    def test_report_rows_and_grid_points_agree_across_the_default_axes(self):
+        grid = corners.build_grid(
+            corners.resolve_corners(["mos"]),
+            corners.DEFAULT_TEMPERATURES_C,
+            corners.supply_points(),
+        )
+        for p in grid:
+            with self.subTest(corner_id=p.corner_id):
+                row = {"process": p.corner.name, "temperature_c": p.temp_c,
+                       "supply_v": {"vin": p.vdd}}
+                self.assertEqual(kb.corner_id(row, "vin"), p.corner_id)
+
+    def test_report_rows_keep_fractional_temperature_and_normalize_signed_zero(self):
+        self.assertEqual(
+            kb.corner_id({"process": "tt", "temperature_c": 27.123456,
+                          "supply_v": {"vin": 3.3}}, "vin"),
+            "tt_27.123456c_3.30v",
+        )
+        self.assertEqual(
+            kb.corner_id({"process": "tt", "temperature_c": -0.0,
+                          "supply_v": {"vin": 3.3}}, "vin"),
+            "tt_0c_3.30v",
+        )
+
+    def test_the_supply_is_still_klts_own_selection(self):
+        """The shared formatter changed only the id's spelling; which supply a
+        report row names stays klt's: the fixed override, else the
+        ``corners.params`` row, else the ``corners.supply_v`` axis."""
+        via_params = {"process": "tt", "temperature_c": 27.0,
+                      "params": {"vsup": 2.97}, "supply_v": {"vin": 3.63}}
+        via_axis = {"process": "tt", "temperature_c": 27.0,
+                    "supply_v": {"vin": 3.63}}
+        self.assertEqual(kb.corner_id(via_params, "vsup"), "tt_27c_2.97v")
+        self.assertEqual(kb.corner_id(via_params, "vin"), "tt_27c_3.63v")
+        self.assertEqual(kb.corner_id(via_axis, "vin"), "tt_27c_3.63v")
+        self.assertEqual(kb.corner_id(via_axis, "vin", 2.97), "tt_27c_2.97v")
 
 
 class RequestOptions(unittest.TestCase):
