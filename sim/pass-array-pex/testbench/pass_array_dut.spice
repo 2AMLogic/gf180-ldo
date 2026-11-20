@@ -1,0 +1,21 @@
+** sch_path: layout/pass_array/pass_array.sch
+* pass_array -- ngspice-form DUT for the klt pex array bench (issue #786).
+*
+* Source of truth: layout/pass_array/pass_array.sch, exported through the
+* repo's pinned-xschem path (sim/harness/xschem_export.py + design/xschemrc,
+* xschem 3.4.7, ERC on) -- the same export design/netlist.py performs, not a
+* hand transcription. One mechanical edit versus that export, forced by klt
+* pex's DUT-swap contract (klayout-tools docs/cli/pex.md, "Pin order must
+* match"): this .subckt header declares the pins in klt extract's
+* deterministic order (ports alphabetical) rather than the symbol's order, so
+* the bench's single instantiation line is valid for both the schematic leg
+* and the extracted leg. Every device line below is byte-identical to the
+* export; the LVS-form netlist (layout/pass_array/netlist/pass_array.spice)
+* remains the LVS reference and is untouched.
+.subckt pass_array ISNS PASS_GATE VIN VOUT
+*.PININFO ISNS:B PASS_GATE:I VIN:B VOUT:B
+XMpass VOUT PASS_GATE VIN VIN pfet_03v3 L=0.28u W=2800u nf=40 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
++ ps='2*int((nf+2)/2) * W/nf * 0.18u' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
+XMsense ISNS PASS_GATE VIN VIN pfet_03v3 L=0.28u W=70u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
++ ps='2*int((nf+2)/2) * W/nf * 0.18u' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
+.ends

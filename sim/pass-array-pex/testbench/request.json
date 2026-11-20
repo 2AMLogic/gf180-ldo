@@ -1,0 +1,121 @@
+{
+  "name": "pass-array-pex",
+  "description": "Array-alone bench for klt pex on layout/pass_array (issue #786): pin-to-pin on-resistance / Vds at the dropout binding test point (VIN = 2.10 V per DR-0004 note 4, PASS_GATE = 0 V, 50 mA sink) and the Msense replica ratio, with both drain pins tied to one node through 0 V sense sources. Corner matrix is sim/dropout-vs-load's: process {tt,ff,ss,fs,sf} x {-40,27,125} C at the single 2.10 V supply. The measured quantities are not spec rows; the deltas klt pex reports against them are the evidence, not a pass/fail gate -- no limits declared.",
+  "netlist": "tb_pass_array.spice",
+  "engine": "ngspice",
+  "netlist_source": "schematic",
+  "models": {
+    "pdk": "gf180mcuD",
+    "lib": "libs.tech/ngspice/sm141064.ngspice"
+  },
+  "corners": {
+    "process": [
+      {
+        "name": "tt",
+        "sections": [
+          "typical",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "ff",
+        "sections": [
+          "ff",
+          "res_ff",
+          "bjt_ff",
+          "diode_ff",
+          "moscap_ff",
+          "mimcap_ff"
+        ]
+      },
+      {
+        "name": "ss",
+        "sections": [
+          "ss",
+          "res_ss",
+          "bjt_ss",
+          "diode_ss",
+          "moscap_ss",
+          "mimcap_ss"
+        ]
+      },
+      {
+        "name": "fs",
+        "sections": [
+          "fs",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      },
+      {
+        "name": "sf",
+        "sections": [
+          "sf",
+          "res_typical",
+          "bjt_typical",
+          "diode_typical",
+          "moscap_typical",
+          "mimcap_typical"
+        ]
+      }
+    ],
+    "supply_v": {
+      "vin": [
+        2.1
+      ]
+    },
+    "temperature_c": [
+      -40,
+      27,
+      125
+    ]
+  },
+  "analysis": {
+    "kind": "op",
+    "args": ""
+  },
+  "measurements": [
+    {
+      "name": "vds_mv",
+      "expr": "(v(vin)-v(vout))*1e3",
+      "unit": "mV",
+      "description": "array pin-to-pin dropout voltage at 50 mA: VIN pin to VOUT pin"
+    },
+    {
+      "name": "r_on_mohm",
+      "expr": "(v(vin)-v(vout))/(i(vsns_out)+i(vsns_sns))*1e3",
+      "unit": "mOhm",
+      "description": "array pin-to-pin on-resistance at the 50 mA operating point"
+    },
+    {
+      "name": "replica_ratio",
+      "expr": "i(vsns_out)/i(vsns_sns)",
+      "unit": "ratio",
+      "description": "Mpass:XMsense current split at equal drain potential; 40 by drawn geometry"
+    },
+    {
+      "name": "iload_ma",
+      "expr": "(i(vsns_out)+i(vsns_sns))*1e3",
+      "unit": "mA",
+      "description": "total sink current sanity check (commanded 50 mA)"
+    },
+    {
+      "name": "isns_ma",
+      "expr": "i(vsns_sns)*1e3",
+      "unit": "mA",
+      "description": "Msense replica leg current (nominally 50/41 mA)"
+    }
+  ],
+  "options": {
+    "timeout_s": 900,
+    "keep_artifacts": true,
+    "stage_model_inputs": true
+  }
+}
