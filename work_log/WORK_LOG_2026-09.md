@@ -2,6 +2,25 @@
 
 Sections moved byte-for-byte from [WORK_LOG.md](../WORK_LOG.md) by `loom-daemon work-docs archive`.
 
+### 2026-09-20
+
+- **PR #271**: signoff: grade this block's T1 state from a klt manifest instead of hand-reading it
+- **Issue #270** (closed): Commit a klt signoff block manifest so this block's T1 state is graded, not hand-read
+
+### 2026-09-19
+
+- **PR #269**: spec: renumber the soft-start branch-gating negative result DR-0027 -> DR-0029
+- **PR #266**: Remove duplicate load() in soft-start-loop-gain: reuse loop-stability's
+- **PR #264**: spec: propose DR-0027, a negative/partial result on gating soft-start's degeneration branches
+- **PR #263**: spec: DR-0025's wnflag facts reproduce on ngspice-42/47 (DR-0027)
+- **PR #262**: sim: list soft-start-loop-gain in the rollup and fail on any unmapped slug
+- **PR #260**: sim: waive grid-level spread checks on a grid too small to define a spread (#253)
+- **Issue #268** (closed): DR-0027 numbering collision: two decision records both landed as DR-0027 (PR #263, PR #264)
+- **Issue #265** (closed): Remove duplicate load() in soft-start-loop-gain/testbench/compare_records.py: reuse loop-stability's
+- **Issue #257** (closed): sim: build_characterization_report.py leaves sim/soft-start-loop-gain unmapped — its records appear in neither the rollup nor the appendix
+- **Issue #254** (closed): spec: revisit DR-0025's `wnflag` bin-pin validation on ngspice majors other than 46 (#221's un-performed scope)
+- **Issue #253** (closed): sim: `selftest.sh --quick` always FAILs stage 3 on a spread check a single point cannot satisfy
+
 ### 2026-09-18
 
 - **PR #258**: spec: propose DR-0026, make the soft-start injection accurate by local feedback rather than by scaling the divider
