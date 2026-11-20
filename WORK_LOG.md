@@ -8,6 +8,10 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-19
 
+- **PR #774**: docs(loop-stability): drop stale "preserved as written" clause from DR-0008 precondition
+- **Issue #772** (closed): docs(loop-stability): "Where this stands … preserved as written" is stale after #769 rewrote that section
+- **PR #770**: docs(loop-stability): make "Where this stands" record-agnostic
+- **Issue #769** (closed): sim/loop-stability/README.md: 'Where this stands' names a three-generations-stale record as 'the current record'
 - **PR #767**: docs: note soft-start per-corner peaks are not toolchain-comparable
 - **Issue #746** (closed): soft-start inrush-peak and peak-dV/dt per-corner values move at the f6eeac7 re-pin (envelope intact)
 - **PR #768**: docs(sim): disclose the loop-stability f6eeac7 re-qualification's 7 verdict flips
@@ -486,23 +490,4 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 - **Issue #272** (closed): 2am: reuse rule 9 — in-tree error amplifier duplicates sibling canary gf180-opamp — add reuse.lock.json in_tree entry (evaluate), then adopt or record
 - **Issue #51** (closed): LDO loop stability: close the 1-50 mA phase-margin gap via DR-0012's Candidate 2 (adaptive pass-device-replica bias)
 - **Issue #15** (closed): Floorplan and matching plan (pass array, sense matching, Kelvin sensing)
-
-### 2026-09-20
-
-- **PR #271**: signoff: grade this block's T1 state from a klt manifest instead of hand-reading it
-- **Issue #270** (closed): Commit a klt signoff block manifest so this block's T1 state is graded, not hand-read
-
-### 2026-09-19
-
-- **PR #269**: spec: renumber the soft-start branch-gating negative result DR-0027 -> DR-0029
-- **PR #266**: Remove duplicate load() in soft-start-loop-gain: reuse loop-stability's
-- **PR #264**: spec: propose DR-0027, a negative/partial result on gating soft-start's degeneration branches
-- **PR #263**: spec: DR-0025's wnflag facts reproduce on ngspice-42/47 (DR-0027)
-- **PR #262**: sim: list soft-start-loop-gain in the rollup and fail on any unmapped slug
-- **PR #260**: sim: waive grid-level spread checks on a grid too small to define a spread (#253)
-- **Issue #268** (closed): DR-0027 numbering collision: two decision records both landed as DR-0027 (PR #263, PR #264)
-- **Issue #265** (closed): Remove duplicate load() in soft-start-loop-gain/testbench/compare_records.py: reuse loop-stability's
-- **Issue #257** (closed): sim: build_characterization_report.py leaves sim/soft-start-loop-gain unmapped — its records appear in neither the rollup nor the appendix
-- **Issue #254** (closed): spec: revisit DR-0025's `wnflag` bin-pin validation on ngspice majors other than 46 (#221's un-performed scope)
-- **Issue #253** (closed): sim: `selftest.sh --quick` always FAILs stage 3 on a spread check a single point cannot satisfy
 
