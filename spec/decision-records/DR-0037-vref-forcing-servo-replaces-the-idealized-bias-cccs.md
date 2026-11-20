@@ -106,3 +106,30 @@ Both blocks use the same real-device circuit (port lists unchanged):
   was found with the startup branch present, and one persists without it.
   Uniqueness, mismatch and other stimuli remain unverified there. This
   record does not ratify DR-0037.
+
+## Update (2026-11-20, issue #783, proposed)
+
+The settled regulator loop and current limit meet their bounds on the servo
+DUT. Two findings prevent an affirmative ratification recommendation. Both
+bias branches carry measurable current with EN low, and the paired Iq
+sweep has one invalid corner.
+
+The settled-loop and soft-start snapshots, and the raw current-limit, Iq
+and enable/shutdown decks' `dut.spice` files, match the committed
+`design/netlist/ldo_core.spice` byte for byte (SHA-256
+`4f99a1a9dcf681be3b470b7f11c8cff1a7a3bc63b276f0aa909fe88dfef5e4e1`).
+The paired ideal-source baseline has SHA-256
+`5bfa966c7d33005f28ecfe1725af798fbb130154633c334ff6d4d6b419c1889e`.
+
+| #320 criterion | Measured result | Committed evidence |
+| --- | --- | --- |
+| Current limit, DR-0005 | **Pass, 63/63.** At VOUT = 1.764 V, onset spans 62.025–93.776 mA inside the 62–95 mA window. The lower margin is 0.025 mA at ss / −40 °C / 2.97 V. Worst short dissipation is 345.598 mW against 346 mW. The largest absolute change in onset versus the ideal source is 0.0033 mA. | [20261115-limits-616-658920d0, corner values](../../sim/current-limit/corners/20261115-limits-616-658920d0/summary.csv), [20261015-ilim-320-pvt, paired comparison](../../sim/current-limit/records/20261015-ilim-320-pvt.md) |
+| Soft-start ramp and extra capacitors | **Matrix complete.** All 63 main points and all five 20-point extra requests produced measurements. The main 0.4–1.4 V ramp spans 1.281–3.364 V/ms (ideal-source baseline 1.30–3.41 V/ms). Extras span 1.113–3.364 V/ms. At 5 ns resolution the two DUTs' peak capacitor currents agree within 0.20% at the 161 hold-release events. This resolves the apparent peak improvement in #351. The ratified Startup row remains **MIXED**. The servo requalification did not regrade the standing ramp, inrush and current-limit clearance failures. | [20261118-pdk-f6eeac7-ss](../../sim/soft-start/records/20261118-pdk-f6eeac7-ss.md), [20261016-ss-320-pvt-main, baseline comparison](../../sim/soft-start/records/20261016-ss-320-pvt-main.md), [20261105-ss-351-peak-pvt, resolved peaks](../../sim/soft-start/records/20261105-ss-351-peak-pvt.md) |
+| Enabled Iq and servo cost | **80/81 physical paired solves.** The servo adds 0.42–0.92 µA at no load and at 50 mA (+0.60 µA typical). At ff / 125 °C / 3.63 V, Iq reaches 28.303 µA unloaded and 29.631 µA loaded, leaving 0.369 µA below 30 µA at full load. Both DUTs false-converged at ss / −40 °C / 2.97 V. The pinned servo run gave −0.0549 V and delivered 0.00187 mA at the commanded 50 mA. The separate enable bench measured 9.237 µA at 49.986 mA there. The paired no-load/full-load Iq delta at that corner remains open. | [20261015-iq-320-pvt, paired](../../sim/quiescent-current/records/20261015-iq-320-pvt.md), [20261020-pdk-f6eeac7-iq](../../sim/quiescent-current/records/20261020-pdk-f6eeac7-iq.md), [enable-bench corner values](../../sim/enable-shutdown/corners/20261020-pdk-f6eeac7-en/summary.csv) |
+| EN = 0 at the extremes | **Exact zero unmet.** The enable bench passes its 63-corner shutdown budget (maximum total Iq 0.277414 µA against 3 µA). The #352 EN-cycle bench inserts 0 V ammeters in both servo conveyors. At ff / 125 °C / 3.63 V, 19.5 µs into the initially disabled state, it measures 0.851118 nA in `ldo_ilimit` and 0.857408 nA in `ldo_softstart`. Its 1%-of-enabled-bias check passes with those finite currents. | [20261020-pdk-f6eeac7-en](../../sim/enable-shutdown/records/20261020-pdk-f6eeac7-en.md), [20261008-ss-352-bias-acq, instrumentation](../../sim/soft-start/records/20261008-ss-352-bias-acq.md), [EN-cycle readings, `en_from_shutdown`](../../sim/soft-start/corners/20261008-ss-352-bias-acq-encycle-part1/acquisition.csv) |
+| Settled main-loop stability, DR-0001 / DR-0018 | **Pass, 630/630.** Five loads from 0.1 to 50 mA × 1 µF × ESR {0.2, 0.5} Ω × 63 PVT corners. Minimum PM is 48.68° (3.30 V, 0.2 Ω) and minimum GM is 11.20 dB (2.97 V, 0.5 Ω), both at res_ss / −40 °C / 50 mA, against 45° and 10 dB. No DR-0008 resurgence flags. The frozen snapshot contains both servos despite the record prose naming `Fbias`. | [20261119-155956-0076e52, matrix](../../sim/loop-stability/records/20261119-155956-0076e52-matrix.csv), [frozen DUT](../../sim/loop-stability/netlist-snapshots/20261119-155956-0076e52.spice) |
+
+The settled-loop injection is between `ERRAMP_OUT` and `PASS_GATE`.
+Main-loop margins during soft-start hand-over have only pre-servo evidence.
+The internal VREF-forcing loop margin is unmeasured. Neither hand-over nor
+internal-loop margins have a #320 acceptance threshold. [Hand-over record 20260910-015601-2387ece](../../sim/soft-start-loop-gain/records/20260910-015601-2387ece.md)
