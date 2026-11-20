@@ -150,8 +150,8 @@ def ab_table(rows: list[Row]) -> tuple[list[str], list[tuple]]:
         b = buckets[key]
         measured = [p for p in b if p[2] is not None]
         if not measured:
-            out.append(f"| `{key[0]}` | {key[1]} | {len(b)} | *no crossover on "
-                       f"either side* | - | - | "
+            out.append(f"| `{key[0]}` | {key[1]} | {len(b)} | *no paired "
+                       f"0 dB crossing* | - | - | "
                        f"{b[0][0].vout_v - b[0][1].vout_v:+.4g} | "
                        f"{(b[0][0].iinj_a - b[0][1].iinj_a) * 1e6:+.3f} |")
             continue
@@ -291,29 +291,14 @@ def handover_section(curves: list[HovCurve], consistency) -> str:
         "  is checked below, not assumed. Every point of every corner is in the",
         "  `-handover.csv` beside this record; what follows is its extremes.",
         "",
-        "  As of issue #231's revert, `device` and `binj` both inject through",
-        "  the identical `Binj_ss` source and differ only in the DR-0024",
-        "  MIM-cap resize on `SSR`/`HG`/`SD` -- none of which this DC transfer",
-        "  (or the margin sweep above) can see, since the transfer below is a",
-        "  sequence of pinned-`V(SSR)` operating points and every one of those",
-        "  capacitors is an open at DC. The extremes table and worked transfer",
-        "  below are consequently expected to read IDENTICAL for both",
-        "  variants, to solver-noise precision; that is a correct measurement",
-        "  of the two variants sharing an injection element, not evidence that",
-        "  the cap resize is inert -- the resize's actual effect is on the",
-        "  ramp's TIME CONSTANT, a transient quantity `sim/soft-start/` owns",
-        "  and this static, per-point deck does not run.",
-        "",
     ]
     lines += ["  " + l for l in handover_extremes_table(curves)]
     lines += [
         "",
-        "  The `design intent` column is not an aspiration: it is what the",
-        "  pre-#195 behavioural source `Binj_ss` computes,",
-        "  `I = max(0, (V(VREF) - V(SSR)) * 5.0e-6)`, which the `binj` rows",
-        "  reproduce to the digits shown and which is therefore also a check",
-        "  that the derivation of `I_inj` from the landed operating point is",
-        "  right.",
+        "  The `design intent` column uses the `binj` transfer,",
+        "  `I = max(0, (V(VREF) - V(SSR)) * 5.0e-6)`. Each measured column",
+        "  uses the landed DC operating points at the pinned ramp voltages.",
+        "  Ramp timing is measured separately in `sim/soft-start/`.",
         "",
     ]
     ct = handover_curve_table(curves, "tt_27c_3.30v")
@@ -343,103 +328,50 @@ def handover_section(curves: list[HovCurve], consistency) -> str:
         worst = max(supply_lines, key=lambda t: abs(t[2]))
         slopes = [t[2] / t[1] for t in supply_lines if t[1]]
         lines += [
-            "  **`device`'s release point against the supply**, checked",
-            "  rather than assumed: `Binj_ss`'s defining expression has no",
-            "  `VIN` term, so this is expected to come out at 0 by",
-            "  construction post-#231 (pre-#231, when `device` was the",
-            "  post-#195 device-level chain, this was where that chain's",
-            "  own bias-current dependence on `VIN` showed up as real ramp",
-            "  movement -- see the historical record for that number).",
-            f"  Over the {len(supply_lines)} (process, temperature) pairs",
-            "  where `device` releases at all three supplies, moving `VIN`",
-            "  from 2.97 V to 3.63 V moves the `V(SSR)` at which it releases",
+            "  **Supply dependence of the `device` release point.** Across",
+            f"  {len(supply_lines)} (process, temperature) pairs, raising `VIN`",
+            "  from the lowest to the highest measured supply changes the",
+            "  release voltage `V(SSR)`",
             f"  by **{min(t[2] for t in supply_lines):+.3f} V to "
             f"{max(t[2] for t in supply_lines):+.3f} V**",
             f"  (mean {sum(slopes) / len(slopes):.3f} V of ramp node per volt of",
-            "  supply). Worst:",
-            f"  `{worst[0][0]}` at {worst[0][1]:g} degC -- "
+            "  supply). The largest absolute change occurs at",
+            f"  `{worst[0][0]}`, {worst[0][1]:g} degC -- "
             + ", ".join(f"{v:.2f} V -> {r:.3f} V" for v, r in worst[3]) + ".",
             "",
         ]
 
-    # The acquisition step, per variant, against the ideal element at the
-    # SAME ramp state -- the DC quantity that is the closest thing this
-    # record has to a handle on #191's transient, stated as arithmetic
-    # rather than as a story.
-    acq = {}
-    for variant in sorted({c.variant for c in curves}):
-        sel = [c for c in curves if c.variant == variant]
-        w = max(sel, key=lambda c: abs(
-            c.acquisition_step_v(HANDOVER_ACQUISITION_SSR_V)
-            - 1.5 * HANDOVER_ACQUISITION_SSR_V))
-        acq[variant] = w
-    if len(acq) == 2 and "device" in acq and "binj" in acq:
-        pair_lines = []
-        for c in curves:
-            if c.variant != "device":
-                continue
-            mate = next((d for d in curves
-                         if d.variant == "binj" and d.corner_id == c.corner_id),
-                        None)
-            if mate is None:
-                continue
-            a = c.acquisition_step_v(HANDOVER_ACQUISITION_SSR_V)
-            b = mate.acquisition_step_v(HANDOVER_ACQUISITION_SSR_V)
-            pair_lines.append((a - b, a, b, c.corner_id))
-        if pair_lines:
-            worst = max(pair_lines, key=lambda t: abs(t[0]))
-            lines += [
-                "  **The acquisition step.** Until `Mhold_ss` lets go, the pass",
-                "  device is off and the output is at zero; the instant the main",
-                "  loop owns the pass gate, the output it is asked to hold is",
-                "  whatever the injection element's current at the ramp state",
-                "  reached by then implies. That voltage is a step into `C_out`.",
-                f"  At `V(SSR)` = {HANDOVER_ACQUISITION_SSR_V:g} V (see the",
-                "  constant's comment for why that state), over the",
-                f"  {len(pair_lines)} corners where both variants are measured,",
-                "  `device` asks for",
-                f"  **{min(t[0] for t in pair_lines) * 1e3:+.1f} mV to "
-                f"{max(t[0] for t in pair_lines) * 1e3:+.1f} mV** more output",
-                "  than `binj` does at the identical ramp state (both use the",
-                "  same `Binj_ss` source post-#231, so this is expected to",
-                "  land at ~0 mV; a nonzero reading here would itself be a",
-                "  finding, since neither variant's DC transfer has a",
-                "  dependence on the DR-0024 cap resize that distinguishes",
-                "  them).",
-                f"  Worst: `{worst[3]}` -- {worst[1] * 1e3:.2f} mV against",
-                f"  {worst[2] * 1e3:.2f} mV, a factor of "
-                f"{(worst[1] / worst[2]) if worst[2] else float('inf'):.1f}.",
-                "",
-                "  **This is a DC statement, and it does not on its own account",
-                "  for #191's transient.** How much capacitor current a given",
-                "  step produces depends on the loop's large-signal acquisition",
-                "  time, which is `sim/soft-start/`'s to measure and which",
-                "  nothing here re-runs. And the arithmetic does not close on",
-                "  its own: at `tt_-40c_2.97v`, the corner #191's own A/B used,",
-                "  that A/B reads 0.468 mA with the ideal element against",
-                "  166.7 mA with the device chain -- a factor of 356 -- while",
-                "  the acquisition step measured here at the same corner differs",
-                "  by a factor of "
-                + (lambda t: f"{(t[1] / t[2]):.1f}" if t and t[2] else "n/a")(
-                    next((t for t in pair_lines if t[3] == "tt_-40c_2.97v"), None))
-                + ". A ~2x difference in the",
-                "  voltage the loop is asked to acquire cannot by itself produce",
-                "  a ~350x difference in the current it acquires it with, so the",
-                "  step is at most a contributing term and there is a mechanism",
-                "  this record does not measure. What this record *does* settle",
-                "  is that the missing mechanism is **not** a small-signal margin",
-                "  deficit at any pinned ramp state, and not the injection",
-                "  element's loading of `FB`: sections 3 and 6 measure both, and",
-                "  both are small. The remaining candidates are large-signal and",
-                "  live in `sim/soft-start/`'s domain -- the recovery out of the",
-                f"  out-of-regulation region this section finds at "
-                f"{sum(1 for c in curves if c.variant == 'device' and c.saturated_to_ssr_v is not None)}"
-                f" of "
-                f"{sum(1 for c in curves if c.variant == 'device')} corners is",
-                "  the first one to look at, because the loop is *open* there",
-                "  and no small-signal margin describes it at all.",
-                "",
-            ]
+    # Compare the landed output steps at the same ramp voltage and corner.
+    binj_by_corner = {c.corner_id: c for c in curves if c.variant == "binj"}
+    pair_lines = []
+    for c in dev:
+        mate = binj_by_corner.get(c.corner_id)
+        if mate is None:
+            continue
+        device_step = c.acquisition_step_v(HANDOVER_ACQUISITION_SSR_V)
+        binj_step = mate.acquisition_step_v(HANDOVER_ACQUISITION_SSR_V)
+        pair_lines.append((device_step - binj_step, device_step, binj_step, c.corner_id))
+    if pair_lines:
+        _, device_step, binj_step, corner_id = max(pair_lines, key=lambda t: abs(t[0]))
+        ratio = f"{device_step / binj_step:.1f}" if binj_step else "n/a"
+        lines += [
+            f"  **Output step at acquisition.** At `V(SSR)` = {HANDOVER_ACQUISITION_SSR_V:g} V,",
+            "  the landed output difference (`device` minus `binj`) ranges from",
+            f"  **{min(t[0] for t in pair_lines) * 1e3:+.1f} mV to "
+            f"{max(t[0] for t in pair_lines) * 1e3:+.1f} mV** over {len(pair_lines)} paired corners.",
+            f"  At `{corner_id}`, the corner with the largest absolute difference, the steps are",
+            f"  {device_step * 1e3:.2f} mV for `device` and {binj_step * 1e3:.2f} mV for `binj`",
+            f"  (ratio {ratio}).",
+            "  `device` leaves regulation on the DC sweep at "
+            f"{sum(c.saturated_to_ssr_v is not None for c in dev)} of {len(dev)} corners.",
+            "  Transient inrush also depends on the time the loop takes to acquire the output.",
+        ]
+        for _, device_step, binj_step, corner_id in pair_lines:
+            if corner_id == "tt_-40c_2.97v" and binj_step:
+                lines.append(
+                    f"  At `{corner_id}` the DC step ratio is {device_step / binj_step:.1f}. "
+                    "The #191 transient A/B measured 166.7 mA against 0.468 mA at this corner.")
+        lines.append("")
 
     if consistency and consistency[0] is not None:
         d, r, hov = consistency[0]
@@ -539,9 +471,9 @@ def attribution_section(attribution: dict | None) -> str:
         f"`{w.corner_id}` at {w.state_id}, {w.cfg_id} -- "
         f"PM {pm_str(w)} deg, GM {gm_str(w)} dB, crossover {_hz(w.f0_hz)} Hz.",
         "",
-        "  Every row below is that **same** operating point, re-simulated with",
-        "  exactly one coupling changed. The AC-only removals (`acopen-*`,",
-        "  `acshort-*`) put a 1 GH inductor in series with a device terminal or",
+        "  Each case uses the corner, ramp state and output network named above.",
+        "  The `acopen-*` and `acshort-*` cases each remove one AC coupling",
+        "  from `device` using a 1 GH inductor in series with a device terminal or",
         "  a 1 F capacitor from a node to a rail: an inductor is a short at DC",
         "  and a capacitor is an open at DC, so the operating point does not",
         "  move -- which is the point, and which the landed `VOUT`/`I_inj`",
@@ -570,7 +502,7 @@ def attribution_section(attribution: dict | None) -> str:
             "  The frequency-domain form of each of those deltas, over the whole",
             "  0.01 Hz - 1 GHz curve rather than at the crossover alone. The first",
             "  two columns are model-free: the largest magnitude and phase",
-            "  difference the coupling makes anywhere in band, and where. The",
+            "  difference from the committed variant anywhere in band, and where. The",
             "  pole/zero columns interpret that as `T(as-committed)/T(case)` =",
             "  `k*(1+s/z)/(1+s/p)`, which is what a single added R-C on one node",
             "  produces exactly -- so the fit is a claim the data can refute, and",
@@ -621,8 +553,8 @@ def attribution_section(attribution: dict | None) -> str:
             "  `design/ldo_softstart.sch`'s regression note states a hypothesis:",
             "  *\"ANY nonzero parasitic capacitance the real transconductor adds",
             "  to FB ... is enough to destabilize the main loop's hold-release",
-            "  transient\"*. Removing this element's own coupling (the table",
-            "  above) only says that **this** element is cheap. Adding known",
+            "  transient\"*. The `acopen-fb-inj` case above measures the loop's",
+            "  sensitivity to the device injection element's FB coupling. Adding known",
             "  capacitance to `FB` until the margins move says what any future",
             "  injection element has to stay under, and is what tests the",
             "  hypothesis as stated. Every rung is a capacitor, so every rung is",
@@ -636,9 +568,7 @@ def attribution_section(attribution: dict | None) -> str:
             "  and not a criterion"
             + ("; and the worst-point ladder below starts from a baseline of "
                f"{pm_str(ladders[0]['base'])} deg with no added capacitance at "
-               f"all -- already under the {PM_MIN_DEG:g} deg line, with "
-               f"*either* injection element, because that corner is "
-               f"`sim/loop-stability/`'s own open 1-50 mA gap (#51). Against an "
+               f"all -- already under the {PM_MIN_DEG:g} deg line. Against an "
                f"absolute bar every rung there would \"fail\" and the ladder "
                f"would say nothing about capacitance"
                if (ladders[0]["base"].pm_deg is not None
@@ -706,18 +636,7 @@ def attribution_section(attribution: dict | None) -> str:
                 f"own estimate of what the device-level chain adds to `FB` is "
                 f"\"tens of femtofarads\" -- call it 30 fF -- which is a factor "
                 f"of **{tight / 30e-15:.0f}** below that budget, and `Cff`'s "
-                f"15 pF already sits across `Rtop` on the same node for scale. "
-                f"`Binj_ss`'s own small-signal contribution to this budget is "
-                f"zero by construction, not a measured near-zero -- its "
-                f"defining expression depends on `VREF`/`SSR`/`EN` only, so "
-                f"its admittance out of `FB` is exactly zero and there is no "
-                f"`acopen-fb-inj`-shaped row left to remove it with (see "
-                f"'Pole/zero attribution' above and issue #234). So the "
-                f"budget above is a statement about real parasitics on `FB` "
-                f"(routing, `XMpre_b_ss`'s drain, any future injection "
-                f"element), not about `Binj_ss`, and it is what the "
-                f"schematic note's hypothesis, *\"ANY nonzero parasitic "
-                f"capacitance ... is enough\"*, has to be read against.",
+                f"15 pF already sits across `Rtop` on the same node for scale.",
             ]
     return "\n".join(lines) + "\n"
 
@@ -803,23 +722,31 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
     else:
         no_cross_reading = ""
 
-    # The A/B reading, computed rather than asserted.
-    dpms = [p[2] for p in pairs if p[2] is not None]
-    if dpms:
-        worst_pair = min((p for p in pairs if p[2] is not None), key=lambda p: p[2])
+    # Compare only matched points with a measured phase margin on both sides.
+    measured_pairs = [p for p in pairs if p[2] is not None]
+    if measured_pairs:
+        dpms = [p[2] for p in measured_pairs]
+        device, binj, _, _ = min(measured_pairs, key=lambda p: p[2])
+        span = max(map(abs, dpms))
+        relation = "within" if span <= XCHECK_PM_TOL_DEG else "above"
+        headline = (
+            "The largest absolute phase-margin difference between `device` and `binj` "
+            f"is **{span:.2f} deg** across {len(dpms)} paired points, {relation} the "
+            f"{XCHECK_PM_TOL_DEG:g} deg cross-invocation tolerance from #182/#185. "
+            "The A/B cannot isolate the contribution of the injection element or capacitor sizing."
+        )
         ab_reading = (
-            f"Across the {len(dpms)} (corner, ramp state, C_eff, ESR) points where "
-            f"both DUT variants have a 0 dB crossing, swapping `binj`'s "
-            f"pre-DR-0024 cap sizing for `device`'s DR-0024 MIM-cap resize "
-            f"(both inject through the identical `Binj_ss` source) moves the "
-            f"phase margin by "
+            f"Across the {len(dpms)} matched points with a 0 dB crossing in both variants, "
+            "the phase-margin difference (`device` minus `binj`) ranges from "
             f"**{min(dpms):+.2f} deg to {max(dpms):+.2f} deg** (mean "
-            f"{sum(dpms) / len(dpms):+.2f} deg). The worst single point is "
-            f"`{worst_pair[0].corner_id}` at {worst_pair[0].state_id}, "
-            f"{worst_pair[0].cfg_id}: {pm_str(worst_pair[0])} deg with `device` "
-            f"against {pm_str(worst_pair[1])} deg with `binj`."
+            f"{sum(dpms) / len(dpms):+.2f} deg). The lowest signed difference occurs at "
+            f"`{device.corner_id}` ({device.state_id}, {device.cfg_id}). The margins there are "
+            f"{pm_str(device)} deg with `device` and {pm_str(binj)} deg with `binj`."
         )
     else:
+        headline = ("No state measured here has a 0 dB crossing on both sides "
+                    "of the A/B, so this record makes no phase-margin "
+                    "comparison between `device` and `binj`.")
         ab_reading = "No point has a 0 dB crossing on both sides, so no A/B delta is computed."
 
     # The DC hand-over reading, also computed.
@@ -870,88 +797,6 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
             f"output error **{(wv.vout_v - VOUT_NOM_V) * 1e3:+.2f} mV** "
             f"({100 * (wv.vout_v - VOUT_NOM_V) / VOUT_NOM_V:+.3f}% of "
             f"{VOUT_NOM_V:g} V) at `{wv.corner_id}`")
-
-    # The pure small-signal contribution of the injection element. Issue
-    # #234: there is no `acopen-fb-inj`-shaped element-removal row left to
-    # measure this with (see 'Pole/zero attribution' above) -- but the same
-    # reason that row was retired answers this analytically: `Binj_ss`'s
-    # defining expression depends on `VREF`/`SSR`/`EN` only, so its
-    # small-signal admittance out of `FB` is exactly zero. That is a
-    # stronger statement than any measured near-zero could be.
-    ss_clause = ""
-    if attribution:
-        ss_clause = (
-            " Separately: `Binj_ss`'s own small-signal contribution to the "
-            "main loop is zero BY CONSTRUCTION, not a measured near-zero -- "
-            "its current does not depend on `V(FB)` at all, so it has no "
-            "admittance to isolate (see 'Pole/zero attribution' above and "
-            "issue #234). Whatever this A/B's spread is, none of it is "
-            "`Binj_ss` loading the loop."
-        )
-
-    # The headline, keyed off the measured A/B spread rather than asserted.
-    #
-    # As of #231's revert (see issue #239), `device` and `binj` both inject
-    # through the identical `Binj_ss` source and differ ONLY in the DR-0024
-    # MIM-cap resize on `SSR`/`HG`/`SD` -- nodes that sit outside both this
-    # margin sweep's loop break and the DC hand-over's KCL-at-FB derivation.
-    # There is consequently no architectural reason left for this A/B to show
-    # anything but solver-noise-level spread, in EITHER the margins here or
-    # the DC hand-over in section 1 -- unlike pre-#231, when `device` was a
-    # real, distinct device-level transconductor and this A/B (and section 1)
-    # measured a real difference (see the historical record
-    # `20260910-015601-2387ece.md`). The two branches below therefore no
-    # longer describe "an injection-element problem" vs. "not a problem"; they
-    # describe "the cap resize is invisible to this record's methodology, as
-    # expected" vs. "something this record did not anticipate is happening".
-    if dpms:
-        span = max(abs(min(dpms)), abs(max(dpms)))
-        if span <= XCHECK_PM_TOL_DEG:
-            headline = (
-                f"**The DR-0024 MIM-cap resize is not a phase-margin problem "
-                f"at any state this record measures -- and, since `device` "
-                f"and `binj` share the identical `Binj_ss` injection source, "
-                f"it could not have shown up here in the first place.** The "
-                f"largest phase-margin difference between the two variants, "
-                f"anywhere in the {len(dpms)}-point A/B, is "
-                f"{span:.2f} deg -- smaller than the ~{XCHECK_PM_TOL_DEG:g} deg "
-                f"cross-invocation movement class #182/#185 measured between two "
-                f"builds of the same ngspice version on an unmodified netlist, "
-                f"i.e. within solver noise. This is the expected outcome of a "
-                f"cap-value change on nodes (`SSR`/`HG`/`SD`) that sit outside "
-                f"this deck's loop break and outside the DC hand-over's "
-                f"KCL-at-FB derivation, both of which section 1 confirms also "
-                f"read identical for the two variants to the same precision. "
-                f"It is NOT evidence that the resize is inert: the resize's "
-                f"actual target is the ramp's TIME CONSTANT, a transient "
-                f"quantity neither this deck nor section 1 runs -- that "
-                f"question belongs to `sim/soft-start/` and to DR-0024's own "
-                f"record." + ss_clause
-            )
-        else:
-            headline = (
-                f"**Swapping `binj`'s pre-DR-0024 cap sizing for `device`'s "
-                f"DR-0024 resize moves the phase margin by up to {span:.2f} deg** "
-                f"at the same pinned ramp state, which is above the "
-                f"~{XCHECK_PM_TOL_DEG:g} deg cross-invocation movement class "
-                f"#182/#185 established. This is unexpected: both variants "
-                f"inject through the identical `Binj_ss` source, and the only "
-                f"netlist difference between them is the DR-0024 MIM-cap "
-                f"resize on `SSR`/`HG`/`SD`, none of which sit in this deck's "
-                f"loop break or in the DC hand-over's KCL-at-FB derivation "
-                f"(section 1). A margin delta this size therefore is NOT "
-                f"explained by \"the two variants inject different currents\" "
-                f"the way it would have been pre-#231 -- section 1 should be "
-                f"read first to check whether the two variants nevertheless "
-                f"landed at different DC operating points, and if not, this "
-                f"result is itself a finding that warrants its own "
-                f"investigation rather than a restatement of the pre-#231 "
-                f"story." + ss_clause
-            )
-    else:
-        headline = ("No state measured here has a 0 dB crossing on both sides "
-                    "of the A/B, so this record makes no phase-margin "
-                    "comparison between `device` and `binj`.")
 
     seeded_md = ""
     if seeded:
@@ -1005,11 +850,8 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
 - **Record ID**: {record_id}
 - **Claim**: issue #196 -- the small-signal loop-gain / phase-margin
   characterization of the LDO main loop **with `design/ldo_softstart.sch`'s
-  FB-injection element in the loop**, at pinned points of the soft-start ramp,
-  for two DUT variants of `Binj_ss` (see 'Netlist provenance' below for what
-  currently distinguishes them -- issue #231 reverted the post-#195
-  device-level injection chain this experiment originally compared against
-  the ideal source; see issue #239). This record substantiates **no ratified
+  FB-injection element in the loop**, at pinned points of the soft-start ramp
+  for the DUT variants listed below. This record substantiates **no ratified
   spec row**. It is
   the AC evidence `design/ldo_softstart.sch`'s own "WHAT THIS COSTS THE MAIN
   LOOP" note points at and that did not exist, and it is the measured input to
@@ -1023,18 +865,14 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   (`design/ldo_core.sch` -> `design/netlist/ldo_core.spice`, with
   `design/ldo_softstart.sch` -> `design/netlist/ldo_softstart.spice` inside
   it){' -- **DIRTY WORKING TREE at run time; not citable as a clean-tree result**' if dirty else ''}.
-  Two DUT variants, both injecting through the same `Binj_ss` source
-  (post-#231; see #234/#239) and differing **only** in the DR-0024 MIM-cap
-  resize:
 {chr(10).join(f'  - `{v}`: {nv.VARIANT_BLURB[v]}' for v in variants)}
 
-  Both are the SSR-instrumented form of the same `ldo_core`: the ramp node
-  `SSR` is appended to `ldo_softstart`'s and `ldo_core`'s port lists and to the
-  `Xsoftstart` instance line, and nothing else is touched. `SSR` is already a
+  Each variant exposes the ramp node `SSR` through the `ldo_softstart` and
+  `ldo_core` port lists and the `Xsoftstart` instance line. `SSR` is already a
   node of the cell, so promoting it to a port renames nothing and connects
   nothing; the `anchor` phase leaves the new port unconnected and **measures**
   that this is so (see the cross-check below). Nothing under `design/` is
-  modified by this experiment; the two frozen netlists are linked below.
+  modified by this experiment. The netlist snapshots are linked below.
   The idealizations in the loop are the ones every other record here names:
   the deck's ideal 1.2 V `VREF` source (#174 / DR-0021) and `Fbias` inside
   `ldo_ilimit`.
@@ -1110,7 +948,7 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   {len(no_cross)}/{len(rows)} points have no 0 dB crossing in
   0.01 Hz - 1 GHz at all.{no_cross_reading}
 
-  **3. The A/B: what the injection element costs the loop.**
+  **3. Paired margin differences between DUT variants.**
 
   {ab_reading}
 
