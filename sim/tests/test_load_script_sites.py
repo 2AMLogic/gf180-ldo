@@ -67,8 +67,6 @@ ALLOWLIST: dict[str, tuple[int, str]] = {
         1, "registers in sys.modules; testbench must not put sim/ on sys.path (#630/#700)"),
     "sim/current-limit/testbench/klt_run.py": (
         1, "registers in sys.modules; testbench must not put sim/ on sys.path (#630/#700)"),
-    "sim/toolchain-portability/testbench/ab_loop_stability.py": (
-        1, "registers in sys.modules; testbench must not put sim/ on sys.path (#630/#700)"),
     "sim/tests/test_ab_loop_stability.py": (
         1, "registers in sys.modules; unique-name load beside its driver test (#630/#700)"),
 }

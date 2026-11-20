@@ -45,7 +45,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import importlib.util
 import os
 import re
 import shutil
@@ -59,6 +58,7 @@ REPO_ROOT = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 
 from harness import klt_grid, tb_adapter  # noqa: E402
+from harness.loop_margin import parse_row_fields  # noqa: E402
 from harness.runner import (  # noqa: E402
     ngspice_major_version,
     ngspice_version_at,
@@ -66,15 +66,6 @@ from harness.runner import (  # noqa: E402
 )
 
 SWEEP = SIM_DIR / "loop-stability" / "testbench" / "sweep.py"
-
-# The deck's own driver owns the parser for the deck's own `ROW` lines, and the
-# field tuple it validates against -- imported, not copied, so the two cannot
-# drift (same idiom as `sim/soft-start-loop-gain/testbench/sweep.py`). The
-# script sits under a hyphenated directory, so it is loaded by path.
-_ls_spec = importlib.util.spec_from_file_location("loop_stability_sweep", SWEEP)
-ls = importlib.util.module_from_spec(_ls_spec)
-sys.modules["loop_stability_sweep"] = ls
-_ls_spec.loader.exec_module(ls)
 
 _RECORD_ID_RE = re.compile(r"^record id\s*:\s*(\S+)")
 
@@ -125,7 +116,7 @@ def parse_corner_logs(logdir: Path) -> dict[Point, Margin]:
                 continue
             # Strict: raises ValueError on a missing, repeated, unknown or
             # non-`key=value` field instead of absorbing it as "no measurement".
-            f = ls.parse_row_fields(line)
+            f = parse_row_fields(line)
             point = Point(
                 corner_id=corner_id,
                 iload_a=f["iload_a"],
