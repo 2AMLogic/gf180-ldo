@@ -45,7 +45,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .corners import CORNERS
+from .corners import CORNERS, format_corner_id
 
 #: The process axis the three standalone PVT benches sweep (bjt_ff/bjt_ss
 #: omitted: the design has no bipolar device -- same convention as run.sh).
@@ -95,12 +95,18 @@ def only_axes(only: str | None) -> dict:
 
 
 def corner_id(c: dict, supply_key: str, fixed_supply: float | None = None) -> str:
+    """The grid's corner id for one ``klt`` report row (issue #780).
+
+    The supply is klt's own selection -- the fixed-supply override, else the
+    ``corners.params`` row, else the ``corners.supply_v`` axis -- and the id
+    itself is the one shared formatter, :func:`harness.corners.format_corner_id`,
+    so a report row always spells the id the grid point it belongs to was
+    keyed under.
+    """
     vin = (float(fixed_supply) if fixed_supply is not None
            else float(c["params"][supply_key] if supply_key in (c.get("params") or {})
                       else c["supply_v"][supply_key]))
-    t = c["temperature_c"]
-    t = int(t) if float(t).is_integer() else t
-    return f"{c['process']}_{t}c_{vin:.2f}v"
+    return format_corner_id(c["process"], c["temperature_c"], vin)
 
 
 @dataclass

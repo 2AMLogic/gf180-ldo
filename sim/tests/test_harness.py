@@ -87,6 +87,20 @@ class CornerTests(unittest.TestCase):
         self.assertIn("ss_-40c_2.97v", ids)
         self.assertIn("ff_125c_3.63v", ids)
 
+    def test_corner_id_preserves_fractional_temperature_precision(self):
+        """issue #780: six significant digits truncated ``27.123456`` to
+        ``27.1235`` on the grid side while the klt report reader kept the full
+        value, so the join that matches a report row to its grid point found
+        nothing. One formatter means one spelling."""
+        p = corners.PvtPoint(corner=corners.CORNERS["tt"], temp_c=27.123456, vdd=3.3)
+        self.assertEqual(p.corner_id, "tt_27.123456c_3.30v")
+
+    def test_corner_id_normalizes_signed_zero(self):
+        """issue #780: ``:g`` spelled ``-0.0`` as ``-0c`` while the report
+        reader's integer conversion produced ``0c`` -- a third silent miss."""
+        p = corners.PvtPoint(corner=corners.CORNERS["tt"], temp_c=-0.0, vdd=3.3)
+        self.assertEqual(p.corner_id, "tt_0c_3.30v")
+
 
 class TestbenchTests(unittest.TestCase):
     def setUp(self):

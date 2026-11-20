@@ -691,6 +691,65 @@ class TestRunGridKltWiring(unittest.TestCase):
         self.assertEqual(seen["expected_pdk_root"], seen["pdk_root"])
 
 
+class TestKltReportJoin(unittest.TestCase):
+    """A report row must be findable by the grid id that asked for it (#780).
+
+    The grid point and the klt report row each constructed the corner id they
+    join on, and the two spellings disagreed for fractional temperatures
+    (``27.123456`` on the report side vs the grid's six-significant-digit
+    ``27.1235``) and for signed zero (``0`` vs ``-0``): the sweep then reported
+    ``expected 1 rows, parsed 0`` for a measurement the report contained. This
+    is the issue's reproduction, end to end through the same three calls
+    ``run_grid_klt`` makes: ``collect_values`` -> ``corner_log`` ->
+    ``rows_from_log``. No PDK, no fleet job.
+    """
+
+    CFG = (1e-3, 1.0e-6, 0.05)
+
+    def _report(self, temp_c: float) -> dict:
+        """A synthetic ok tt report row at 3.30 V via the supply param axis."""
+        return {"corners": [{
+            "process": "tt", "temperature_c": temp_c, "status": "ok",
+            "params": {sweep.klt_run.SUPPLY_PARAM: 3.3},
+            "passes": [{"name": "inj_v", "status": "ok"},
+                       {"name": "inj_i", "status": "ok"}],
+            "measurements": [
+                {"name": "vout_v", "value": 1.8},
+                {"name": "dcgain_db", "value": 90.0},
+                {"name": "f0_hz", "value": 1.0e5},
+                {"name": "phase_at_f0_deg", "value": -120.0},
+                {"name": "f180_hz", "value": 2.0e6},
+                {"name": "gain_at_f180_db", "value": 25.0},
+                {"name": "f0_rising_hz", "value": None},
+                {"name": "resurgence_db", "value": -3.0},
+            ],
+            "diagnostics": [{"code": "measurement", "message":
+                             "tian_metric_unavailable: measurement "
+                             "'f0_rising_hz': no rising crossing in band"}],
+        }]}
+
+    def _rows_for(self, temp_c: float):
+        values, problems = sweep.klt_run.collect_values(self._report(temp_c))
+        self.assertEqual(problems, [])
+        pvt = sweep.build_grid(sweep.resolve_corners(["tt"]), [temp_c], [3.3])[0]
+        text = sweep.klt_run.corner_log(pvt.corner_id, [self.CFG], {self.CFG: values})
+        return pvt, sweep.rows_from_log(pvt, text, 1, Path(f"{pvt.corner_id}.log"))
+
+    def test_a_fractional_temperature_row_survives_the_lookup(self):
+        pvt, (rows, err) = self._rows_for(27.123456)
+        self.assertIsNone(err)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].corner_id, pvt.corner_id)
+        self.assertAlmostEqual(rows[0].vout_v, 1.8)
+
+    def test_a_signed_zero_temperature_row_survives_the_lookup(self):
+        pvt, (rows, err) = self._rows_for(-0.0)
+        self.assertIsNone(err)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(pvt.corner_id, "tt_0c_3.30v")
+        self.assertAlmostEqual(rows[0].vout_v, 1.8)
+
+
 class TestRenderRecordSmoke(unittest.TestCase):
     """`render_record` renders a whole record from fabricated inputs (#658).
 
