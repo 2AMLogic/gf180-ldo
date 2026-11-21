@@ -14,6 +14,7 @@ store; and ``summarize.py`` takes a directory as well as a record id.
 from __future__ import annotations
 
 import contextlib
+import csv
 import io
 import json
 import math
@@ -104,6 +105,23 @@ class SampleRows(unittest.TestCase):
         self.assertIs(req["options"]["stage_model_inputs"], True)
 
 
+class Grade(unittest.TestCase):
+    """The staged pass column is ``tb_adapter.grade(TB, st)`` (issue #798)."""
+
+    def test_at_bound_values_pass_and_nonfinite_or_missing_fail(self):
+        ok = {"n_samples": 1000, "n_bad_solves": 0, "sigma_mv": 0.05, "sigma3_mv": 3.49,
+              "vos_in_sigma3_mv": 2.33, "worst_abs_mv": 18.0, "divider_exact_uv": 1.0,
+              "mean_mv": 2.56}
+        self.assertTrue(ta.grade(mc.TB, ok))
+        for key, bad in (("mean_mv", float("nan")),
+                         ("sigma_mv", float("inf")),      # min-only bound
+                         ("sigma3_mv", float("-inf")),    # max-only bound
+                         ("mean_mv", 3.0)):               # max 2.56, as probed
+            with self.subTest(key=key, bad=bad):
+                self.assertFalse(ta.grade(mc.TB, {**ok, key: bad}))
+        self.assertFalse(ta.grade(mc.TB, {k: v for k, v in ok.items() if k != "sigma_mv"}))
+
+
 class McDriverRouting(unittest.TestCase):
     """DR-0044, issue #647: the mc driver stages, refuses and mints.
 
@@ -119,6 +137,7 @@ class McDriverRouting(unittest.TestCase):
         self.dests: list[Path] = []
         self.stdout = io.StringIO()
         self.stderr = io.StringIO()
+        self.value = 0.1  # every measurement of every fake sample
 
     def _run_ab(self, job_factory, dut, baseline_ref, dest, repo, **kw):
         self.dests.append(Path(dest))
@@ -129,7 +148,7 @@ class McDriverRouting(unittest.TestCase):
             tl = int(t) if float(t).is_integer() else t
             corners.append({"corner_id": f"{proc}_{tl}c_{vin:.2f}v", "process": proc,
                             "temperature_c": t, "status": "pass", "supply_v": {},
-                            "measurements": [{"name": m["name"], "value": 0.1}
+                            "measurements": [{"name": m["name"], "value": self.value}
                                              for m in mc.MEASUREMENTS],
                             "monte_carlo": {"sample_index": 0}})
         report = json.dumps({"corners": corners})
@@ -198,6 +217,19 @@ class McDriverRouting(unittest.TestCase):
         rc = self._main(["--record-id", self.rid, "--only", "tt,27,3.30"], explode)
         self.assertEqual(rc, 0)
         self.assertTrue(self._staged().is_dir())
+
+    def test_a_nonfinite_sample_fails_the_staged_pass_column(self):
+        # Issue #798: a NaN that survives the fleet report passed the driver's
+        # old local grader (every NaN comparison is False); the shared scalar
+        # rule must fail the row.
+        self.value = float("nan")
+        rc = self._main(["--record-id", self.rid], lambda repo: None)
+        self.assertEqual(rc, 0)
+        with open(self._staged() / "summary.csv", newline="") as fh:
+            rows = list(csv.DictReader(fh))
+        new = [r for r in rows if r["dut"] == "new"]
+        self.assertTrue(new)
+        self.assertTrue(all(r["pass"] == "False" for r in new), [r["pass"] for r in new])
 
     def test_a_record_id_already_committed_is_refused(self):
         existing = sorted(p for p in (SIM_DIR / "mc-output-accuracy" / "corners").iterdir()

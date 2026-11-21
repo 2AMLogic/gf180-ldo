@@ -53,6 +53,7 @@ from pathlib import Path
 
 import check_append_only
 from . import klt_batch as kb
+from . import report
 from . import testbench as tbmod
 
 #: The nine-process axis the standalone PVT benches record over (the seven
@@ -470,12 +471,15 @@ def jobs(tb: tbmod.Testbench, tag: str, dut: Path,
 
 
 def grade(tb: tbmod.Testbench, values: dict) -> bool:
-    """Every ``checks`` bound holds; a missing value fails."""
-    for key, lim in tb.checks.items():
-        x = values.get(key)
-        if x is None or ("max" in lim and x > lim["max"]) or ("min" in lim and x < lim["min"]):
-            return False
-    return True
+    """Every ``checks`` bound holds; a missing value fails.
+
+    The scalar rule itself is the record evaluator's
+    :func:`harness.report.scalar_bound_failure` (issue #798): a value a minted
+    record would reject -- NaN, an infinity, an out-of-bound number, or a
+    missing key -- never passes the staged summary's pass column either.
+    """
+    return all(report.scalar_bound_failure(values.get(key), lim) is None
+               for key, lim in tb.checks.items())
 
 
 def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None = None,
