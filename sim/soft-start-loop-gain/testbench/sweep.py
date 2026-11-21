@@ -1408,10 +1408,8 @@ def run_attribution(worst: Row, grid, pdk, netlists, args, workdir: Path,
                     logdir: Path, rows: list[Row]) -> dict:
     """Element-removal sensitivity at the worst device-variant point.
 
-    Runs the SAME operating point -- same corner, same ramp state, same output
-    network -- through the netlist as committed, through the ``binj`` variant
-    (the same ``Binj_ss`` source frozen at its pre-DR-0024 cap sizing), and
-    through one netlist per AC-only coupling removal in ``ATTRIBUTIONS``.
+    Uses the same corner, ramp state and output network for the ``device``
+    and ``binj`` variants and each AC-only coupling removal in ``ATTRIBUTIONS``.
     Every one of those removals is DC-inert by construction (an inductor is a
     short at DC, a capacitor is an open), which is checked here rather than
     asserted: each case's landed VOUT/FB/injection current is reported next to
@@ -1421,10 +1419,7 @@ def run_attribution(worst: Row, grid, pdk, netlists, args, workdir: Path,
     pvt = next(p for p in grid if p.corner_id == worst.corner_id)
     device_text = netlists["device"].read_text()
     cases: list[tuple[str, str, str]] = [
-        ("as-committed",
-         "`Binj_ss` with the DR-0024 MIM-cap resize, exactly as `main` has "
-         "it",
-         device_text)
+        ("as-committed", "`device` variant", device_text)
     ]
     for tag, desc, fn in ATTRIBUTIONS:
         try:
@@ -1432,10 +1427,7 @@ def run_attribution(worst: Row, grid, pdk, netlists, args, workdir: Path,
         except nv.TransformError as exc:
             print(f"  attribution: skipping {tag}: {exc}", file=sys.stderr)
     if "binj" in netlists:
-        cases.append(("binj",
-                       "the same `Binj_ss` source frozen at its "
-                       "pre-DR-0024 cap sizing (commit bfc4a0a)",
-                       netlists["binj"].read_text()))
+        cases.append(("binj", "`binj` variant", netlists["binj"].read_text()))
 
     ssr_values = None if PHASES[worst.phase]["ssr"] is None else [worst.ssr_cmd]
     out: dict = {"worst": worst, "cases": [], "fits": []}

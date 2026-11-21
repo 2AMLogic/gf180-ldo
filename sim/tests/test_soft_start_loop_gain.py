@@ -1340,14 +1340,11 @@ class TestRenderRecordSmoke(unittest.TestCase):
     expensive possible place to discover that, and invisible to a green
     `unittest` run before it. These smoke tests call it with a four-row
     fabricated device/binj A/B (two ramp states at one corner, one output
-    network cell) and assert on structure only: the `## Environment` block is
-    present with its canonical bullets in order, and the no-klt / klt-local /
-    klt-batch variants all render without raising. Deliberately no golden
+    network cell) and check the reported A/B measurements and environment
+    metadata for no-klt, klt-local and klt-batch runs. Deliberately no golden
     file -- the record prose evolves (the #609 Champion ruling accepted
     exactly such a change), so pinning the full text would only make this
-    test churn on every wording edit. The not-run paths are taken for the
-    optional sections (`curves=[]`, `xcheck={"skipped": True}`) so the
-    fixture stays small; those sections have their own tests above.
+    test churn on every wording edit.
 
     Stubbed, and why: `ngspice_version` shells out to the host's ngspice and
     `ngspice_binary_sha256` hashes that binary. This module's contract is
@@ -1361,7 +1358,8 @@ class TestRenderRecordSmoke(unittest.TestCase):
     COMMAND_BULLET = "- Command: `./sim/soft-start-loop-gain/testbench/run.sh`"
     PDK_BULLET = "- PDK: gf180mcuD @ open_pdks `unittest`"
 
-    def _render(self, klt_info=None) -> str:
+    def _render(self, klt_info=None, *, device_phases=(-120.0, -120.0),
+                curves=()) -> str:
         # device/binj mates at the same (phase, ramp state, corner, C_eff,
         # ESR), so `ab_table` has pairs to tabulate and `handover_table` has
         # a two-state transfer at the tt corner. VOUT follows the intended
@@ -1370,10 +1368,12 @@ class TestRenderRecordSmoke(unittest.TestCase):
         # error) are computed from -- the values only have to be finite and
         # self-consistent, not measured.
         rows = [
-            row(variant=variant, ssr_cmd=cmd, ssr_v=v, vout_v=1.5 * v,
-                fb_v=1.1975)
-            for variant in ("device", "binj")
-            for cmd, v in (("0.05", 0.05), ("1.15", 1.15))
+            row(variant=variant, ssr_cmd=str(v), ssr_v=v, vout_v=1.5 * v,
+                fb_v=1.1975, phase_at_f0_deg=phase,
+                f0_hz=1e5 if phase is not None else None,
+                dcgain_db=100.0 if phase is not None else -1.0)
+            for variant, phases in (("device", device_phases), ("binj", (-120.0, -120.0)))
+            for v, phase in zip((0.05, 1.15), phases, strict=True)
         ]
         args = SimpleNamespace(ac_dec=int(sweep.AC_DEC), author="unittest",
                                phases=["ramp"], subset_reason="", supersedes=None)
@@ -1400,7 +1400,38 @@ class TestRenderRecordSmoke(unittest.TestCase):
                 prov={"commit": "abc1234", "short": "abc1234",
                       "branch": "unittest", "dirty": False},
                 args=args, xcheck={"skipped": True}, attribution=[],
-                seeded=(), curves=(), klt_info=klt_info)
+                seeded=(), curves=curves, klt_info=klt_info)
+
+    def test_provenance_and_handover_describe_the_measured_variants(self):
+        md = self._render(curves=[ideal_curve("device", gm=4e-6), ideal_curve()])
+        provenance = md.split("**Netlist provenance**")[1].split("**Corner matrix run**")[0]
+        for blurb in nv.VARIANT_BLURB.values():
+            self.assertIn(blurb, provenance)
+            self.assertEqual(md.count(blurb), 1)
+        self.assertNotRegex(" ".join(md.split()), r"(?:same|identical) `Binj_ss`")
+        self.assertIn("+345.0 mV to +345.0 mV", md)
+
+    def test_paired_phase_margins_on_either_side_of_the_tolerance(self):
+        for phases, span, relation, delta_range, mean, worst_pm in (
+            ((-121.0, -118.0), "2.00", "within", "-1.00 deg to +2.00", "+0.50", "59.00"),
+            ((-126.0, -117.0), "6.00", "above", "-6.00 deg to +3.00", "-1.50", "54.00"),
+        ):
+            with self.subTest(phases=phases):
+                md = self._render(device_phases=phases)
+                headline = md.split("**Result**:")[1].split("**1.")[0]
+                self.assertIn(f"{span} deg", headline)
+                self.assertIn(f"{relation} the {sweep.XCHECK_PM_TOL_DEG:g} deg", headline)
+                self.assertIn("cannot isolate", headline)
+                self.assertIn(f"{delta_range} deg", md)
+                self.assertIn(f"mean {mean} deg", md)
+                self.assertIn(f"{worst_pm} deg with `device`", md)
+                self.assertIn("60.00 deg with `binj`", md)
+
+    def test_no_paired_crossing_has_no_phase_margin_comparison(self):
+        md = self._render(device_phases=(None, None))
+        self.assertIn("no phase-margin comparison", md)
+        self.assertIn("no A/B delta is computed", md)
+        self.assertIn("no paired 0 dB crossing", md)
 
     def test_no_klt_renders_the_environment_block_in_order(self):
         md = self._render()
