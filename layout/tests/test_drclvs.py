@@ -834,10 +834,6 @@ class ControlSetTests(unittest.TestCase):
                 )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class KltLvsRequestTests(unittest.TestCase):
     """build_klt_lvs_request(): the committed-report request shape (issue
     #784), mirroring the sibling precedent's keys and carrying the raw
@@ -959,3 +955,7 @@ class GdsEqualModuloTimestampsTests(unittest.TestCase):
             b.write_bytes(b"\x00\x40")  # declares 64 bytes, has 2
             with self.assertRaises(ValueError):
                 drclvs.gds_equal_modulo_timestamps(a, b)
+
+
+if __name__ == "__main__":
+    unittest.main()
