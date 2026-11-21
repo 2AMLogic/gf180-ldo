@@ -1,0 +1,41 @@
+* pass-array PEX bench -- array-alone on-resistance and replica ratio (issue #786)
+*
+* Measures the pass array as a black box at the dropout binding test point:
+* VIN = 2.10 V (DR-0004 note 4: Vout_nom + the ratified dropout bound), the
+* PASS_GATE pin at 0 V -- the error amp saturated low, i.e. the dropout
+* condition -- and a 50 mA sink (README.md 'Dropout @ 50 mA') shared by the
+* two drain pins. VOUT and ISNS are tied to one node through independent
+* 0 V sense sources, so Mpass and Msense sit at the same drain potential and
+* the current split is the replica ratio (40:1 by drawn geometry: 40 unit
+* cells against Msense's one, the same unit cell). Any replica-ratio delta
+* on the extracted leg is therefore metal, not device sizing.
+*
+* This deck is a klt pex testbench, not a sim/harness corner bench: the
+* single .include below is the DUT swap point klt pex re-points at the
+* extracted PASS_ARRAY netlist (klt pex contract: exactly one .include line),
+* and the evidence it produces is the committed klt pex report plus the
+* layout/records/ pex record. Corner matrix: the sim/dropout-vs-load
+* bench's -- process {tt,ff,ss,fs,sf} x {-40,27,125} C at the single
+* 2.10 V supply axis.
+*
+* PDK global switch parameters and wnflag are inlined here, ahead of the
+* DUT include, exactly as sim/harness/tb_adapter.py inlines them for every
+* harness bench: the corner .lib sections klt sim appends reference them,
+* and DR-0025 needs wnflag=1 for gf180mcu's per-finger width binning (the
+* pass device is W/nf = 70 um per finger). Both legs share this preamble
+* byte-identically; only the .include line below is swapped.
+.param sw_stat_global=0 sw_stat_mismatch=0 mc_skew=3 res_mc_skew=3 cap_mc_skew=3 fnoicor=0
+.options wnflag=1
+.include "pass_array_dut.spice"
+Xarr ISNS PASS_GATE VIN VOUT pass_array
+*
+* --- stimulus: the binding test point, gate fully enhanced --------------
+Vin VIN 0 DC 2.10
+Vgate PASS_GATE 0 DC 0
+*
+* --- drains tied at one node, each leg's current measured ----------------
+* 50 mA leaves the common drain node; the split between Vsns_out (Mpass)
+* and Vsns_sns (Msense) is the replica ratio.
+Vsns_out VOUT VDR 0
+Vsns_sns ISNS VDR 0
+Iload VDR 0 DC 0.05
