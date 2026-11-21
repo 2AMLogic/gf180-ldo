@@ -355,6 +355,31 @@ def waived_checks(checks: dict[str, dict], summary: dict) -> list[dict]:
     return waived
 
 
+def scalar_bound_failure(value, spec: dict) -> str | None:
+    """Why one measured scalar fails check ``spec``, or ``None`` when it holds.
+
+    The one scalar rule behind the record evaluator and both staging graders
+    (issue #798). Fails closed on non-finite values: every comparison against
+    NaN is False, and an infinity on the unbounded side of a one-sided check
+    would otherwise pass (issue #420). ``min``/``max`` are inclusive. A spread
+    bound is a grid-level statistic rather than a per-scalar bound, but a
+    spec that bounds a measurement in any way still refuses a non-finite
+    value for it. A spec with no bound at all (refused by
+    ``testbench.validate_checks``) constrains nothing, and a missing value
+    (``None``) fails: it is not a finite in-range number.
+    """
+    if not any(spec.get(k) is not None for k in ("min", "max", *SPREAD_KINDS)):
+        return None
+    if not _is_finite(value):
+        return "nonfinite"
+    low, high = spec.get("min"), spec.get("max")
+    if low is not None and value < low:
+        return "min"
+    if high is not None and value > high:
+        return "max"
+    return None
+
+
 def evaluate_checks(
     checks: dict[str, dict],
     results: list[PointResult],
@@ -367,51 +392,24 @@ def evaluate_checks(
         unknown = sorted(set(spec) - known)
         if unknown:
             raise ValueError(f"check {name!r} has unsupported key(s) {unknown}")
-        low = spec.get("min")
-        high = spec.get("max")
-        # Fail closed on NaN/inf: every comparison against NaN is False, so a
-        # non-finite value would otherwise pass every bound (issue #420).
-        if any(spec.get(k) is not None for k in ("min", "max", *SPREAD_KINDS)):
-            for result in results:
-                if result.status != "ok" or name not in result.measurements:
-                    continue
-                if not _is_finite(result.measurements[name]):
-                    failures.append(
-                        {
-                            "measurement": name,
-                            "kind": "nonfinite",
-                            "limit": None,
-                            "value": str(result.measurements[name]),
-                            "at": result.point.corner_id,
-                        }
-                    )
-        if low is not None or high is not None:
-            for result in results:
-                if result.status != "ok" or name not in result.measurements:
-                    continue
-                value = result.measurements[name]
-                if not _is_finite(value):
-                    continue
-                if low is not None and value < low:
-                    failures.append(
-                        {
-                            "measurement": name,
-                            "kind": "min",
-                            "limit": low,
-                            "value": value,
-                            "at": result.point.corner_id,
-                        }
-                    )
-                if high is not None and value > high:
-                    failures.append(
-                        {
-                            "measurement": name,
-                            "kind": "max",
-                            "limit": high,
-                            "value": value,
-                            "at": result.point.corner_id,
-                        }
-                    )
+        # One shared scalar rule (issue #798): fail closed on NaN/inf -- every
+        # comparison against NaN is False, and an infinity on the unbounded
+        # side of a one-sided check would otherwise pass (issue #420).
+        for result in results:
+            if result.status != "ok" or name not in result.measurements:
+                continue
+            value = result.measurements[name]
+            kind = scalar_bound_failure(value, spec)
+            if kind is not None:
+                failures.append(
+                    {
+                        "measurement": name,
+                        "kind": kind,
+                        "limit": None if kind == "nonfinite" else spec[kind],
+                        "value": str(value) if kind == "nonfinite" else value,
+                        "at": result.point.corner_id,
+                    }
+                )
         # Grid-level spread checks. max_spread_pct is the usual "this must be
         # stable over PVT" assertion; min_spread_pct is its inverse and exists
         # to prove the harness is actually *moving* the corner -- a measurement
