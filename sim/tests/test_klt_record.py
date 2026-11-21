@@ -22,6 +22,7 @@ sys.path.insert(0, str(SIM_DIR))
 from harness import evidence_store as es  # noqa: E402
 from harness import klt_record as kr  # noqa: E402
 from harness import pdk  # noqa: E402
+from harness import report  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -144,6 +145,8 @@ class StoreRun(unittest.TestCase):
     the record, the netlist snapshot and the ``klt-report.json`` envelopes."""
 
     RID = "20261113-zz-test-0abcdef"
+    #: a second, distinct record id staged for the same bench (issue #802)
+    SIB = "20261113-zz-sibl-0bedeca"
 
     def setUp(self):
         td = tempfile.TemporaryDirectory()
@@ -156,25 +159,26 @@ class StoreRun(unittest.TestCase):
         self.objects = {}
         self._patch(kr, "REPO", self.repo)
 
-    def _stage(self):
+    def _stage(self, rid: str | None = None):
         """Write one request's worth of staged output, in run_ab/collect's layout.
 
-        A successful mint consumes the staging tree (``main`` rmtree's it), so a
-        test that mints the same record id twice must restage in between --
+        A successful mint consumes the record's own staged scratch (#802), so
+        a test that mints the same record id twice must restage in between --
         otherwise the second attempt stops at the "no staged run" guard instead
         of reaching the refusal it means to exercise.
         """
-        (self.stage / "new").mkdir(parents=True, exist_ok=True)
-        (self.stage / "new" / "klt-report.json").write_text(json.dumps(
+        stage = ta.stage_corner_dir(self.repo, SLUG, self.RID if rid is None else rid)
+        (stage / "new").mkdir(parents=True, exist_ok=True)
+        (stage / "new" / "klt-report.json").write_text(json.dumps(
             {"corner_count": 1, "environment": {"remote": {
                 "job_id": "klt-sim-1", "instance_type": "c7i.8xlarge", "state": "done",
                 "worker_environment": {"pdk": {"models_staged": True,
                                                "stamp_text": "open_pdks c6d73a3"}}}}}))
-        (self.stage / "new" / "tt_27c_3.30v.log").write_text("ngspice log bytes\n")
-        (self.stage / "new" / "dut.spice").write_text("* dut\n")
-        (self.stage / "new" / "body.spice").write_text("* body\n")
-        (self.stage / "new" / "request.json").write_text('{"engine": "ngspice"}\n')
-        (self.stage / "summary.csv").write_text(
+        (stage / "new" / "tt_27c_3.30v.log").write_text("ngspice log bytes\n")
+        (stage / "new" / "dut.spice").write_text("* dut\n")
+        (stage / "new" / "body.spice").write_text("* body\n")
+        (stage / "new" / "request.json").write_text('{"engine": "ngspice"}\n')
+        (stage / "summary.csv").write_text(
             "dut,corner,line_reg_pct_per_v,status,diagnostics,pass\n"
             "new,tt_27c_3.30v,0.01,pass,,True\n")
 
@@ -187,7 +191,7 @@ class StoreRun(unittest.TestCase):
     #: test is not routed through the previous attempt's failing stub.
     _put_files = staticmethod(es.put_files)
 
-    def _mint(self, **kw):
+    def _mint(self, rid: str | None = None, **kw):
         # `store_files` resolves `put_files` from the module at call time, so
         # patching it here routes every put through the shared `fake_klt` stub.
         self._patch(es, "put_files",
@@ -195,7 +199,7 @@ class StoreRun(unittest.TestCase):
                         files, root, run=fake_klt(self.objects, **kw)))
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            rc = kr.main([SLUG, "--record-id", self.RID])
+            rc = kr.main([SLUG, "--record-id", self.RID if rid is None else rid])
         self.out, self.err = out.getvalue(), err.getvalue()
         return rc
 
@@ -302,6 +306,41 @@ class StoreRun(unittest.TestCase):
             self._mint()
         self.assertFalse((self.repo / "manifests").exists())
         self.assertFalse((self.exp / "records" / f"{self.RID}.md").exists())
+
+    def test_minting_one_record_leaves_a_sibling_staged_run_alone(self):
+        """Issue #802: the staging tree is shared by every record id of a
+        bench, so one record's successful mint consumes only its own scratch.
+
+        The bench-wide rmtree this replaces erased the sibling's summary.csv,
+        and minting the sibling then died at the "no staged run" guard."""
+        self._stage(self.SIB)
+        sibling = ta.stage_corner_dir(self.repo, SLUG, self.SIB)
+        self.assertEqual(self._mint(), 0)
+        # The completed record's own scratch is consumed ...
+        self.assertFalse(self.stage.exists())
+        self.assertFalse((ta.stage_experiment_dir(self.repo, SLUG) / report.SNAPSHOT_DIR
+                          / f"{self.RID}.spice").exists())
+        # ... the sibling's staged bytes survived, and it still mints.
+        self.assertTrue((sibling / "summary.csv").is_file())
+        self.assertTrue((sibling / "new" / "tt_27c_3.30v.log").is_file())
+        self.assertEqual(self._mint(self.SIB), 0)
+        self.assertTrue((self.exp / "records" / f"{self.SIB}.md").is_file())
+        self.assertFalse(sibling.exists())
+
+    def test_a_run_kept_for_retry_survives_another_records_mint(self):
+        """Issue #802's sharpest edge: a sibling the store refused is kept
+        staged for retry (the fail-closed contract); minting a *different*
+        record of the same bench must not erase those retry inputs."""
+        self._stage(self.SIB)
+        sibling = ta.stage_corner_dir(self.repo, SLUG, self.SIB)
+        self.assertEqual(self._mint(self.SIB, fail="broker_unreachable"),
+                         kr.EXIT_NOT_STORED)
+        self.assertEqual(self._mint(), 0)
+        self.assertTrue((sibling / "summary.csv").is_file())
+        self.assertTrue((sibling / "new" / "tt_27c_3.30v.log").is_file())
+        # The retry the kept bytes exist for goes through.
+        self.assertEqual(self._mint(self.SIB), 0)
+        self.assertTrue((self.exp / "records" / f"{self.SIB}.md").is_file())
 
 
 def _fake_tb():

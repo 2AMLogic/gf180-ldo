@@ -21,6 +21,7 @@ from pathlib import Path
 from . import HARNESS_VERSION, corners as corners_mod, report, runner, testbench as tb_mod
 from . import evidence_store as store_mod
 from . import klt_grid
+from . import tb_adapter
 from .pdk import PdkNotFound, find_pdk
 from .runner import NgspiceIdentityMismatch, NgspiceMissing
 
@@ -517,7 +518,12 @@ def run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return EXIT_NOT_STORED
-        shutil.rmtree(STAGE_DIR / tb.experiment, ignore_errors=True)
+        # Issue #802: consume only this record's scratch. The bench-wide
+        # rmtree this replaces also erased every other record id's staged
+        # run for the bench, including one kept for retry after a store
+        # refusal.
+        tb_adapter.consume_staged_record(
+            REPO_ROOT, tb.experiment, record_id, extra_scratch=(staged_record,))
         print()
         print(f"record    : {records_dir / (record_id + '.md')}")
         print(f"manifest  : {record_path}")
