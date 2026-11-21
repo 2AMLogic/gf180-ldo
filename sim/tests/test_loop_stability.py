@@ -858,9 +858,10 @@ class TestRunConfigsResume(unittest.TestCase):
 
     The batch path stages its request under ``workdir`` (never a tempdir),
     submits with klt's ``--resume``, and skips a configuration whose report
-    is already collected with an identical request -- so re-invoking the
-    sweep with ``--resume-record`` continues a partial grid instead of
-    repeating hours of fleet work.
+    is already collected with a matching staged identity (request, deck body
+    and DUT bytes, issue #796) -- so re-invoking the sweep with
+    ``--resume-record`` continues a partial grid instead of repeating hours
+    of fleet work.
     """
 
     CFGS = [(1e-3, 1.0e-6, 0.05)]
@@ -880,7 +881,7 @@ class TestRunConfigsResume(unittest.TestCase):
             "loop_stability_klt_run",
             SIM_DIR / "loop-stability" / "testbench" / "klt_run.py")
 
-    def _run(self, tmp: Path, *, ac_dec=400, axes=None):
+    def _run(self, tmp: Path, *, ac_dec=400, axes=None, dut_text="* dut\n"):
         """One run_configs call over the single config, kb.run faked."""
         klt_run = self._load_klt_run()
         calls = []
@@ -891,7 +892,7 @@ class TestRunConfigsResume(unittest.TestCase):
             return self._report()
 
         dut = tmp / "dut.spice"
-        dut.write_text("* dut\n")
+        dut.write_text(dut_text)
         axes = axes or {"process": ("tt",), "temps": (27.0,), "supplies": (3.3,),
                         "stage_model_inputs": True, "batch": {"capacity_wait_s": 600}}
         with unittest.mock.patch.object(klt_run.kb, "run", fake_run), \
@@ -910,8 +911,9 @@ class TestRunConfigsResume(unittest.TestCase):
             self.assertEqual("batch", calls[0]["backend"])
             self.assertTrue(calls[0]["req"].is_file())
             self.assertTrue(str(calls[0]["req"]).startswith(str(tmp / "work")))
-            # the collected report and the request that produced it both land
-            # next to each other, so a resume can byte-compare them
+            # the collected report, the request that produced it and the
+            # identity marker vouching for both land next to each other, so
+            # a resume can match the staged identity (issue #796)
             vals_dir = tmp / "logs" / "klt-reports"
             self.assertTrue((vals_dir / "il0.001_ce1e-06_es0.05.json").is_file())
             self.assertTrue((vals_dir / "il0.001_ce1e-06_es0.05.request.json").is_file())
@@ -927,7 +929,7 @@ class TestRunConfigsResume(unittest.TestCase):
 
     def test_a_saved_report_from_a_different_request_is_rerun(self):
         """A report collected under other grid flags is not this run's
-        result; the byte-compare must send it back through klt."""
+        result; the mismatched identity must send it back through klt."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             self._run(tmp, ac_dec=400)
@@ -935,25 +937,51 @@ class TestRunConfigsResume(unittest.TestCase):
             self.assertEqual(1, len(calls))
         self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
 
-    def test_a_saved_report_with_no_sidecar_request_is_rerun(self):
-        """A ``klt-reports/`` dir whose report has no ``.request.json``
-        beside it -- how pre-#465 code left every report dir -- is re-run,
-        not crashed on with FileNotFoundError."""
+    def test_a_saved_report_from_a_dut_only_change_is_rerun(self):
+        """The request JSON names the deck file only, so a DUT edit leaves
+        it byte-identical; the resume guard must still refuse the old report
+        (issue #796)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            self._run(tmp, dut_text="* dut r100\n")
+            results, problems, bad, calls, _ = self._run(tmp, dut_text="* dut r200\n")
+            self.assertEqual(1, len(calls))
+        self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
+
+    def test_a_saved_report_from_a_deck_only_change_is_rerun(self):
+        """Same grid flags and DUT, a different circuit body (here: a
+        different DESIGN_PARAMS header): only the staged identity can see it
+        (issue #796)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            klt_run = self._load_klt_run()
+            self._run(tmp)
+            with unittest.mock.patch.object(klt_run.kb, "DESIGN_PARAMS",
+                                            ".param patched=1"):
+                results, problems, bad, calls, _ = self._run(tmp)
+            self.assertEqual(1, len(calls))
+        self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
+
+    def test_a_saved_report_with_no_identity_sidecar_is_rerun(self):
+        """A ``klt-reports/`` dir whose report has no ``.identity.json``
+        beside it -- how pre-#796 code left every report dir, or a run
+        interrupted before the marker was published -- is re-run, not read:
+        missing identity evidence is a miss (issue #796)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             self._run(tmp)
             (tmp / "logs" / "klt-reports"
-             / "il0.001_ce1e-06_es0.05.request.json").unlink()
+             / "il0.001_ce1e-06_es0.05.identity.json").unlink()
             results, problems, bad, calls, _ = self._run(tmp)
             self.assertEqual(1, len(calls))
         self.assertEqual({"tt_27c_3.30v": {"vout_v": 1.8}}, results[self.CFGS[0]])
 
     def test_the_identity_sidecar_is_written_after_the_report_it_vouches_for(self):
-        """Torn-write ordering (PR #745 review 3): the sidecar that
-        establishes identity may only exist once the report beside it is
+        """Torn-write ordering (PR #745 review 3): the sidecars that
+        establish identity may only exist once the report beside it is
         fully written -- marker-first would let a crash between the two
         writes pair a NEW marker with an OLD report from a different
-        request, which the resume guard would then trust."""
+        circuit, which the resume guard would then trust."""
         from pathlib import Path as _Path
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = _Path(tmpdir)
@@ -973,8 +1001,11 @@ class TestRunConfigsResume(unittest.TestCase):
                 self._run(tmp)
         payload = [i for i, (kind, name) in enumerate(calls)
                    if kind == "payload" and name.endswith("es0.05.json")]
-        marker = [i for i, (kind, name) in enumerate(calls)
-                  if kind == "marker" and "es0.05.request.json" in name]
+        markers = [i for i, (kind, name) in enumerate(calls)
+                   if kind == "marker" and "es0.05.request.json" in name]
+        markers += [i for i, (kind, name) in enumerate(calls)
+                    if kind == "payload" and "es0.05.identity.json" in name]
         self.assertEqual(1, len(payload))
-        self.assertEqual(1, len(marker))
-        self.assertLess(payload[0], marker[0])
+        self.assertEqual(2, len(markers))
+        for m in markers:
+            self.assertLess(payload[0], m)
