@@ -1,0 +1,244 @@
+{
+  "schema_version": 3,
+  "engine": "klayout",
+  "layout": {
+    "path": "layout/pass_array/pass_array.gds",
+    "scope": "repo"
+  },
+  "reference": {
+    "path": "layout/pass_array/netlist/pass_array.spice",
+    "scope": "repo"
+  },
+  "top": "PASS_ARRAY",
+  "reference_top": "PASS_ARRAY",
+  "reference_conversion": {
+    "form": "subckt-call",
+    "deck": "gf180mcu",
+    "device_map": null
+  },
+  "parameter_tolerance": null,
+  "options": {
+    "combine_devices": true,
+    "combine_devices_per_circuit": null,
+    "combine_devices_max_attempts": 5,
+    "flatten_layout": false,
+    "flatten_reference": false,
+    "netgen_setup": null,
+    "parameter_tolerance": null,
+    "compare_parameters": null,
+    "power_connectivity": null,
+    "anchor_top_level_pins": null,
+    "strict_top_level_pin_count": false,
+    "compare_mos_flavour": false,
+    "ignore_mos_bulk": false,
+    "supply_nets": [
+      "GND",
+      "VCC",
+      "VDD",
+      "VGND",
+      "VPWR",
+      "VSS"
+    ],
+    "finfet_bulk": null
+  },
+  "hints_applied": null,
+  "constant_nets_applied": null,
+  "status": "match",
+  "power_connectivity": {
+    "status": "unchecked",
+    "reason": "reference.form is 'subckt-call', whose reference netlist carries its own power/ground pins and nets -- they take part in the ordinary compare, so this check (which exists to cover the signal-only 'gate-level-verilog' form) does not apply",
+    "power_pins": [],
+    "power_pins_derivation": null,
+    "instance_count": 0,
+    "expected_nets": null,
+    "unchecked_expected_pins": [],
+    "excluded_pins": [],
+    "findings": [],
+    "finding_count": 0
+  },
+  "body_verification": {
+    "status": "verified",
+    "reason": null,
+    "device_classes": [],
+    "device_count": 0,
+    "inspected_count": 2,
+    "findings": [],
+    "finding_count": 0
+  },
+  "device_parameter_coverage": [
+    {
+      "class": "pfet",
+      "device_kind": "mos",
+      "layout_devices": 2,
+      "reference_devices": 2,
+      "compared": [
+        "L",
+        "W"
+      ],
+      "not_compared": [
+        {
+          "parameter": "AS",
+          "reason": "secondary"
+        },
+        {
+          "parameter": "AD",
+          "reason": "secondary"
+        },
+        {
+          "parameter": "PS",
+          "reason": "secondary"
+        },
+        {
+          "parameter": "PD",
+          "reason": "secondary"
+        }
+      ]
+    }
+  ],
+  "mismatch_count": 2,
+  "error_count": 0,
+  "category_counts": {
+    "topology": 2
+  },
+  "category_error_counts": {},
+  "counts": {
+    "nets": {
+      "layout": 4,
+      "reference": 4,
+      "matched": 4
+    },
+    "devices": {
+      "layout": 2,
+      "reference": 2,
+      "matched": 2
+    },
+    "pins": {
+      "layout": 4,
+      "reference": 4,
+      "matched": 4
+    }
+  },
+  "device_classes": [
+    "nfet",
+    "pfet",
+    "bjt",
+    "cap_mim_2f0_m4m5_noshield",
+    "cap_nmos_03v3",
+    "cap_nmos_03v3_dn",
+    "cap_pmos_03v3",
+    "cap_pmos_03v3_dn",
+    "cap_nmos_06v0",
+    "cap_nmos_06v0_dn",
+    "cap_pmos_06v0",
+    "cap_pmos_06v0_dn",
+    "cap_nmos_03v3_b",
+    "cap_pmos_03v3_b",
+    "cap_nmos_06v0_b",
+    "cap_pmos_06v0_b",
+    "resistor",
+    "diode_nd2ps_06v0",
+    "diode_pd2nw_06v0"
+  ],
+  "environment": {
+    "engine": "klayout",
+    "engine_version": "0.30.12",
+    "netgen_binary": null,
+    "layout_sha256": "18bd95712dace323047428eb6b7369d20766c7df0ae9777c9f2fa584821c6859",
+    "reference_sha256": "c9d8a9807e18fb22040acfee86edd57d111abe80fb45736ed1d65ecf691e299a",
+    "extracted_netlist": null
+  },
+  "provenance": {
+    "klt_version": "0.9.3.dev2575+g6bd18bbc8637",
+    "klt_git_commit": "6bd18bbc8637f6d767b3c24e77bd5db7a39e4bbe",
+    "klt_reinstall_spec": "klayout-tools @ git+https://github.com/2AMLogic/klayout-tools@6bd18bbc8637f6d767b3c24e77bd5db7a39e4bbe",
+    "klayout_version": "0.30.12",
+    "pdk": null,
+    "deck": {
+      "name": "gf180mcu",
+      "content_hash": "sha256:491eddc17dcbcfde58e862c8106389b31cc77690ccc9b7046a901cf0a96058e3",
+      "released": false,
+      "options": {
+        "metal_top": "11K",
+        "mim_cap": "cap_mim_2f0_m4m5_noshield",
+        "poly_res": "1k"
+      },
+      "options_explicit": {
+        "metal_top": true,
+        "mim_cap": true,
+        "poly_res": true
+      },
+      "options_hash": "sha256:89cb6001bb2512394da175a3e1f170dfa7b97d8a9470378e9fc2180f6358e7d2"
+    },
+    "input": {
+      "content_hash": "sha256:18bd95712dace323047428eb6b7369d20766c7df0ae9777c9f2fa584821c6859",
+      "role": "layout"
+    },
+    "klayout_version_mismatch": false
+  },
+  "mismatches": [
+    {
+      "category": "topology",
+      "severity": "warning",
+      "description": "device class has no counterpart on the other side, but no devices of this class were extracted either -- not a real topology mismatch: 'nfet'",
+      "side": "layout",
+      "net": null,
+      "device": {
+        "layout": null,
+        "reference": null,
+        "class": "nfet"
+      },
+      "property": null,
+      "details": null,
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    },
+    {
+      "category": "topology",
+      "severity": "warning",
+      "description": "device class has no counterpart on the other side, but no devices of this class were extracted either -- not a real topology mismatch: 'bjt'",
+      "side": "layout",
+      "net": null,
+      "device": {
+        "layout": null,
+        "reference": null,
+        "class": "bjt"
+      },
+      "property": null,
+      "details": null,
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    }
+  ],
+  "net_correspondence": [
+    {
+      "layout": "ISNS",
+      "layout_id": 3,
+      "reference": "ISNS",
+      "reference_id": 2,
+      "pin": true
+    },
+    {
+      "layout": "PASS_GATE",
+      "layout_id": 1,
+      "reference": "PASS_GATE",
+      "reference_id": 3,
+      "pin": true
+    },
+    {
+      "layout": "VIN",
+      "layout_id": 0,
+      "reference": "VIN",
+      "reference_id": 0,
+      "pin": true
+    },
+    {
+      "layout": "VOUT",
+      "layout_id": 2,
+      "reference": "VOUT",
+      "reference_id": 1,
+      "pin": true
+    }
+  ]
+}

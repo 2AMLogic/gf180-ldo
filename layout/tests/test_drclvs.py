@@ -13,6 +13,7 @@ cell's netlist must be a hard error, never a silently skipped stage), and
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import re
 import subprocess
@@ -39,14 +40,38 @@ def fake_summary(record_id: str) -> dict:
     return {
         "record_id": record_id,
         "netlist_devices": 1,
-        "klt_drc": {"status": "clean", "violations": 0, "dbu_um": 0.001},
+        "klt_drc": {
+            "status": "clean",
+            "violations": 0,
+            "dbu_um": 0.001,
+            "rule_counts": {},
+            "report": None,
+            "coverage": {
+                "layers_in_stream_without_rules": ["34/10"],
+                "rules_skipped": [],
+                "deck_scope": ["7.4 Nwell"],
+            },
+        },
         "pdk_drc": {
             "violations": 0,
             "rule_categories": 1,
             "deck": "gf180mcu.drc",
             "decks_selection": "all,-antenna,-density",
+            "engine": "klt drc --engine klayout",
+            "asserted_categories": 1,
+            "report": None,
+            "coverage": {
+                "layers_in_stream_without_rules": [],
+                "rules_skipped": [],
+                "deck_scope": [],
+            },
         },
-        "lvs": {"match": True, "warnings": []},
+        "lvs": {
+            "match": True,
+            "warnings": [],
+            "engine": "klt lvs (klayout)",
+            "report": None,
+        },
         "lvs_negative_controls": {
             "topology": {"match": False, "mutation": "gate shorted to drain"},
             "parameter": {"match": False, "mutation": "device width doubled"},
@@ -144,16 +169,17 @@ class DeckEnvTests(unittest.TestCase):
             self.assertTrue(sliced[:-1].strip().isdigit(), sliced)
 
 
-class RunPdkDrcSwitchesTests(unittest.TestCase):
-    """Stage 4 must drive the pinned revision's deck driver, and only it.
+class RunPdkDrcKltTests(unittest.TestCase):
+    """Stage 4 must drive the PDK's own deck through klt, with the deck's
+    declared rule-category set asserted.
 
     The driver (`tech/drc/gf180mcu.drc`) SILENTLY IGNORES unknown ``-rd``
     switches -- it exits 0 and writes a valid report regardless -- so a stale
-    switch in ``run_pdk_drc()`` would change nothing while the code claimed an
-    intent the deck never carries out. These tests hold the emitted switch set
-    to the driver's measured contract (``-rd help=true``): required
-    ``input``/``report``; optional ``topcell``, ``run_mode``, ``verbose``,
-    ``threads``, ``metal_level``, ``metal_top``, ``mim_option``, ``decks``.
+    ``--deck-var`` would change nothing while the code claimed an intent the
+    deck never carries out (issue #784 kept the raw route's switch contract;
+    these tests hold the klt route to the same one). The category-set
+    assertion is what keeps a zero-category (or swapped-category) deck run a
+    hard error rather than a clean pass.
     """
 
     STALE_SWITCHES = (
@@ -163,20 +189,40 @@ class RunPdkDrcSwitchesTests(unittest.TestCase):
         "split_deep", "table_name", "thr",
     )
 
-    def run_stage4(self, report_text: str = "<category><a/></category>"):
-        """Run run_pdk_drc() with run_logged stubbed; return (cmd, result)."""
+    def run_stage4(
+        self,
+        report: dict | None = None,
+        categories: tuple[str, ...] = ("cat.a", "cat.b"),
+    ):
+        """Run run_pdk_drc() with the klt subprocess stubbed.
+
+        ``--list-rule-categories`` and the deck run are both ``klt drc``
+        invocations; the stub answers the listing from ``categories`` and
+        writes ``report`` (default: clean, all categories declared, the
+        assertion satisfied) to the run's ``-o`` path.
+        """
         captured: dict = {}
 
-        def fake_run_logged(cmd, log, what, env=None):
-            captured["cmd"] = cmd
-            captured["env"] = env
-            for arg in cmd:
-                if arg.startswith("report="):
-                    Path(arg.split("=", 1)[1]).write_text(report_text)
-            return ""
+        def fake_run(cmd, **kwargs):
+            captured.setdefault("cmds", []).append(list(cmd))
+            captured["kwargs"] = kwargs
+            if "--list-rule-categories" in cmd:
+                return subprocess.CompletedProcess(
+                    cmd, 0, "\n".join(categories) + "\n", ""
+                )
+            out = Path(cmd[cmd.index("-o") + 1])
+            payload = report if report is not None else {
+                "status": "clean",
+                "violation_count": 0,
+                "coverage": {"rule_categories": list(categories)},
+                "coverage_assertion": {"satisfied": True},
+            }
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload))
+            return subprocess.CompletedProcess(cmd, 0, "", "")
 
-        original = drclvs.run_logged
-        drclvs.run_logged = fake_run_logged
+        original = drclvs.subprocess.run
+        drclvs.subprocess.run = fake_run
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 run_dir = Path(tmp)
@@ -184,71 +230,145 @@ class RunPdkDrcSwitchesTests(unittest.TestCase):
                 result = drclvs.run_pdk_drc(
                     fake_pdk(run_dir / "pdk"),
                     spec, run_dir / "in.gds", run_dir, run_dir / "pdk-drc.log",
+                    run_dir / "out.json",
                 )
         finally:
-            drclvs.run_logged = original
-        return captured["cmd"], result
+            drclvs.subprocess.run = original
+        return captured, result
 
     @staticmethod
-    def switches_of(cmd: list[str]) -> dict[str, str]:
+    def deck_vars_of(cmd: list[str]) -> dict[str, str]:
         switches = {}
-        it = iter(cmd)
-        for arg in it:
-            if arg == "-rd":
-                key, _, value = next(it).partition("=")
+        for index, arg in enumerate(cmd):
+            if arg == "--deck-var":
+                key, _, value = cmd[index + 1].partition("=")
                 switches[key] = value
         return switches
 
-    def test_drives_the_pdk_deck_driver_not_an_assembled_deck(self):
-        cmd, result = self.run_stage4()
-        self.assertEqual(cmd[:3], ["klayout", "-b", "-r"])
-        self.assertTrue(cmd[3].endswith("/drc/gf180mcu.drc"), cmd[3])
+    def test_drives_the_pdk_deck_through_klt(self):
+        captured, result = self.run_stage4()
+        deck_run = captured["cmds"][-1]
+        self.assertEqual(deck_run[:2], ["klt", "drc"])
+        self.assertIn("--engine", deck_run)
+        self.assertEqual(
+            deck_run[deck_run.index("--engine") + 1], "klayout"
+        )
+        deck_file = deck_run[deck_run.index("--deck-file") + 1]
+        self.assertTrue(deck_file.endswith("/drc/gf180mcu.drc"), deck_file)
         self.assertEqual(result["deck"], "gf180mcu.drc")
 
-    def test_no_stale_switch_from_the_old_deck_contract_is_emitted(self):
-        cmd, _ = self.run_stage4()
-        switches = self.switches_of(cmd)
-        for stale in self.STALE_SWITCHES:
-            self.assertNotIn(stale, switches, f"stale -rd switch {stale!r}")
+    def test_the_run_selects_the_top_cell_and_writes_the_report(self):
+        captured, result = self.run_stage4()
+        deck_run = captured["cmds"][-1]
+        spec = drclvs.CELLS["testcell"]
+        self.assertEqual(
+            deck_run[deck_run.index("--top") + 1], spec.top_cell
+        )
+        self.assertIn("--expect-rule-categories-file", deck_run)
+        self.assertEqual(result["status"], "clean")
+        self.assertEqual(result["violations"], 0)
 
-    def test_every_emitted_switch_is_in_the_driver_contract(self):
-        cmd, _ = self.run_stage4()
+    def test_no_stale_switch_from_the_old_deck_contract_is_emitted(self):
+        captured, _ = self.run_stage4()
+        for cmd in captured["cmds"]:
+            deck_vars = self.deck_vars_of(cmd)
+            for stale in self.STALE_SWITCHES:
+                self.assertNotIn(stale, deck_vars, f"stale deck var {stale!r}")
+
+    def test_every_emitted_deck_var_is_in_the_driver_contract(self):
+        captured, _ = self.run_stage4()
         known = {
             "input", "report", "topcell", "run_mode", "verbose", "workers",
             "threads", "variant", "metal_level", "metal_top", "mim_option",
             "decks", "help",
         }
-        unknown = set(self.switches_of(cmd)) - known
-        self.assertEqual(unknown, set(), "switches the driver would ignore")
+        for cmd in captured["cmds"]:
+            unknown = set(self.deck_vars_of(cmd)) - known
+            self.assertEqual(unknown, set(), "deck vars the driver would ignore")
 
     def test_decks_selection_excludes_exactly_antenna_and_density(self):
-        cmd, result = self.run_stage4()
+        captured, result = self.run_stage4()
+        deck_run = captured["cmds"][-1]
         self.assertEqual(result["decks_selection"], "all,-antenna,-density")
-        self.assertEqual(self.switches_of(cmd)["decks"], "all,-antenna,-density")
+        self.assertEqual(
+            self.deck_vars_of(deck_run)["decks"], "all,-antenna,-density"
+        )
 
     def test_run_mode_is_deep_and_threads_replaces_thr(self):
-        cmd, _ = self.run_stage4()
-        switches = self.switches_of(cmd)
-        self.assertEqual(switches["run_mode"], "deep")
-        self.assertIn("threads", switches)
+        captured, _ = self.run_stage4()
+        deck_vars = self.deck_vars_of(captured["cmds"][-1])
+        self.assertEqual(deck_vars["run_mode"], "deep")
+        self.assertIn("threads", deck_vars)
 
     def test_variant_switches_carry_the_metal_stack(self):
-        cmd, _ = self.run_stage4()
-        switches = self.switches_of(cmd)
-        self.assertEqual(switches["metal_top"], "11K")
-        self.assertEqual(switches["mim_option"], "B")
-        self.assertEqual(switches["metal_level"], "5LM")
+        captured, _ = self.run_stage4()
+        deck_vars = self.deck_vars_of(captured["cmds"][-1])
+        self.assertEqual(deck_vars["metal_top"], "11K")
+        self.assertEqual(deck_vars["mim_option"], "B")
+        self.assertEqual(deck_vars["metal_level"], "5LM")
 
-    def test_counts_categories_and_items_from_the_report(self):
-        text = "<category>a</category><category>b</category><item>x</item>"
-        _, result = self.run_stage4(report_text=text)
-        self.assertEqual(result["rule_categories"], 2)
-        self.assertEqual(result["violations"], 1)
-
-    def test_a_zero_category_report_is_a_hard_error(self):
+    def test_a_zero_category_listing_is_a_hard_error(self):
         with self.assertRaises(drclvs.StageError) as ctx:
-            self.run_stage4(report_text="<item>x</item>")
+            self.run_stage4(categories=())
         self.assertIn("ZERO rule categories", str(ctx.exception))
+
+    def test_an_unsatisfied_category_assertion_is_a_hard_error(self):
+        report = {
+            "status": "coverage_unknown",
+            "violation_count": 0,
+            "coverage": {"rule_categories": ["cat.a"]},
+            "coverage_assertion": {"satisfied": False},
+        }
+        with self.assertRaises(drclvs.StageError) as ctx:
+            self.run_stage4(report=report)
+        self.assertIn("assertion", str(ctx.exception))
+
+    def test_the_coverage_triple_is_carried_for_the_record(self):
+        _, result = self.run_stage4()
+        self.assertEqual(
+            sorted(result["coverage"]),
+            [
+                "deck_scope",
+                "layers_in_stream_without_rules",
+                "rules_skipped",
+            ],
+        )
+
+
+class RawDeckParityTests(unittest.TestCase):
+    """check_raw_parity(): a verdict or category-set difference is a hard
+    error, never a silent divergence between the retired raw route and the
+    klt route that replaced it (issue #784's migration gate)."""
+
+    def test_agreement_passes_and_describes_it(self):
+        native = {
+            "violations": 0,
+            "category_names": {"cat.a", "cat.b"},
+        }
+        raw = {"violations": 0, "categories": {"cat.a", "cat.b"}}
+        line = drclvs.check_raw_parity(
+            native, raw, drclvs.CELLS["testcell"], Path("/tmp")
+        )
+        self.assertIn("verdict equal", line)
+        self.assertIn("2 rule categories", line)
+
+    def test_a_verdict_difference_is_a_hard_error(self):
+        native = {"violations": 0, "category_names": {"cat.a"}}
+        raw = {"violations": 2, "categories": {"cat.a"}}
+        with self.assertRaises(drclvs.StageError) as ctx:
+            drclvs.check_raw_parity(
+                native, raw, drclvs.CELLS["testcell"], Path("/tmp")
+            )
+        self.assertIn("parity failed", str(ctx.exception))
+
+    def test_a_category_set_difference_is_a_hard_error(self):
+        native = {"violations": 0, "category_names": {"cat.a", "cat.x"}}
+        raw = {"violations": 0, "categories": {"cat.a", "cat.b"}}
+        with self.assertRaises(drclvs.StageError) as ctx:
+            drclvs.check_raw_parity(
+                native, raw, drclvs.CELLS["testcell"], Path("/tmp")
+            )
+        self.assertIn("cat.x", str(ctx.exception))
 
 
 def lvs_switches_of(cmd: list[str]) -> dict[str, str]:
@@ -716,3 +836,126 @@ class ControlSetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KltLvsRequestTests(unittest.TestCase):
+    """build_klt_lvs_request(): the committed-report request shape (issue
+    #784), mirroring the sibling precedent's keys and carrying the raw
+    route's per-cell knobs onto their klt counterparts."""
+
+    def request_for(self, spec_key: str) -> dict:
+        spec = drclvs.CELLS[spec_key]
+        with tempfile.TemporaryDirectory() as tmp:
+            return drclvs.build_klt_lvs_request(
+                spec, fake_pdk(Path(tmp) / "pdk"), "layout.gds", "ref.spice"
+            )
+
+    def test_layout_side_selects_the_curated_deck_and_flavours(self):
+        request = self.request_for("divider")
+        self.assertEqual(request["layout"]["deck"], "gf180mcu")
+        self.assertEqual(request["layout"]["top"], "FB_DIVIDER")
+        options = request["layout"]["deck_options"]
+        self.assertEqual(options["poly_res"], "3k")
+        # the curated deck's own MIM class spelling (klayout-tools#7031),
+        # transcribed in one place: lvs_form.MIMCAP_CURATED_OPTION
+        self.assertEqual(options["mim_cap"], "cap_mim_2f0_m4m5_noshield")
+        self.assertEqual(options["metal_top"], "11K")
+
+    def test_reference_side_uses_the_subckt_call_conversion(self):
+        request = self.request_for("pass_array")
+        self.assertEqual(request["reference"]["form"], "subckt-call")
+        self.assertEqual(request["reference"]["deck"], "gf180mcu")
+        self.assertEqual(request["reference"]["top"], "pass_array")
+
+    def test_geometry_parameters_are_scoped_per_cell(self):
+        request = self.request_for("divider")
+        self.assertEqual(
+            request["options"]["compare_parameters"],
+            {"ppolyf_u_3k": ["L", "W"]},
+        )
+        self.assertFalse(request["options"]["combine_devices"])
+
+    def test_parallel_folding_is_per_cell(self):
+        request = self.request_for("pass_array")
+        self.assertTrue(request["options"]["combine_devices"])
+        self.assertNotIn("compare_parameters", request["options"])
+
+    def test_a_cell_without_passives_scopes_nothing(self):
+        request = self.request_for("testcell")
+        self.assertEqual(request["options"], {"combine_devices": False})
+
+
+class LvsRouteRegistryTests(unittest.TestCase):
+    """The per-cell LVS routing (issue #784): klt wherever the curated path
+    can express the reference, raw PDK runset only for a named gap."""
+
+    def test_the_three_committed_cells_have_a_committed_gds(self):
+        for key in ("pass_array", "divider", "passives"):
+            spec = drclvs.CELLS[key]
+            self.assertIsNotNone(spec.gds_path, key)
+            self.assertEqual(
+                spec.gds_path, spec.gds_path.parent / f"{spec.cell}.gds", key
+            )
+
+    def test_the_scratch_flow_vehicles_commit_no_gds(self):
+        self.assertIsNone(drclvs.CELLS["testcell"].gds_path)
+
+    def test_the_default_route_is_klt(self):
+        for key in ("testcell", "pass_array", "divider"):
+            self.assertEqual(drclvs.CELLS[key].lvs_route, "klt", key)
+
+    def test_passives_stays_raw_for_the_implicit_connect_gap(self):
+        spec = drclvs.CELLS["passives"]
+        self.assertEqual(spec.lvs_route, "pdk-deck")
+
+    def test_an_unknown_route_is_refused(self):
+        with tempfile.TemporaryDirectory():
+            with self.assertRaises(ValueError):
+                dataclasses.replace(
+                    drclvs.CELLS["testcell"], lvs_route="carrier-pigeon"
+                )
+
+
+class GdsEqualModuloTimestampsTests(unittest.TestCase):
+    """gds_equal_modulo_timestamps(): the committed-GDS freshness check."""
+
+    @staticmethod
+    def gds_with_timestamps(stamp: bytes, geometry: bytes = b"\x00\x06\x0d\x02\x00\x01") -> bytes:
+        # HEADER record (rectype 0x00, no payload) then a BGNSTR timestamp
+        # record (rectype 0x05, 12-byte payload) then a geometry-ish record.
+        header = b"\x00\x06\x00\x02\x00\x01"
+        bgnstr = b"\x00\x10\x05\x02" + stamp
+        return header + bgnstr + geometry
+
+    def test_same_geometry_different_stamps_is_equal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.gds"
+            b = Path(tmp) / "b.gds"
+            a.write_bytes(
+                self.gds_with_timestamps(b"\x07\xe6\x00\x01" * 3)
+            )
+            b.write_bytes(
+                self.gds_with_timestamps(b"\x07\xe6\x00\x02" * 3)
+            )
+            self.assertTrue(drclvs.gds_equal_modulo_timestamps(a, b))
+
+    def test_different_geometry_is_not_equal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.gds"
+            b = Path(tmp) / "b.gds"
+            a.write_bytes(
+                self.gds_with_timestamps(b"\x07\xe6\x00\x01" * 3, b"\x00\x06\x0d\x02\x00\x01")
+            )
+            b.write_bytes(
+                self.gds_with_timestamps(b"\x07\xe6\x00\x01" * 3, b"\x00\x06\x0d\x02\x00\x02")
+            )
+            self.assertFalse(drclvs.gds_equal_modulo_timestamps(a, b))
+
+    def test_a_truncated_stream_is_an_error_not_a_false_equal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.gds"
+            b = Path(tmp) / "b.gds"
+            a.write_bytes(self.gds_with_timestamps(b"\x00" * 12))
+            b.write_bytes(b"\x00\x40")  # declares 64 bytes, has 2
+            with self.assertRaises(ValueError):
+                drclvs.gds_equal_modulo_timestamps(a, b)

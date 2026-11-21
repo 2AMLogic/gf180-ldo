@@ -108,6 +108,7 @@ import re
 __all__ = [
     "LvsFormError",
     "MIMCAP_CLASS",
+    "MIMCAP_CURATED_OPTION",
     "MIMCAP_SWITCH",
     "rewrite_passives",
     "unrendered_device_lines",
@@ -153,6 +154,16 @@ _FAMILIES = (
 MIMCAP_SWITCH = "2"
 MIMCAP_FLAVOUR = "2f0"
 MIMCAP_CLASS = f"cap_mim_{MIMCAP_FLAVOUR}fF"
+# The same flavour as a *curated klt deck option* value. ``klt extract`` /
+# ``klt lvs`` name the gf180mcu MIM classes ``cap_mim_<n>f<m>_m4m5_noshield``
+# -- the previous PDK revision's LVS class names, kept by klt for netlist
+# stability -- while this repo's netlists (and the installed PDK's own LVS
+# deck) spell the class ``cap_mim_<n>f<m>fF`` (MIMCAP_CLASS above). The two
+# spellings denote the same drawn device at the same density; transcribing
+# the curated value here keeps the third spelling of the same pairing in the
+# one place the other two already live. The divergence itself is
+# 2AMLogic/klayout-tools#7031.
+MIMCAP_CURATED_OPTION = f"cap_mim_{MIMCAP_FLAVOUR}_m4m5_noshield"
 _MIMCAP_CLASS_RE = re.compile(r"^cap_mim_(\d+f\d+)fF$")
 _MIMCAP_SYMBOL_RE = re.compile(r"^cap_mim_(\d+f\d+)(?:_.+)?$")
 
