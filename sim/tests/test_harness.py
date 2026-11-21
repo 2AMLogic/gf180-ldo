@@ -3278,7 +3278,13 @@ class LocalCliRecordScratchCleanupTests(unittest.TestCase):
     def setUp(self):
         td = tempfile.TemporaryDirectory()
         self.addCleanup(td.cleanup)
+        # Cleanups run in reverse order: the caller's cwd is restored before
+        # the temp repo is deleted, including on failure. Entering the fixture
+        # keeps the bare-slug argument resolving against this repo instead of
+        # a real bench that happens to sit under the process cwd (#805).
+        self.addCleanup(os.chdir, Path.cwd())
         self.repo = Path(td.name).resolve()
+        os.chdir(self.repo)
         shutil.copytree(SIM_DIR / self.SLUG / "testbench",
                         self.repo / "sim" / self.SLUG / "testbench")
         self.exp = self.repo / "sim" / self.SLUG
