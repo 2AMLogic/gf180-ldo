@@ -6,6 +6,18 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-22
+
+- **PR #806**: test: chdir into the temp repo in LocalCliRecordScratchCleanupTests.setUp
+- **Issue #805** (closed): LocalCliRecordScratchCleanupTests escapes its temp repo and writes a record into sim/<slug>/records/ when the suite is run from inside sim/
+
+### 2026-11-21
+
+- **PR #804**: fix: consume only the stored record's staging scratch, not the bench tree
+- **Issue #802** (closed): Limit simulation staging cleanup to the record that was stored
+- **PR #803**: feat(layout): drive drclvs stages 3-5 through klt; commit GDS + DRC/LVS reports for pass_array, divider, passives
+- **Issue #801** (closed): Bench DUT .subckt port order is unchecked beside the device-card gate
+
 ### 2026-11-20
 
 - **PR #781**: fix: share one corner-id formatter between the PVT grid and klt report rows
