@@ -3560,10 +3560,16 @@ class TestKltBatchRunResume(unittest.TestCase):
     def _run_kb(self, tmp: Path, *, resume: bool):
         proc = unittest.mock.Mock(returncode=0,
                                   stdout=json.dumps(self._report()), stderr="")
-        req = Path(tmp) / "request.json"
-        req.write_text("{}")
+        # Resume is identity-checked over the staged request/deck/DUT trio
+        # (issue #796), so the request must come from a real kb.stage().
+        dut = tmp / "dut.spice"
+        dut.write_text("* dut\n")
+        job = klt_batch.Job(name="t", body="* body\n", dut_netlist=dut,
+                            analysis={"kind": "ac", "args": "dec 10 1k 10k"},
+                            measurements=[])
+        req = klt_batch.stage(job, tmp / "stage")
         with unittest.mock.patch("subprocess.run", return_value=proc) as run:
-            klt_batch.run(req, Path(tmp) / "out", backend="batch", resume=resume)
+            klt_batch.run(req, tmp / "out", backend="batch", resume=resume)
         return run.call_args.args[0]
 
     def test_resume_appends_klts_resume_flag(self):
@@ -3590,21 +3596,81 @@ class TestKltBatchRunResume(unittest.TestCase):
                                            "_diagnostics": ""}}, collected)
 
 
+class TestKltRunShardMapIdentity(unittest.TestCase):
+    """``kb.run(resume=True)`` identity-checks the retained shard map (#796).
+
+    klt's ``--resume`` re-attaches to the shard map retained under the
+    outdir, so a re-submission after a circuit edit would otherwise collect
+    the previous circuit's finished shards into the new circuit's report.
+    The outdir records the staged identity it was submitted with; a
+    mismatch drops the map and starts clean, while an interrupted run of
+    the same circuit keeps it (issue #465).
+    """
+
+    def _run(self, tmp: Path, dut_text: str, body: str):
+        tmp.joinpath("dut.spice").write_text(dut_text)
+        job = klt_batch.Job(name="t", body=body, dut_netlist=tmp / "dut.spice",
+                            analysis={"kind": "ac", "args": "dec 10 1k 10k"},
+                            measurements=[])
+        req = klt_batch.stage(job, tmp / "stage")
+        proc = unittest.mock.Mock(returncode=0, stdout=json.dumps({"corners": []}),
+                                  stderr="")
+        with unittest.mock.patch("subprocess.run", return_value=proc), \
+                contextlib.redirect_stdout(io.StringIO()):
+            klt_batch.run(req, tmp / "out", backend="batch", resume=True)
+
+    def test_a_same_circuit_resume_keeps_the_retained_shard_map(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            self._run(tmp, "* dut\n", "* body\n")
+            (tmp / "out" / "shard-map.json").write_text("{}")
+            self._run(tmp, "* dut\n", "* body\n")
+            self.assertTrue((tmp / "out" / "shard-map.json").is_file())
+
+    def test_a_dut_change_drops_the_retained_shard_map(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            self._run(tmp, "* dut r100\n", "* body\n")
+            (tmp / "out" / "shard-map.json").write_text("{}")
+            self._run(tmp, "* dut r200\n", "* body\n")
+            self.assertFalse((tmp / "out" / "shard-map.json").exists())
+
+    def test_a_deck_change_drops_the_retained_shard_map(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            self._run(tmp, "* dut\n", "* body a\n")
+            (tmp / "out" / "shard-map.json").write_text("{}")
+            self._run(tmp, "* dut\n", "* body b\n")
+            self.assertFalse((tmp / "out" / "shard-map.json").exists())
+
+    def test_a_map_without_identity_evidence_is_claimed_clean(self):
+        """An outdir written before #796 recorded identities has no marker;
+        a resume must not trust its shards on faith (a miss, not a match)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            self._run(tmp, "* dut\n", "* body\n")
+            (tmp / "out" / "run-identity.json").unlink()
+            (tmp / "out" / "shard-map.json").write_text("{}")
+            self._run(tmp, "* dut\n", "* body\n")
+            self.assertFalse((tmp / "out" / "shard-map.json").exists())
+
+
 class TestRunAbResume(unittest.TestCase):
     """``run_ab``'s run_root: persistent staging, skip-if-done, --resume.
 
     With a run_root the staged request and the run dir survive the session,
     so re-invoking the same driver command only submits what is still
-    missing; a tag that already reported -- with an identical request -- is
-    not re-submitted at all (issue #465).
+    missing; a tag that already reported -- with a matching staged identity
+    (request, deck body and DUT bytes, issue #796) -- is not re-submitted
+    at all (issue #465).
     """
 
     @staticmethod
-    def _factory(dut: Path):
+    def _factory(dut: Path, body: str = "* body\n", temps: tuple = (27.0,)):
         def factory(tag, dut_path):
-            return klt_batch.Job(name=tag, body=f"* body {tag}\n", dut_netlist=dut_path,
+            return klt_batch.Job(name=tag, body=body, dut_netlist=dut_path,
                                  analysis={"kind": "ac", "args": "dec 10 1k 10k"},
-                                 measurements=[], process=("tt",), temps=(27.0,),
+                                 measurements=[], process=("tt",), temps=temps,
                                  supplies=(3.3,))
         return factory
 
@@ -3615,42 +3681,60 @@ class TestRunAbResume(unittest.TestCase):
             "status": "ok", "diagnostics": [],
         }]}
 
+    def _run_once(self, tmp: Path, factory):
+        """One run_ab invocation with klt itself faked (a fresh report)."""
+        proc = unittest.mock.Mock(returncode=0,
+                                  stdout=json.dumps(self._report()), stderr="")
+        with unittest.mock.patch("subprocess.run", return_value=proc) as run:
+            klt_ab.run_ab(factory, tmp / "dut.spice", None, tmp / "dest", tmp,
+                          backend="batch", run_root=tmp / "run")
+        return run
+
     def test_a_completed_tag_is_not_resubmitted(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            dest, run_root = tmp / "dest", tmp / "run"
-            dut = tmp / "dut.spice"
-            dut.write_text("* dut\n")
-            sub = dest / "new"
-            sub.mkdir(parents=True)
-            (sub / "klt-report.json").write_text(json.dumps(self._report()))
-            job = self._factory(dut)("new", dut)
-            req = klt_batch.stage(job, run_root / "new" / "stage")
-            (sub / "request.json").write_bytes(req.read_bytes())
+            tmp.joinpath("dut.spice").write_text("* dut\n")
+            self._run_once(tmp, self._factory(tmp / "dut.spice"))
             with unittest.mock.patch.object(klt_batch, "run") as run:
-                res = klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
-                                    backend="batch", run_root=run_root)
+                res = klt_ab.run_ab(self._factory(tmp / "dut.spice"),
+                                    tmp / "dut.spice", None, tmp / "dest", tmp,
+                                    backend="batch", run_root=tmp / "run")
             run.assert_not_called()
         self.assertEqual({"tt_27c_3.30v": {"vout_settled": 1.8, "_status": "ok",
                                            "_diagnostics": ""}}, res["new"])
 
-    def test_a_mismatched_saved_request_is_rerun_not_trusted(self):
+    def test_a_saved_report_from_a_changed_dut_is_rerun_not_trusted(self):
+        """The request names only the deck file, so a DUT edit leaves it
+        byte-identical -- the resume guard must still refuse the old report
+        (issue #796)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            tmp.joinpath("dut.spice").write_text("* dut r100\n")
+            self._run_once(tmp, self._factory(tmp / "dut.spice"))
+            tmp.joinpath("dut.spice").write_text("* dut r200\n")
+            run = self._run_once(tmp, self._factory(tmp / "dut.spice"))
+            run.assert_called()
+            self.assertIn("--resume", run.call_args.args[0])
+
+    def test_a_saved_report_from_a_changed_deck_is_rerun_not_trusted(self):
+        """Same grid flags and DUT, a different circuit body: the request
+        alone cannot see it, the staged identity can (issue #796)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            tmp.joinpath("dut.spice").write_text("* dut\n")
+            self._run_once(tmp, self._factory(tmp / "dut.spice", body="* body a\n"))
+            run = self._run_once(tmp, self._factory(tmp / "dut.spice", body="* body b\n"))
+            run.assert_called()
+            self.assertIn("--resume", run.call_args.args[0])
+
+    def test_a_saved_report_from_a_different_request_is_rerun_not_trusted(self):
         """A saved report from a different request (other grid flags) must
         never be read as this run's result."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            dest, run_root = tmp / "dest", tmp / "run"
-            dut = tmp / "dut.spice"
-            dut.write_text("* dut\n")
-            sub = dest / "new"
-            sub.mkdir(parents=True)
-            (sub / "klt-report.json").write_text(json.dumps(self._report()))
-            (sub / "request.json").write_text("{}")  # not what stage() writes
-            proc = unittest.mock.Mock(returncode=0,
-                                      stdout=json.dumps(self._report()), stderr="")
-            with unittest.mock.patch("subprocess.run", return_value=proc) as run:
-                klt_ab.run_ab(self._factory(dut), dut, None, dest, tmp,
-                              backend="batch", run_root=run_root)
+            tmp.joinpath("dut.spice").write_text("* dut\n")
+            self._run_once(tmp, self._factory(tmp / "dut.spice", temps=(25.0,)))
+            run = self._run_once(tmp, self._factory(tmp / "dut.spice"))
             run.assert_called()
             self.assertIn("--resume", run.call_args.args[0])
 
@@ -3698,9 +3782,10 @@ class TestRunAbResume(unittest.TestCase):
                                            "_diagnostics": ""}}, res["new"])
 
     def test_a_saved_report_with_no_sidecar_request_is_rerun_not_trusted(self):
-        """A ``klt-report.json`` without its ``request.json`` sidecar --
-        a run interrupted between collect and the sidecar copy, or a dest
-        written before #465 saved sidecars -- is re-run, never read."""
+        """A ``klt-report.json`` without its ``identity.json`` sidecar -- a
+        run interrupted between collect and the marker publish, or a dest
+        written before #796 published identity markers -- is re-run, never
+        read: identity evidence that is missing is a miss (issue #796)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             dest, run_root = tmp / "dest", tmp / "run"

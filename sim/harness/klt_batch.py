@@ -35,6 +35,7 @@ their own bench's bounds.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import random
@@ -188,6 +189,82 @@ def stage(job: Job, workdir: Path) -> Path:
     return req
 
 
+def staged_identity(req: Path) -> dict[str, str]:
+    """Named sha256 digests over every staged byte the simulator consumes.
+
+    ``request.json`` names the deck only as a file name (``"netlist":
+    "body.spice"``) and the deck reaches the DUT by relative include, so the
+    request alone cannot see a circuit edit: :func:`stage` writes the deck
+    body and the DUT netlist into separate files beside it. A resume
+    decision that compared the request alone could therefore reuse a report
+    -- or re-attach a batch shard map -- from a different circuit under one
+    record id (issue #796). The identity covers all three staged files.
+    """
+    return {"request_sha256": _sha256_file(req),
+            "body_sha256": _sha256_file(req.parent / "body.spice"),
+            "dut_sha256": _sha256_file(req.parent / "dut.spice")}
+
+
+def _sha256_file(p: Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def _identity_text(req: Path) -> str:
+    return json.dumps(staged_identity(req), sort_keys=True) + "\n"
+
+
+def identity_matches(marker: Path, req: Path) -> bool:
+    """True iff ``marker`` exists and holds ``req``'s staged identity.
+
+    A missing marker -- a legacy result from before identity sidecars, or a
+    run interrupted before its result was complete -- is a miss, never a
+    match (issue #796).
+    """
+    try:
+        return marker.read_text() == _identity_text(req)
+    except FileNotFoundError:
+        return False
+
+
+def publish_identity(marker: Path, req: Path) -> None:
+    """Record ``req``'s staged identity beside the result it produced.
+
+    Publish only for a complete result, after the report and its other
+    sidecars are written: the marker vouches for the report beside it, so a
+    marker-first ordering could pair a new marker with an old report from a
+    different circuit, which the resume guard would then trust (issue #796;
+    the same torn-write rule as PR #745 review 3).
+    """
+    marker.write_text(_identity_text(req))
+
+
+def _claim_resume_outdir(outdir: Path, req: Path, log=print) -> None:
+    """Make ``outdir``'s retained shard map safe to re-attach to (issue #796).
+
+    ``--resume`` re-attaches to the shard map retained under ``outdir``, so
+    the outdir records the staged identity it was submitted with. A
+    re-submission whose circuit changed must not collect the previous
+    circuit's finished shards: the stale outdir is dropped and the
+    submission starts clean. An outdir with no recorded identity -- written
+    before this marker existed, or by a non-resume run into the same path --
+    is claimed the same way; an interrupted run of the *same* circuit keeps
+    its shard map and continues (issue #465).
+    """
+    marker = outdir / "run-identity.json"
+    text = _identity_text(req)
+    if outdir.is_dir():
+        try:
+            same = marker.read_text() == text
+        except FileNotFoundError:
+            same = False
+        if same:
+            return
+        shutil.rmtree(outdir)
+        log(f"  {outdir.name}: dropped retained shard map -- staged circuit changed")
+    outdir.mkdir(parents=True, exist_ok=True)
+    marker.write_text(text)
+
+
 def run(req: Path, outdir: Path, backend: str | None = None,
         max_cap_wait_s: float = 4 * 3600, log=print,
         resume: bool = False) -> dict:
@@ -209,11 +286,16 @@ def run(req: Path, outdir: Path, backend: str | None = None,
     request instead of repeating it. It needs the same staged ``req`` and
     ``outdir`` as the interrupted run, so a caller that wants resumability
     must keep both out of any tempdir that dies with the session (issue #465).
+    Re-attachment is identity-checked: ``outdir`` records the staged identity
+    (:func:`staged_identity`) it was submitted with, and a re-submission
+    whose circuit changed drops the retained shard map instead of collecting
+    the previous circuit's finished shards (issue #796).
     """
     cmd = klt_cmd() + ["sim", str(req), "-o", str(outdir), "--format", "json"]
     if backend:
         cmd += ["--backend", backend]
     if resume:
+        _claim_resume_outdir(outdir, req, log=log)
         cmd += ["--resume"]
     deadline = time.monotonic() + max_cap_wait_s
     delay = 60.0
