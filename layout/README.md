@@ -407,19 +407,27 @@ continue.
 > at. The cells in `design/` already follow this convention.
 
 **3. DRC — `klt drc --deck gf180mcu --format json`.** The agent-facing,
-JSON-contracted path; the report is kept in the run directory. Fast (milliseconds),
-and it is a **13-rule curated subset**. See "Coverage, honestly" below.
+JSON-contracted path. Fast (milliseconds), and it is a **curated subset, not
+signoff** — 127 rules at klt `0.9.3.dev2575` (114 at the PyPI-pinned `0.8.0`);
+re-measure with `klt drc --deck gf180mcu --list-rules`. See "Coverage,
+honestly" below. On the three design cells a `--record` run also commits the
+report (via `-o`) to `layout/drc/reports/<cell>/<record-id>.drc.json`.
 
-**4. DRC — the PDK's own deck.** The full gf180mcu KLayout deck, driven through
-its own Ruby driver (`libs.tech/klayout/tech/drc/gf180mcu.drc`, which
-`require_relative`s its rule tables from `tech/drc/rule_decks/*.rb`), invoked
-exactly as the driver's documented contract prescribes:
-`klayout -b -r gf180mcu.drc -rd input=… -rd report=… -rd decks=all,-antenna,-density …`.
-The `decks=` selection excludes the `antenna` and `density` decks, the same
-tables the old concatenated-deck flow excluded explicitly; the driver honours
-`run_mode=deep`, `threads`, and the variant's metal-stack switches
-(`metal_level`/`metal_top`/`mim_option`). **This is the DRC number worth
-quoting.**
+**4. DRC — the PDK's own deck, through klt.** The full gf180mcu KLayout deck
+(`libs.tech/klayout/tech/drc/gf180mcu.drc`, which `require_relative`s its rule
+tables from `tech/drc/rule_decks/*.rb`), driven since issue #784 by
+`klt drc --engine klayout --deck-file … --deck-var decks=all,-antenna,-density …`:
+klt passes the same table selection and variant metal-stack switches
+(`metal_level`/`metal_top`/`mim_option`) the raw `klayout -b -r` invocation
+passed, fails a deck that aborted part-way (a partial report is never clean),
+and asserts the deck's declared rule-category **set** via
+`--expect-rule-categories-file` fed by a `--list-rule-categories` listing of
+the same deck under the same switches — so a deck that ran zero (or swapped)
+categories is a hard error, never a clean pass. **This is the DRC number worth
+quoting.** `--parity-raw-deck` re-runs the retired raw invocation beside it
+and hard-fails on any verdict or category-set difference; the three cells'
+parity is recorded in their #784 run records. A `--record` run commits the
+report to `layout/drc/reports/<cell>/<record-id>.drc-klayout.json`.
 
 Quote it from a *record*, not from this file: the category count is a property
 of the deck **as the installed KLayout builds it**, not of the PDK alone, and
@@ -437,14 +445,39 @@ that is indistinguishable from a clean one — that is what a deck that ran no
 rules looks like (a mis-set `decks=` selection does exactly this), so
 `drclvs.py` treats zero categories as a hard error rather than a pass.
 
-**5. LVS.** The PDK's own `gf180mcu.lvs`, layout against the netlist from stage 2.
-The deck reports its own verdict in its log and exits 0 either way, so the log is
-the contract; `drclvs.py` demands exactly one of the two verdict strings, so a
-deck that fell over before comparing is an error rather than a silent pass.
+**5. LVS.** Routed per cell since issue #784 (`CellSpec.lvs_route`):
+
+- **`klt` (the default)** — `klt lvs` on the curated gf180mcu deck (engine
+  `klayout`), layout against the committed reference netlist. The request
+  document is committed beside its report
+  (`layout/lvs/reports/<cell>/<record-id>.lvs-request.json`), carrying the
+  raw route's knobs on their klt counterparts: `deck_options`
+  (`poly_res` per cell, the MIM flavour in the curated deck's own class
+  spelling, `metal_top` for the installed variant), the
+  `reference.form: "subckt-call"` + `reference.deck: gf180mcu` conversion for
+  references whose device cards name PDK model tokens, and the per-cell
+  `options` (`compare_parameters` scopes a resistor class's `L`/`W` back
+  into the compare — KLayout declares them *secondary*, so without this the
+  geometry controls would match — and `combine_devices` folds pass_array's
+  40 drawn parallel units onto its one `nf=40` reference card). A `--record`
+  run commits the report (`<record-id>.lvs.json`); its
+  `provenance.input.content_hash` pins the committed GDS bytes, and
+  `klt lvs --check <report>` re-verifies it.
+- **`pdk-deck` (raw `klayout -b -r`, the pre-#784 path)** — kept only for
+  `passives`, whose reference relies on the runset's implicit-connect label
+  join (`connect_implicit('*')`), which `klt lvs` cannot express
+  ([klayout-tools#7030](https://github.com/2AMLogic/klayout-tools/issues/7030));
+  when that lands, the cell flips to `klt` and additionally needs a
+  `reference.device_map` entry for the MIM cap's PDK-current class spelling
+  ([klayout-tools#7031](https://github.com/2AMLogic/klayout-tools/issues/7031)).
+  The deck reports its own verdict in its log and exits 0 either way, so the
+  log is the contract; `drclvs.py` demands exactly one of the two verdict
+  strings, so a deck that fell over before comparing is an error rather than
+  a silent pass.
 
 **6 onwards. Negative controls.** The same compare, once more per control,
-against deliberately corrupted copies of the netlist. Every one **must**
-mismatch:
+against deliberately corrupted copies of the netlist — through the **same
+route stage 5 took for that cell**. Every one **must** mismatch:
 
 | Control | Mutation | Registered when | What it would mean if it matched |
 | --- | --- | --- | --- |
@@ -500,12 +533,17 @@ PDK's own deck rather than of this repo:
 
 ## Coverage, honestly
 
-**`klt drc`'s gf180mcu deck is a curated 13-rule subset**, transcribed from the
-published design rule manual — width, space and enclosure checks across
-poly2 / comp / contact / metal1, 3.3 V column only. It is a fast inner-loop
-check, not signoff. `klt drc: clean` and "DRC clean" are different claims and
-this repo will not conflate them: any DRC claim made in this repo cites the
-**PDK deck's** result and its rule-category count.
+**`klt drc`'s gf180mcu deck is a curated subset**, transcribed from the
+published design rule manual — **127 rules** at klt `0.9.3.dev2575` (114 at
+the PyPI-pinned `0.8.0`; re-measure with `klt drc --deck gf180mcu
+--list-rules`, the figure is a property of the installed klt). It is a fast
+inner-loop check, not signoff. `klt drc: clean` and "DRC clean" are different
+claims and this repo will not conflate them: any DRC claim made in this repo
+cites the **PDK deck's** result and its rule-category count, and every
+`--record` run quotes both reports' own `coverage` blocks
+(`layers_in_stream_without_rules`, `rules_skipped`, `deck_scope`) so a
+"clean" claim can never silently mean "clean under the subset that happened
+to check".
 
 Both are run on every invocation precisely so the two numbers stay visible next
 to each other.
@@ -550,11 +588,31 @@ bringing in a GDS from elsewhere should check its dbu before believing a
 with the record-id convention `sim/` uses (`<YYYYMMDD>-<HHMMSS>-<short-sha>`).
 Re-runs mint a new record; records are never edited in place. Each one carries
 the tool versions, the PDK variant and open_pdks hash, both DRC results with
-their rule-category counts, the LVS verdict and every control verdict.
+their rule-category counts and coverage quotes, the LVS verdict, every control
+verdict, and the committed-artifact list.
 
 The run directory itself (`layout/.work/`) is scratch and gitignored — the
 `.lyrdb` / `.lvsdb` databases are large, machine-specific and regenerable. The
-record is the evidence.
+record is the evidence — and, since issue #784, so are the klt reports and the
+GDS they pin:
+
+- **The GDS.** The three design cells commit their generated GDS at
+  `layout/<cell>/<cell>.gds`. Every later stage runs against the *committed*
+  bytes — the artifact the reports pin by content hash — after the flow proves
+  the fresh build reproduces them (GDS timestamps aside,
+  `gds_equal_modulo_timestamps`). Re-minting is a deliberate act
+  (`--mint-gds`, then a `--record` run to refresh the reports), never a side
+  effect of running the flow.
+- **The klt reports.** `--record` also commits the curated and native-deck
+  DRC reports (`layout/drc/reports/<cell>/<record-id>.drc{,-klayout}.json`)
+  and, on the `klt` LVS route, the request + report pair
+  (`layout/lvs/reports/<cell>/<record-id>.lvs-request.json` /
+  `.lvs.json`), each named by the same record id as the run record it
+  accompanies. Append-only like records; `klt drc --check` /
+  `klt lvs --check` re-verify a report against the committed inputs, and
+  `klt signoff <drc-report> <lvs-report>` aggregates a cell's pair into one
+  verdict. `passives` has no klt LVS report yet (the #7030 route above); its
+  DRC reports are committed all the same.
 
 ## Friction filed upstream
 
@@ -587,7 +645,14 @@ generically against [klayout-tools](https://github.com/2AMLogic/klayout-tools):
 `klt drc --engine klayout` (PDK-native DRC-DSL decks, #173) and `klt extract` /
 `klt lvs` (headless extraction and compare, the #163 epic) — as of `klt 0.4.0`,
 which is newer than stages 4 and 5 here. **Collapsing those two stages into
-`klt` calls is real, available work, but it is not a free swap**: the negative
-controls and the verdict-string contract in stage 5 are what make an LVS
-"match" evidence at all, and any move has to carry them across and show the
-same cell reaching the same verdict both ways before the old path is retired.
+`klt` calls was real, available work, but not a free swap** — and it is done
+(#784): stage 4 drives the PDK deck through `klt drc --engine klayout` with
+the declared rule-category set asserted, stage 5 routes per cell (`klt lvs`
+everywhere except `passives`, below), the negative controls run through the
+same route as their stage 5, the raw deck invocation survives as
+`--parity-raw-deck` and all three cells' records show both routes agreeing.
+The one cell still on the raw LVS path is `passives`, blocked by
+[#7030](https://github.com/2AMLogic/klayout-tools/issues/7030) (implicit-
+connect label join has no `klt lvs` counterpart; also
+[#7031](https://github.com/2AMLogic/klayout-tools/issues/7031) for the MIM
+class spelling it will need once unblocked).

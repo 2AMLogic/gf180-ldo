@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,9 @@ SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
 
 from harness import cli, corners, deck, klt_grid, klt_ab, klt_batch, paths, report, runner, testbench  # noqa: E402
+from harness import evidence_store as store_mod  # noqa: E402
+from harness import klt_record as kr  # noqa: E402
+from harness import tb_adapter as ta  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
     parse_meas_lines,
@@ -33,6 +37,9 @@ from harness.pvt_log import (  # noqa: E402
     report_flag,
     report_minmax,
 )
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_evidence_store import fake_klt  # noqa: E402
 
 
 def fake_pdk(root: Path) -> Pdk:
@@ -3244,6 +3251,123 @@ class LocalGridCliTests(unittest.TestCase):
             ap.parse_args(["smoke-bias"]).jobs, klt_grid.DEFAULT_JOBS)
         self.assertEqual(ap.parse_args(["smoke-bias", "-j", "8"]).jobs, 8)
         self.assertEqual(ap.parse_args(["smoke-bias", "-j", "0"]).jobs, 0)
+
+
+class LocalCliRecordScratchCleanupTests(unittest.TestCase):
+    """Issue #802: a stored record consumes only its own staged scratch.
+
+    ``sim/.work/.stage/<slug>/`` is shared by every record id of a bench.
+    ``cli.run`` used to rmtree the whole bench tree after storing one record,
+    which erased a sibling staged run's only copy -- including a batch run
+    left pending for a later mint. End to end over ``cli.run`` with the grid
+    stubbed and the store faked, per this file's no-PDK/no-ngspice contract.
+    """
+
+    SLUG = "line-regulation"
+    SIB = "20261121-zz-sibl-0bedeca"
+
+    #: Stubbed measurements, one per ``tb.json`` measure name and inside every
+    #: check bound, so the record passes and ``run`` reaches the store and
+    #: cleanup path with ``EXIT_OK``.
+    MEAS = {
+        "vout_1ma_lo": 1.8, "vout_1ma_hi": 1.8, "vout_50ma_lo": 1.8,
+        "vout_50ma_hi": 1.8, "line_reg_1ma_mvpv": 1.0, "line_reg_50ma_mvpv": 1.0,
+        "iload_err_max_ua": 0.1,
+    }
+
+    def setUp(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        # Cleanups run in reverse order: the caller's cwd is restored before
+        # the temp repo is deleted, including on failure. Entering the fixture
+        # keeps the bare-slug argument resolving against this repo instead of
+        # a real bench that happens to sit under the process cwd (#805).
+        self.addCleanup(os.chdir, Path.cwd())
+        self.repo = Path(td.name).resolve()
+        os.chdir(self.repo)
+        shutil.copytree(SIM_DIR / self.SLUG / "testbench",
+                        self.repo / "sim" / self.SLUG / "testbench")
+        self.exp = self.repo / "sim" / self.SLUG
+        self.put_objects: dict = {}
+        self._patch(cli, "REPO_ROOT", self.repo)
+        self._patch(cli, "SIM_DIR", self.repo / "sim")
+        self._patch(cli, "WORK_DIR", self.repo / "sim" / ".work")
+        self._patch(cli, "STAGE_DIR", self.repo / "sim" / ".work" / ".stage")
+        self._patch(cli, "find_pdk", lambda: fake_pdk(self.repo / "pdk"))
+        self._patch(runner, "ngspice_version", lambda: "ngspice-46 (stubbed)")
+        self._patch(runner, "ngspice_binary_sha256", lambda: "a" * 64)
+        self._patch(store_mod, "preflight", lambda *_a, **_k: None)
+        self._real_put = store_mod.put_files
+        self._patch(store_mod, "put_files", self._fake_store_put)
+        self._patch(kr, "REPO", self.repo)
+        self._stage_sibling()
+
+    def _patch(self, obj, name, value):
+        old = getattr(obj, name)
+        setattr(obj, name, value)
+        self.addCleanup(lambda: setattr(obj, name, old))
+
+    def _fake_store_put(self, files, root, **_kw):
+        return self._real_put(files, root, run=fake_klt(self.put_objects))
+
+    def _stage_sibling(self):
+        """A second, batch-run record id staged for the same bench, in the
+        layout ``klt_run.py`` leaves behind (same bytes as
+        ``test_klt_record.StoreRun._stage``)."""
+        corner = ta.stage_corner_dir(self.repo, self.SLUG, self.SIB)
+        (corner / "new").mkdir(parents=True, exist_ok=True)
+        (corner / "new" / "klt-report.json").write_text(json.dumps(
+            {"corner_count": 1, "environment": {"remote": {
+                "job_id": "klt-sim-1", "instance_type": "c7i.8xlarge", "state": "done",
+                "worker_environment": {"pdk": {"models_staged": True,
+                                               "stamp_text": "open_pdks c6d73a3"}}}}}))
+        (corner / "new" / "tt_27c_3.30v.log").write_text("ngspice log bytes\n")
+        (corner / "summary.csv").write_text(
+            "dut,corner,line_reg_pct_per_v,status,diagnostics,pass\n"
+            "new,tt_27c_3.30v,0.01,pass,,True\n")
+
+    def _stub_grid(self):
+        def grid(tb, pdk, points, workdir, jobs=1, timeout_s=None,
+                 on_result=None, log_dir=None):
+            log_dir.mkdir(parents=True, exist_ok=True)
+            results = []
+            for point in points:
+                (log_dir / f"{point.corner_id}.log").write_text("stubbed ngspice log\n")
+                result = runner.PointResult(
+                    point=point, status="ok", measurements=dict(self.MEAS))
+                results.append(result)
+                if on_result is not None:
+                    on_result(result)
+            return results
+        return grid
+
+    def test_a_stored_record_consumes_only_its_own_scratch(self):
+        args = cli.build_parser().parse_args(
+            [self.SLUG, "--subset-reason", "two-record staging-cleanup test",
+             "-j", "1"])
+        with unittest.mock.patch.object(runner, "run_grid", self._stub_grid()), \
+                contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(cli.run(args), cli.EXIT_OK)
+        (rid_md,) = (self.exp / "records").glob("*.md")
+        rid = rid_md.stem
+        self.assertTrue(
+            (self.repo / "manifests/artifacts" / f"{self.SLUG}-{rid}.manifest.json").is_file(),
+            "the run never reached the store: the cleanup path was not exercised")
+        stage_exp = ta.stage_experiment_dir(self.repo, self.SLUG)
+        # The stored record's own scratch is consumed: its corner logs, its
+        # netlist snapshot and its staged Markdown record.
+        self.assertFalse((stage_exp / report.CORNERS_DIR / rid).exists())
+        self.assertFalse((stage_exp / report.SNAPSHOT_DIR / f"{rid}.spice").exists())
+        self.assertFalse((stage_exp / report.RECORDS_DIR / f"{rid}.md").exists())
+        # The sibling staged batch run survived, and still mints.
+        sibling = ta.stage_corner_dir(self.repo, self.SLUG, self.SIB)
+        self.assertTrue((sibling / "summary.csv").is_file())
+        self.assertTrue((sibling / "new" / "tt_27c_3.30v.log").is_file())
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(kr.main([self.SLUG, "--record-id", self.SIB]), 0)
+        self.assertTrue((self.exp / "records" / f"{self.SIB}.md").is_file())
 
 
 class HostPathRedactionTests(unittest.TestCase):
