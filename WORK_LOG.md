@@ -8,6 +8,10 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-23
 
+- **PR #819**: refactor(sim): load sibling modules via load_script in three drivers
+- **Issue #778** (closed): Use the shared script loader for four sibling loads in simulation drivers
+- **PR #818**: feat(layout): klt erc supply runs on pass_array and divider with committed specs and tie-severing controls
+- **Issue #785** (closed): T1 item 11 groundwork: write the `klt erc` supply spec and run it on `pass_array` and `fb_divider` now, ahead of the ldo_core assembly
 - **PR #808**: fix(layout): double divider resistor widths with the shared dimension grammar
 - **Issue #807** (closed): Share dimension parsing across LVS negative controls so resistor widths double consistently
 
