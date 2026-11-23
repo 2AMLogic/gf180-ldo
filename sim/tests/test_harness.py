@@ -1417,6 +1417,17 @@ class ChecksTests(unittest.TestCase):
         self.assertEqual("nonfinite", f(float("nan"), {"max_spread_pct": 5}))
         self.assertIsNone(f(float("nan"), {}), "no bound constrains nothing")
 
+    def test_inverted_range_reports_both_bounds(self):
+        # Review of #800: an accepted-but-unsatisfiable range must keep both
+        # record failures (min and max), as before the shared rule.
+        spec = {"x": {"min": 2, "max": 0}}
+        self.assertEqual(["min", "max"], report.scalar_bound_failures(1, spec["x"]))
+        results = [_StubResult("a", {"x": 1})]
+        failures = report.evaluate_checks(spec, results, report.summarize(results, ["x"]))
+        self.assertEqual([("min", 2), ("max", 0)],
+                         [(f["kind"], f["limit"]) for f in failures])
+        self.assertEqual([], report.scalar_bound_failures(1, {"min": 0, "max": 2}))
+
     def test_max_spread_violation(self):
         failures = report.evaluate_checks(
             {"v": {"max_spread_pct": 10.0}}, self.results, self.summary

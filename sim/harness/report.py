@@ -355,13 +355,16 @@ def waived_checks(checks: dict[str, dict], summary: dict) -> list[dict]:
     return waived
 
 
-def scalar_bound_failure(value, spec: dict) -> str | None:
-    """Why one measured scalar fails check ``spec``, or ``None`` when it holds.
+def scalar_bound_failures(value, spec: dict) -> list[str]:
+    """Every way one measured scalar fails check ``spec`` (empty == it holds).
 
     The one scalar rule behind the record evaluator and both staging graders
     (issue #798). Fails closed on non-finite values: every comparison against
     NaN is False, and an infinity on the unbounded side of a one-sided check
-    would otherwise pass (issue #420). ``min``/``max`` are inclusive. A spread
+    would otherwise pass (issue #420); that is the single ``"nonfinite"``
+    entry. Otherwise each violated bound is reported -- ``"min"`` and
+    ``"max"`` both, for an (inverted) range no value can satisfy -- so the
+    record keeps every failure. ``min``/``max`` are inclusive. A spread
     bound is a grid-level statistic rather than a per-scalar bound, but a
     spec that bounds a measurement in any way still refuses a non-finite
     value for it. A spec with no bound at all (refused by
@@ -369,15 +372,22 @@ def scalar_bound_failure(value, spec: dict) -> str | None:
     (``None``) fails: it is not a finite in-range number.
     """
     if not any(spec.get(k) is not None for k in ("min", "max", *SPREAD_KINDS)):
-        return None
+        return []
     if not _is_finite(value):
-        return "nonfinite"
+        return ["nonfinite"]
+    failed: list[str] = []
     low, high = spec.get("min"), spec.get("max")
     if low is not None and value < low:
-        return "min"
+        failed.append("min")
     if high is not None and value > high:
-        return "max"
-    return None
+        failed.append("max")
+    return failed
+
+
+def scalar_bound_failure(value, spec: dict) -> str | None:
+    """The first failure of :func:`scalar_bound_failures`, or ``None``."""
+    failed = scalar_bound_failures(value, spec)
+    return failed[0] if failed else None
 
 
 def evaluate_checks(
@@ -399,8 +409,7 @@ def evaluate_checks(
             if result.status != "ok" or name not in result.measurements:
                 continue
             value = result.measurements[name]
-            kind = scalar_bound_failure(value, spec)
-            if kind is not None:
+            for kind in scalar_bound_failures(value, spec):
                 failures.append(
                     {
                         "measurement": name,

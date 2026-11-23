@@ -218,18 +218,36 @@ class McDriverRouting(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertTrue(self._staged().is_dir())
 
-    def test_a_nonfinite_sample_fails_the_staged_pass_column(self):
-        # Issue #798: a NaN that survives the fleet report passed the driver's
-        # old local grader (every NaN comparison is False); the shared scalar
-        # rule must fail the row.
-        self.value = float("nan")
-        rc = self._main(["--record-id", self.rid], lambda repo: None)
-        self.assertEqual(rc, 0)
+    PASSING_STATS = {"n_samples": 1000, "n_bad_solves": 0, "sigma_mv": 0.05,
+                     "sigma3_mv": 3.49, "vos_in_sigma3_mv": 2.33, "worst_abs_mv": 18.0,
+                     "divider_exact_uv": 1.0, "mean_mv": 2.56}
+
+    def _staged_pass_column(self, stats: dict) -> list[str]:
+        """Run the driver with ``statistics`` stubbed to ``stats``; return the
+        ``pass`` column of every ``new`` row of the CSV it wrote."""
+        self.addCleanup(setattr, mc, "statistics", mc.statistics)
+        mc.statistics = lambda samples: dict(stats)
+        self.assertEqual(self._main(["--record-id", self.rid], lambda repo: None), 0)
         with open(self._staged() / "summary.csv", newline="") as fh:
-            rows = list(csv.DictReader(fh))
-        new = [r for r in rows if r["dut"] == "new"]
-        self.assertTrue(new)
-        self.assertTrue(all(r["pass"] == "False" for r in new), [r["pass"] for r in new])
+            rows = [r for r in csv.DictReader(fh) if r["dut"] == "new"]
+        self.assertTrue(rows)
+        return [r["pass"] for r in rows]
+
+    def test_staged_pass_column_follows_the_shared_scalar_rule(self):
+        # Issue #798: drive an otherwise-passing statistics row through
+        # mc.main and vary one field at a time; the CSV must say False for
+        # each non-finite / out-of-range / missing case.
+        self.assertEqual({"True"}, set(self._staged_pass_column(self.PASSING_STATS)))
+        missing = {k: v for k, v in self.PASSING_STATS.items() if k != "sigma_mv"}
+        cases = (("nan", {**self.PASSING_STATS, "mean_mv": float("nan")}),
+                 ("+inf on a min-only bound", {**self.PASSING_STATS, "sigma_mv": float("inf")}),
+                 ("-inf on a max-only bound", {**self.PASSING_STATS, "sigma3_mv": float("-inf")}),
+                 ("out of range", {**self.PASSING_STATS, "mean_mv": 3.0}),
+                 ("missing", missing))
+        for label, stats in cases:
+            with self.subTest(label):
+                shutil.rmtree(self._staged(), ignore_errors=True)
+                self.assertEqual({"False"}, set(self._staged_pass_column(stats)))
 
     def test_a_record_id_already_committed_is_refused(self):
         existing = sorted(p for p in (SIM_DIR / "mc-output-accuracy" / "corners").iterdir()
