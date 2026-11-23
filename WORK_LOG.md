@@ -8,6 +8,14 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-23
 
+- **PR #794**: docs(spec): add DR-0045 answering gf180-opamp's amplifier-slot offset, divider and noise questions
+- **Issue #790** (closed): Answer gf180-opamp DR-0007 questions Q1 to Q3 (error-amp offset share, divider ratio and VCM, noise allowance) from this repo's committed evidence
+- **PR #815**: sim: pin DR-0025 wnflag in the four remaining standalone decks
+- **Issue #607** (closed): Pin DR-0025 per-finger model binning in the four remaining standalone decks
+- **PR #817**: Hand fleet-capacity retries to klt via a 600 s request default
+- **Issue #610** (closed): Delegate fleet-capacity retries to klt with a 600-second request default
+- **PR #797**: test: compare bench DUT device cards against the design export
+- **Issue #792** (closed): CI has no gate comparing a committed testbench DUT against the pinned-xschem export it claims to come from
 - **PR #819**: refactor(sim): load sibling modules via load_script in three drivers
 - **Issue #778** (closed): Use the shared script loader for four sibling loads in simulation drivers
 - **PR #818**: feat(layout): klt erc supply runs on pass_array and divider with committed specs and tie-severing controls
