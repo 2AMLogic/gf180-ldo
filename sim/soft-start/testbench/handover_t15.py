@@ -57,7 +57,6 @@ import argparse
 import concurrent.futures
 import csv
 import datetime as _dt
-import importlib.util
 import math
 import sys
 from pathlib import Path
@@ -68,6 +67,14 @@ REPO_ROOT = EXPDIR.parent.parent
 LG_TB = REPO_ROOT / "sim" / "soft-start-loop-gain" / "testbench"
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
+from harness import deck, klt_grid  # noqa: E402
+from harness.loader import load_script  # noqa: E402
+from harness.pdk import find_pdk  # noqa: E402
+from harness.report import (  # noqa: E402
+    format_record_id,
+    git_provenance,
+    print_provenance_banner,
+)
 
 # The soft-start-loop-gain helpers this experiment deliberately reuses are
 # loaded by path under unique names, never bare ``import sweep`` /
@@ -75,23 +82,8 @@ sys.path.insert(0, str(REPO_ROOT / "sim"))
 # bind caches whichever bench's file resolved first in the interpreter
 # (issue #700; enforced by sim/tests/test_sibling_import_names.py; same rule
 # as the klt_run loads in sim/loop-stability/testbench/sweep.py).
-_nv_spec = importlib.util.spec_from_file_location(
-    "ss_handover_netlist_variants", LG_TB / "netlist_variants.py")
-nv = importlib.util.module_from_spec(_nv_spec)
-sys.modules["ss_handover_netlist_variants"] = nv
-_nv_spec.loader.exec_module(nv)
-_sweep_spec = importlib.util.spec_from_file_location(
-    "ss_handover_lg_sweep", LG_TB / "sweep.py")
-sweep = importlib.util.module_from_spec(_sweep_spec)
-sys.modules["ss_handover_lg_sweep"] = sweep
-_sweep_spec.loader.exec_module(sweep)
-from harness import deck, klt_grid  # noqa: E402
-from harness.pdk import find_pdk  # noqa: E402
-from harness.report import (  # noqa: E402
-    format_record_id,
-    git_provenance,
-    print_provenance_banner,
-)
+nv = load_script("ss_handover_netlist_variants", LG_TB / "netlist_variants.py")
+sweep = load_script("ss_handover_lg_sweep", LG_TB / "sweep.py")
 
 # --- the targets, as machine-checkable predicates ---------------------------
 T1_RESIDUAL_A = 50e-9          # I_inj <= 50 nA for all V(SSR) >= VREF
