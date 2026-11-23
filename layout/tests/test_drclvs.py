@@ -973,3 +973,257 @@ class GdsEqualModuloTimestampsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def fake_erc_summary(
+    findings=(),
+    nets=(("VSS", 1, 1),),
+    ties_checked=("substrate_vss_tie",),
+    ties_skipped=(),
+):
+    """A minimal `klt erc` envelope slice for the ERC-stage tests."""
+    return {
+        "erc_status": "violations" if findings else "clean",
+        "erc_findings": [
+            {"rule": rule, "net": net, "layer": layer}
+            for rule, net, layer in findings
+        ],
+        "nets": [
+            {"name": name, "matched_islands": matched, "expected_islands": expected}
+            for name, matched, expected in nets
+        ],
+        "erc_coverage": {
+            "checked": [f'erc.missing_tie:["{t}"]' for t in ties_checked],
+            "skipped": [f'erc.missing_tie:["{t}"]' for t in ties_skipped],
+            "inapplicable": [],
+            "checked_by_well_assertion": list(ties_checked),
+            "layers_in_stream_without_declaration": [],
+        },
+        "provenance": {
+            "deck": {"name": "gf180mcu", "content_hash": "sha256:0" * 8},
+            "klt_version": "klt 0.9.3.test",
+        },
+    }
+
+
+class ErcRegistryTests(unittest.TestCase):
+    """Which cells carry the ERC supply stage, and with what contract."""
+
+    def test_the_two_design_cells_register_erc(self):
+        for key, tie in (
+            ("pass_array", "nwell_vin_tie"),
+            ("divider", "substrate_vss_tie"),
+        ):
+            erc = drclvs.CELLS[key].erc
+            self.assertIsNotNone(erc, key)
+            self.assertEqual(erc.ties, (tie,))
+            self.assertTrue(erc.control_mutation)
+
+    def test_the_flow_vehicles_register_no_erc(self):
+        self.assertIsNone(drclvs.CELLS["testcell"].erc)
+        self.assertIsNone(drclvs.CELLS["passives"].erc)
+
+    def test_pass_array_discloses_its_floating_gate(self):
+        self.assertEqual(
+            drclvs.CELLS["pass_array"].erc.expected_findings,
+            (("erc.floating_gate", "PASS_GATE"),),
+        )
+
+    def test_the_erc_scripts_exist_for_the_registered_cells(self):
+        for path in (drclvs.GEN_ERC_SPEC_SCRIPT, drclvs.MUTATE_ERC_SCRIPT):
+            self.assertTrue(path.is_file(), path)
+
+
+class ValidateErcReportTests(unittest.TestCase):
+    """The intact-run evidence contract (issue #785), checked mechanically."""
+
+    def test_a_clean_divider_shaped_report_passes(self):
+        report = fake_erc_summary()
+        failures, summary = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(summary["erc_status"], "clean")
+        self.assertEqual(summary["ties_checked"], ["substrate_vss_tie"])
+        self.assertEqual(summary["deck"]["name"], "gf180mcu")
+
+    def test_an_unexpected_supply_finding_fails(self):
+        report = fake_erc_summary(
+            findings=(("erc.supply_short", "VSS", None),)
+        )
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(
+            any("does not disclose" in f for f in failures), failures
+        )
+
+    def test_a_vanished_disclosed_finding_fails(self):
+        report = fake_erc_summary()
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.PASS_ARRAY_SPEC
+        )
+        self.assertTrue(
+            any("no longer reported" in f for f in failures), failures
+        )
+
+    def test_a_disclosed_pass_array_report_passes(self):
+        report = fake_erc_summary(
+            findings=(("erc.floating_gate", "PASS_GATE", "poly2"),),
+            nets=(("VIN", 1, 1), ("VOUT", 1, 1), ("ISNS", 1, 1),
+                  ("PASS_GATE", 1, 1)),
+            ties_checked=("nwell_vin_tie",),
+        )
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.PASS_ARRAY_SPEC
+        )
+        self.assertEqual(failures, [])
+
+    def test_a_split_supply_fails(self):
+        report = fake_erc_summary(nets=(("VSS", 2, 1),))
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(any("resolved 2 island" in f for f in failures))
+
+    def test_a_tie_missing_from_checked_fails(self):
+        report = fake_erc_summary(ties_checked=())
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(any("not in erc_coverage.checked" in f for f in failures))
+
+    def test_a_skipped_tie_fails(self):
+        report = fake_erc_summary(ties_skipped=("substrate_vss_tie",))
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(any("erc_coverage.skipped" in f for f in failures))
+
+    def test_an_undeclared_stream_layer_fails(self):
+        report = fake_erc_summary()
+        report["erc_coverage"]["layers_in_stream_without_declaration"] = ["42/0"]
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(any("declares nowhere" in f for f in failures))
+
+
+class CheckErcControlFindingsTests(unittest.TestCase):
+    """The ERC negative control: only the intended new finding passes."""
+
+    def setUp(self):
+        self.erc = drclvs.DIVIDER_SPEC.erc
+        self.intact = fake_erc_summary()
+
+    def mutated(self, findings):
+        return fake_erc_summary(findings=findings,
+                                ties_checked=self.erc.ties)
+
+    def test_the_intended_new_missing_tie_passes(self):
+        failures, nets = drclvs.check_erc_control_findings(
+            self.mutated((("erc.missing_tie", "VSS", "substrate_vss_tie"),)),
+            self.intact, self.erc,
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(nets, {"VSS"})
+
+    def test_a_run_that_cannot_fail_fails_the_control(self):
+        failures, _ = drclvs.check_erc_control_findings(
+            self.mutated(()), self.intact, self.erc
+        )
+        self.assertTrue(any("cannot fail" in f for f in failures))
+
+    def test_an_unrelated_new_finding_fails_the_control(self):
+        failures, _ = drclvs.check_erc_control_findings(
+            self.mutated((
+                ("erc.missing_tie", "VSS", "substrate_vss_tie"),
+                ("erc.unconnected_net", "FB", None),
+            )),
+            self.intact, self.erc,
+        )
+        self.assertTrue(any("unrelated" in f for f in failures))
+
+    def test_a_missing_tie_on_the_wrong_tie_fails(self):
+        failures, _ = drclvs.check_erc_control_findings(
+            self.mutated((("erc.missing_tie", "VIN", "some_other_tie"),)),
+            self.intact, self.erc,
+        )
+        self.assertTrue(any("cannot fail" in f for f in failures))
+        self.assertTrue(any("unrelated" in f for f in failures))
+
+    def test_a_skipped_control_tie_fails(self):
+        mutant = self.mutated((("erc.missing_tie", "VSS", "substrate_vss_tie"),))
+        mutant["erc_coverage"]["skipped"] = ['erc.missing_tie:["substrate_vss_tie"]']
+        failures, _ = drclvs.check_erc_control_findings(
+            mutant, self.intact, self.erc
+        )
+        self.assertTrue(any("erc_coverage.skipped" in f for f in failures))
+
+    def test_baseline_findings_are_not_new(self):
+        # pass_array's disclosed floating gate is in the intact run too, so
+        # the control's diff must not count it as an unrelated new finding.
+        erc = drclvs.PASS_ARRAY_SPEC.erc
+        intact = fake_erc_summary(
+            findings=(("erc.floating_gate", "PASS_GATE", "poly2"),),
+            ties_checked=erc.ties,
+        )
+        mutant = fake_erc_summary(
+            findings=(
+                ("erc.floating_gate", "PASS_GATE", "poly2"),
+                ("erc.missing_tie", "VIN", "nwell_vin_tie"),
+            ),
+            ties_checked=erc.ties,
+        )
+        failures, _ = drclvs.check_erc_control_findings(mutant, intact, erc)
+        self.assertEqual(failures, [])
+
+
+class ErcRecordRenderingTests(unittest.TestCase):
+    """write_record renders the ERC rows and section for cells with ERC."""
+
+    def test_rows_and_section_render(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            records_dir = Path(tmp) / "records"
+            pdk = fake_pdk(Path(tmp) / "pdk")
+            rid = "20260821-000001-abc1234"
+            summary = fake_summary(rid)
+            summary["erc"] = {
+                "erc_status": "clean",
+                "findings": [],
+                "nets": [{"name": "VSS", "matched_islands": 1,
+                          "expected_islands": 1}],
+                "ties_checked": ["substrate_vss_tie"],
+                "ties_by_well_assertion": ['erc.missing_tie:["substrate_vss_tie"]'],
+                "ties_skipped": [],
+                "inapplicable": [],
+                "layers_in_stream_without_declaration": [],
+                "deck": {"name": "gf180mcu",
+                         "content_hash": "sha256:deadbeef"},
+                "klt_version": "klt 0.9.3.test",
+                "spec": "layout/erc/specs/divider.erc.json",
+                "report": "layout/erc/reports/divider/%s.erc.json" % rid,
+            }
+            summary["erc_control"] = {
+                "mutation": "every contact cut deleted",
+                "finding": "erc.missing_tie on substrate_vss_tie",
+                "net": ["VSS"],
+                "failures": [],
+            }
+            original_records_dir = drclvs.RECORDS_DIR
+            drclvs.RECORDS_DIR = records_dir
+            try:
+                path = drclvs.write_record(rid, summary, pdk, drclvs.DIVIDER_SPEC)
+                text = path.read_text()
+            finally:
+                drclvs.RECORDS_DIR = original_records_dir
+            self.assertIn("klt erc --deck gf180mcu --findings-only", text)
+            self.assertIn("ERC negative control", text)
+            self.assertIn("layout/erc/specs/divider.erc.json", text)
+            self.assertIn("`matched_islands`", text)
+            self.assertIn("sha256:deadbeef", text)
+
+    def test_a_summary_without_erc_renders_no_erc_section(self):
+        summary = fake_summary("rid")
+        self.assertEqual(drclvs.erc_result_rows(summary), "")
+        self.assertEqual(drclvs.erc_section(summary), "")

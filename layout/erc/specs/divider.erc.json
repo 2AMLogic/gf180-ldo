@@ -1,0 +1,104 @@
+{
+  "_comment": [
+    "Supply spec for FB_DIVIDER (issue #785), emitted by",
+    "layout/erc/gen_spec.py from layout/divider/fb_divider.gds.",
+    "VSS is the supply (the substrate-tap ring is the cell's only",
+    "VSS conductor); VOUT_S is the Kelvin sense port of the regulated",
+    "rail and is declared a signal -- the force/sense join happens",
+    "only at the pad, at assembly (layout/floorplan.md \u00a75; the rail",
+    "itself is declared a supply on the pass array). FB is the",
+    "divider tap. metal1 carries all three nets plus the unlabelled",
+    "inter-unit links, so no net declares roles on it and its",
+    "unlabelled remainder is unmeasured. The ppolyf_u bodies are",
+    "carved out of poly2 by the --deck gf180mcu resistor recognition",
+    "(provenance.devices), so the string does not read as one",
+    "conductor shorting every net to every other."
+  ],
+  "stackup": [
+    {
+      "name": "poly2",
+      "layer": "30/0",
+      "role": "gate",
+      "active_layer": "22/0"
+    },
+    {
+      "name": "metal1",
+      "layer": "34/0",
+      "label_layer": "34/10"
+    }
+  ],
+  "vias": [
+    {
+      "name": "con",
+      "layer": "33/0",
+      "between": [
+        "poly2",
+        "metal1"
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "name": "VSS",
+      "kind": "supply"
+    },
+    {
+      "name": "VOUT_S",
+      "kind": "signal"
+    },
+    {
+      "name": "FB",
+      "kind": "signal"
+    }
+  ],
+  "ties": [
+    {
+      "_comment": [
+        "The substrate tie: this cell draws no well/tub layer at",
+        "all (a native-substrate block), so the substrate region",
+        "is asserted in well_boxes -- the four measured arms of",
+        "the tap ring's band, not an enclosing rectangle. The",
+        "PCell's per-unit p-tap columns are stripped by the",
+        "generator and the resistor heads are poly2, so COMP",
+        "draws exactly the ring (asserted on every emission),",
+        "which is what makes tap_is_dedicated honest here. The",
+        "tap reaches metal1 only through drawn contact cuts",
+        "(through: con)."
+      ],
+      "name": "substrate_vss_tie",
+      "well_layer": null,
+      "well_boxes": [
+        [
+          -2.92,
+          -2.41,
+          -2.5,
+          50.01
+        ],
+        [
+          34.3,
+          -2.41,
+          34.72,
+          50.01
+        ],
+        [
+          -2.92,
+          -2.41,
+          34.72,
+          -1.99
+        ],
+        [
+          -2.92,
+          49.59,
+          34.72,
+          50.01
+        ]
+      ],
+      "tap_layer": "22/0",
+      "tap_is_dedicated": true,
+      "connect_to": "metal1",
+      "through": "con",
+      "net": "VSS"
+    }
+  ],
+  "ties_disclosure": null
+}

@@ -69,6 +69,18 @@ What this runs, in order
    label join has no ``klt lvs`` counterpart,
    2AMLogic/klayout-tools#7030) keeps the raw ``klayout -b -r`` runset
    path until that lands.
+5b. **ERC supply run** (issue #785, cells that register ``CellSpec.erc`` --
+   today ``pass_array`` and ``divider``): the cell's ``klt erc`` supply spec
+   is emitted from the committed GDS (``layout/erc/gen_spec.py``, one
+   parameterized source per cell), ``klt erc --deck gf180mcu
+   --findings-only`` runs against it, and the envelope is validated against
+   the cell's own contract -- every declared supply resolves to one
+   labelled island, every declared tie is in ``erc_coverage.checked``
+   (never ``skipped``), and the finding set is exactly the cell's disclosed
+   expected findings. A ``--record`` run commits the spec
+   (``layout/erc/specs/``) and the report (``layout/erc/reports/``). These
+   sub-cell runs are T1 item 11 *groundwork*, not its evidence: the item
+   stays ``unmet`` until #524's ``ldo_core`` run.
 6. **LVS negative control -- topology.** The same compare against a copy of that
    netlist with the connection graph deliberately corrupted (for a MOS cell:
    the device's gate shorted to its drain; for an all-passive one: two
@@ -81,6 +93,12 @@ What this runs, in order
    class the netlist contains (``R``, ``C``), each with that device's length
    doubled. Registered only when the class is present, so a FET-only cell stops
    at stage 7.
+last. **ERC negative control** (cells with ``CellSpec.erc``): a disposable
+   copy of the committed GDS with the declared tie's connection severed
+   (``layout/erc/mutate_gds.py``) is run with the intact spec and must
+   report exactly one new ``erc.missing_tie`` on the intended tie -- the
+   ERC counterpart of the LVS controls' "a run that cannot fail is not
+   evidence" contract.
 
    None of these are decoration. Without them, "LVS passed" is not evidence
    that the compare looked at anything: a mis-wired invocation that silently
@@ -205,6 +223,33 @@ class ControlNotApplicable(StageError):
     (and, via ``StageError`` handling in ``main()``, exits nonzero) rather
     than letting the run report a pass.
     """
+
+
+@dataclasses.dataclass(frozen=True)
+class ErcSpec:
+    """The ``klt erc`` supply stage's per-cell contract (issue #785).
+
+    A cell registers one of these (``CellSpec.erc``) when it has a committed
+    supply spec; the stages themselves are generic, exactly like the LVS
+    controls. T1 item 11 stays ``unmet`` on these sub-cell runs -- they are
+    the groundwork #524's top-level run reuses, not the item's evidence.
+    """
+
+    # The spec's declared ties, by name. Each must land in the intact run's
+    # ``erc_coverage.checked`` (and NOT in ``skipped`` -- a skipped tie is a
+    # degenerate declaration the docs refuse to read as a pass).
+    ties: tuple[str, ...]
+    # ``(rule, net)`` findings the INTACT cell legitimately reports, so the
+    # stage can tell a disclosed finding from a new defect: pass_array's
+    # standalone gate bus is a label-only port, which is one real
+    # erc.floating_gate by design (gate routing lands at ldo_core assembly).
+    expected_findings: tuple[tuple[str, str], ...] = ()
+    # One line naming the ERC negative control's mutation, quoted in the
+    # record beside the LVS controls' own descriptions.
+    control_mutation: str = ""
+
+    def tie_id(self, name: str) -> str:
+        return f'erc.missing_tie:["{name}"]'
 
 
 @dataclasses.dataclass(frozen=True)
@@ -333,6 +378,16 @@ class CellSpec:
     # erase exactly the structure the layout exists to prove (the same
     # reason simplify_extracted is False there).
     lvs_combine_devices: bool = False
+    # The `klt erc` supply-spec contract (issue #785), or None for a cell
+    # with no committed supply spec (the flow vehicles). Registers the
+    # cell's declared ties, its disclosed expected findings, and the ERC
+    # negative control's mutation. When set, the flow gains two stages:
+    # the intact supply run (spec emitted from the committed GDS, report
+    # committed under layout/erc/reports/<key>/) and, after the LVS
+    # controls, the tie-severing negative control. T1 item 11 stays
+    # `unmet` on these sub-cell runs -- they are the groundwork #524's
+    # ldo_core run reuses, not the item's evidence (signoff/README.md).
+    erc: ErcSpec | None = None
 
     def __post_init__(self) -> None:
         if self.lvs_route not in LVS_ROUTES:
@@ -1121,6 +1176,22 @@ PASS_ARRAY_SPEC = CellSpec(
     # compare must fold the 40 drawn parallel units to meet it (see the
     # field's declaration-site comment).
     lvs_combine_devices=True,
+    # The `klt erc` supply stage (issue #785): VIN and VOUT declared as
+    # supplies (VOUT is the regulated rail feeding the 0-50 mA load), the
+    # n-well tie to VIN declared, the p-substrate class disclosed
+    # undeclared (no substrate tap exists in this pfet-only cell). The one
+    # disclosed finding is the standalone cell's label-only gate bus: no
+    # gate contact is drawn (gate routing lands at ldo_core assembly), so
+    # erc.floating_gate on PASS_GATE is a true statement about the sub-cell
+    # view, quoted in the record rather than hidden.
+    erc=ErcSpec(
+        ties=("nwell_vin_tie",),
+        expected_findings=(("erc.floating_gate", "PASS_GATE"),),
+        control_mutation=(
+            "every via1 landing between the VIN straps and both n-well "
+            "guard-ring arms deleted"
+        ),
+    ),
     description=(
         "40 pfet_03v3 pass unit cells (L=0.28 um, W=70 um, nf=1) plus 1 "
         "Msense unit cell of the same cell at the array centroid -- "
@@ -1148,6 +1219,19 @@ DIVIDER_SPEC = CellSpec(
     # drawn geometry back into the compare (klt discloses the narrowed-away
     # siblings, e.g. R, as device.parameter_excluded warnings).
     lvs_compare_parameters={"ppolyf_u_3k": ("L", "W")},
+    # The `klt erc` supply stage (issue #785): VSS declared as the supply
+    # (the substrate-tap ring is the cell's only VSS conductor), the
+    # substrate tie asserted over the measured ring band. VOUT_S stays a
+    # signal -- it is the Kelvin sense port of the regulated rail, which is
+    # declared a supply where the force current flows, on the pass array.
+    erc=ErcSpec(
+        ties=("substrate_vss_tie",),
+        expected_findings=(),
+        control_mutation=(
+            "every contact cut between the p+ substrate-tap ring and its "
+            "metal1 VSS ring deleted"
+        ),
+    ),
     description=(
         "18 ppolyf_u_3k units (W=2 um, L=31.8 um) + 2 dummies, "
         "common-centroid 6 up / 12 down -- layout/floorplan.md §4.1"
@@ -1656,6 +1740,296 @@ def run_klt_lvs(
 
 
 # --------------------------------------------------------------------------
+# stage 5 -- klt erc supply spec (issue #785)
+# --------------------------------------------------------------------------
+
+#: Committed ERC spec tree (``layout/erc/specs/<key>.erc.json``), emitted by
+#: ``layout/erc/gen_spec.py`` from the committed GDS -- a source artifact the
+#: eventual ``ldo_core`` supply run extends, not per-run evidence (the reports
+#: under ``layout/erc/reports/`` are the append-only evidence, named by record
+#: id exactly like the DRC/LVS report trees).
+ERC_SPECS_DIR = LAYOUT_DIR / "erc" / "specs"
+ERC_REPORTS_DIR = LAYOUT_DIR / "erc" / "reports"
+GEN_ERC_SPEC_SCRIPT = LAYOUT_DIR / "erc" / "gen_spec.py"
+MUTATE_ERC_SCRIPT = LAYOUT_DIR / "erc" / "mutate_gds.py"
+
+
+def erc_finding_keys(report: dict) -> set[tuple[str, str]]:
+    """The ``(rule, net)`` identity set of a report's ``erc_findings``."""
+    return {(f["rule"], f["net"]) for f in report.get("erc_findings", [])}
+
+
+def validate_erc_report(report: dict, spec: CellSpec) -> tuple[list[str], dict]:
+    """Check an intact-run ERC envelope against this cell's contract.
+
+    Returns ``(failures, summary)``; ``failures`` is empty when every claim
+    below held. The checks are the issue #785 acceptance criteria made
+    mechanical, so a green ``--record`` run cannot quietly mean less than
+    the record says:
+
+    - the finding set is exactly the cell's disclosed ``expected_findings``
+      -- in particular no ``erc.unconnected_net``, ``erc.supply_short`` or
+      ``erc.missing_tie`` anywhere, and a disclosed finding that vanished
+      is a failure too (the disclosure would have rotted);
+    - every declared net resolved ``matched_islands == expected_islands``
+      (both are labelled-island counts by the ERC contract; the report
+      carries them whether or not a finding fired);
+    - every declared tie is in ``erc_coverage.checked`` and none is in
+      ``skipped`` (a degenerate/skipped tie "does not count as checked");
+    - ``layers_in_stream_without_declaration`` is empty: the spec generator
+      declares every routing layer the stream draws, so a non-empty list
+      means the spec has rotted behind the layout.
+    """
+    erc = spec.erc
+    assert erc is not None  # the stage only runs for cells that registered one
+    failures: list[str] = []
+    findings = erc_finding_keys(report)
+    expected = set(erc.expected_findings)
+    unexpected = findings - expected
+    missing = expected - findings
+    if unexpected:
+        failures.append(
+            "the ERC run reported findings the cell does not disclose: "
+            + ", ".join(f"{rule} on {net}" for rule, net in sorted(unexpected))
+        )
+    if missing:
+        failures.append(
+            "the cell's disclosed ERC findings are no longer reported (the "
+            "disclosure has rotted): "
+            + ", ".join(f"{rule} on {net}" for rule, net in sorted(missing))
+        )
+    nets_summary = []
+    for net in report.get("nets", []):
+        nets_summary.append(
+            {
+                "name": net["name"],
+                "matched_islands": net["matched_islands"],
+                "expected_islands": net["expected_islands"],
+            }
+        )
+        if net["matched_islands"] != net["expected_islands"]:
+            failures.append(
+                f"net {net['name']} resolved {net['matched_islands']} "
+                f"island(s) carrying its label, expected "
+                f"{net['expected_islands']}"
+            )
+    coverage = report.get("erc_coverage") or {}
+    checked = coverage.get("checked") or []
+    skipped = coverage.get("skipped") or []
+    skipped_ids = [entry["id"] if isinstance(entry, dict) else entry
+                   for entry in skipped]
+    for tie in erc.ties:
+        if erc.tie_id(tie) not in checked:
+            failures.append(
+                f"tie {tie!r} is not in erc_coverage.checked -- its "
+                "erc.missing_tie work was not graded as checked"
+            )
+        if erc.tie_id(tie) in skipped_ids:
+            failures.append(
+                f"tie {tie!r} is listed in erc_coverage.skipped -- a skipped "
+                "tie does not count as checked (degenerate declaration)"
+            )
+    undeclared = coverage.get("layers_in_stream_without_declaration") or []
+    if undeclared:
+        failures.append(
+            "the stream draws layers the spec declares nowhere: "
+            f"{undeclared}"
+        )
+    summary = {
+        "erc_status": report.get("erc_status"),
+        "findings": [
+            {"rule": rule, "net": net} for rule, net in sorted(findings)
+        ],
+        "nets": nets_summary,
+        "ties_checked": [
+            name for name in erc.ties if spec.erc.tie_id(name) in checked
+        ],
+        "ties_by_well_assertion": coverage.get("checked_by_well_assertion") or [],
+        "ties_skipped": skipped_ids,
+        "inapplicable": coverage.get("inapplicable") or [],
+        "layers_in_stream_without_declaration": undeclared,
+        "deck": (report.get("provenance") or {}).get("deck"),
+        "klt_version": (report.get("provenance") or {}).get("klt_version"),
+    }
+    return failures, summary
+
+
+def run_erc_spec_gen(spec: CellSpec, gds: Path, out_json: Path) -> str:
+    """Emit the cell's supply spec from the committed GDS (issue #785).
+
+    ``layout/erc/gen_spec.py`` under ``klayout -b -r``: one parameterized
+    source per cell, measuring the GDS (the divider's asserted substrate
+    region) and asserting every spec claim the tool cannot check (COMP
+    draws only the divider's tap ring, the array's well/tap/via landings
+    exist, the supply labels are where the spec says). A nonzero exit is a
+    StageError carrying the generator's message.
+    """
+    ERC_SPECS_DIR.mkdir(parents=True, exist_ok=True)
+    rel_script = repo_arg(GEN_ERC_SPEC_SCRIPT)
+    proc = subprocess.run(
+        [
+            "klayout", "-b", "-r", str(rel_script),
+            "-rd", f"cell={spec.key}",
+            "-rd", f"gds={repo_arg(gds)}",
+            "-rd", f"out={repo_arg(out_json)}",
+        ],
+        capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+    if proc.returncode != 0:
+        raise StageError(
+            f"the ERC spec generator failed for {spec.key} "
+            f"(exit {proc.returncode})\n{proc.stdout}\n{proc.stderr}"
+        )
+    if not out_json.is_file():
+        raise StageError(f"the ERC spec generator wrote no spec at {out_json}")
+    return proc.stdout.strip()
+
+
+def run_klt_erc(
+    spec: CellSpec, gds: Path, spec_json: Path, out_json: Path
+) -> dict:
+    """One ``klt erc`` findings-only run, report captured to ``out_json``.
+
+    Same invocation shape the test plan fixes: ``--deck gf180mcu`` (whose
+    resistor recognition carves the divider's ppolyf_u bodies out of poly2)
+    plus ``--findings-only``. ``klt erc`` writes its JSON to stdout (no
+    ``-o``), so the report is captured here and written to ``out_json`` --
+    the committed-report artifact for a ``--record`` run. Exit 3 (findings)
+    and 4 (antenna not checked, every findings-only run) are both
+    successful runs; the verdict read is ``erc_status`` in the payload.
+    """
+    proc = subprocess.run(
+        [
+            "klt", "erc", str(repo_arg(gds)), str(repo_arg(spec_json)),
+            "--top", spec.top_cell,
+            "--deck", "gf180mcu",
+            "--findings-only", "--format", "json",
+        ],
+        capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+    if proc.returncode not in (0, 3, 4):
+        raise StageError(
+            f"klt erc failed for {spec.key} (exit {proc.returncode})\n"
+            f"{proc.stdout}\n{proc.stderr}"
+        )
+    try:
+        report = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise StageError(
+            f"klt erc wrote no readable JSON report for {spec.key}: {exc}"
+        )
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    out_json.write_text(proc.stdout.rstrip("\n") + "\n")
+    return report
+
+
+def run_erc_control(
+    spec: CellSpec,
+    stage_gds: Path,
+    spec_json: Path,
+    intact: dict,
+    run_dir: Path,
+) -> dict:
+    """The ERC negative control: sever the declared tie, expect the finding.
+
+    Mirrors the LVS controls' contract ("a run that cannot fail is not
+    evidence") on the layout side: ``layout/erc/mutate_gds.py`` writes a
+    disposable copy with every cut landing on the FIRST declared tie's tap
+    region deleted (the tie's path to its net, not its labelled metal and
+    not the tap itself), the copy is run with the **intact** spec, and the
+    run passes only when the finding set grew by exactly one new
+    ``erc.missing_tie`` on that tie -- a skipped check, a malformed report
+    or any unrelated new finding fails the control.
+    """
+    erc = spec.erc
+    assert erc is not None
+    tie = erc.ties[0]
+    mutated = run_dir / f"{spec.cell}.erc-control.gds"
+    proc = subprocess.run(
+        [
+            "klayout", "-b", "-r", str(repo_arg(MUTATE_ERC_SCRIPT)),
+            "-rd", f"cell={spec.key}",
+            "-rd", f"src={repo_arg(stage_gds)}",
+            "-rd", f"dst={repo_arg(mutated)}",
+        ],
+        capture_output=True, text=True, cwd=REPO_ROOT,
+    )
+    if proc.returncode != 0:
+        raise StageError(
+            f"the ERC control mutation failed for {spec.key} "
+            f"(exit {proc.returncode})\n{proc.stdout}\n{proc.stderr}"
+        )
+    report = run_klt_erc(
+        spec, mutated, spec_json,
+        run_dir / f"{spec.cell}.erc-control.erc.json",
+    )
+    failures, tie_nets = check_erc_control_findings(report, intact, erc)
+    return {
+        "mutation": erc.control_mutation,
+        "finding": f"erc.missing_tie on {tie}" if tie_nets else None,
+        "net": sorted(tie_nets),
+        "removed": proc.stdout.strip().splitlines()[-1]
+        if proc.stdout.strip() else "",
+        "failures": failures,
+        "report_path": run_dir / f"{spec.cell}.erc-control.erc.json",
+    }
+
+
+def check_erc_control_findings(
+    mutant: dict, intact: dict, erc: ErcSpec
+) -> tuple[list[str], set[str]]:
+    """Grade the ERC negative control's report against the intact one.
+
+    Returns ``(failures, nets)`` where ``nets`` are the declared nets the
+    intended ``erc.missing_tie`` finding named. The control passes only
+    when the finding set grew by exactly one new ``erc.missing_tie`` **on
+    the declared tie** (the finding's ``layer`` names the tie): a skipped
+    check, an absent finding, or any unrelated new finding fails it -- the
+    ERC counterpart of the LVS controls' "a control that matches is a
+    failed run".
+    """
+    tie = erc.ties[0]
+    findings = erc_finding_keys(mutant)
+    # Anything the intact run already reported (disclosed or not -- an
+    # undisclosed intact finding already failed the intact stage) is
+    # baseline; the control must add exactly one new erc.missing_tie.
+    new = findings - erc_finding_keys(intact)
+    failures: list[str] = []
+    tie_nets = {
+        f["net"]
+        for f in mutant.get("erc_findings", [])
+        if f["rule"] == "erc.missing_tie" and f.get("layer") == tie
+    }
+    if not tie_nets:
+        failures.append(
+            f"severing the tie ({erc.control_mutation}) produced no "
+            f"erc.missing_tie on {tie!r} -- the ERC run cannot fail on this "
+            "defect, so its clean verdict on the intact layout is not "
+            "evidence"
+        )
+    unrelated = {
+        (rule, net)
+        for rule, net in new
+        if not (rule == "erc.missing_tie" and net in tie_nets)
+    }
+    if unrelated:
+        failures.append(
+            "the ERC control run reported unrelated new findings: "
+            + ", ".join(f"{rule} on {net}" for rule, net in sorted(unrelated))
+        )
+    skipped_ids = [
+        entry["id"] if isinstance(entry, dict) else entry
+        for entry in (mutant.get("erc_coverage") or {}).get("skipped") or []
+    ]
+    if erc.tie_id(tie) in skipped_ids:
+        failures.append(
+            f"the control run's tie {tie!r} landed in erc_coverage.skipped -- "
+            "the control did not actually grade the severed tie"
+        )
+    return failures, tie_nets
+
+
+# --------------------------------------------------------------------------
 # plumbing
 # --------------------------------------------------------------------------
 
@@ -1785,9 +2159,12 @@ def run(args: argparse.Namespace) -> int:
     # whose controls do not apply fails here rather than after stage 5 has
     # already printed `lvs: MATCH`.
     controls = check_controls_apply(spec, netlist_text)
-    total = 5 + len(controls)
-    print(f"[1/{total}] {layout_line}")
-    print(f"[2/{total}] netlist     : {len(device_lines)} device line(s), LVS form")
+    total = 5 + len(controls) + (2 if spec.erc else 0)
+    stage_no = 1
+    print(f"[{stage_no}/{total}] {layout_line}")
+    stage_no += 1
+    print(f"[{stage_no}/{total}] netlist     : {len(device_lines)} device line(s), LVS form")
+    stage_no += 1
     summary["netlist_devices"] = len(device_lines)
     print(
         "      controls  : "
@@ -1816,10 +2193,11 @@ def run(args: argparse.Namespace) -> int:
         },
     }
     print(
-        f"[3/{total}] klt drc     : {klt_report['status']} "
+        f"[{stage_no}/{total}] klt drc     : {klt_report['status']} "
         f"({klt_report['violation_count']} violation(s), curated subset)"
         + (f" -> {klt_out.relative_to(REPO_ROOT)}" if committed_reports else "")
     )
+    stage_no += 1
     if not klt_ok:
         failures.append(
             f"klt drc reported {klt_report['violation_count']} violation(s): "
@@ -1843,13 +2221,14 @@ def run(args: argparse.Namespace) -> int:
         "coverage": pdk_drc["coverage"],
     }
     print(
-        f"[4/{total}] pdk drc     : {pdk_drc['status']} "
+        f"[{stage_no}/{total}] pdk drc     : {pdk_drc['status']} "
         f"({pdk_drc['violations']} violation(s) across "
         f"{pdk_drc['rule_categories']} rule categories, "
         f"{pdk_drc['deck']} via klt --engine klayout, "
         f"decks={pdk_drc['decks_selection']}, categories asserted)"
         + (f" -> {native_out.relative_to(REPO_ROOT)}" if committed_reports else "")
     )
+    stage_no += 1
     if pdk_drc["violations"]:
         failures.append(
             f"the PDK DRC deck reported {pdk_drc['violations']} violation(s); "
@@ -1864,7 +2243,50 @@ def run(args: argparse.Namespace) -> int:
         summary["pmap"] = raw["pmap"]
         print(f"      parity    : raw klayout run agrees -- {parity}")
 
-    # ---- 5. LVS ----------------------------------------------------------
+    # ---- 5. ERC supply spec + intact run (cells that register one) -------
+    # Issue #785: emit the cell's supply spec from the committed GDS, run
+    # `klt erc --deck gf180mcu --findings-only` against it, and validate the
+    # envelope against the cell's own contract (disclosed findings, one
+    # island per declared net, ties checked and not skipped). The committed
+    # spec is regenerated from the committed bytes, so writing it here is
+    # idempotent; the report tree is append-only, minted per record id.
+    erc_report_intact = None
+    if spec.erc is not None:
+        erc_spec_path = ERC_SPECS_DIR / f"{spec.key}.erc.json"
+        erc_out = (
+            ERC_REPORTS_DIR / spec.key / f"{rid}.erc.json"
+            if committed_reports
+            else run_dir / f"{spec.cell}.erc.json"
+        )
+        spec_line = run_erc_spec_gen(spec, stage_gds, erc_spec_path)
+        print(f"      {spec_line}")
+        erc_report_intact = run_klt_erc(spec, stage_gds, erc_spec_path, erc_out)
+        erc_failures, summary["erc"] = validate_erc_report(
+            erc_report_intact, spec
+        )
+        summary["erc"]["spec"] = str(erc_spec_path.relative_to(REPO_ROOT))
+        summary["erc"]["report"] = (
+            str(erc_out.relative_to(REPO_ROOT)) if committed_reports else None
+        )
+        disclosed = ", ".join(
+            f"{rule} on {net}" for rule, net in spec.erc.expected_findings
+        ) or "none disclosed"
+        print(
+            f"[{stage_no}/{total}] klt erc     : "
+            f"{summary['erc']['erc_status']} "
+            f"({len(summary['erc']['findings'])}"
+            f" finding(s); disclosed: {disclosed}; islands: "
+            + ", ".join(
+                f"{n['name']}={n['matched_islands']}"
+                for n in summary["erc"]["nets"]
+            )
+            + ")"
+            + (f" -> {erc_out.relative_to(REPO_ROOT)}" if committed_reports else "")
+        )
+        stage_no += 1
+        failures.extend(f"ERC supply run: {failure}" for failure in erc_failures)
+
+    # ---- LVS -------------------------------------------------------------
     if spec.lvs_route == "klt":
         reports_dir = LVS_REPORTS_DIR / spec.key
         request_path = (
@@ -1902,9 +2324,10 @@ def run(args: argparse.Namespace) -> int:
         summary["pmap"] = lvs["pmap"]
         mismatch_where = f"see {lvs['lvsdb']}"
     print(
-        f"[5/{total}] lvs         : {'MATCH' if lvs['match'] else 'MISMATCH'} "
+        f"[{stage_no}/{total}] lvs         : {'MATCH' if lvs['match'] else 'MISMATCH'} "
         f"[{summary['lvs']['engine']}]"
     )
+    stage_no += 1
     for warning in lvs["warnings"]:
         print(f"                    note: {warning}")
     if not lvs["match"]:
@@ -1915,10 +2338,10 @@ def run(args: argparse.Namespace) -> int:
     # back at stage 2: the cell's own topology/parameter pair (MOS_CONTROLS,
     # or PASSIVE_CONTROLS for an all-passive cell such as the divider), plus
     # one per passive element class the netlist contains. Each control runs
-    # through the SAME route stage 5 took -- a control that only exercised
+    # through the SAME route the LVS stage took -- a control that only exercised
     # the other route would prove nothing about the report being committed.
     summary["lvs_negative_controls"] = {}
-    for index, control in enumerate(controls.values(), 6):
+    for control in controls.values():
         tag, what, implication = control.tag, control.what, control.implication
         bad = run_dir / f"{spec.cell}.control-{tag}.spice"
         bad.write_text(apply_control(spec, control, netlist_text))
@@ -1943,13 +2366,40 @@ def run(args: argparse.Namespace) -> int:
             "match": result["match"], "mutation": what,
         }
         verdict = "MISMATCH (expected)" if not result["match"] else "MATCH -- WRONG"
-        print(f"[{index}/{total}] control {tag:<10}: {what} -> {verdict}")
+        print(f"[{stage_no}/{total}] control {tag:<10}: {what} -> {verdict}")
+        stage_no += 1
         if result["match"]:
             failures.append(
                 f"the LVS {tag} negative control ({what}) MATCHED, which means "
                 f"{implication}. The LVS invocation is not actually comparing "
                 "what it appears to compare -- a 'match' from it is worthless."
             )
+
+    # ---- last: the ERC negative control (cells that register one) --------
+    # After the LVS controls, through the same ERC invocation the intact
+    # run took: sever the declared tie's connection in a disposable copy of
+    # the committed GDS and require exactly one new erc.missing_tie on the
+    # intended tie (issue #785 -- "a run that cannot fail is not evidence").
+    if spec.erc is not None and erc_report_intact is not None:
+        erc_control = run_erc_control(
+            spec, stage_gds, ERC_SPECS_DIR / f"{spec.key}.erc.json",
+            erc_report_intact, run_dir,
+        )
+        summary["erc_control"] = erc_control
+        verdict = (
+            "erc.missing_tie, as required"
+            if erc_control["finding"] and not erc_control["failures"]
+            else "NO FINDING -- INVALID RUN"
+        )
+        print(
+            f"[{stage_no}/{total}] erc control: {erc_control['mutation']} "
+            f"-> {verdict}"
+        )
+        stage_no += 1
+        failures.extend(
+            f"ERC negative control: {failure}"
+            for failure in erc_control["failures"]
+        )
 
     print()
     if failures:
@@ -1961,6 +2411,9 @@ def run(args: argparse.Namespace) -> int:
 
     print("OK: DRC clean (klt subset and the PDK's own deck), LVS matches, and")
     print(f"    all {len(controls)} negative controls correctly fail.")
+    if spec.erc is not None:
+        print("    The klt erc supply run is clean under the cell's disclosed")
+        print("    findings, and its tie-severing control fails as required.")
     if args.record:
         try:
             path = write_record(rid, summary, pdk, spec)
@@ -1991,6 +2444,90 @@ def control_rows(summary: dict) -> str:
             f"| LVS negative control, {tag} ({result['mutation']}) | **{verdict}** |"
         )
     return "\n".join(rows)
+
+
+def erc_result_rows(summary: dict) -> str:
+    """The Results-table rows for a cell with an ERC run (issue #785)."""
+    if "erc" not in summary:
+        return ""
+    erc = summary["erc"]
+    findings = ", ".join(f"`{f['rule']}` on `{f['net']}`" for f in erc["findings"])
+    if not findings:
+        findings = "none"
+    rows = [
+        f"| ERC -- `klt erc --deck gf180mcu --findings-only` vs. `{erc['spec']}`"
+        f" | **`{erc['erc_status']}`**; finding(s): {findings} |"
+    ]
+    control = summary.get("erc_control")
+    if control:
+        verdict = (
+            "**erc.missing_tie on the intended tie, as required**"
+            if control["finding"] and not control["failures"]
+            else "**NO EXPECTED FINDING -- INVALID RUN**"
+        )
+        rows.append(
+            f"| ERC negative control ({control['mutation']}) | {verdict} |"
+        )
+    return "\n".join(rows)
+
+
+def erc_section(summary: dict) -> str:
+    """The record's ERC section, quoting the envelope's own coverage block.
+
+    Quotes ``erc_coverage`` and ``provenance.deck`` verbatim (issue #785's
+    record contract), so a "clean" claim can never silently mean "clean
+    under a tie that was skipped" or "run without the deck's device
+    carve-outs".
+    """
+    if "erc" not in summary:
+        return ""
+    erc = summary["erc"]
+    by_assertion = ", ".join(erc["ties_by_well_assertion"]) or "none"
+    inapplicable = "; ".join(
+        f"{entry['id']} ({entry['reason']})"
+        if isinstance(entry, dict) else str(entry)
+        for entry in erc["inapplicable"]
+    ) or "none"
+    deck = erc.get("deck") or {}
+    deck_text = (
+        f"`{deck.get('name')}` (content hash `{deck.get('content_hash')}`)"
+        if deck.get("name") else "none"
+    )
+    control = summary.get("erc_control")
+    control_par = ""
+    if control:
+        control_par = (
+            "\nThe ERC negative control severed the declared tie's connection "
+            f"({control['mutation']}) in a disposable copy of the committed "
+            "GDS, ran it against the intact spec, and required exactly one "
+            f"new `erc.missing_tie` on the declared tie (net "
+            f"{', '.join(control['net']) or 'n/a'}). The intact layout's "
+            "clean tie verdict is therefore falsifiable, not vacuous.\n"
+        )
+    nets_rows = "\n".join(
+        f"| `{n['name']}` | {n['matched_islands']} | {n['expected_islands']} |"
+        for n in erc["nets"]
+    )
+    return f"""
+## The ERC supply run
+
+Committed spec `{erc['spec']}` (emitted from the committed GDS by
+`layout/erc/gen_spec.py`), report `{erc['report']}`. The verdict field read
+is `erc_status`; the antenna half is `not_checked` by design on a
+`--findings-only` run.
+
+| Net | `matched_islands` | `expected_islands` |
+| --- | --- | --- |
+{nets_rows}
+
+`erc_coverage`: `checked` includes `{', '.join(erc['ties_checked']) or 'none'}`;
+`checked_by_well_assertion`: {by_assertion};
+`skipped`: {erc['ties_skipped'] or 'none'};
+`inapplicable`: {inapplicable};
+`layers_in_stream_without_declaration`: {erc['layers_in_stream_without_declaration'] or 'none'}.
+`provenance.deck`: {deck_text}; `provenance.klt_version`: `{erc.get('klt_version')}`.
+{control_par}
+"""
 
 
 def write_record(rid: str, summary: dict, pdk: Pdk, spec: CellSpec) -> Path:
@@ -2058,6 +2595,15 @@ def write_record(rid: str, summary: dict, pdk: Pdk, spec: CellSpec) -> Path:
             )
     if summary["lvs"].get("report"):
         artifacts.append(f"- Report `{summary['lvs']['report']}` (klt lvs)")
+    if summary.get("erc"):
+        artifacts.append(
+            f"- Supply spec `{summary['erc']['spec']}` -- committed, emitted "
+            "from the committed GDS by `klayout -b -r layout/erc/gen_spec.py`"
+        )
+        if summary["erc"].get("report"):
+            artifacts.append(
+                f"- Report `{summary['erc']['report']}` (klt erc, findings-only)"
+            )
 
     pmap_row = (
         f"`{summary['pmap']}` (the PDK decks' memory logger; `shimmed` = this "
@@ -2089,6 +2635,7 @@ a re-run mints a new record rather than editing this one.
 | DRC -- PDK deck via `klt drc --engine klayout` (`{drc['deck']}`, `decks={drc['decks_selection']}`, {drc['asserted_categories']} asserted categories) | **{drc['violations']} violation(s)** across {drc['rule_categories']} rule categories |
 | LVS -- {summary['lvs']['engine']} vs. xschem export | **{'match' if summary['lvs']['match'] else 'MISMATCH'}** |
 {control_rows(summary)}
+{erc_result_rows(summary)}
 {coverage_row('klt drc curated deck', klt.get('coverage') or {})}
 {coverage_row('PDK deck (klt, engine klayout)', drc.get('coverage') or {})}
 
@@ -2096,7 +2643,7 @@ a re-run mints a new record rather than editing this one.
 
 Schematic netlist: {summary['netlist_devices']} device line(s), exported in
 xschem's `lvs_netlist` form from `{schematic_rel}`.
-
+{erc_section(summary) if summary.get("erc") else ""}
 ## Committed artifacts
 
 {chr(10).join(artifacts) if artifacts else 'None (scratch-only cell: every artifact lives in the gitignored run directory).'}

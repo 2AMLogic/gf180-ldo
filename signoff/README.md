@@ -128,7 +128,7 @@ requires of the claimant rather than of the tool.
 | 8 | **`met`** | Cites `evidence/characterization.generic.json`, a generic envelope wrapping `sim/CHARACTERIZATION.md`. See below. |
 | 9 | **`met`** | `evidence/item9.generic.json`: every committed bench under `sim/*/testbench/`, a single-corner cold start and the pinned PDK/tool versions. See below. |
 | 10 | **`met`** | `evidence/item10.generic.json`: README, licence, CI workflow, spec lock and environment doc exist and the PDK-free CI gates pass. See below. |
-| 11 | `unmet` / `no_evidence` | Power delivery (structural). No layout means no `klt erc` supply run and no supply-carrying LVS compare. The item has a row here, unmet, rather than being silently absent — it was added to the checklist on 2026-09-17 (klayout-tools#2025) and invalidated every hand-read that predates it. |
+| 11 | `unmet` / `no_evidence` | Power delivery (structural). Sub-cell **groundwork** exists since #785: committed `klt erc` supply specs and findings-only runs for `pass_array` and `divider` (`layout/erc/`, each with a tie-severing negative control; the divider clean, the pass array carrying one disclosed `erc.floating_gate` on its label-only gate bus), deliberately **not** cited here — the item grades an `ldo_core` supply run plus item 4's LVS supply pairing, both owned by #524 (parked on #288). The row stays `unmet`, present here rather than silently absent — the item was added to the checklist on 2026-09-17 (klayout-tools#2025) and invalidated every hand-read that predates it. |
 
 ### Item 8 is `met`, and what that verdict does and does not say
 
@@ -271,6 +271,29 @@ the MIM class spelling it will also need is
 evidence remains the raw-runset verdict in its run record; the curated route
 has not been chosen around a finding — there is no curated-deck finding to
 avoid, the route simply cannot express the reference yet.
+
+Item 11's sub-cell groundwork (#785) rides the same route: `pass_array` and
+`divider` each have a committed `klt erc` supply spec
+(`layout/erc/specs/<key>.erc.json`, emitted from the committed GDS by
+`layout/erc/gen_spec.py`) and a committed findings-only report envelope
+(`layout/erc/reports/<key>/`), with every supply resolving to one labelled
+island, both declared ties (`nwell_vin_tie` to VIN on the array,
+`substrate_vss_tie` to VSS on the divider) in `erc_coverage.checked`, and a
+negative control per cell proving the tie verdict can fail. Two decisions
+are baked into those specs and carry to `ldo_core`: **VOUT is a supply**
+(the regulated rail feeding the specified 0-50 mA load; the pin table's
+"output" is current direction, not rail-ness) and **VOUT_S is a signal**
+(the Kelvin sense port; the force/sense join happens only at the pad).
+The pass array's one disclosed finding is `erc.floating_gate` on
+`PASS_GATE` — a true statement about the standalone sub-cell, whose gate
+bus is a label-only port until assembly. None of this is cited for item 11:
+the item needs the same spec run on `ldo_core` (extending
+`layout/erc/gen_spec.py`, not a new spec) plus item 4's LVS report pairing
+every declared supply in `net_correspondence` — both owned by #524, parked
+on #288. The spec's `ties[].through` also needs a klayout-tools build
+newer than `check.sh`'s `KLT_REV` grading pin (which predates the key and
+rejects the spec); the klt versions the committed reports cite all carry
+it, in their `provenance.klt_version`.
 
 ### Disclosures the claimant owes, not the grader
 

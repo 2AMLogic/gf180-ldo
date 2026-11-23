@@ -94,6 +94,17 @@ layout/
     fb_divider.sch                   the divider, schematic side
     fb_divider.sym                   (fixes the `.subckt` port order)
     netlist/fb_divider.spice         the exported LVS reference netlist
+  erc/                               the klt erc supply stage (issue #785)
+    gen_spec.py                      emits each cell's supply spec from its
+                                     committed GDS (one parameterized source,
+                                     measured and asserted, not transcribed)
+    mutate_gds.py                    the ERC negative control's tie-severing
+                                     disposable layout copy
+    specs/<key>.erc.json             the committed supply specs (ldo_core
+                                     extends the same source)
+    reports/<key>/<rid>.erc.json     append-only klt erc report envelopes
+  drc/reports/<key>/<rid>.*.json     append-only klt drc report envelopes (#784)
+  lvs/reports/<key>/<rid>.*.json     append-only klt lvs reports + requests (#784)
   tests/                             stdlib unittest, no PDK/klayout needed
   records/<record-id>.md             append-only run records
 ```
@@ -445,7 +456,39 @@ that is indistinguishable from a clean one — that is what a deck that ran no
 rules looks like (a mis-set `decks=` selection does exactly this), so
 `drclvs.py` treats zero categories as a hard error rather than a pass.
 
-**5. LVS.** Routed per cell since issue #784 (`CellSpec.lvs_route`):
+**5. ERC supply run** (issue #785; the cells that register `CellSpec.erc` --
+today `pass_array` and `divider`). `klt erc --deck gf180mcu --findings-only`
+against the cell's supply spec, which `layout/erc/gen_spec.py` emits from the
+**committed** GDS immediately before the run: one parameterized source, one
+spec per cell, so `ldo_core` extends the same source instead of forking a
+spec format. The generator *measures* the GDS (the divider's asserted
+substrate region is the tap ring's own band, read out of the stream) and
+*asserts* every spec claim the ERC tool cannot check for itself -- the
+divider's `tap_is_dedicated` rests on "COMP draws only the tap ring here",
+and the day that stops being true, spec generation fails instead of the tie
+quietly widening. The stage then validates the envelope against the cell's
+own contract: every declared supply resolves to one labelled island
+(`matched_islands == expected_islands`, both quoted in the record), every
+declared tie lands in `erc_coverage.checked` (a tie in `skipped` is a
+degenerate declaration and "does not count as checked"), and the finding
+set is exactly the cell's disclosed expected findings -- the pass array's
+one finding is `erc.floating_gate` on `PASS_GATE`, a true statement about
+the standalone sub-cell (its gate bus is a label-only port; gate routing
+lands at `ldo_core` assembly), quoted in the record rather than hidden.
+`--deck gf180mcu` matters here beyond the report line: its resistor
+recognition carves the divider's `ppolyf_u` bodies out of poly2, without
+which the whole resistor string reads as one conductor shorting every net
+to every other. A `--record` run commits the spec
+(`layout/erc/specs/<key>.erc.json`) and the report envelope
+(`layout/erc/reports/<key>/<record-id>.erc.json`). These sub-cell runs are
+T1 item 11 *groundwork*, not its evidence: the item stays `unmet` until
+#524's `ldo_core` run (see `signoff/README.md`). The spec's
+`ties[].through` (the tie reaches its rail only through drawn contact
+cuts) needs a klayout-tools build carrying that key -- the klt the records
+cite has it; `signoff/check.sh`'s older grading pin does not, and rejects
+the spec.
+
+**6. LVS.** Routed per cell since issue #784 (`CellSpec.lvs_route`):
 
 - **`klt` (the default)** — `klt lvs` on the curated gf180mcu deck (engine
   `klayout`), layout against the committed reference netlist. The request
@@ -475,9 +518,9 @@ rules looks like (a mis-set `decks=` selection does exactly this), so
   strings, so a deck that fell over before comparing is an error rather than
   a silent pass.
 
-**6 onwards. Negative controls.** The same compare, once more per control,
+**7 onwards. Negative controls.** The same compare, once more per control,
 against deliberately corrupted copies of the netlist — through the **same
-route stage 5 took for that cell**. Every one **must** mismatch:
+route stage 6 took for that cell**. Every one **must** mismatch:
 
 | Control | Mutation | Registered when | What it would mean if it matched |
 | --- | --- | --- | --- |
@@ -487,6 +530,17 @@ route stage 5 took for that cell**. Every one **must** mismatch:
 | parameter | unit resistor width doubled | the cell registers the all-passive pair | device parameters are not being compared at all |
 | passive-r | resistor length doubled | the netlist has an `R` element | resistor geometry is not being compared at all |
 | passive-c | capacitor length doubled | the netlist has a `C` element | capacitor geometry is not being compared at all |
+
+After the LVS controls, the ERC-negative-control stage (issue #785, same
+cells): `layout/erc/mutate_gds.py` writes a disposable copy of the committed
+GDS with the declared tie's connection severed — every via1 landing on the
+pass array's n-well guard ring, every contact cut on the divider's p+
+substrate-tap ring — and the copy is run with the **intact** spec. It must
+report exactly one new `erc.missing_tie` on the intended tie; a skipped
+check, an absent finding, or any unrelated new finding fails the control.
+The mutation severs the *path*, not the parts (the labelled supply metal and
+the tap region itself stay in the stream), which is what makes the intact
+run's clean tie verdict falsifiable rather than vacuous.
 
 These are not decoration. A "match" from an LVS run is not evidence unless a
 *known-wrong* netlist fails: a mis-wired invocation that silently compares
