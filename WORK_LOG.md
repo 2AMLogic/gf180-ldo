@@ -8,6 +8,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-22
 
+- **PR #810**: chore: ignore the daemon's .loom/account-ranking.codex runtime file
+- **Issue #809** (closed): Ignore Loom’s generated .loom/account-ranking.codex file
 - **PR #806**: test: chdir into the temp repo in LocalCliRecordScratchCleanupTests.setUp
 - **Issue #805** (closed): LocalCliRecordScratchCleanupTests escapes its temp repo and writes a record into sim/<slug>/records/ when the suite is run from inside sim/
 
