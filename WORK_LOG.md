@@ -6,6 +6,11 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-23
+
+- **PR #808**: fix(layout): double divider resistor widths with the shared dimension grammar
+- **Issue #807** (closed): Share dimension parsing across LVS negative controls so resistor widths double consistently
+
 ### 2026-11-22
 
 - **PR #799**: fix(sim): identity-check resumes against the staged circuit, not just the request
