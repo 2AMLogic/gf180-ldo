@@ -1402,6 +1402,39 @@ class ChecksTests(unittest.TestCase):
         self.assertEqual(len(failures), 1)
         self.assertEqual((failures[0]["kind"], failures[0]["at"]), ("min", "c"))
 
+    def test_values_exactly_at_a_bound_pass(self):
+        results = [_StubResult("a", {"v": 1.0}), _StubResult("b", {"v": 1.2})]
+        summary = report.summarize(results, ["v"])
+        self.assertEqual(
+            [], report.evaluate_checks({"v": {"min": 1.0, "max": 1.2}}, results, summary)
+        )
+
+    def test_scalar_bound_failure_is_inclusive_and_fails_closed(self):
+        # Issue #798: the one scalar rule behind evaluate_checks and both
+        # staging graders.
+        f = report.scalar_bound_failure
+        self.assertIsNone(f(2.56, {"min": -2.56, "max": 2.56}))
+        self.assertIsNone(f(-2.56, {"min": -2.56, "max": 2.56}))
+        self.assertEqual("max", f(2.5600001, {"min": -2.56, "max": 2.56}))
+        self.assertEqual("min", f(-2.5600001, {"min": -2.56, "max": 2.56}))
+        self.assertEqual("nonfinite", f(float("inf"), {"min": 0.05}), "one-sided min")
+        self.assertEqual("nonfinite", f(float("-inf"), {"max": 3.49}), "one-sided max")
+        self.assertEqual("nonfinite", f(None, {"max": 1.0}), "staging: a missing value")
+        self.assertIsNone(f(1.0, {"max_spread_pct": 5}), "spread bounds are grid-level")
+        self.assertEqual("nonfinite", f(float("nan"), {"max_spread_pct": 5}))
+        self.assertIsNone(f(float("nan"), {}), "no bound constrains nothing")
+
+    def test_inverted_range_reports_both_bounds(self):
+        # Review of #800: an accepted-but-unsatisfiable range must keep both
+        # record failures (min and max), as before the shared rule.
+        spec = {"x": {"min": 2, "max": 0}}
+        self.assertEqual(["min", "max"], report.scalar_bound_failures(1, spec["x"]))
+        results = [_StubResult("a", {"x": 1})]
+        failures = report.evaluate_checks(spec, results, report.summarize(results, ["x"]))
+        self.assertEqual([("min", 2), ("max", 0)],
+                         [(f["kind"], f["limit"]) for f in failures])
+        self.assertEqual([], report.scalar_bound_failures(1, {"min": 0, "max": 2}))
+
     def test_max_spread_violation(self):
         failures = report.evaluate_checks(
             {"v": {"max_spread_pct": 10.0}}, self.results, self.summary

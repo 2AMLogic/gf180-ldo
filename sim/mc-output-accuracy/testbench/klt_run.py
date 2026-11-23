@@ -110,14 +110,6 @@ def write_log(path: Path, cid: str, samples: dict[int, dict]) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
-def grade(stats: dict) -> bool:
-    for key, lim in TB.checks.items():
-        x = stats.get(key)
-        if x is None or ("max" in lim and x > lim["max"]) or ("min" in lim and x < lim["min"]):
-            return False
-    return True
-
-
 def compact(report: dict) -> dict:
     """The report minus what the per-sample logs already hold.
 
@@ -199,7 +191,7 @@ def main(argv=None, *, preflight=None) -> int:
                 if tag == "new":
                     write_log(dest / f"{cid}.log", cid, samples)
                 rows.append({"dut": tag, "corner": cid, **st, "status": "pass",
-                             "diagnostics": "", "pass": grade(st)})
+                             "diagnostics": "", "pass": tb_adapter.grade(TB, st)})
     write_summary_csv(rows, dest / "summary.csv")
     expected = len(procs) * len(only.get("temps") or TB.temperatures_c) * len(supplies)
     got = sum(1 for r in rows if r["dut"] == "new")
