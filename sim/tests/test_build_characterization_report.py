@@ -30,6 +30,8 @@ from pathlib import Path
 
 SIM_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SIM_DIR))
+from harness import report as harness_report  # noqa: E402
+from harness import testbench as harness_testbench  # noqa: E402
 from harness.loader import load_script  # noqa: E402
 
 _REPORT_PATH = SIM_DIR / "build_characterization_report.py"
@@ -880,6 +882,47 @@ class TestFreshnessBindsToDesignatedDut(unittest.TestCase):
             parts.append(self._section("included design cell", rel, body))
         parts.append(self._section("testbench fragment", "sim/x/tb.spice", ".end\n"))
         return "\n".join(parts)
+
+    def _write_real_snapshot(self, name: str, manifest_extra: dict) -> Path:
+        """Freeze a snapshot with the harness's own writer (no hand-built header)."""
+        tb_dir = self.root / "sim" / name / "testbench"
+        tb_dir.mkdir(parents=True)
+        (tb_dir / "stim.spice").write_text("Vin vin 0 dc 1\n")
+        manifest = {"name": name, "netlist": "stim.spice", "measure": {"v": "v(vin)"}}
+        manifest.update(manifest_extra)
+        (tb_dir / "tb.json").write_text(json.dumps(manifest))
+        tb = harness_testbench.load(tb_dir)
+        return harness_report.write_netlist_snapshot(
+            tb, tb_dir.parent, "20260101-000000-abc1234", repo_root=self.root
+        )
+
+    def test_parser_sees_every_section_of_the_writers_real_output(self):
+        snap = self._write_real_snapshot("zz-real", {"dut_netlist": "../../../design/netlist/ldo_core.spice"})
+        kinds = [
+            (m.group(1), m.group(2).strip())
+            for m in bcr.SECTION_HEADER_RE.finditer(snap.read_bytes())
+        ]
+        self.assertEqual(
+            [k for k, _ in kinds], [b"DUT netlist", b"testbench fragment"]
+        )
+
+    def test_header_regex_accepts_unlabelled_and_labelled_sha_lines(self):
+        bar = b"* " + b"=" * 70 + b"\n"
+        for kind in (b"DUT netlist", b"included design cell", b"testbench fragment"):
+            for shas in (
+                b"* sha256               : 00\n",
+                b"* sha256 (committed)   : 00\n* sha256 (rendered)    : 11\n",
+            ):
+                data = bar + b"* " + kind.ljust(21) + b": p\n" + shas + bar
+                m = bcr.SECTION_HEADER_RE.search(data)
+                self.assertIsNotNone(m, (kind, shas))
+                self.assertEqual((m.group(1), m.group(2)), (kind, b"p"))
+
+    def test_fragment_only_snapshot_of_a_dut_mapped_experiment_is_unknown(self):
+        snap = self._write_real_snapshot("zz-frag", {})
+        status, label, reason = bcr.freshness(snap, "ldo_core")
+        self.assertEqual((status, label), ("unknown", None))
+        self.assertIn("no section for the expected DUT", reason)
 
     def test_stale_core_with_current_included_amp_is_stale_for_a_core_source(self):
         snap = self._snap(

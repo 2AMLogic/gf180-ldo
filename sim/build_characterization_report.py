@@ -193,10 +193,12 @@ DUT_BY_SLUG = {
     "vref-transfer-50ma": "ldo_core",
 }
 
-# Harness provenance header: one per concatenated section.
+# Harness provenance header: one per concatenated section. The hash line is
+# either a single unlabelled `* sha256 :` or one-or-more labelled lines
+# (`* sha256 (committed) :` / `* sha256 (rendered) :`, issue #826).
 SECTION_HEADER_RE = re.compile(
     rb"^\* =+\n\* (DUT netlist|included design cell|testbench fragment)[ ]*: ([^\n]+)\n"
-    rb"\* sha256[ ]*: [^\n]*\n\* =+\n",
+    rb"(?:\* sha256[^:\n]*:[^\n]*\n)+\* =+\n",
     re.MULTILINE,
 )
 LEGACY_SOURCE_RE = re.compile(rb"^\* source[ ]*: ([^\n]+)$", re.MULTILINE)
