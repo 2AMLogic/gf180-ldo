@@ -403,7 +403,7 @@ def body(tb: tbmod.Testbench, vdd: float | None = None) -> str:
     lines += [f".options {o}" for o in tb.options]
     if tb.nodeset:
         lines.append(".nodeset " + " ".join(f"v({n})={v}" for n, v in tb.nodeset.items()))
-    lines += ['.include "dut.spice"', "", tb.netlist.read_text()]
+    lines += ['.include "dut.spice"', "", tb.fragment_text()]
     return "\n".join(lines)
 
 
@@ -439,7 +439,7 @@ _SUPPLY_WAVEFORM = re.compile(r"\b(?:pwl|pulse)\s*\([^)]*\{\s*vdd_val", re.IGNOR
 
 
 def supply_in_waveform(tb: tbmod.Testbench) -> bool:
-    return bool(_SUPPLY_WAVEFORM.search(tb.netlist.read_text()))
+    return bool(_SUPPLY_WAVEFORM.search(tb.fragment_text()))
 
 
 def supply_jobs(tb: tbmod.Testbench, tag: str, dut: Path, only: str | None = None,

@@ -82,7 +82,7 @@ Xdut VIN VOUT VIN 0 LOOP LOOP VREF ldo_core
 * operating point this record reports; i(Vlmeas) is measured and checked
 * against the commanded 50 mA so that stays verified rather than assumed.
 Vilc ILC 0 DC 50m
-Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+@BLOAD@
 Vlmeas NLOAD 0 DC 0
 Resr VOUT n_esr 0.1
 Cout n_esr 0 1u

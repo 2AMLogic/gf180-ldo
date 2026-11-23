@@ -54,6 +54,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import load_sink
 from .corners import (
     DEFAULT_CORNER_SET,
     DEFAULT_NOMINAL_SUPPLY_V,
@@ -149,6 +150,14 @@ class Testbench:
     @property
     def netlist_sha256(self) -> str:
         return hashlib.sha256(self.netlist.read_bytes()).hexdigest()
+
+    def fragment_text(self) -> str:
+        """The fragment as ngspice sees it: ``@BLOAD...@`` sink holes filled (#637).
+
+        ``netlist_sha256`` hashes the committed file, holes included; every
+        consumer that emits the fragment into a deck reads it through here.
+        """
+        return load_sink.render(self.netlist.read_text(), source=str(self.netlist))
 
     @property
     def manifest_sha256(self) -> str:

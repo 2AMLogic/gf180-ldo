@@ -764,7 +764,7 @@ def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str,
                 "",
             ]
         )
-        + tb.netlist.read_text()
+        + tb.fragment_text()
     )
     _publish_exclusive(path, "\n".join(chunks))
     return path

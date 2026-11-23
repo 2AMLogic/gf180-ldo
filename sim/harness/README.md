@@ -298,9 +298,27 @@ insensitive to the sweep's or the multi-instance deck's own initial bias:
 
 ```spice
 Vilc ILC 0 DC 1m
-Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+@BLOAD@
 Vlmeas NLOAD 0 DC 0
 ```
+
+`@BLOAD@` is a hole, not text a deck types: `sim/harness/load_sink.py` is the
+one definition of the `Bload` card (#637), and every consumer of a deck
+fragment fills it (`Testbench.fragment_text()`; the quiescent-current
+`klt_body.spice` through `load_sink.render`). Rendered, it is
+
+```spice
+Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+```
+
+The variants are tokens, not retyped expressions: `@BLOAD_VIN_GATED@` adds the
+supply gate `0.5 * (1 + tanh((v(vin) - 2.0) / 0.05))` (#478; only
+`psrr-vs-freq-50ma` uses it), and `@BLOAD_FULL@` is the
+`Bload_full VOUT_FULL NLOAD_FULL` instance of the three-instance
+quiescent-current deck. Parameters live in `load_sink.bload()`: element-name
+suffix, `vout`/`nload` node names, and `supply_gate` (the opt-in supply node).
+Putting the gate on another bench is a token rename in its deck plus its own
+PVT evidence; `sim/tests/test_load_sink.py` pins the rendered text.
 
 - `Vilc` carries the *commanded* load current as a voltage (1 V == 1 A) —
   a control node only, so a `.dc`/`.tran` sweep of the load can drive it
