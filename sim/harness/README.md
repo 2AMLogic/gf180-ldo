@@ -572,7 +572,7 @@ writes, under `sim/<experiment-slug>/`:
 | Path | Contents |
 |---|---|
 | `records/<record-id>.md` | the append-only summary record (the fields from `sim/README.md`, including the LDO-specific Operating conditions field, plus an Environment section with PDK / ngspice / harness / git provenance and the per-corner model sections) |
-| `netlist-snapshots/<record-id>.spice` | verbatim frozen copy of the testbench fragment, with its sha256 |
+| `netlist-snapshots/<record-id>.spice` | frozen copy of the testbench fragment as ngspice saw it (`@BLOAD@` sink holes filled), with two labelled sha256 lines: `committed` (the fragment file on disk) and `rendered` (the exact bytes printed beneath the header) |
 | `corners/<record-id>/<corner-id>.log` | raw ngspice output, one file per PVT point |
 
 Nothing is ever overwritten: the runner refuses to write over an existing
