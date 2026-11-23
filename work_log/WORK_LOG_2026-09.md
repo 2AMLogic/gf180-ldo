@@ -2,6 +2,48 @@
 
 Sections moved byte-for-byte from [WORK_LOG.md](../WORK_LOG.md) by `loom-daemon work-docs archive`.
 
+### 2026-09-23
+
+- **PR #323**: spec: propose a VIN-referenced soft-start ramp ceiling (DR-0035)
+- **PR #322**: sim(standalone benches): propagate #310's pseudo-transient op gate to run_point.sh
+- **PR #321**: fix: render the PDK's lvs_format-less passives as primitive R/C so LVS can read them
+- **PR #319**: fix: prefer the newest evidence record matching the current DUT
+- **PR #318**: sim(harness): make the pseudo-transient op rung fatal for DC benches
+- **PR #316**: spec: the < 200 mV dropout stretch unlocks on margin DR-0033 already delivered — pass device to 2.8 mm (DR-0034)
+- **PR #315**: design(error_amp): fix stale rejected-variant phase margin in §6.14's cost/benefit table
+- **PR #314**: sim(harness): record which DC continuation rung each PVT corner's op solved on
+- **PR #306**: design: a poly resistor's flavour follows its DC-current duty (DR-0033) — Rz/Rza/Rbufb go ppolyf_u_3k, Rbias cannot, and 17% of the core-area budget comes back
+- **PR #305**: sim: the ratified PSRR row fails on main -- bisected to the soft-start injection element's settled residual, and why no sizing lever closes it (DR-0031)
+- **PR #299**: refactor: share one sha256_of() helper instead of three copies
+- **PR #295**: spec: keep the pass device at 2 mm — the 200 mV dropout stretch is capped by DR-0018's ratified gain margin, not by area
+- **Issue #317** (closed): sim(standalone benches): the shared run_point.sh driver lacks the pseudo-transient op gate #310 added to the harness
+- **Issue #313** (closed): drclvs.py cannot netlist any cell with a passive: the PDK's resistor/MIM-cap xschem symbols have no lvs_format
+- **Issue #311** (closed): quiescent-current's #301 DC seed inverts on the post-DR-0033 DUT: it now CREATES the pseudo-transient corner the unseeded deck no longer has
+- **Issue #310** (closed): sim(harness): a pseudo-transient `op` fallback is recorded as a converged DC point — FATAL_LOG_PATTERNS does not catch it
+- **Issue #309** (closed): sim: quiescent-current's head record lost its res_ff/res_ss corners in DR-0033's swap, and error_amp.md §6.14 cites the rejected variant's phase margin
+- **Issue #301** (closed): sim(quiescent-current): the ss/-40C/2.97V corner lands on the non-regulating DC branch, so the Iq row's verdict depends on the Newton path rather than on Iq
+- **Issue #300** (closed): bug: the ratified PSRR row fails at three corners on current main (29.4 dB at ff/125C/3.63V against a > 50 dB floor), hidden behind a STALE record
+- **Issue #298** (closed): Remove duplicate sha256_of() in toolchain-portability: reuse a shared helper
+- **Issue #294** (closed): Unlock the < 200 mV dropout stretch: it needs ~1.9 dB more gain margin at 50 mA / 1 uF / 500 mOhm, not a wider pass device
+- **Issue #289** (closed): sim/psrr-vs-freq FAILS 3/45 corners on current main (worst 29.4 dB vs the ratified 50 dB row) while its committed record still reads PASS — a stale-record regression, likely from the soft-start series
+- **Issue #279** (closed): The amplifier's ppolyf_u_1k serpentines are 24% of the core area budget; ppolyf_u_3k would recover ~16% of it at a wider corner spread on a steep stability frontier
+- **Issue #139** (closed): Pass device ships at W = 2 mm, half the sizing DR-0004's spec review assumed — now measurable, and it costs the < 200 mV dropout stretch at 9/27 corners
+
+### 2026-09-22
+
+- **PR #283**: layout: make the DRC/LVS flow drive any registered cell, on any host
+- **PR #282**: spec: derive the tech LEF EM unit convention and book the CON contact gap as DR-0030
+- **PR #281**: fix: grade Stability against DR-0018's ratified envelope, not DR-0001's original matrix
+- **PR #280**: layout: add the floorplan, matching plan and a re-derivable core-area estimate
+- **PR #277**: sim: re-verify DR-0018's ratified stability envelope on the current design (630/630)
+- **PR #275**: chore: resync installed Loom surfaces
+- **PR #274**: 2am: add reuse.lock.json in_tree entry for error_amp vs gf180-opamp
+- **Issue #278** (closed): Electromigration limits are not published in the open gf180mcu PDK, so the 50 mA power-path metal sizing rests on a stated placeholder
+- **Issue #276** (closed): Characterization rollup grades Stability against DR-0001's original matrix, not the ratified DR-0018 envelope
+- **Issue #272** (closed): 2am: reuse rule 9 — in-tree error amplifier duplicates sibling canary gf180-opamp — add reuse.lock.json in_tree entry (evaluate), then adopt or record
+- **Issue #51** (closed): LDO loop stability: close the 1-50 mA phase-margin gap via DR-0012's Candidate 2 (adaptive pass-device-replica bias)
+- **Issue #15** (closed): Floorplan and matching plan (pass array, sense matching, Kelvin sensing)
+
 ### 2026-09-20
 
 - **PR #271**: signoff: grade this block's T1 state from a klt manifest instead of hand-reading it
