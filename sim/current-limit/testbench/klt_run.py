@@ -78,11 +78,6 @@ def job(name: str, dut: Path, only=None) -> kb.Job:
     return kb.Job(name=name, body=body, dut_netlist=dut,
                   analysis={"kind": "dc", "args": "Vforce 0 1.764 0.012"},
                   measurements=MEASUREMENTS, timeout_s=900, stage_model_inputs=True,
-                  # Request-level form of `klt sim --wait-for-capacity 600`,
-                  # the dispatch-host rule for every batch submit (the
-                  # harness's own re-submit loop covers only the concurrency
-                  # cap, not Spot capacity).
-                  batch={"capacity_wait_s": 600},
                   **kb.only_axes(only))
 
 
