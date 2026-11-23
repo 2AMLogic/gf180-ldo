@@ -22,7 +22,6 @@ graders for the same spec rows cannot disagree.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import sys
 from pathlib import Path
 
@@ -34,17 +33,14 @@ from harness import klt_batch as kb  # noqa: E402
 from harness import pdk  # noqa: E402
 from harness import tb_adapter  # noqa: E402
 from harness.klt_ab import add_ab_args, run_ab, write_summary_csv  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 # summarize.py is loaded by path under a unique name, never a bare
 # ``from summarize import ...``: the bare name is ambiguous (current-limit,
 # enable-shutdown and soft-start each ship a summarize.py), so it binds
 # whichever bench's file resolved first in the interpreter (issue #700,
 # enforced by sim/tests/test_sibling_import_names.py; same rule as the
 # klt_run loads in sim/loop-stability/testbench/sweep.py).
-_summarize_spec = importlib.util.spec_from_file_location(
-    "current_limit_summarize", HERE / "summarize.py")
-summarize = importlib.util.module_from_spec(_summarize_spec)
-sys.modules["current_limit_summarize"] = summarize
-_summarize_spec.loader.exec_module(summarize)
+summarize = load_script("current_limit_summarize", HERE / "summarize.py")
 ILIM_WINDOW_MA, PSHORT_MAX_MW = summarize.ILIM_WINDOW_MA, summarize.PSHORT_MAX_MW
 
 ILIM_MIN_MA, ILIM_MAX_MA = ILIM_WINDOW_MA
