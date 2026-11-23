@@ -29,7 +29,7 @@ REPO = "owner/repo"
 
 def fake_klt(store: dict, *, fail=None, corrupt=False, uri=None):
     """Emulate ``klt artifact put FILE --name N --manifest M --format json``.
-    ``uri`` overrides the written uri (given the key) to emulate an old klt."""
+    If supplied, ``uri(key)`` returns the URI to write for the object key."""
 
     def run(cmd, **kw):
         assert cmd[:3] == ["klt", "artifact", "put"], cmd
@@ -122,6 +122,14 @@ class Writer(Base):
             self.store_files(corrupt=True)
         self.assert_nothing_committed()
 
+    def test_uri_key_naming_a_different_repo_is_refused(self):
+        def wrong_repo(key):
+            return "artifact:" + key.replace("owner__repo", "owner__other")
+
+        with self.assertRaisesRegex(es.StoreError, "uri key names a different repo"):
+            self.store_files(uri=wrong_repo)
+        self.assert_nothing_committed()
+
     def test_non_artifact_uri_from_klt_is_refused(self):
         # An old klt (before klayout-tools 7e3561f) writes a bucket-naming uri;
         # the writer refuses any scheme but artifact:<key> and commits nothing.
@@ -129,7 +137,7 @@ class Writer(Base):
         for uri in (lambda k: f"{legacy}bucket/{k}", lambda k: f"https://host/{k}",
                     lambda k: f"artifact:/{k}", lambda k: k):
             with self.subTest(uri=uri("K")):
-                with self.assertRaisesRegex(es.StoreError, "uri is not artifact:<key>"):
+                with self.assertRaisesRegex(es.StoreError, "uri must be artifact:<key>"):
                     self.store_files(uri=uri)
                 self.assert_nothing_committed()
 
