@@ -22,6 +22,7 @@ graders for the same spec rows cannot disagree.
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 
@@ -87,7 +88,12 @@ def grade(v: dict, vin: float) -> dict:
     short = v.get("ilim_0000_ma")
     out["p_short_mw"] = None if short is None else short * vin
     out["in_window"] = on is not None and ILIM_MIN_MA <= on <= ILIM_MAX_MA
-    out["thermal_ok"] = out["p_short_mw"] is not None and out["p_short_mw"] <= PSHORT_MAX_MW
+    # Finiteness guard (issue #823): the bound is one-sided, so without it a
+    # non-finite p_short_mw (from ilim_0000_ma = -inf) passes and the staged
+    # column would report thermal_ok for a garbage measurement, unlike the
+    # two-sided in_window/reg_ok, which fail closed on NaN and both infinities.
+    out["thermal_ok"] = (out["p_short_mw"] is not None and math.isfinite(out["p_short_mw"])
+                         and out["p_short_mw"] <= PSHORT_MAX_MW)
     vo = v.get("vout_50ma")
     out["reg_ok"] = vo is not None and 1.764 <= vo <= 1.836
     if v.get("ilim_1500_ma") and short is not None:
