@@ -577,6 +577,37 @@ class DeckIncludeTests(unittest.TestCase):
         self.assertIn(self.tb.dut_netlist_sha256, text)
         self.assertIn(self.tb.netlist_sha256, text)
 
+    def _fragment_chunk(self, text):
+        marker = "* testbench fragment   :"
+        rule = "* " + "=" * 70 + "\n"
+        start = text.index(marker)
+        body_at = text.index(rule, start) + len(rule)
+        return text[start:body_at], text[body_at:]
+
+    def _check_snapshot_hashes(self, stim):
+        import hashlib
+        (self.root / "tb" / "stim.spice").write_text(stim)
+        tb = testbench.load(self.root / "tb")
+        path = report.write_netlist_snapshot(tb, self.root / "tb", "20260731-000001-abc1234")
+        header, body = self._fragment_chunk(path.read_text())
+        self.assertIn(f"* sha256 (committed)   : {tb.netlist_sha256}", header)
+        rendered = re.search(r"\* sha256 \(rendered\)    : (\w+)", header).group(1)
+        self.assertEqual(rendered, hashlib.sha256(body.encode()).hexdigest())
+        self.assertNotIn("verbatim", path.read_text())
+        return tb.netlist_sha256, rendered
+
+    def test_snapshot_rendered_sha_matches_body_with_sink_token(self):
+        committed, rendered = self._check_snapshot_hashes(
+            "Vin vin 0 dc {vdd_val}\n@BLOAD@\nXdut vin out dut_sub\n"
+        )
+        self.assertNotEqual(committed, rendered)
+
+    def test_snapshot_rendered_sha_equals_committed_without_token(self):
+        committed, rendered = self._check_snapshot_hashes(
+            "Vin vin 0 dc {vdd_val}\nXdut vin out dut_sub\n"
+        )
+        self.assertEqual(committed, rendered)
+
 
 class ParseTests(unittest.TestCase):
     def test_parses_print_output(self):

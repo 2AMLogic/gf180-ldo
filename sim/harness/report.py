@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import getpass
+import hashlib
 import math
 import platform
 import re
@@ -735,7 +736,8 @@ def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str,
         "\n".join(
             [
                 f"* Frozen netlist snapshot for record {record_id}",
-                "* This is a verbatim copy taken at record time. Do not edit.",
+                "* This is a frozen copy taken at record time; testbench sink holes",
+                "* (@BLOAD@) are filled. Do not edit.",
                 "",
             ]
         )
@@ -754,17 +756,19 @@ def write_netlist_snapshot(tb: Testbench, experiment_dir: Path, record_id: str,
             )
             + source.read_text()
         )
+    rendered = tb.fragment_text()
     chunks.append(
         "\n".join(
             [
                 "* ======================================================================",
                 f"* testbench fragment   : {_rel(tb.netlist)}",
-                f"* sha256               : {tb.netlist_sha256}",
+                f"* sha256 (committed)   : {tb.netlist_sha256}",
+                f"* sha256 (rendered)    : {hashlib.sha256(rendered.encode()).hexdigest()}",
                 "* ======================================================================",
                 "",
             ]
         )
-        + tb.fragment_text()
+        + rendered
     )
     _publish_exclusive(path, "\n".join(chunks))
     return path
