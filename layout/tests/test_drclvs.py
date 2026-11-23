@@ -665,6 +665,20 @@ class PassiveControlTests(unittest.TestCase):
         mutated = drclvs.control_unit_width(self.text)
         self.assertNotIn("R=", mutated)
 
+    def test_parameter_control_doubles_every_significant_digit(self):
+        """Six-significant-digit formatting would round away the corruption."""
+        mutated = drclvs.control_unit_width(
+            "R1 A B VSS ppolyf_u_1k l=10u W=1.2345678u m=1\n"
+        )
+        self.assertIn("W=2.4691356u", mutated)
+
+    def test_parameter_control_accepts_a_trailing_dot_width(self):
+        """`2.u` is a number spelling the shared grammar already accepts."""
+        mutated = drclvs.control_unit_width(
+            "R1 A B VSS ppolyf_u_1k l=10u W=2.u m=1\n"
+        )
+        self.assertIn("W=4u", mutated)
+
 
 class NetlistDirGuardTests(unittest.TestCase):
     """A CellSpec must not be able to clobber a simulation netlist.

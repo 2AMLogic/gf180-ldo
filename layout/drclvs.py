@@ -748,13 +748,26 @@ def control_topology(text: str) -> str:
     return text.replace(line, " ".join(shorted))
 
 
-# `W=<number><unit>` on a MOS element line: 2u, 0.22u, 6u, 2e-6, 360U. The
-# unit suffix is carried through unchanged, so the doubled value stays in the
-# same units as the original.
-W_TOKEN_RE = re.compile(
-    r"^W=([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([a-zA-Z]*)$",
-    re.IGNORECASE,
-)
+def _dimension_token_re(param: str) -> re.Pattern[str]:
+    """Compile the shared ``<param>=<number>[unit]`` dimension-token grammar.
+
+    One grammar for every dimension control -- MOS ``W=``, divider-resistor
+    ``W=``, passive ``l=`` (the spelling layout/lvs_form.py renders): 2u,
+    0.22u, 2.u, 6u, 2e-6, 360U. The unit suffix is its own group so a
+    doubled value stays in the original units. Case-insensitive because this
+    repo's netlists spell the MOS convention uppercase (`L=`/`W=`) while the
+    passive convention the LVS deck's SPICE reader delegate reads is
+    lowercase (`l=`/`w=`); the split between the two constants below is about
+    which parameter each control corrupts, not about case.
+    """
+    return re.compile(
+        rf"^{param}=([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([a-zA-Z]*)$",
+        re.IGNORECASE,
+    )
+
+
+W_TOKEN_RE = _dimension_token_re("W")
+L_TOKEN_RE = _dimension_token_re("l")
 
 
 def _double(value: str) -> str:
@@ -766,6 +779,27 @@ def _double(value: str) -> str:
     # 0.44000000000000006), which matters because this text goes into a
     # netlist a human may read in a failure report.
     return repr(doubled)
+
+
+def _double_first_dimension(
+    tokens: list[str], param_re: re.Pattern[str], prefix: str, missing: str
+) -> list[str]:
+    """Replace the first token matching ``param_re`` with its doubled value.
+
+    The shared body of every parameter-doubling control: find the first
+    dimension token on the element line, scale its number with ``_double``
+    and carry the unit suffix through unchanged. ``prefix`` re-spells the
+    parameter name in the control's output spelling (`W=`, `l=`); ``missing``
+    is that control's own no-parameter diagnostic, raised verbatim.
+    """
+    for index, token in enumerate(tokens):
+        match = param_re.match(token)
+        if match is None:
+            continue
+        resized = list(tokens)
+        resized[index] = f"{prefix}{_double(match.group(1))}{match.group(2)}"
+        return resized
+    raise ControlNotApplicable(missing)
 
 
 def control_parameter(text: str) -> str:
@@ -780,18 +814,13 @@ def control_parameter(text: str) -> str:
     `W=4u` substitution made this stage die on every other cell (issue #313).
     """
     line, tokens = _mos_line(text)
-    resized = list(tokens)
-    for index, token in enumerate(tokens):
-        match = W_TOKEN_RE.match(token)
-        if match is None:
-            continue
-        resized[index] = f"W={_double(match.group(1))}{match.group(2)}"
-        break
-    else:
-        raise ControlNotApplicable(
-            "expected a `W=<number>[unit]` parameter on the first MOS element "
-            f"line, got: {line}"
-        )
+    resized = _double_first_dimension(
+        tokens,
+        W_TOKEN_RE,
+        "W=",
+        "expected a `W=<number>[unit]` parameter on the first MOS element "
+        f"line, got: {line}",
+    )
     return text.replace(line, " ".join(resized))
 
 
@@ -837,37 +866,15 @@ def control_unit_width(text: str) -> str:
     compare exactly as stage 7's MOS version does.
     """
     line, tokens = _resistor_line(text)
-    resized = []
-    hits = 0
-    for token in tokens:
-        match = re.fullmatch(
-            r"(W)=([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)([a-zA-Z]*)",
-            token,
-            flags=re.IGNORECASE,
-        )
-        if match and hits == 0:
-            hits += 1
-            resized.append(f"{match.group(1)}={float(match.group(2)) * 2:g}{match.group(3)}")
-        else:
-            resized.append(token)
-    if not hits:
-        raise ControlNotApplicable(
-            "expected a `W=` parameter on the first resistor element line, "
-            f"got: {line}"
-        )
+    resized = _double_first_dimension(
+        tokens,
+        W_TOKEN_RE,
+        "W=",
+        "expected a `W=` parameter on the first resistor element line, "
+        f"got: {line}",
+    )
     return text.replace(line, " ".join(resized))
 
-
-# `l=<number><unit>` on a primitive R/C element line, as layout/lvs_form.py
-# renders it. Separate from W_TOKEN_RE because the MOS convention in this
-# repo's netlists is uppercase `L=`/`W=` while the passive convention (which
-# the LVS deck's SPICE reader delegate reads) is lowercase `l=`/`w=`; both
-# regexes are case-insensitive anyway, so the split is about which parameter
-# each control corrupts, not about case.
-L_TOKEN_RE = re.compile(
-    r"^l=([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([a-zA-Z]*)$",
-    re.IGNORECASE,
-)
 
 PASSIVE_ELEMENTS = {"R": "resistor", "C": "capacitor"}
 
@@ -902,20 +909,15 @@ def control_passive(letter: str):
     """
 
     def mutate(text: str) -> str:
+        missing = (
+            f"no primitive {letter} element line with an `l=` parameter "
+            "in the exported netlist"
+        )
         found = _passive_line(text, letter)
         if found is None:
-            raise ControlNotApplicable(
-                f"no primitive {letter} element line with an `l=` parameter "
-                "in the exported netlist"
-            )
+            raise ControlNotApplicable(missing)
         line, tokens = found
-        resized = list(tokens)
-        for index, token in enumerate(tokens):
-            match = L_TOKEN_RE.match(token)
-            if match is None:
-                continue
-            resized[index] = f"l={_double(match.group(1))}{match.group(2)}"
-            break
+        resized = _double_first_dimension(tokens, L_TOKEN_RE, "l=", missing)
         return text.replace(line, " ".join(resized))
 
     return mutate
