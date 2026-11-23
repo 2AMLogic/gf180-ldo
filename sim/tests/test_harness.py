@@ -609,6 +609,55 @@ class DeckIncludeTests(unittest.TestCase):
         self.assertEqual(committed, rendered)
 
 
+class TokenGuardTests(unittest.TestCase):
+    """#827: every simulator boundary rejects a surviving @TOKEN@."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def test_compose_deck_rejects_unrendered_fragment(self):
+        (self.root / "tb").mkdir()
+        (self.root / "tb" / "stim.spice").write_text("Bload out 0 @BLOAD@\n")
+        (self.root / "tb" / "tb.json").write_text(
+            json.dumps({"name": "x", "netlist": "stim.spice", "measure": {"v": "v(out)"}})
+        )
+        tb = testbench.load(self.root / "tb")
+        pdk = fake_pdk(self.root / "gf180mcuD")
+        point = corners.build_grid(corners.resolve_corners(["tt"]), (27,), [3.3])[0]
+        raw = tb.netlist.read_text()
+        with unittest.mock.patch.object(testbench.Testbench, "fragment_text", return_value=raw):
+            with self.assertRaises(SystemExit) as cm:
+                runner.compose_deck(tb, pdk, point)
+        self.assertIn("BLOAD", str(cm.exception))
+
+    def test_run_ngspice_deck_rejects_before_spawning(self):
+        deck_path = self.root / "d.spice"
+        deck_path.write_text("Bload out 0 @BLOAD@\n.end\n")
+        with unittest.mock.patch("subprocess.run") as run:
+            with self.assertRaises(SystemExit):
+                runner.run_ngspice_deck(deck_path, self.root / "d.log", self.root)
+        run.assert_not_called()
+
+    def test_print_curve_log_rejects_before_writing_or_spawning(self):
+        from harness import loop_margin
+        deck_path = self.root / "c.spice"
+        with unittest.mock.patch("subprocess.run") as run:
+            with self.assertRaises(SystemExit):
+                loop_margin.print_curve_log("Bload out 0 @BLOAD@\n", "h", self.root / "c.log", deck_path)
+        run.assert_not_called()
+        self.assertFalse(deck_path.exists())
+
+    def test_bare_at_syntax_passes_print_curve_log(self):
+        from harness import loop_margin
+        proc = unittest.mock.Mock(returncode=0, stdout="", stderr="")
+        with unittest.mock.patch("subprocess.run", return_value=proc):
+            loop_margin.print_curve_log("alter @Vinj[acmag] = 1\n", "h", self.root / "c.log",
+                                        self.root / "c.spice")
+        self.assertTrue((self.root / "c.spice").exists())
+
+
 class ParseTests(unittest.TestCase):
     def test_parses_print_output(self):
         text = "\n".join(

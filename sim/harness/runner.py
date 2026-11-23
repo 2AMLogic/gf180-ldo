@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import deck as deck_mod
 from .corners import PvtPoint
 from .paths import display_path
 from .pdk import Pdk
@@ -412,6 +413,8 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     :func:`run_point` (the generic corner-grid path, which
     ``quiescent-current`` uses) records it for every corner already.
     """
+    deck_text = deck.read_text()
+    deck_mod.require_substituted(deck_text, source=str(deck))
     proc = subprocess.run(
         [NGSPICE, "-b", str(deck)],
         capture_output=True,
@@ -423,7 +426,7 @@ def run_ngspice_deck(deck: Path, log: Path, workdir: Path) -> str:
     problem = validate_process_output(proc.returncode, text, display_path(log))
     if problem:
         raise RuntimeError(problem)
-    if not _runs_transient_analysis(deck.read_text()):
+    if not _runs_transient_analysis(deck_text):
         exhausted = _ladder_exhaustion_lines(text)
         if exhausted:
             raise RuntimeError(
@@ -929,6 +932,7 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
         lines += [f'.include "{path}"' for path in tb.design_netlists]
 
     fragment = tb.fragment_text()
+    raw = tb.netlist.read_text()
     # A fragment with sink holes (#637) cannot be `.include`d raw: ngspice would
     # read the literal ``@BLOAD@``. Paste the rendered text instead.
     lines += [
@@ -936,7 +940,7 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
         "* ---- testbench ------------------------------------------------------",
         *(
             [f"* {tb.netlist}, sink holes filled by harness/load_sink.py", fragment]
-            if fragment != tb.netlist.read_text()
+            if deck_mod.tokens(raw) or fragment != raw
             else [f'.include "{tb.netlist}"']
         ),
         "",
@@ -951,7 +955,9 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
     for name in tb.measure:
         lines.append(f"  print m_{name}")
     lines += [".endc", ".end", ""]
-    return "\n".join(lines)
+    return deck_mod.require_substituted(
+        "\n".join(lines), source=f"{tb.name} @ {point.corner_id}"
+    )
 
 
 @dataclass

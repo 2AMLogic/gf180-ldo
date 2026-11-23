@@ -21,6 +21,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import deck as deck_mod
 from .report import parse_row_fields as _harness_parse_row_fields
 
 # --- the ratified matrix (DR-0001 section "Consequences") --------------------
@@ -225,6 +226,7 @@ def print_curve_log(deck_text: str, header: str, log: Path, deck: Path,
     """Splice ``print tdb tph`` ahead of the ``ROW`` echo, run the single-config
     deck once and write ``header`` + the shared column note + output to ``log``.
     Shared by every sweep's ``run_curve()``."""
+    deck_mod.require_substituted(deck_text, source=str(deck))
     deck.write_text(deck_text.replace('      echo "ROW', "      print tdb tph\n" + '      echo "ROW'))
     proc = subprocess.run(["ngspice", "-b", str(deck)], capture_output=True, text=True,
                           cwd=None if cwd is None else str(cwd))
