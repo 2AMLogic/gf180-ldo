@@ -139,9 +139,10 @@ def run_configs(configs, dut: Path, ac_dec: int, f_start: str, f_stop: str, axes
     a session-local tempdir, and batch requests are submitted with klt's
     ``--resume``: an interrupted run re-attaches to the retained shard map and
     re-submits only unfinished shards. A configuration whose report is already
-    collected -- with an identical request -- is not re-submitted at all, so
-    re-invoking ``sweep.py --resume-record <id>`` continues a partial grid
-    instead of repeating it (issue #465).
+    collected -- whose staged identity (request, deck body and DUT bytes,
+    issue #796) matches the freshly staged inputs -- is not re-submitted at
+    all, so re-invoking ``sweep.py --resume-record <id>`` continues a partial
+    grid instead of repeating it (issue #465).
     """
     results: dict = {}
     problems: list[str] = []
@@ -156,21 +157,21 @@ def run_configs(configs, dut: Path, ac_dec: int, f_start: str, f_stop: str, axes
         req = kb.stage(j, workdir / "stage" / tag)
         saved = vals_dir / f"{tag}.json"
         req_saved = vals_dir / f"{tag}.request.json"
-        if saved.is_file() \
-                and req_saved.is_file() \
-                and req_saved.read_bytes() == req.read_bytes():
+        ident = vals_dir / f"{tag}.identity.json"
+        if saved.is_file() and kb.identity_matches(ident, req):
             vals, probs = collect_values(json.loads(saved.read_text()), SUPPLY_PARAM)
             return cfg, vals, [(tag, c, p) for c, p in probs]
         report = kb.run(req, workdir / "run" / tag, backend=backend, log=log,
                         resume=backend == "batch")
-        # Payload first, identity marker last: the sidecar vouches for the
+        # Payload first, identity markers last: each sidecar vouches for the
         # report beside it, so it may only exist once that report is fully
         # written. Marker-first would let a crash between the two writes
-        # leave a new marker beside an OLD report from a different request,
+        # leave a new marker beside an OLD report from a different circuit,
         # and the guard above would trust it (issue #465, PR #745 review 3).
         saved.write_text(
             json.dumps(kb.redact(report), indent=1, sort_keys=True) + "\n")
         req_saved.write_bytes(req.read_bytes())
+        kb.publish_identity(ident, req)
         vals, probs = collect_values(report, SUPPLY_PARAM)
         return cfg, vals, [(tag, c, p) for c, p in probs]
 

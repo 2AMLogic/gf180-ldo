@@ -62,7 +62,9 @@ class SupplyWaveform(unittest.TestCase):
                                   timeout_s=1700, batch={"max_units_per_job": 2})
         req = job.request()
         self.assertEqual(req["options"]["timeout_s"], 1700)
-        self.assertEqual(req["batch"], {"max_units_per_job": 2})
+        # A shard-only batch mapping still inherits the harness's 600 s
+        # capacity-wait default (issue #610).
+        self.assertEqual(req["batch"], {"max_units_per_job": 2, "capacity_wait_s": 600})
 
 
 class ParamOverride(unittest.TestCase):
@@ -586,6 +588,29 @@ class Grade(unittest.TestCase):
         self.assertFalse(ta.grade(tb, {**ok, "iload_50ma_ma": 49.0}))
         self.assertFalse(ta.grade(tb, {**ok, "vout_1ma": None}))
         self.assertFalse(ta.grade(tb, {k: v for k, v in ok.items() if k != "vout_50ma"}))
+
+    def test_nonfinite_values_fail_and_exact_bounds_pass(self):
+        # Issue #798: staging shares the record evaluator's scalar rule, so the
+        # NaN/infinity rows that passed the old comparisons (every comparison
+        # against NaN is False; an infinity on the unbounded side of a
+        # one-sided check passes) now fail. The control row sits exactly on
+        # every bound of the mc bench's own checks: bounds are inclusive.
+        tb = _tb("mc-output-accuracy")
+        ok = {"n_samples": 1000, "n_bad_solves": 0, "sigma_mv": 0.05, "sigma3_mv": 3.49,
+              "vos_in_sigma3_mv": 2.33, "worst_abs_mv": 18.0, "divider_exact_uv": 1.0,
+              "mean_mv": 2.56}
+        self.assertTrue(ta.grade(tb, ok))
+        for key, bad in (("mean_mv", float("nan")),      # two-sided
+                         ("sigma_mv", float("nan")),     # min-only
+                         ("sigma_mv", float("inf")),     # min-only, passed before
+                         ("sigma3_mv", float("-inf")),   # max-only, passed before
+                         ("worst_abs_mv", float("inf")),
+                         ("mean_mv", 3.0),               # max 2.56, as probed
+                         ("mean_mv", 2.5600001)):        # just outside
+            with self.subTest(key=key, bad=bad):
+                self.assertFalse(ta.grade(tb, {**ok, key: bad}))
+        self.assertFalse(ta.grade(tb, {k: v for k, v in ok.items() if k != "sigma_mv"}),
+                         "a missing staging value fails")
 
 
 if __name__ == "__main__":

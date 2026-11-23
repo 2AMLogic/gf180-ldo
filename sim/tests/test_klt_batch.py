@@ -83,11 +83,34 @@ class RequestOptions(unittest.TestCase):
         self.assertEqual(self._job(monte_carlo=mc).request()["monte_carlo"], mc)
         self.assertNotIn("monte_carlo", self._job().request())
 
-    def test_unit_cap_per_job_is_emitted_only_when_asked(self):
-        """A slow-unit bench splits into fleet jobs so none reaches the 3600 s whole-job ceiling (#469)."""
+    def test_every_request_carries_the_default_capacity_wait(self):
+        """Fleet capacity is klt's to wait out (issue #610): the dispatch-host
+        rule -- a 600 s ``batch.capacity_wait_s`` on every batch submit -- is
+        applied once here, so a driver that sets no ``batch`` (89 of the 98
+        committed requests when #610 was filed) still waits out a refusal."""
+        for batch in (None, {}):
+            with self.subTest(batch=batch):
+                self.assertEqual(self._job(batch=batch).request()["batch"],
+                                 {"capacity_wait_s": kb.DEFAULT_CAPACITY_WAIT_S})
+
+    def test_driver_keys_merge_over_the_default_capacity_wait(self):
+        """A shard-only mapping inherits the default; an explicit
+        ``capacity_wait_s`` -- including 0, a deliberate no-wait -- wins, and
+        the caller's mapping is left intact. A later default job still emits
+        600: the default is rebuilt per request, never a shared mapping a
+        driver could mutate."""
+        shard_only = {"max_units_per_job": 2, "max_concurrent_jobs": 2}
+        self.assertEqual(
+            self._job(batch=shard_only).request()["batch"],
+            {"max_units_per_job": 2, "max_concurrent_jobs": 2,
+             "capacity_wait_s": kb.DEFAULT_CAPACITY_WAIT_S})
+        self.assertEqual(shard_only, {"max_units_per_job": 2, "max_concurrent_jobs": 2})
+        self.assertEqual(self._job(batch={"capacity_wait_s": 0}).request()["batch"],
+                         {"capacity_wait_s": 0})
         batch = {"max_units_per_job": 2, "max_concurrent_jobs": 2, "capacity_wait_s": 7200}
         self.assertEqual(self._job(batch=batch, timeout_s=1700).request()["batch"], batch)
-        self.assertNotIn("batch", self._job().request())
+        self.assertEqual(self._job().request()["batch"],
+                         {"capacity_wait_s": kb.DEFAULT_CAPACITY_WAIT_S})
 
 
 if __name__ == "__main__":

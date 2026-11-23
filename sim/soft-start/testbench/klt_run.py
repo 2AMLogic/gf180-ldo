@@ -52,11 +52,6 @@ MAIN = [("1u", "0.1", "36")]
 EXTRA = [("0.33u", "0.001", "36"), ("0.33u", "0.5", "36"), ("4.7u", "0.001", "36"),
          ("4.7u", "0.5", "36"), ("1u", "0.1", "1e9")]
 EXTRA_AXES = {"process": ("tt", "ff", "ss", "res_ff", "res_ss"), "temps": (-40, 125), "supplies": (2.97, 3.63)}
-#: Wait out a Spot capacity refusal instead of failing the shard (the
-#: dispatch-worker rule). With ``run_root`` set, a re-invoked shard also
-#: resumes: klt re-attaches to the retained shard map and only the unfinished
-#: units re-run.
-BATCH_WAIT = {"capacity_wait_s": 600}
 
 
 def body(configs) -> str:
@@ -150,8 +145,8 @@ def main(argv=None, *, preflight=None) -> int:
                   '"Stored evidence"); an --only debug point needs no store.',
                   file=sys.stderr)
             return tb_adapter.EXIT_NOT_STORED
-    parts = [("main", MAIN, {"batch": BATCH_WAIT}),
-             ("extra", EXTRA, {**EXTRA_AXES, "batch": BATCH_WAIT})]
+    parts = [("main", MAIN, {}),
+             ("extra", EXTRA, EXTRA_AXES)]
     parts = [p for p in parts if args.part in (p[0], "both")]
     # Wrinkle 1 (issue #646): a sharded record is complete only when every
     # shard of every part has run. Each shard accumulates into the same staged

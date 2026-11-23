@@ -48,11 +48,13 @@ from __future__ import annotations
 
 import fnmatch
 import re
+import shutil
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import check_append_only
 from . import klt_batch as kb
+from . import report
 from . import testbench as tbmod
 
 #: The nine-process axis the standalone PVT benches record over (the seven
@@ -89,6 +91,25 @@ def stage_experiment_dir(repo: Path, slug: str) -> Path:
 def stage_corner_dir(repo: Path, slug: str, record_id: str) -> Path:
     """Where one staged run's raw bytes land, before they are stored."""
     return stage_experiment_dir(repo, slug) / "corners" / record_id
+
+
+def consume_staged_record(repo: Path, slug: str, record_id: str,
+                          extra_scratch: tuple[Path, ...] = ()) -> None:
+    """Consume only this record's scratch from the staging tree (issue #802).
+
+    The staging tree is shared by every record id of a bench, so a successful
+    publication removes the completed record's own corner directory and its
+    own netlist snapshot (plus any further scratch the caller staged under
+    that record id, e.g. the local CLI's staged Markdown record) -- never the
+    bench-wide directory, which would also erase a sibling run that has not
+    minted yet, including one kept for retry after the store refused it.
+    Called only after publication succeeds: an interrupted store keeps its
+    staged inputs.
+    """
+    stage_exp = stage_experiment_dir(repo, slug)
+    shutil.rmtree(stage_corner_dir(repo, slug, record_id), ignore_errors=True)
+    for path in (stage_exp / report.SNAPSHOT_DIR / f"{record_id}.spice", *extra_scratch):
+        path.unlink(missing_ok=True)
 
 
 #: Directory prefixes whose contents are append-only evidence (DR-0041),
@@ -470,12 +491,15 @@ def jobs(tb: tbmod.Testbench, tag: str, dut: Path,
 
 
 def grade(tb: tbmod.Testbench, values: dict) -> bool:
-    """Every ``checks`` bound holds; a missing value fails."""
-    for key, lim in tb.checks.items():
-        x = values.get(key)
-        if x is None or ("max" in lim and x > lim["max"]) or ("min" in lim and x < lim["min"]):
-            return False
-    return True
+    """Every ``checks`` bound holds; a missing value fails.
+
+    The scalar rule itself is the record evaluator's
+    :func:`harness.report.scalar_bound_failure` (issue #798): a value a minted
+    record would reject -- NaN, an infinity, an out-of-bound number, or a
+    missing key -- never passes the staged summary's pass column either.
+    """
+    return all(report.scalar_bound_failure(values.get(key), lim) is None
+               for key, lim in tb.checks.items())
 
 
 def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None = None,

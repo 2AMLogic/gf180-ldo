@@ -1,0 +1,267 @@
+{
+  "schema_version": 2,
+  "file": {
+    "path": "layout/pass_array/pass_array.gds",
+    "scope": "repo"
+  },
+  "top": "PASS_ARRAY",
+  "spec": "layout/erc/specs/pass_array.erc.json",
+  "pdk": null,
+  "findings_only": true,
+  "gate_role": "poly2",
+  "gate_count": 1,
+  "antenna_tables_omitted": false,
+  "gates": [
+    {
+      "gate_id": "gate0",
+      "net": "PASS_GATE",
+      "gate_area_um2": 803.6,
+      "antenna_verdict": "unchecked",
+      "levels": [
+        {
+          "layer": "poly2",
+          "step_area_um2": null,
+          "cumulative_area_um2": null,
+          "antenna_ratio": null,
+          "antenna_ratio_max": null,
+          "antenna_ratio_source": null,
+          "verdict": "unchecked",
+          "remedy": null
+        },
+        {
+          "layer": "metal1",
+          "step_area_um2": null,
+          "cumulative_area_um2": null,
+          "antenna_ratio": null,
+          "antenna_ratio_max": null,
+          "antenna_ratio_source": null,
+          "verdict": "unchecked",
+          "remedy": null
+        },
+        {
+          "layer": "metal2",
+          "step_area_um2": null,
+          "cumulative_area_um2": null,
+          "antenna_ratio": null,
+          "antenna_ratio_max": null,
+          "antenna_ratio_source": null,
+          "verdict": "unchecked",
+          "remedy": null
+        },
+        {
+          "layer": "metal3",
+          "step_area_um2": null,
+          "cumulative_area_um2": null,
+          "antenna_ratio": null,
+          "antenna_ratio_max": null,
+          "antenna_ratio_source": null,
+          "verdict": "unchecked",
+          "remedy": null
+        },
+        {
+          "layer": "metal4",
+          "step_area_um2": null,
+          "cumulative_area_um2": null,
+          "antenna_ratio": null,
+          "antenna_ratio_max": null,
+          "antenna_ratio_source": null,
+          "verdict": "unchecked",
+          "remedy": null
+        },
+        {
+          "layer": "metal5",
+          "step_area_um2": null,
+          "cumulative_area_um2": null,
+          "antenna_ratio": null,
+          "antenna_ratio_max": null,
+          "antenna_ratio_source": null,
+          "verdict": "unchecked",
+          "remedy": null
+        }
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "name": "VIN",
+      "matched_islands": 1,
+      "expected_islands": 1,
+      "roles": [],
+      "unlabelled_islands": null,
+      "unlabelled_area_um2": null,
+      "unlabelled_bbox": null,
+      "unlabelled_allowed_islands": null
+    },
+    {
+      "name": "VOUT",
+      "matched_islands": 1,
+      "expected_islands": 1,
+      "roles": [],
+      "unlabelled_islands": null,
+      "unlabelled_area_um2": null,
+      "unlabelled_bbox": null,
+      "unlabelled_allowed_islands": null
+    },
+    {
+      "name": "ISNS",
+      "matched_islands": 1,
+      "expected_islands": 1,
+      "roles": [],
+      "unlabelled_islands": null,
+      "unlabelled_area_um2": null,
+      "unlabelled_bbox": null,
+      "unlabelled_allowed_islands": null
+    },
+    {
+      "name": "PASS_GATE",
+      "matched_islands": 1,
+      "expected_islands": 1,
+      "roles": [
+        "poly2"
+      ],
+      "unlabelled_islands": 0,
+      "unlabelled_area_um2": 0.0,
+      "unlabelled_bbox": null,
+      "unlabelled_allowed_islands": 0
+    }
+  ],
+  "erc_findings": [
+    {
+      "rule": "erc.floating_gate",
+      "description": "gate net has no connected geometry above the gate layer (floating/uncontacted gate)",
+      "net": "PASS_GATE",
+      "other_net": null,
+      "gate_id": "gate0",
+      "layer": "poly2",
+      "bbox": {
+        "left": 440,
+        "bottom": -620,
+        "right": 34320,
+        "top": 70620
+      },
+      "islands": null
+    }
+  ],
+  "erc_finding_count": 1,
+  "erc_status": "violations",
+  "status": "violations",
+  "coverage": {
+    "scope": "antenna",
+    "schema_version": 1,
+    "known": true,
+    "checked": [],
+    "skipped": [
+      {
+        "id": "antenna:[\"gate0\",\"metal1\"]",
+        "reason": "findings_only"
+      },
+      {
+        "id": "antenna:[\"gate0\",\"metal2\"]",
+        "reason": "findings_only"
+      },
+      {
+        "id": "antenna:[\"gate0\",\"metal3\"]",
+        "reason": "findings_only"
+      },
+      {
+        "id": "antenna:[\"gate0\",\"metal4\"]",
+        "reason": "findings_only"
+      },
+      {
+        "id": "antenna:[\"gate0\",\"metal5\"]",
+        "reason": "findings_only"
+      }
+    ],
+    "inapplicable": [
+      {
+        "id": "antenna:[\"gate0\",\"poly2\"]",
+        "reason": "gate_reference_level"
+      }
+    ],
+    "unknown": [],
+    "nothing_checked": true,
+    "nothing_checked_reasons": [
+      "findings_only",
+      "gate_reference_level"
+    ]
+  },
+  "erc_coverage": {
+    "scope": "connectivity",
+    "schema_version": 1,
+    "known": true,
+    "checked": [
+      "erc.floating_gate:[\"gate0\"]",
+      "erc.missing_tie:[\"nwell_vin_tie\"]",
+      "erc.net_connectivity:[\"ISNS\"]",
+      "erc.net_connectivity:[\"PASS_GATE\"]",
+      "erc.net_connectivity:[\"VIN\"]",
+      "erc.net_connectivity:[\"VOUT\"]",
+      "erc.supply_short",
+      "erc.supply_short.substrate"
+    ],
+    "skipped": [],
+    "inapplicable": [
+      {
+        "id": "erc.missing_tie:[\"p_substrate\"]",
+        "reason": "ties_disclosed_unexpressible"
+      }
+    ],
+    "unknown": [],
+    "nothing_checked": false,
+    "nothing_checked_reasons": [],
+    "missing_tie_checked": true,
+    "checked_by_assertion": [],
+    "checked_by_well_assertion": [],
+    "layers_in_stream_without_declaration": [],
+    "well_assertion_coverage": []
+  },
+  "ties_disclosure": {
+    "reason": "p_substrate: PASS_ARRAY draws no p-substrate tap and no pwell (pfet-only; the generator's docstring says so) -- its only bulk terminal is the n-well tied to VIN by the guard ring, and the substrate tie lands at ldo_core assembly (issue #288). There is no tap geometry to name.",
+    "kind": "unexpressible",
+    "undeclared_classes": [
+      "p_substrate"
+    ]
+  },
+  "provenance": {
+    "klt_version": "0.9.3.dev3808+g1ad4a837f657",
+    "klt_git_commit": "1ad4a837f6577813bc367c29a0b948c0bff66fda",
+    "klt_reinstall_spec": "klayout-tools @ git+https://github.com/2AMLogic/klayout-tools@1ad4a837f6577813bc367c29a0b948c0bff66fda",
+    "klayout_version": "0.30.12",
+    "pdk": null,
+    "deck": {
+      "name": "gf180mcu",
+      "content_hash": "sha256:778e9a4eba34b67a0427367917b4c9c2602d44ff085d663affd302a8d0f197cd",
+      "released": false
+    },
+    "input": {
+      "content_hash": "sha256:18bd95712dace323047428eb6b7369d20766c7df0ae9777c9f2fa584821c6859",
+      "role": "layout"
+    },
+    "spec": {
+      "content_hash": "sha256:1ba30037c77591bf9a957e3368928d994652f2d977a2ce348a07d62e02748ee3"
+    },
+    "devices": [],
+    "net_exclusions": [],
+    "label_layers": [
+      {
+        "name": "poly2",
+        "label_layer": "30/10",
+        "label_text_count": 1
+      },
+      {
+        "name": "metal5",
+        "label_layer": "81/10",
+        "label_text_count": 3
+      }
+    ],
+    "substrate_bodies": [
+      {
+        "kind": "well",
+        "id": "-880,-1440,35640,71440",
+        "ties": [
+          "nwell_vin_tie"
+        ]
+      }
+    ]
+  }
+}

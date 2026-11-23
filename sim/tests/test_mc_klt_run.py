@@ -14,6 +14,7 @@ store; and ``summarize.py`` takes a directory as well as a record id.
 from __future__ import annotations
 
 import contextlib
+import csv
 import io
 import json
 import math
@@ -104,6 +105,23 @@ class SampleRows(unittest.TestCase):
         self.assertIs(req["options"]["stage_model_inputs"], True)
 
 
+class Grade(unittest.TestCase):
+    """The staged pass column is ``tb_adapter.grade(TB, st)`` (issue #798)."""
+
+    def test_at_bound_values_pass_and_nonfinite_or_missing_fail(self):
+        ok = {"n_samples": 1000, "n_bad_solves": 0, "sigma_mv": 0.05, "sigma3_mv": 3.49,
+              "vos_in_sigma3_mv": 2.33, "worst_abs_mv": 18.0, "divider_exact_uv": 1.0,
+              "mean_mv": 2.56}
+        self.assertTrue(ta.grade(mc.TB, ok))
+        for key, bad in (("mean_mv", float("nan")),
+                         ("sigma_mv", float("inf")),      # min-only bound
+                         ("sigma3_mv", float("-inf")),    # max-only bound
+                         ("mean_mv", 3.0)):               # max 2.56, as probed
+            with self.subTest(key=key, bad=bad):
+                self.assertFalse(ta.grade(mc.TB, {**ok, key: bad}))
+        self.assertFalse(ta.grade(mc.TB, {k: v for k, v in ok.items() if k != "sigma_mv"}))
+
+
 class McDriverRouting(unittest.TestCase):
     """DR-0044, issue #647: the mc driver stages, refuses and mints.
 
@@ -119,6 +137,7 @@ class McDriverRouting(unittest.TestCase):
         self.dests: list[Path] = []
         self.stdout = io.StringIO()
         self.stderr = io.StringIO()
+        self.value = 0.1  # every measurement of every fake sample
 
     def _run_ab(self, job_factory, dut, baseline_ref, dest, repo, **kw):
         self.dests.append(Path(dest))
@@ -129,7 +148,7 @@ class McDriverRouting(unittest.TestCase):
             tl = int(t) if float(t).is_integer() else t
             corners.append({"corner_id": f"{proc}_{tl}c_{vin:.2f}v", "process": proc,
                             "temperature_c": t, "status": "pass", "supply_v": {},
-                            "measurements": [{"name": m["name"], "value": 0.1}
+                            "measurements": [{"name": m["name"], "value": self.value}
                                              for m in mc.MEASUREMENTS],
                             "monte_carlo": {"sample_index": 0}})
         report = json.dumps({"corners": corners})
@@ -198,6 +217,37 @@ class McDriverRouting(unittest.TestCase):
         rc = self._main(["--record-id", self.rid, "--only", "tt,27,3.30"], explode)
         self.assertEqual(rc, 0)
         self.assertTrue(self._staged().is_dir())
+
+    PASSING_STATS = {"n_samples": 1000, "n_bad_solves": 0, "sigma_mv": 0.05,
+                     "sigma3_mv": 3.49, "vos_in_sigma3_mv": 2.33, "worst_abs_mv": 18.0,
+                     "divider_exact_uv": 1.0, "mean_mv": 2.56}
+
+    def _staged_pass_column(self, stats: dict) -> list[str]:
+        """Run the driver with ``statistics`` stubbed to ``stats``; return the
+        ``pass`` column of every ``new`` row of the CSV it wrote."""
+        self.addCleanup(setattr, mc, "statistics", mc.statistics)
+        mc.statistics = lambda samples: dict(stats)
+        self.assertEqual(self._main(["--record-id", self.rid], lambda repo: None), 0)
+        with open(self._staged() / "summary.csv", newline="") as fh:
+            rows = [r for r in csv.DictReader(fh) if r["dut"] == "new"]
+        self.assertTrue(rows)
+        return [r["pass"] for r in rows]
+
+    def test_staged_pass_column_follows_the_shared_scalar_rule(self):
+        # Issue #798: drive an otherwise-passing statistics row through
+        # mc.main and vary one field at a time; the CSV must say False for
+        # each non-finite / out-of-range / missing case.
+        self.assertEqual({"True"}, set(self._staged_pass_column(self.PASSING_STATS)))
+        missing = {k: v for k, v in self.PASSING_STATS.items() if k != "sigma_mv"}
+        cases = (("nan", {**self.PASSING_STATS, "mean_mv": float("nan")}),
+                 ("+inf on a min-only bound", {**self.PASSING_STATS, "sigma_mv": float("inf")}),
+                 ("-inf on a max-only bound", {**self.PASSING_STATS, "sigma3_mv": float("-inf")}),
+                 ("out of range", {**self.PASSING_STATS, "mean_mv": 3.0}),
+                 ("missing", missing))
+        for label, stats in cases:
+            with self.subTest(label):
+                shutil.rmtree(self._staged(), ignore_errors=True)
+                self.assertEqual({"False"}, set(self._staged_pass_column(stats)))
 
     def test_a_record_id_already_committed_is_refused(self):
         existing = sorted(p for p in (SIM_DIR / "mc-output-accuracy" / "corners").iterdir()
