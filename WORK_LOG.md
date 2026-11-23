@@ -8,6 +8,14 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-23
 
+- **PR #825**: refactor: render the load-sink Bload card from one harness definition
+- **Issue #637** (closed): Define the compliance-limited load sink once: 10 hand copies in 9 decks, and #478's supply gate reached 1 of them
+- **PR #824**: fix: fail current-limit thermal_ok closed on non-finite short-circuit power
+- **Issue #823** (closed): current-limit staged grader: a one-sided max bound lets -infinity report thermal_ok
+- **PR #800**: fix: reject non-finite staged check values via one shared scalar rule
+- **Issue #798** (closed): Share the per-corner bounds check so staged simulation summaries reject NaN and infinity
+- **PR #789**: fix(sim): report paired soft-start margins without attributing their cause
+- **Issue #787** (closed): Use one description of the soft-start loop-gain variants in generated reports
 - **PR #794**: docs(spec): add DR-0045 answering gf180-opamp's amplifier-slot offset, divider and noise questions
 - **Issue #790** (closed): Answer gf180-opamp DR-0007 questions Q1 to Q3 (error-amp offset share, divider ratio and VCM, noise allowance) from this repo's committed evidence
 - **PR #815**: sim: pin DR-0025 wnflag in the four remaining standalone decks
