@@ -3807,7 +3807,11 @@ class TestKltBatchRunOutdirLockedRetry(unittest.TestCase):
 
     A resumed run's outdir can still be held by a killed-but-dying earlier
     owner; the lock frees the moment the process tree is reaped, so the
-    correct response is a bounded wait, not losing the grid.
+    correct response is a bounded wait, not losing the grid. Fleet capacity
+    is not retried here (issue #610): ``batch.capacity_wait_s`` (defaulted by
+    ``Job.request``) makes waiting out ``batch_no_capacity`` and
+    ``batch_concurrency_cap`` klt's own job, so a capacity error that still
+    reaches the harness is final.
     """
 
     @staticmethod
@@ -3835,25 +3839,75 @@ class TestKltBatchRunOutdirLockedRetry(unittest.TestCase):
                                                return_value=0.0):
                 run.side_effect = procs
                 out = klt_batch.run(req, tmp / "out", backend="batch",
-                                    max_cap_wait_s=600)
+                                    max_lock_wait_s=600)
         self.assertEqual(3, run.call_count)
+        self.assertEqual(2, sleep.call_count)
         self.assertEqual(report, out)
-        sleep.assert_called()
 
     def test_a_permanently_locked_outdir_raises_within_the_deadline(self):
-        proc = unittest.mock.Mock(returncode=1, stdout="", stderr="")
+        """A one-second budget against the 60 s initial delay: the deadline is
+        already spent when the first lock response arrives, so the refusal is
+        terminal -- one submission, no sleep, and the diagnostic surfaced."""
+        proc = unittest.mock.Mock(returncode=1,
+                                  stdout=json.dumps(self._error()), stderr="")
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             req = tmp / "request.json"
             req.write_text("{}")
             with unittest.mock.patch("subprocess.run", return_value=proc) as run, \
-                    unittest.mock.patch.object(klt_batch.time, "sleep"), \
+                    unittest.mock.patch.object(klt_batch.time, "sleep") as sleep, \
                     unittest.mock.patch.object(klt_batch.random, "uniform",
                                                return_value=0.0), \
-                    self.assertRaises(klt_batch.KltError):
-                run.side_effect = [proc] * 50
+                    self.assertRaises(klt_batch.KltError) as raised:
                 klt_batch.run(req, tmp / "out", backend="batch",
-                              max_cap_wait_s=1)
+                              max_lock_wait_s=1)
+        self.assertEqual(1, run.call_count)
+        sleep.assert_not_called()
+        self.assertIn("is owned by another run", str(raised.exception))
+
+    def test_a_final_fleet_capacity_error_is_not_retried(self):
+        """klt already waited out the fleet under ``capacity_wait_s`` (issue
+        #610): a capacity refusal that still reaches the harness raises after
+        one invocation, with no harness sleep, and the diagnostic is kept."""
+        for code in ("batch_no_capacity", "batch_concurrency_cap"):
+            with self.subTest(code=code):
+                message = f"launch refused: {code}"
+                err = {"schema_version": 1,
+                       "error": {"command": "sim", "code": code,
+                                 "message": message}}
+                proc = unittest.mock.Mock(returncode=1,
+                                          stdout=json.dumps(err), stderr="")
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    tmp = Path(tmpdir)
+                    req = tmp / "request.json"
+                    req.write_text("{}")
+                    with unittest.mock.patch("subprocess.run", return_value=proc) as run, \
+                            unittest.mock.patch.object(klt_batch.time, "sleep") as sleep, \
+                            self.assertRaises(klt_batch.KltError) as raised:
+                        klt_batch.run(req, tmp / "out", backend="batch",
+                                      max_lock_wait_s=600)
+                self.assertEqual(1, run.call_count)
+                sleep.assert_not_called()
+                self.assertIn(message, str(raised.exception))
+
+    def test_the_legacy_cap_refusal_wording_is_final_too(self):
+        """The pre-#610 loop keyed on the ``BATCH_MAX_CONCURRENT_INSTANCES``
+        wording and re-submitted; that substring no longer buys a retry, so a
+        wording change upstream cannot resurrect a dead code path."""
+        message = "launch refused: request exceeds BATCH_MAX_CONCURRENT_INSTANCES"
+        proc = unittest.mock.Mock(returncode=1, stdout="", stderr=message)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            req = tmp / "request.json"
+            req.write_text("{}")
+            with unittest.mock.patch("subprocess.run", return_value=proc) as run, \
+                    unittest.mock.patch.object(klt_batch.time, "sleep") as sleep, \
+                    self.assertRaises(klt_batch.KltError) as raised:
+                klt_batch.run(req, tmp / "out", backend="batch",
+                              max_lock_wait_s=600)
+        self.assertEqual(1, run.call_count)
+        sleep.assert_not_called()
+        self.assertIn(message, str(raised.exception))
 
 
 if __name__ == "__main__":

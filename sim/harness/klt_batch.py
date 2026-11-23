@@ -18,9 +18,12 @@ list, and this module does the rest:
   ``run.sh`` grid bind the identical ``.lib`` sections;
 * the DUT netlist is copied next to the body, so ``klt``'s off-host include
   staging picks it up by a relative path;
-* a submission refused only because the shared fleet is at its concurrency
-  cap is re-submitted after a bounded, jittered wait (``klt``'s own
-  ``batch.capacity_wait_s`` covers Spot *capacity* refusals but not this one);
+* fleet capacity is ``klt``'s to wait out, not this harness's: every request
+  carries ``batch.capacity_wait_s`` (:class:`Job` defaults it to the 600 s
+  the dispatch-host rules mandate), which covers ``batch_no_capacity``,
+  ``batch_concurrency_cap`` and a split request's ``lost_shard`` refusals
+  alike. The one transient :func:`run` re-submits itself is klt's
+  ``outdir_locked``;
 * the per-corner logs ``klt`` returns (``options.keep_artifacts``) are copied
   into the caller's ``dest`` under this repo's ``<corner>_<temp>c_<vin>v``
   names, next to the report JSON. :func:`collect` writes wherever it is
@@ -65,8 +68,15 @@ DESIGN_PARAMS = (
 #: to a declared bin with this set.
 WNFLAG = ".options wnflag=1"
 
-_CAP_REFUSAL = "exceeds BATCH_MAX_CONCURRENT_INSTANCES"
 _OUTDIR_LOCKED = "outdir_locked"
+
+
+#: Every request's ``batch.capacity_wait_s``: the dispatch-host rule for a
+#: batch submit, applied once here instead of per driver, so a driver that
+#: sets no ``batch`` still waits out a fleet capacity refusal inside ``klt``.
+#: A driver's ``batch`` keys merge over this; an explicit
+#: ``capacity_wait_s`` -- including 0, a deliberate no-wait -- wins.
+DEFAULT_CAPACITY_WAIT_S = 600
 
 
 class KltError(RuntimeError):
@@ -152,9 +162,12 @@ class Job:
     #: into a near-short) otherwise lets one job run into the fleet's 3600 s
     #: whole-job ceiling, which reports EVERY unit of it ``batch_job_timeout``
     #: (klt refuses a cap unless ``timeout_s * N + 120 <= 3600``, so ``timeout_s``
-    #: is lowered with it). A split request's shards that the fleet's instance cap
-    #: refuses come back ``lost_shard``, not retried: ``max_concurrent_jobs`` bounds
-    #: this request's jobs in flight and ``capacity_wait_s`` waits out a refusal.
+    #: is lowered with it). A split request's shards that the fleet's instance
+    #: cap refuses come back ``lost_shard``, not re-submitted by this harness:
+    #: ``max_concurrent_jobs`` bounds this request's jobs in flight and
+    #: ``capacity_wait_s`` waits out a refusal. Omitted, ``None``, empty and
+    #: shard-only mappings still carry :data:`DEFAULT_CAPACITY_WAIT_S`; an
+    #: explicit ``capacity_wait_s`` -- including 0 -- wins.
     batch: dict | None = None
 
     def request(self) -> dict:
@@ -173,7 +186,7 @@ class Job:
             "analysis": self.analysis,
             **({"monte_carlo": self.monte_carlo} if self.monte_carlo else {}),
             "measurements": self.measurements,
-            **({"batch": self.batch} if self.batch else {}),
+            "batch": {"capacity_wait_s": DEFAULT_CAPACITY_WAIT_S, **(self.batch or {})},
             "options": {"timeout_s": self.timeout_s, "keep_artifacts": True,
                         **({"stage_model_inputs": True} if self.stage_model_inputs else {}),
                         **({"ngspice_init": list(self.ngspice_init)} if self.ngspice_init else {})},
@@ -266,18 +279,23 @@ def _claim_resume_outdir(outdir: Path, req: Path, log=print) -> None:
 
 
 def run(req: Path, outdir: Path, backend: str | None = None,
-        max_cap_wait_s: float = 4 * 3600, log=print,
+        max_lock_wait_s: float = 4 * 3600, log=print,
         resume: bool = False) -> dict:
     """Run ``klt sim`` on ``req``; return the parsed report.
 
     ``backend=None`` leaves the choice to ``klt`` (request field, then
-    ``$KLT_SIM_BACKEND``). Re-submits on two transient conditions, within
-    ``max_cap_wait_s``: the fleet concurrency-cap refusal, and klt's
+    ``$KLT_SIM_BACKEND``). Fleet capacity refusals -- ``batch_no_capacity``,
+    ``batch_concurrency_cap``, the ``lost_shard`` a split request's refused
+    shards come back as -- are ``klt``'s to wait out under
+    ``batch.capacity_wait_s``, which :meth:`Job.request` defaults on every
+    request (issue #610); one that still reaches here is final and raises
+    after a single invocation, legacy ``BATCH_MAX_CONCURRENT_INSTANCES``
+    wording included. The one transient re-submitted here is klt's
     ``outdir_locked`` -- a resumed run's outdir can still be held by a
     killed-but-dying earlier owner (its ``flock`` frees the moment the
     process tree is reaped, and the pid in the message is diagnostic only),
-    so waiting is the correct response to that refusal; any other failure
-    raises.
+    so waiting is the correct response to that refusal, within
+    ``max_lock_wait_s``; any other failure raises.
 
     ``resume`` passes klt's ``--resume``: a sharded batch request re-attaches
     to the shard map retained under ``outdir`` -- shards whose fleet jobs
@@ -297,7 +315,7 @@ def run(req: Path, outdir: Path, backend: str | None = None,
     if resume:
         _claim_resume_outdir(outdir, req, log=log)
         cmd += ["--resume"]
-    deadline = time.monotonic() + max_cap_wait_s
+    deadline = time.monotonic() + max_lock_wait_s
     delay = 60.0
     while True:
         proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -309,14 +327,10 @@ def run(req: Path, outdir: Path, backend: str | None = None,
             return report
         message = (report or {}).get("error", {}).get("message", "") + proc.stderr
         code = (report or {}).get("error", {}).get("code", "")
-        transient = _CAP_REFUSAL in message or code == _OUTDIR_LOCKED
-        if transient and time.monotonic() + delay < deadline:
+        if code == _OUTDIR_LOCKED and time.monotonic() + delay < deadline:
             wait = delay * random.uniform(0.5, 1.0)
-            if code == _OUTDIR_LOCKED:
-                log(f"  {req.parent.name}'s outdir is locked by another run; "
-                    f"retrying in {wait:.0f}s")
-            else:
-                log(f"  fleet at its concurrency cap; re-submitting {req.parent.name} in {wait:.0f}s")
+            log(f"  {req.parent.name}'s outdir is locked by another run; "
+                f"retrying in {wait:.0f}s")
             time.sleep(wait)
             delay = min(delay * 2, 600.0)
             continue

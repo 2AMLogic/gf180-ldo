@@ -194,9 +194,9 @@ KLT_JOB_OVERHEAD_S = 120
 KLT_MAX_UNITS_PER_JOB = 29
 
 #: ``request.batch.max_concurrent_jobs``: once a request is split, the shards
-#: that the fleet's instance cap refuses come back ``lost_shard`` and are NOT
-#: retried (``sim/harness/klt_batch.py``); ``kb.run``'s own re-submit loop only
-#: covers a cap refusal of the whole submit. Bounding this request's jobs in
+#: that the fleet's instance cap refuses come back ``lost_shard`` and are not
+#: re-submitted by this repo's harness -- ``capacity_wait_s`` below is what
+#: waits out a refusal (inside ``klt``). Bounding this request's jobs in
 #: flight keeps its 3 shards from provoking that refusal in the first place.
 KLT_MAX_CONCURRENT_JOBS = 3
 
