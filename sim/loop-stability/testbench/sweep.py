@@ -59,7 +59,6 @@ import argparse
 import concurrent.futures
 import csv
 import datetime as _dt
-import importlib.util
 import math
 import os
 import shutil
@@ -76,6 +75,7 @@ LDO_NETLIST = REPO_ROOT / "design" / "netlist" / "ldo_core.spice"
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness import deck, klt_grid  # noqa: E402
 from harness.corners import build_grid, resolve_corners, supply_points  # noqa: E402
+from harness.loader import load_script  # noqa: E402
 from harness.loop_margin import (  # noqa: E402
     AC_DEC,
     F_START,
@@ -135,11 +135,7 @@ from harness.runner import (  # noqa: E402
 # driver must not put its bench directory on ``sys.path`` or bind the bare
 # module name, because both leak into whatever process loads this file
 # (issue #630).
-_klt_run_spec = importlib.util.spec_from_file_location(
-    "loop_stability_klt_run", HERE / "klt_run.py")
-klt_run = importlib.util.module_from_spec(_klt_run_spec)
-sys.modules["loop_stability_klt_run"] = klt_run
-_klt_run_spec.loader.exec_module(klt_run)
+klt_run = load_script("loop_stability_klt_run", HERE / "klt_run.py")
 
 DR0001 = "spec/decision-records/DR-0001-output-cap-strategy.md"
 # The swept (load, cap, ESR) axes are this experiment's own; the PVT axes
@@ -194,9 +190,9 @@ KLT_JOB_OVERHEAD_S = 120
 KLT_MAX_UNITS_PER_JOB = 29
 
 #: ``request.batch.max_concurrent_jobs``: once a request is split, the shards
-#: that the fleet's instance cap refuses come back ``lost_shard`` and are NOT
-#: retried (``sim/harness/klt_batch.py``); ``kb.run``'s own re-submit loop only
-#: covers a cap refusal of the whole submit. Bounding this request's jobs in
+#: that the fleet's instance cap refuses come back ``lost_shard`` and are not
+#: re-submitted by this repo's harness -- ``capacity_wait_s`` below is what
+#: waits out a refusal (inside ``klt``). Bounding this request's jobs in
 #: flight keeps its 3 shards from provoking that refusal in the first place.
 KLT_MAX_CONCURRENT_JOBS = 3
 

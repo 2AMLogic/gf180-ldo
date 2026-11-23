@@ -13,6 +13,7 @@ cell's netlist must be a hard error, never a silently skipped stage), and
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 import re
 import subprocess
@@ -39,14 +40,38 @@ def fake_summary(record_id: str) -> dict:
     return {
         "record_id": record_id,
         "netlist_devices": 1,
-        "klt_drc": {"status": "clean", "violations": 0, "dbu_um": 0.001},
+        "klt_drc": {
+            "status": "clean",
+            "violations": 0,
+            "dbu_um": 0.001,
+            "rule_counts": {},
+            "report": None,
+            "coverage": {
+                "layers_in_stream_without_rules": ["34/10"],
+                "rules_skipped": [],
+                "deck_scope": ["7.4 Nwell"],
+            },
+        },
         "pdk_drc": {
             "violations": 0,
             "rule_categories": 1,
             "deck": "gf180mcu.drc",
             "decks_selection": "all,-antenna,-density",
+            "engine": "klt drc --engine klayout",
+            "asserted_categories": 1,
+            "report": None,
+            "coverage": {
+                "layers_in_stream_without_rules": [],
+                "rules_skipped": [],
+                "deck_scope": [],
+            },
         },
-        "lvs": {"match": True, "warnings": []},
+        "lvs": {
+            "match": True,
+            "warnings": [],
+            "engine": "klt lvs (klayout)",
+            "report": None,
+        },
         "lvs_negative_controls": {
             "topology": {"match": False, "mutation": "gate shorted to drain"},
             "parameter": {"match": False, "mutation": "device width doubled"},
@@ -144,16 +169,17 @@ class DeckEnvTests(unittest.TestCase):
             self.assertTrue(sliced[:-1].strip().isdigit(), sliced)
 
 
-class RunPdkDrcSwitchesTests(unittest.TestCase):
-    """Stage 4 must drive the pinned revision's deck driver, and only it.
+class RunPdkDrcKltTests(unittest.TestCase):
+    """Stage 4 must drive the PDK's own deck through klt, with the deck's
+    declared rule-category set asserted.
 
     The driver (`tech/drc/gf180mcu.drc`) SILENTLY IGNORES unknown ``-rd``
     switches -- it exits 0 and writes a valid report regardless -- so a stale
-    switch in ``run_pdk_drc()`` would change nothing while the code claimed an
-    intent the deck never carries out. These tests hold the emitted switch set
-    to the driver's measured contract (``-rd help=true``): required
-    ``input``/``report``; optional ``topcell``, ``run_mode``, ``verbose``,
-    ``threads``, ``metal_level``, ``metal_top``, ``mim_option``, ``decks``.
+    ``--deck-var`` would change nothing while the code claimed an intent the
+    deck never carries out (issue #784 kept the raw route's switch contract;
+    these tests hold the klt route to the same one). The category-set
+    assertion is what keeps a zero-category (or swapped-category) deck run a
+    hard error rather than a clean pass.
     """
 
     STALE_SWITCHES = (
@@ -163,20 +189,40 @@ class RunPdkDrcSwitchesTests(unittest.TestCase):
         "split_deep", "table_name", "thr",
     )
 
-    def run_stage4(self, report_text: str = "<category><a/></category>"):
-        """Run run_pdk_drc() with run_logged stubbed; return (cmd, result)."""
+    def run_stage4(
+        self,
+        report: dict | None = None,
+        categories: tuple[str, ...] = ("cat.a", "cat.b"),
+    ):
+        """Run run_pdk_drc() with the klt subprocess stubbed.
+
+        ``--list-rule-categories`` and the deck run are both ``klt drc``
+        invocations; the stub answers the listing from ``categories`` and
+        writes ``report`` (default: clean, all categories declared, the
+        assertion satisfied) to the run's ``-o`` path.
+        """
         captured: dict = {}
 
-        def fake_run_logged(cmd, log, what, env=None):
-            captured["cmd"] = cmd
-            captured["env"] = env
-            for arg in cmd:
-                if arg.startswith("report="):
-                    Path(arg.split("=", 1)[1]).write_text(report_text)
-            return ""
+        def fake_run(cmd, **kwargs):
+            captured.setdefault("cmds", []).append(list(cmd))
+            captured["kwargs"] = kwargs
+            if "--list-rule-categories" in cmd:
+                return subprocess.CompletedProcess(
+                    cmd, 0, "\n".join(categories) + "\n", ""
+                )
+            out = Path(cmd[cmd.index("-o") + 1])
+            payload = report if report is not None else {
+                "status": "clean",
+                "violation_count": 0,
+                "coverage": {"rule_categories": list(categories)},
+                "coverage_assertion": {"satisfied": True},
+            }
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload))
+            return subprocess.CompletedProcess(cmd, 0, "", "")
 
-        original = drclvs.run_logged
-        drclvs.run_logged = fake_run_logged
+        original = drclvs.subprocess.run
+        drclvs.subprocess.run = fake_run
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 run_dir = Path(tmp)
@@ -184,71 +230,145 @@ class RunPdkDrcSwitchesTests(unittest.TestCase):
                 result = drclvs.run_pdk_drc(
                     fake_pdk(run_dir / "pdk"),
                     spec, run_dir / "in.gds", run_dir, run_dir / "pdk-drc.log",
+                    run_dir / "out.json",
                 )
         finally:
-            drclvs.run_logged = original
-        return captured["cmd"], result
+            drclvs.subprocess.run = original
+        return captured, result
 
     @staticmethod
-    def switches_of(cmd: list[str]) -> dict[str, str]:
+    def deck_vars_of(cmd: list[str]) -> dict[str, str]:
         switches = {}
-        it = iter(cmd)
-        for arg in it:
-            if arg == "-rd":
-                key, _, value = next(it).partition("=")
+        for index, arg in enumerate(cmd):
+            if arg == "--deck-var":
+                key, _, value = cmd[index + 1].partition("=")
                 switches[key] = value
         return switches
 
-    def test_drives_the_pdk_deck_driver_not_an_assembled_deck(self):
-        cmd, result = self.run_stage4()
-        self.assertEqual(cmd[:3], ["klayout", "-b", "-r"])
-        self.assertTrue(cmd[3].endswith("/drc/gf180mcu.drc"), cmd[3])
+    def test_drives_the_pdk_deck_through_klt(self):
+        captured, result = self.run_stage4()
+        deck_run = captured["cmds"][-1]
+        self.assertEqual(deck_run[:2], ["klt", "drc"])
+        self.assertIn("--engine", deck_run)
+        self.assertEqual(
+            deck_run[deck_run.index("--engine") + 1], "klayout"
+        )
+        deck_file = deck_run[deck_run.index("--deck-file") + 1]
+        self.assertTrue(deck_file.endswith("/drc/gf180mcu.drc"), deck_file)
         self.assertEqual(result["deck"], "gf180mcu.drc")
 
-    def test_no_stale_switch_from_the_old_deck_contract_is_emitted(self):
-        cmd, _ = self.run_stage4()
-        switches = self.switches_of(cmd)
-        for stale in self.STALE_SWITCHES:
-            self.assertNotIn(stale, switches, f"stale -rd switch {stale!r}")
+    def test_the_run_selects_the_top_cell_and_writes_the_report(self):
+        captured, result = self.run_stage4()
+        deck_run = captured["cmds"][-1]
+        spec = drclvs.CELLS["testcell"]
+        self.assertEqual(
+            deck_run[deck_run.index("--top") + 1], spec.top_cell
+        )
+        self.assertIn("--expect-rule-categories-file", deck_run)
+        self.assertEqual(result["status"], "clean")
+        self.assertEqual(result["violations"], 0)
 
-    def test_every_emitted_switch_is_in_the_driver_contract(self):
-        cmd, _ = self.run_stage4()
+    def test_no_stale_switch_from_the_old_deck_contract_is_emitted(self):
+        captured, _ = self.run_stage4()
+        for cmd in captured["cmds"]:
+            deck_vars = self.deck_vars_of(cmd)
+            for stale in self.STALE_SWITCHES:
+                self.assertNotIn(stale, deck_vars, f"stale deck var {stale!r}")
+
+    def test_every_emitted_deck_var_is_in_the_driver_contract(self):
+        captured, _ = self.run_stage4()
         known = {
             "input", "report", "topcell", "run_mode", "verbose", "workers",
             "threads", "variant", "metal_level", "metal_top", "mim_option",
             "decks", "help",
         }
-        unknown = set(self.switches_of(cmd)) - known
-        self.assertEqual(unknown, set(), "switches the driver would ignore")
+        for cmd in captured["cmds"]:
+            unknown = set(self.deck_vars_of(cmd)) - known
+            self.assertEqual(unknown, set(), "deck vars the driver would ignore")
 
     def test_decks_selection_excludes_exactly_antenna_and_density(self):
-        cmd, result = self.run_stage4()
+        captured, result = self.run_stage4()
+        deck_run = captured["cmds"][-1]
         self.assertEqual(result["decks_selection"], "all,-antenna,-density")
-        self.assertEqual(self.switches_of(cmd)["decks"], "all,-antenna,-density")
+        self.assertEqual(
+            self.deck_vars_of(deck_run)["decks"], "all,-antenna,-density"
+        )
 
     def test_run_mode_is_deep_and_threads_replaces_thr(self):
-        cmd, _ = self.run_stage4()
-        switches = self.switches_of(cmd)
-        self.assertEqual(switches["run_mode"], "deep")
-        self.assertIn("threads", switches)
+        captured, _ = self.run_stage4()
+        deck_vars = self.deck_vars_of(captured["cmds"][-1])
+        self.assertEqual(deck_vars["run_mode"], "deep")
+        self.assertIn("threads", deck_vars)
 
     def test_variant_switches_carry_the_metal_stack(self):
-        cmd, _ = self.run_stage4()
-        switches = self.switches_of(cmd)
-        self.assertEqual(switches["metal_top"], "11K")
-        self.assertEqual(switches["mim_option"], "B")
-        self.assertEqual(switches["metal_level"], "5LM")
+        captured, _ = self.run_stage4()
+        deck_vars = self.deck_vars_of(captured["cmds"][-1])
+        self.assertEqual(deck_vars["metal_top"], "11K")
+        self.assertEqual(deck_vars["mim_option"], "B")
+        self.assertEqual(deck_vars["metal_level"], "5LM")
 
-    def test_counts_categories_and_items_from_the_report(self):
-        text = "<category>a</category><category>b</category><item>x</item>"
-        _, result = self.run_stage4(report_text=text)
-        self.assertEqual(result["rule_categories"], 2)
-        self.assertEqual(result["violations"], 1)
-
-    def test_a_zero_category_report_is_a_hard_error(self):
+    def test_a_zero_category_listing_is_a_hard_error(self):
         with self.assertRaises(drclvs.StageError) as ctx:
-            self.run_stage4(report_text="<item>x</item>")
+            self.run_stage4(categories=())
         self.assertIn("ZERO rule categories", str(ctx.exception))
+
+    def test_an_unsatisfied_category_assertion_is_a_hard_error(self):
+        report = {
+            "status": "coverage_unknown",
+            "violation_count": 0,
+            "coverage": {"rule_categories": ["cat.a"]},
+            "coverage_assertion": {"satisfied": False},
+        }
+        with self.assertRaises(drclvs.StageError) as ctx:
+            self.run_stage4(report=report)
+        self.assertIn("assertion", str(ctx.exception))
+
+    def test_the_coverage_triple_is_carried_for_the_record(self):
+        _, result = self.run_stage4()
+        self.assertEqual(
+            sorted(result["coverage"]),
+            [
+                "deck_scope",
+                "layers_in_stream_without_rules",
+                "rules_skipped",
+            ],
+        )
+
+
+class RawDeckParityTests(unittest.TestCase):
+    """check_raw_parity(): a verdict or category-set difference is a hard
+    error, never a silent divergence between the retired raw route and the
+    klt route that replaced it (issue #784's migration gate)."""
+
+    def test_agreement_passes_and_describes_it(self):
+        native = {
+            "violations": 0,
+            "category_names": {"cat.a", "cat.b"},
+        }
+        raw = {"violations": 0, "categories": {"cat.a", "cat.b"}}
+        line = drclvs.check_raw_parity(
+            native, raw, drclvs.CELLS["testcell"], Path("/tmp")
+        )
+        self.assertIn("verdict equal", line)
+        self.assertIn("2 rule categories", line)
+
+    def test_a_verdict_difference_is_a_hard_error(self):
+        native = {"violations": 0, "category_names": {"cat.a"}}
+        raw = {"violations": 2, "categories": {"cat.a"}}
+        with self.assertRaises(drclvs.StageError) as ctx:
+            drclvs.check_raw_parity(
+                native, raw, drclvs.CELLS["testcell"], Path("/tmp")
+            )
+        self.assertIn("parity failed", str(ctx.exception))
+
+    def test_a_category_set_difference_is_a_hard_error(self):
+        native = {"violations": 0, "category_names": {"cat.a", "cat.x"}}
+        raw = {"violations": 0, "categories": {"cat.a", "cat.b"}}
+        with self.assertRaises(drclvs.StageError) as ctx:
+            drclvs.check_raw_parity(
+                native, raw, drclvs.CELLS["testcell"], Path("/tmp")
+            )
+        self.assertIn("cat.x", str(ctx.exception))
 
 
 def lvs_switches_of(cmd: list[str]) -> dict[str, str]:
@@ -545,6 +665,20 @@ class PassiveControlTests(unittest.TestCase):
         mutated = drclvs.control_unit_width(self.text)
         self.assertNotIn("R=", mutated)
 
+    def test_parameter_control_doubles_every_significant_digit(self):
+        """Six-significant-digit formatting would round away the corruption."""
+        mutated = drclvs.control_unit_width(
+            "R1 A B VSS ppolyf_u_1k l=10u W=1.2345678u m=1\n"
+        )
+        self.assertIn("W=2.4691356u", mutated)
+
+    def test_parameter_control_accepts_a_trailing_dot_width(self):
+        """`2.u` is a number spelling the shared grammar already accepts."""
+        mutated = drclvs.control_unit_width(
+            "R1 A B VSS ppolyf_u_1k l=10u W=2.u m=1\n"
+        )
+        self.assertIn("W=4u", mutated)
+
 
 class NetlistDirGuardTests(unittest.TestCase):
     """A CellSpec must not be able to clobber a simulation netlist.
@@ -712,6 +846,384 @@ class ControlSetTests(unittest.TestCase):
                     sorted(drclvs.check_controls_apply(spec, text)),
                     sorted(drclvs.build_controls(text, spec.controls)),
                 )
+
+
+class KltLvsRequestTests(unittest.TestCase):
+    """build_klt_lvs_request(): the committed-report request shape (issue
+    #784), mirroring the sibling precedent's keys and carrying the raw
+    route's per-cell knobs onto their klt counterparts."""
+
+    def request_for(self, spec_key: str) -> dict:
+        spec = drclvs.CELLS[spec_key]
+        with tempfile.TemporaryDirectory() as tmp:
+            return drclvs.build_klt_lvs_request(
+                spec, fake_pdk(Path(tmp) / "pdk"), "layout.gds", "ref.spice"
+            )
+
+    def test_layout_side_selects_the_curated_deck_and_flavours(self):
+        request = self.request_for("divider")
+        self.assertEqual(request["layout"]["deck"], "gf180mcu")
+        self.assertEqual(request["layout"]["top"], "FB_DIVIDER")
+        options = request["layout"]["deck_options"]
+        self.assertEqual(options["poly_res"], "3k")
+        # the curated deck's own MIM class spelling (klayout-tools#7031),
+        # transcribed in one place: lvs_form.MIMCAP_CURATED_OPTION
+        self.assertEqual(options["mim_cap"], "cap_mim_2f0_m4m5_noshield")
+        self.assertEqual(options["metal_top"], "11K")
+
+    def test_reference_side_uses_the_subckt_call_conversion(self):
+        request = self.request_for("pass_array")
+        self.assertEqual(request["reference"]["form"], "subckt-call")
+        self.assertEqual(request["reference"]["deck"], "gf180mcu")
+        self.assertEqual(request["reference"]["top"], "pass_array")
+
+    def test_geometry_parameters_are_scoped_per_cell(self):
+        request = self.request_for("divider")
+        self.assertEqual(
+            request["options"]["compare_parameters"],
+            {"ppolyf_u_3k": ["L", "W"]},
+        )
+        self.assertFalse(request["options"]["combine_devices"])
+
+    def test_parallel_folding_is_per_cell(self):
+        request = self.request_for("pass_array")
+        self.assertTrue(request["options"]["combine_devices"])
+        self.assertNotIn("compare_parameters", request["options"])
+
+    def test_a_cell_without_passives_scopes_nothing(self):
+        request = self.request_for("testcell")
+        self.assertEqual(request["options"], {"combine_devices": False})
+
+
+class LvsRouteRegistryTests(unittest.TestCase):
+    """The per-cell LVS routing (issue #784): klt wherever the curated path
+    can express the reference, raw PDK runset only for a named gap."""
+
+    def test_the_three_committed_cells_have_a_committed_gds(self):
+        for key in ("pass_array", "divider", "passives"):
+            spec = drclvs.CELLS[key]
+            self.assertIsNotNone(spec.gds_path, key)
+            self.assertEqual(
+                spec.gds_path, spec.gds_path.parent / f"{spec.cell}.gds", key
+            )
+
+    def test_the_scratch_flow_vehicles_commit_no_gds(self):
+        self.assertIsNone(drclvs.CELLS["testcell"].gds_path)
+
+    def test_the_default_route_is_klt(self):
+        for key in ("testcell", "pass_array", "divider"):
+            self.assertEqual(drclvs.CELLS[key].lvs_route, "klt", key)
+
+    def test_passives_stays_raw_for_the_implicit_connect_gap(self):
+        spec = drclvs.CELLS["passives"]
+        self.assertEqual(spec.lvs_route, "pdk-deck")
+
+    def test_an_unknown_route_is_refused(self):
+        with tempfile.TemporaryDirectory():
+            with self.assertRaises(ValueError):
+                dataclasses.replace(
+                    drclvs.CELLS["testcell"], lvs_route="carrier-pigeon"
+                )
+
+
+class GdsEqualModuloTimestampsTests(unittest.TestCase):
+    """gds_equal_modulo_timestamps(): the committed-GDS freshness check."""
+
+    @staticmethod
+    def gds_with_timestamps(stamp: bytes, geometry: bytes = b"\x00\x06\x0d\x02\x00\x01") -> bytes:
+        # HEADER record (rectype 0x00, no payload) then a BGNSTR timestamp
+        # record (rectype 0x05, 12-byte payload) then a geometry-ish record.
+        header = b"\x00\x06\x00\x02\x00\x01"
+        bgnstr = b"\x00\x10\x05\x02" + stamp
+        return header + bgnstr + geometry
+
+    def test_same_geometry_different_stamps_is_equal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.gds"
+            b = Path(tmp) / "b.gds"
+            a.write_bytes(
+                self.gds_with_timestamps(b"\x07\xe6\x00\x01" * 3)
+            )
+            b.write_bytes(
+                self.gds_with_timestamps(b"\x07\xe6\x00\x02" * 3)
+            )
+            self.assertTrue(drclvs.gds_equal_modulo_timestamps(a, b))
+
+    def test_different_geometry_is_not_equal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.gds"
+            b = Path(tmp) / "b.gds"
+            a.write_bytes(
+                self.gds_with_timestamps(b"\x07\xe6\x00\x01" * 3, b"\x00\x06\x0d\x02\x00\x01")
+            )
+            b.write_bytes(
+                self.gds_with_timestamps(b"\x07\xe6\x00\x01" * 3, b"\x00\x06\x0d\x02\x00\x02")
+            )
+            self.assertFalse(drclvs.gds_equal_modulo_timestamps(a, b))
+
+    def test_a_truncated_stream_is_an_error_not_a_false_equal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = Path(tmp) / "a.gds"
+            b = Path(tmp) / "b.gds"
+            a.write_bytes(self.gds_with_timestamps(b"\x00" * 12))
+            b.write_bytes(b"\x00\x40")  # declares 64 bytes, has 2
+            with self.assertRaises(ValueError):
+                drclvs.gds_equal_modulo_timestamps(a, b)
+
+
+
+def fake_erc_summary(
+    findings=(),
+    nets=(("VSS", 1, 1),),
+    ties_checked=("substrate_vss_tie",),
+    ties_skipped=(),
+):
+    """A minimal `klt erc` envelope slice for the ERC-stage tests."""
+    return {
+        "erc_status": "violations" if findings else "clean",
+        "erc_findings": [
+            {"rule": rule, "net": net, "layer": layer}
+            for rule, net, layer in findings
+        ],
+        "nets": [
+            {"name": name, "matched_islands": matched, "expected_islands": expected}
+            for name, matched, expected in nets
+        ],
+        "erc_coverage": {
+            "checked": [f'erc.missing_tie:["{t}"]' for t in ties_checked],
+            "skipped": [f'erc.missing_tie:["{t}"]' for t in ties_skipped],
+            "inapplicable": [],
+            "checked_by_well_assertion": list(ties_checked),
+            "layers_in_stream_without_declaration": [],
+        },
+        "provenance": {
+            "deck": {"name": "gf180mcu", "content_hash": "sha256:0" * 8},
+            "klt_version": "klt 0.9.3.test",
+        },
+    }
+
+
+class ErcRegistryTests(unittest.TestCase):
+    """Which cells carry the ERC supply stage, and with what contract."""
+
+    def test_the_two_design_cells_register_erc(self):
+        for key, tie in (
+            ("pass_array", "nwell_vin_tie"),
+            ("divider", "substrate_vss_tie"),
+        ):
+            erc = drclvs.CELLS[key].erc
+            self.assertIsNotNone(erc, key)
+            self.assertEqual(erc.ties, (tie,))
+            self.assertTrue(erc.control_mutation)
+
+    def test_the_flow_vehicles_register_no_erc(self):
+        self.assertIsNone(drclvs.CELLS["testcell"].erc)
+        self.assertIsNone(drclvs.CELLS["passives"].erc)
+
+    def test_pass_array_discloses_its_floating_gate(self):
+        self.assertEqual(
+            drclvs.CELLS["pass_array"].erc.expected_findings,
+            (("erc.floating_gate", "PASS_GATE"),),
+        )
+
+    def test_the_erc_scripts_exist_for_the_registered_cells(self):
+        for path in (drclvs.GEN_ERC_SPEC_SCRIPT, drclvs.MUTATE_ERC_SCRIPT):
+            self.assertTrue(path.is_file(), path)
+
+
+class ValidateErcReportTests(unittest.TestCase):
+    """The intact-run evidence contract (issue #785), checked mechanically."""
+
+    def test_a_clean_divider_shaped_report_passes(self):
+        report = fake_erc_summary()
+        failures, summary = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(summary["erc_status"], "clean")
+        self.assertEqual(summary["ties_checked"], ["substrate_vss_tie"])
+        self.assertEqual(summary["deck"]["name"], "gf180mcu")
+
+    def test_an_unexpected_supply_finding_fails(self):
+        report = fake_erc_summary(
+            findings=(("erc.supply_short", "VSS", None),)
+        )
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(
+            any("does not disclose" in f for f in failures), failures
+        )
+
+    def test_a_vanished_disclosed_finding_fails(self):
+        report = fake_erc_summary()
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.PASS_ARRAY_SPEC
+        )
+        self.assertTrue(
+            any("no longer reported" in f for f in failures), failures
+        )
+
+    def test_a_disclosed_pass_array_report_passes(self):
+        report = fake_erc_summary(
+            findings=(("erc.floating_gate", "PASS_GATE", "poly2"),),
+            nets=(("VIN", 1, 1), ("VOUT", 1, 1), ("ISNS", 1, 1),
+                  ("PASS_GATE", 1, 1)),
+            ties_checked=("nwell_vin_tie",),
+        )
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.PASS_ARRAY_SPEC
+        )
+        self.assertEqual(failures, [])
+
+    def test_a_split_supply_fails(self):
+        report = fake_erc_summary(nets=(("VSS", 2, 1),))
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(any("resolved 2 island" in f for f in failures))
+
+    def test_a_tie_missing_from_checked_fails(self):
+        report = fake_erc_summary(ties_checked=())
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(any("not in erc_coverage.checked" in f for f in failures))
+
+    def test_a_skipped_tie_fails(self):
+        report = fake_erc_summary(ties_skipped=("substrate_vss_tie",))
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(any("erc_coverage.skipped" in f for f in failures))
+
+    def test_an_undeclared_stream_layer_fails(self):
+        report = fake_erc_summary()
+        report["erc_coverage"]["layers_in_stream_without_declaration"] = ["42/0"]
+        failures, _ = drclvs.validate_erc_report(
+            report, drclvs.DIVIDER_SPEC
+        )
+        self.assertTrue(any("declares nowhere" in f for f in failures))
+
+
+class CheckErcControlFindingsTests(unittest.TestCase):
+    """The ERC negative control: only the intended new finding passes."""
+
+    def setUp(self):
+        self.erc = drclvs.DIVIDER_SPEC.erc
+        self.intact = fake_erc_summary()
+
+    def mutated(self, findings):
+        return fake_erc_summary(findings=findings,
+                                ties_checked=self.erc.ties)
+
+    def test_the_intended_new_missing_tie_passes(self):
+        failures, nets = drclvs.check_erc_control_findings(
+            self.mutated((("erc.missing_tie", "VSS", "substrate_vss_tie"),)),
+            self.intact, self.erc,
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(nets, {"VSS"})
+
+    def test_a_run_that_cannot_fail_fails_the_control(self):
+        failures, _ = drclvs.check_erc_control_findings(
+            self.mutated(()), self.intact, self.erc
+        )
+        self.assertTrue(any("cannot fail" in f for f in failures))
+
+    def test_an_unrelated_new_finding_fails_the_control(self):
+        failures, _ = drclvs.check_erc_control_findings(
+            self.mutated((
+                ("erc.missing_tie", "VSS", "substrate_vss_tie"),
+                ("erc.unconnected_net", "FB", None),
+            )),
+            self.intact, self.erc,
+        )
+        self.assertTrue(any("unrelated" in f for f in failures))
+
+    def test_a_missing_tie_on_the_wrong_tie_fails(self):
+        failures, _ = drclvs.check_erc_control_findings(
+            self.mutated((("erc.missing_tie", "VIN", "some_other_tie"),)),
+            self.intact, self.erc,
+        )
+        self.assertTrue(any("cannot fail" in f for f in failures))
+        self.assertTrue(any("unrelated" in f for f in failures))
+
+    def test_a_skipped_control_tie_fails(self):
+        mutant = self.mutated((("erc.missing_tie", "VSS", "substrate_vss_tie"),))
+        mutant["erc_coverage"]["skipped"] = ['erc.missing_tie:["substrate_vss_tie"]']
+        failures, _ = drclvs.check_erc_control_findings(
+            mutant, self.intact, self.erc
+        )
+        self.assertTrue(any("erc_coverage.skipped" in f for f in failures))
+
+    def test_baseline_findings_are_not_new(self):
+        # pass_array's disclosed floating gate is in the intact run too, so
+        # the control's diff must not count it as an unrelated new finding.
+        erc = drclvs.PASS_ARRAY_SPEC.erc
+        intact = fake_erc_summary(
+            findings=(("erc.floating_gate", "PASS_GATE", "poly2"),),
+            ties_checked=erc.ties,
+        )
+        mutant = fake_erc_summary(
+            findings=(
+                ("erc.floating_gate", "PASS_GATE", "poly2"),
+                ("erc.missing_tie", "VIN", "nwell_vin_tie"),
+            ),
+            ties_checked=erc.ties,
+        )
+        failures, _ = drclvs.check_erc_control_findings(mutant, intact, erc)
+        self.assertEqual(failures, [])
+
+
+class ErcRecordRenderingTests(unittest.TestCase):
+    """write_record renders the ERC rows and section for cells with ERC."""
+
+    def test_rows_and_section_render(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            records_dir = Path(tmp) / "records"
+            pdk = fake_pdk(Path(tmp) / "pdk")
+            rid = "20260821-000001-abc1234"
+            summary = fake_summary(rid)
+            summary["erc"] = {
+                "erc_status": "clean",
+                "findings": [],
+                "nets": [{"name": "VSS", "matched_islands": 1,
+                          "expected_islands": 1}],
+                "ties_checked": ["substrate_vss_tie"],
+                "ties_by_well_assertion": ['erc.missing_tie:["substrate_vss_tie"]'],
+                "ties_skipped": [],
+                "inapplicable": [],
+                "layers_in_stream_without_declaration": [],
+                "deck": {"name": "gf180mcu",
+                         "content_hash": "sha256:deadbeef"},
+                "klt_version": "klt 0.9.3.test",
+                "spec": "layout/erc/specs/divider.erc.json",
+                "report": "layout/erc/reports/divider/%s.erc.json" % rid,
+            }
+            summary["erc_control"] = {
+                "mutation": "every contact cut deleted",
+                "finding": "erc.missing_tie on substrate_vss_tie",
+                "net": ["VSS"],
+                "failures": [],
+            }
+            original_records_dir = drclvs.RECORDS_DIR
+            drclvs.RECORDS_DIR = records_dir
+            try:
+                path = drclvs.write_record(rid, summary, pdk, drclvs.DIVIDER_SPEC)
+                text = path.read_text()
+            finally:
+                drclvs.RECORDS_DIR = original_records_dir
+            self.assertIn("klt erc --deck gf180mcu --findings-only", text)
+            self.assertIn("ERC negative control", text)
+            self.assertIn("layout/erc/specs/divider.erc.json", text)
+            self.assertIn("`matched_islands`", text)
+            self.assertIn("sha256:deadbeef", text)
+
+    def test_a_summary_without_erc_renders_no_erc_section(self):
+        summary = fake_summary("rid")
+        self.assertEqual(drclvs.erc_result_rows(summary), "")
+        self.assertEqual(drclvs.erc_section(summary), "")
 
 
 if __name__ == "__main__":

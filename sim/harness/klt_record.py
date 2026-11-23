@@ -491,7 +491,10 @@ def main(argv=None) -> int:
         print(f"EVIDENCE NOT STORED -- nothing committed (fail closed): {exc}. The staged run is "
               f"kept, uncommitted, under {corner_dir.relative_to(REPO)}/.", file=sys.stderr)
         return EXIT_NOT_STORED
-    shutil.rmtree(REPO / "sim" / ".work" / ".stage" / slug, ignore_errors=True)
+    # Issue #802: consume only this record's scratch. The bench-wide rmtree
+    # this replaces also erased every other record id's staged run for the
+    # bench, including one kept for retry after a store refusal.
+    tb_adapter.consume_staged_record(REPO, slug, rid)
     print(f"record   : sim/{slug}/records/{rid}.md")
     print(f"manifest : {mpath.relative_to(REPO)}  ({len(files)} objects stored)")
     print(f"committed: {final_snapshot.relative_to(REPO)}"

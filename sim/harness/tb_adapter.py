@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
+import shutil
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -90,6 +91,25 @@ def stage_experiment_dir(repo: Path, slug: str) -> Path:
 def stage_corner_dir(repo: Path, slug: str, record_id: str) -> Path:
     """Where one staged run's raw bytes land, before they are stored."""
     return stage_experiment_dir(repo, slug) / "corners" / record_id
+
+
+def consume_staged_record(repo: Path, slug: str, record_id: str,
+                          extra_scratch: tuple[Path, ...] = ()) -> None:
+    """Consume only this record's scratch from the staging tree (issue #802).
+
+    The staging tree is shared by every record id of a bench, so a successful
+    publication removes the completed record's own corner directory and its
+    own netlist snapshot (plus any further scratch the caller staged under
+    that record id, e.g. the local CLI's staged Markdown record) -- never the
+    bench-wide directory, which would also erase a sibling run that has not
+    minted yet, including one kept for retry after the store refused it.
+    Called only after publication succeeds: an interrupted store keeps its
+    staged inputs.
+    """
+    stage_exp = stage_experiment_dir(repo, slug)
+    shutil.rmtree(stage_corner_dir(repo, slug, record_id), ignore_errors=True)
+    for path in (stage_exp / report.SNAPSHOT_DIR / f"{record_id}.spice", *extra_scratch):
+        path.unlink(missing_ok=True)
 
 
 #: Directory prefixes whose contents are append-only evidence (DR-0041),

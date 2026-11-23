@@ -106,9 +106,10 @@ def run_ab(job_factory, dut: Path, baseline_ref: str | None, dest: Path, repo: P
     request and the ``klt sim`` run dir live there instead of a session-local
     tempdir, each batch request is submitted with klt's ``--resume``, and a
     tag whose ``klt-report.json`` is already under ``dest`` from an earlier
-    invocation -- with an identical request -- is not re-submitted at all.
-    Together these make a sharded record resumable across sessions: re-run
-    the same command and only what is still missing runs (issue #465).
+    invocation -- whose staged identity (request, deck body and DUT bytes,
+    issue #796) matches the freshly staged inputs -- is not re-submitted at
+    all. Together these make a sharded record resumable across sessions:
+    re-run the same command and only what is still missing runs (issue #465).
     """
     dest.mkdir(parents=True, exist_ok=True)
     duts = {"new": Path(dut)}
@@ -131,10 +132,9 @@ def run_ab(job_factory, dut: Path, baseline_ref: str | None, dest: Path, repo: P
             job, req = staged[tag]
             sub = dest / tag
             saved = sub / "klt-report.json"
-            req_saved = sub / "request.json"
+            ident = sub / "identity.json"
             if run_root is not None and saved.is_file() \
-                    and req_saved.is_file() \
-                    and req_saved.read_bytes() == req.read_bytes():
+                    and kb.identity_matches(ident, req):
                 return tag, kb.values(json.loads(saved.read_text()), job)
             out = (tmp / tag / "out") if run_root is not None else (tmp / f"{tag}-out")
             report = kb.run(req, out, backend=backend, log=log,
@@ -143,6 +143,10 @@ def run_ab(job_factory, dut: Path, baseline_ref: str | None, dest: Path, repo: P
             shutil.copyfile(path_of(tag), sub / "dut.spice")
             shutil.copyfile(req.parent / "body.spice", sub / "body.spice")
             shutil.copyfile(req, sub / "request.json")
+            if run_root is not None:
+                # Identity marker last: it vouches for the completed result
+                # beside it (issue #796).
+                kb.publish_identity(ident, req)
             return tag, vals
 
         def path_of(tag):

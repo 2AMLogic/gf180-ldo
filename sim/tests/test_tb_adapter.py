@@ -62,7 +62,9 @@ class SupplyWaveform(unittest.TestCase):
                                   timeout_s=1700, batch={"max_units_per_job": 2})
         req = job.request()
         self.assertEqual(req["options"]["timeout_s"], 1700)
-        self.assertEqual(req["batch"], {"max_units_per_job": 2})
+        # A shard-only batch mapping still inherits the harness's 600 s
+        # capacity-wait default (issue #610).
+        self.assertEqual(req["batch"], {"max_units_per_job": 2, "capacity_wait_s": 600})
 
 
 class ParamOverride(unittest.TestCase):

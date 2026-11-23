@@ -1,0 +1,27 @@
+{
+  "layout": {
+    "file": "../../../divider/fb_divider.gds",
+    "deck": "gf180mcu",
+    "top": "FB_DIVIDER",
+    "deck_options": {
+      "poly_res": "3k",
+      "mim_cap": "cap_mim_2f0_m4m5_noshield",
+      "metal_top": "11K"
+    }
+  },
+  "reference": {
+    "netlist": "../../../divider/netlist/fb_divider.spice",
+    "top": "fb_divider",
+    "form": "subckt-call",
+    "deck": "gf180mcu"
+  },
+  "options": {
+    "combine_devices": false,
+    "compare_parameters": {
+      "ppolyf_u_3k": [
+        "L",
+        "W"
+      ]
+    }
+  }
+}

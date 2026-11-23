@@ -3,7 +3,7 @@
 
     python3 -m unittest discover -s layout/tests -v
 
-No PDK, klayout or xschem required. Two things are checked here that a
+No PDK, klayout or xschem required. Three things are checked here that a
 DRC/LVS run cannot check for itself:
 
 1. **The array's LVS reference schematic has not drifted from the design.**
@@ -18,10 +18,20 @@ DRC/LVS run cannot check for itself:
    under-viad geometry that must come out over the limit, and its published
    constants are re-derived from ``layout/floorplan.md`` §1 rather than
    trusted.
+
+3. **A committed bench DUT is the pinned export it claims to come from.**
+   ``sim/pass-array-pex/testbench/pass_array_dut.spice`` (whenever that bench
+   is present) restates ``ldo_core/XMpass`` and ``ldo_ilimit/XMsense`` for
+   ``klt pex``'s DUT swap, and its header claims every device line is
+   byte-identical to the export. PR #791 committed it with both cards'
+   source-perimeter expression typo'd and every CI job stayed green, so here
+   every card is compared against the design export on committed text alone
+   (issue #792).
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import sys
 import unittest
@@ -30,6 +40,8 @@ from pathlib import Path
 LAYOUT_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = LAYOUT_DIR.parent
 PASS_ARRAY_DIR = LAYOUT_DIR / "pass_array"
+BENCH_DIR = REPO_ROOT / "sim" / "pass-array-pex"
+BENCH_DUT = BENCH_DIR / "testbench" / "pass_array_dut.spice"
 
 sys.path.insert(0, str(LAYOUT_DIR))
 sys.path.insert(0, str(PASS_ARRAY_DIR))
@@ -169,6 +181,298 @@ class ReferenceSchematicMatchesTheDesign(unittest.TestCase):
         self.assertTrue(spec.gen_gds.is_file())
         self.assertTrue(spec.schematic.is_file())
         self.assertTrue((PASS_ARRAY_DIR / "pass_array.sym").is_file())
+
+
+# The bench DUT exactly as #791 should have committed it: both device cards
+# byte-identical to their counterparts in design/netlist/ldo_core.spice, PEX
+# pin order intact. Pinned by the SHA-256 #793 reported for the corrected
+# deck, so this fixture cannot drift from the deck its corner rerun cites.
+CORRECTED_BENCH_DUT = """\
+** sch_path: layout/pass_array/pass_array.sch
+* pass_array -- ngspice-form DUT for the klt pex array bench (issue #786).
+*
+* Source of truth: layout/pass_array/pass_array.sch, exported through the
+* repo's pinned-xschem path (sim/harness/xschem_export.py + design/xschemrc,
+* xschem 3.4.7, ERC on) -- the same export design/netlist.py performs, not a
+* hand transcription. One mechanical edit versus that export, forced by klt
+* pex's DUT-swap contract (klayout-tools docs/cli/pex.md, "Pin order must
+* match"): this .subckt header declares the pins in klt extract's
+* deterministic order (ports alphabetical) rather than the symbol's order, so
+* the bench's single instantiation line is valid for both the schematic leg
+* and the extracted leg. Every device line below is byte-identical to the
+* export; the LVS-form netlist (layout/pass_array/netlist/pass_array.spice)
+* remains the LVS reference and is untouched.
+.subckt pass_array ISNS PASS_GATE VIN VOUT
+*.PININFO ISNS:B PASS_GATE:I VIN:B VOUT:B
+XMpass VOUT PASS_GATE VIN VIN pfet_03v3 L=0.28u W=2800u nf=40 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
++ ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
+XMsense ISNS PASS_GATE VIN VIN pfet_03v3 L=0.28u W=70u nf=1 ad='int((nf+1)/2) * W/nf * 0.18u' as='int((nf+2)/2) * W/nf * 0.18u' pd='2*int((nf+1)/2) * (W/nf + 0.18u)'
++ ps='2*int((nf+2)/2) * (W/nf + 0.18u)' nrd='0.18u / W' nrs='0.18u / W' sa=0 sb=0 sd=0 m=1
+.ends
+"""
+
+# The deck PR #791 actually committed: the same file with both source
+# perimeters hand-typo'd from a sum into a product -- an area where ngspice
+# takes a perimeter.
+REVIEWED_791_DUT = CORRECTED_BENCH_DUT.replace(
+    "ps='2*int((nf+2)/2) * (W/nf + 0.18u)'",
+    "ps='2*int((nf+2)/2) * W/nf * 0.18u'",
+)
+
+# Bench instance -> where its card lives in the design export.
+BENCH_DEVICE_SOURCES = {
+    "XMPASS": ("ldo_core", "XMpass"),
+    "XMSENSE": ("ldo_ilimit", "XMsense"),
+}
+
+
+def subckt_device_cards(text: str, subckt: str) -> dict[str, str]:
+    """Every device card inside ``.subckt <subckt>`` .. ``.ends``, keyed by
+    its uppercased instance name.  Continuation lines (leading ``+``) are
+    joined onto their card and whitespace runs collapsed, so a card matches
+    its counterpart however the export wrapped it.  Comment lines are
+    ignored; a duplicated instance name is an error, never a silent
+    overwrite.
+    """
+    body: list[str] = []
+    inside = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not inside and line.lower().startswith(".subckt"):
+            if line.split()[1].lower() == subckt.lower():
+                inside = True
+            continue
+        if inside and line.lower().startswith(".ends"):
+            break
+        if inside:
+            body.append(line)
+    if not inside:
+        raise AssertionError(f"no .subckt {subckt} in the netlist")
+
+    cards: dict[str, str] = {}
+    card: list[str] = []
+
+    def flush() -> None:
+        if not card:
+            return
+        name = card[0].split()[0].upper()
+        if name in cards:
+            raise AssertionError(
+                f"duplicated device {name} inside .subckt {subckt}"
+            )
+        cards[name] = " ".join(" ".join(card).split())
+
+    for line in body:
+        if not line or line.startswith("*"):
+            continue
+        if line.startswith("+"):
+            if not card:
+                raise AssertionError(
+                    f"continuation line before any device inside "
+                    f".subckt {subckt}: {line!r}"
+                )
+            card.append(line[1:])
+            continue
+        flush()
+        card = [line]
+    flush()
+    return cards
+
+
+def first_card_difference(bench_card: str, design_card: str) -> str:
+    """Where two canonical cards first disagree, token by token."""
+    bench = bench_card.split()
+    design = design_card.split()
+    for position, (bench_token, design_token) in enumerate(zip(bench, design), 1):
+        if bench_token != design_token:
+            return (
+                f"token {position}: bench says {bench_token!r}, "
+                f"design export says {design_token!r}"
+            )
+    if len(bench) != len(design):
+        short = "the bench card ends early" if len(bench) < len(design) \
+            else "the design card ends early"
+        return f"{short} after {min(len(bench), len(design))} shared tokens"
+    return "the cards differ only in whitespace"
+
+
+def bench_card_mismatches(dut_text: str, design_text: str, source: str) -> list[str]:
+    """Compare the bench DUT's ``pass_array`` cards against the design export.
+
+    Returns one human-readable line per problem, each naming ``source`` and,
+    where applicable, the offending instance; an empty list means the DUT is
+    the export, card for card.
+    """
+    try:
+        actual = subckt_device_cards(dut_text, "pass_array")
+    except AssertionError as malformed:
+        return [f"{source}: {malformed}"]
+    expected = {
+        bench_name: subckt_device_cards(design_text, subckt)[instance.upper()]
+        for bench_name, (subckt, instance) in BENCH_DEVICE_SOURCES.items()
+    }
+    wanted = " and ".join(expected)
+    problems: list[str] = []
+    for bench_name in expected:
+        if bench_name not in actual:
+            problems.append(
+                f"{source}: missing device {bench_name} -- the DUT must "
+                f"carry exactly {wanted} from the design export"
+            )
+    for bench_name in actual:
+        if bench_name not in expected:
+            problems.append(
+                f"{source}: extra device {bench_name} -- the DUT must "
+                f"carry exactly {wanted} from the design export"
+            )
+    for bench_name, design_card in expected.items():
+        if bench_name in actual and actual[bench_name] != design_card:
+            problems.append(
+                f"{source}: {bench_name} is not the design export's card "
+                f"({first_card_difference(actual[bench_name], design_card)})"
+            )
+    return problems
+
+
+def bench_card_span(deck: str, device: str) -> tuple[int, int, list[str]]:
+    """``(start, end, lines)`` covering device's card, '+' lines included."""
+    lines = deck.splitlines()
+    for i, line in enumerate(lines):
+        if line.split()[:1] == [device]:
+            end = i
+            while end + 1 < len(lines) and lines[end + 1].startswith("+"):
+                end += 1
+            return i, end, lines
+    raise AssertionError(f"no {device} card in the deck")
+
+
+def rewrite_bench_card(deck: str, device: str, replacement: list[str]) -> str:
+    start, end, lines = bench_card_span(deck, device)
+    return "\n".join(lines[:start] + replacement + lines[end + 1:]) + "\n"
+
+
+def reintroduce_791_typo_on(deck: str, device: str) -> str:
+    """The #791 perimeter typo back on one card's continuation line only."""
+    start, end, lines = bench_card_span(deck, device)
+    card = lines[start:end + 1]
+    typoed = card[1].replace("(W/nf + 0.18u)", "W/nf * 0.18u")
+    if typoed == card[1]:
+        raise AssertionError(f"{device}'s continuation has no perimeter sum to typo")
+    return rewrite_bench_card(deck, device, [card[0], typoed])
+
+
+def drop_bench_card(deck: str, device: str) -> str:
+    return rewrite_bench_card(deck, device, [])
+
+
+def duplicate_bench_card(deck: str, device: str) -> str:
+    start, end, lines = bench_card_span(deck, device)
+    card = lines[start:end + 1]
+    return rewrite_bench_card(deck, device, card + card)
+
+
+def add_extra_bench_card(deck: str, device: str, name: str) -> str:
+    start, end, lines = bench_card_span(deck, device)
+    card = lines[start:end + 1]
+    extra = [name + card[0][len(device):]] + card[1:]
+    return rewrite_bench_card(deck, device, card + extra)
+
+
+class BenchDutIsTheDesignExport(unittest.TestCase):
+    """The pass-array bench DUT must be the design export, card for card.
+
+    Controlled examples below run on any tree (main has no bench yet); the
+    committed-bench check activates as soon as ``sim/pass-array-pex/`` lands.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.core = (REPO_ROOT / "design" / "netlist" / "ldo_core.spice").read_text()
+
+    def test_the_corrected_fixture_is_the_deck_793_reran(self):
+        self.assertEqual(
+            hashlib.sha256(CORRECTED_BENCH_DUT.encode()).hexdigest(),
+            "2aa8d2bd3ee13f2bbdd924b59055cb16019fab2c4cd046ddb29c17328e380c73",
+            "the controlled example is no longer the corrected deck #793 "
+            "reported its corner rerun for",
+        )
+
+    def test_the_corrected_deck_is_accepted(self):
+        self.assertEqual(
+            bench_card_mismatches(
+                CORRECTED_BENCH_DUT, self.core, "<corrected deck fixture>"
+            ),
+            [],
+        )
+
+    def test_the_reviewed_791_deck_is_rejected_on_both_devices(self):
+        problems = bench_card_mismatches(
+            REVIEWED_791_DUT, self.core, "<PR #791 deck fixture>"
+        )
+        self.assertEqual(len(problems), 2, "\n".join(problems))
+        for bench_name in BENCH_DEVICE_SOURCES:
+            named = [p for p in problems if bench_name in p]
+            self.assertEqual(len(named), 1, "\n".join(problems))
+        self.assertIn(
+            "bench says 'W/nf', design export says '(W/nf'",
+            "\n".join(problems),
+            "the report must point at the typo'd perimeter expression itself",
+        )
+
+    def test_the_typo_on_either_continuation_line_alone_is_rejected(self):
+        for device in ("XMpass", "XMsense"):
+            with self.subTest(device=device):
+                problems = bench_card_mismatches(
+                    reintroduce_791_typo_on(CORRECTED_BENCH_DUT, device),
+                    self.core,
+                    "<fixture>",
+                )
+                self.assertEqual(len(problems), 1, "\n".join(problems))
+                self.assertIn(device.upper(), problems[0])
+
+    def test_a_missing_device_is_rejected(self):
+        for device in ("XMpass", "XMsense"):
+            with self.subTest(device=device):
+                problems = bench_card_mismatches(
+                    drop_bench_card(CORRECTED_BENCH_DUT, device),
+                    self.core,
+                    "<fixture>",
+                )
+                self.assertEqual(len(problems), 1, "\n".join(problems))
+                self.assertIn(f"missing device {device.upper()}", problems[0])
+
+    def test_a_duplicated_device_is_rejected(self):
+        problems = bench_card_mismatches(
+            duplicate_bench_card(CORRECTED_BENCH_DUT, "XMsense"),
+            self.core,
+            "<fixture>",
+        )
+        self.assertEqual(len(problems), 1, "\n".join(problems))
+        self.assertIn("duplicated device XMSENSE", problems[0])
+
+    def test_an_extra_device_is_rejected(self):
+        problems = bench_card_mismatches(
+            add_extra_bench_card(CORRECTED_BENCH_DUT, "XMsense", "XMshadow"),
+            self.core,
+            "<fixture>",
+        )
+        self.assertEqual(len(problems), 1, "\n".join(problems))
+        self.assertIn("extra device XMSHADOW", problems[0])
+
+    def test_the_committed_bench_dut_is_checked_whenever_the_bench_exists(self):
+        if not BENCH_DIR.is_dir():
+            self.skipTest("sim/pass-array-pex/ is not on this tree yet (issue #786)")
+        self.assertTrue(
+            BENCH_DUT.is_file(),
+            f"{BENCH_DUT.relative_to(REPO_ROOT)}: the bench directory is "
+            "committed, so its DUT must be committed too",
+        )
+        problems = bench_card_mismatches(
+            BENCH_DUT.read_text(),
+            self.core,
+            str(BENCH_DUT.relative_to(REPO_ROOT)),
+        )
+        self.assertEqual(problems, [], "\n".join(problems))
 
 
 class PublishedLimitsAreTheFloorplansOwn(unittest.TestCase):

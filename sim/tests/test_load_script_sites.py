@@ -52,21 +52,14 @@ ALLOWLIST: dict[str, tuple[int, str]] = {
            "the tests holding load_script's contract"),
     "spec/check_spec_table.py": (
         1, "documented #625 carve-out: runs from spec/, no sim/ on sys.path"),
-    # The remaining sites each register the module in sys.modules before
-    # executing -- the one thing load_script exists to guarantee is already
-    # satisfied there -- and sit under testbench or spec directories that
-    # must not put sim/ on sys.path to reach harness.loader: a bench driver
-    # is loaded by path and its directory is deliberately not an import
-    # root, so binding a bare sibling name or widening sys.path is the
-    # hazard #630/#700 rule out (issues #706's per-site survey).
-    "sim/soft-start/testbench/handover_t15.py": (
-        2, "registers in sys.modules; testbench must not put sim/ on sys.path (#630/#700)"),
+    # The remaining two sites register the module in sys.modules before
+    # executing and do not put sim/ on sys.path ahead of their
+    # spec_from_file_location call: klt_peak_run.py derives REPO (and its
+    # sim/ sys.path entry) from the klt_run.py module it loads first, and
+    # test_ab_loop_stability.py loads its target script without adding sim/
+    # to sys.path (#706/#778).
     "sim/soft-start/testbench/klt_peak_run.py": (
-        1, "registers in sys.modules; testbench must not put sim/ on sys.path (#630/#700)"),
-    "sim/loop-stability/testbench/sweep.py": (
-        1, "registers in sys.modules; testbench must not put sim/ on sys.path (#630/#700)"),
-    "sim/current-limit/testbench/klt_run.py": (
-        1, "registers in sys.modules; testbench must not put sim/ on sys.path (#630/#700)"),
+        1, "registers in sys.modules; loads klt_run.py before sim/ is on sys.path (#630/#700)"),
     "sim/tests/test_ab_loop_stability.py": (
         1, "registers in sys.modules; unique-name load beside its driver test (#630/#700)"),
 }
