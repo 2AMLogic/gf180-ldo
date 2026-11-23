@@ -1,0 +1,150 @@
+{
+  "schema_version": 2,
+  "file": {
+    "path": "layout/divider/fb_divider.gds",
+    "scope": "repo"
+  },
+  "top": "FB_DIVIDER",
+  "spec": "layout/erc/specs/divider.erc.json",
+  "pdk": null,
+  "findings_only": true,
+  "gate_role": "poly2",
+  "gate_count": 0,
+  "antenna_tables_omitted": false,
+  "gates": [],
+  "nets": [
+    {
+      "name": "VSS",
+      "matched_islands": 1,
+      "expected_islands": 1,
+      "roles": [],
+      "unlabelled_islands": null,
+      "unlabelled_area_um2": null,
+      "unlabelled_bbox": null,
+      "unlabelled_allowed_islands": null
+    },
+    {
+      "name": "VOUT_S",
+      "matched_islands": 1,
+      "expected_islands": 1,
+      "roles": [],
+      "unlabelled_islands": null,
+      "unlabelled_area_um2": null,
+      "unlabelled_bbox": null,
+      "unlabelled_allowed_islands": null
+    },
+    {
+      "name": "FB",
+      "matched_islands": 1,
+      "expected_islands": 1,
+      "roles": [],
+      "unlabelled_islands": null,
+      "unlabelled_area_um2": null,
+      "unlabelled_bbox": null,
+      "unlabelled_allowed_islands": null
+    }
+  ],
+  "erc_findings": [],
+  "erc_finding_count": 0,
+  "erc_status": "clean",
+  "status": "not_checked",
+  "coverage": {
+    "scope": "antenna",
+    "schema_version": 1,
+    "known": true,
+    "checked": [],
+    "skipped": [],
+    "inapplicable": [
+      {
+        "id": "antenna:[]",
+        "reason": "no_gates"
+      }
+    ],
+    "unknown": [],
+    "nothing_checked": true,
+    "nothing_checked_reasons": [
+      "no_gates"
+    ]
+  },
+  "erc_coverage": {
+    "scope": "connectivity",
+    "schema_version": 1,
+    "known": true,
+    "checked": [
+      "erc.missing_tie:[\"substrate_vss_tie\"]",
+      "erc.net_connectivity:[\"FB\"]",
+      "erc.net_connectivity:[\"VOUT_S\"]",
+      "erc.net_connectivity:[\"VSS\"]",
+      "erc.supply_short",
+      "erc.supply_short.substrate"
+    ],
+    "skipped": [],
+    "inapplicable": [],
+    "unknown": [],
+    "nothing_checked": false,
+    "nothing_checked_reasons": [],
+    "missing_tie_checked": true,
+    "checked_by_assertion": [],
+    "checked_by_well_assertion": [
+      "erc.missing_tie:[\"substrate_vss_tie\"]"
+    ],
+    "layers_in_stream_without_declaration": [],
+    "well_assertion_coverage": [
+      {
+        "id": "erc.missing_tie:[\"substrate_vss_tie\"]",
+        "tap_layer": "22/0",
+        "drawn_tap_area_um2": 74.9448,
+        "uncovered_tap_area_um2": 0.0,
+        "uncovered_tap_fraction": 0.0,
+        "extent_uncovered_fraction": 0.962086
+      }
+    ]
+  },
+  "ties_disclosure": null,
+  "provenance": {
+    "klt_version": "0.9.3.dev3808+g1ad4a837f657",
+    "klt_git_commit": "1ad4a837f6577813bc367c29a0b948c0bff66fda",
+    "klt_reinstall_spec": "klayout-tools @ git+https://github.com/2AMLogic/klayout-tools@1ad4a837f6577813bc367c29a0b948c0bff66fda",
+    "klayout_version": "0.30.12",
+    "pdk": null,
+    "deck": {
+      "name": "gf180mcu",
+      "content_hash": "sha256:778e9a4eba34b67a0427367917b4c9c2602d44ff085d663affd302a8d0f197cd",
+      "released": false
+    },
+    "input": {
+      "content_hash": "sha256:61d22acc539372ff216d04eabf0f1337b259c81f5380d5fe5cdde37e434edaa5",
+      "role": "layout"
+    },
+    "spec": {
+      "content_hash": "sha256:49eca13cacaca6714e29807c53f6d35e679090dbbcf836f21d35940ba454f887"
+    },
+    "devices": [
+      {
+        "name": "ppolyf_u_1k",
+        "body_layer": "30/0",
+        "on": "poly2",
+        "body_area_um2": 1272.0,
+        "source": "deck",
+        "superseded_by": null
+      }
+    ],
+    "net_exclusions": [],
+    "label_layers": [
+      {
+        "name": "metal1",
+        "label_layer": "34/10",
+        "label_text_count": 3
+      }
+    ],
+    "substrate_bodies": [
+      {
+        "kind": "substrate",
+        "id": "vsubs",
+        "ties": [
+          "substrate_vss_tie"
+        ]
+      }
+    ]
+  }
+}
