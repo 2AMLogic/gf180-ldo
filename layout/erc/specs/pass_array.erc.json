@@ -1,0 +1,144 @@
+{
+  "_comment": [
+    "Supply spec for PASS_ARRAY (issue #785), emitted by",
+    "layout/erc/gen_spec.py from layout/pass_array/pass_array.gds.",
+    "VIN is the input supply; VOUT is declared a supply because the",
+    "pin table's 'output' is current direction, not rail-ness -- it",
+    "feeds the specified 0-50 mA load (design/README.md pin table,",
+    "layout/floorplan.md \u00a75). ISNS (the Msense drain) and PASS_GATE",
+    "are signals. metal1..metal5 each carry several nets, so no net",
+    "declares roles on them and their unlabelled remainder is",
+    "unmeasured; PASS_GATE owns every poly2 shape in the cell and",
+    "declares that role (unlabelled_islands == 0 is the severed-rail",
+    "negative for the gate net). The intact cell's one expected",
+    "finding is erc.floating_gate on PASS_GATE: the standalone",
+    "array's gate bus is a label-only port (no gate contact is",
+    "drawn; see the generator's 'What the cell does not contain'),",
+    "disclosed here rather than hidden. The p_substrate class is",
+    "disclosed undeclared: this pfet-only cell draws no substrate",
+    "tap and no pwell at all -- its sole bulk terminal is the n-well",
+    "tied to VIN by the guard ring -- so the substrate tie lands at",
+    "ldo_core assembly (#288)."
+  ],
+  "stackup": [
+    {
+      "name": "poly2",
+      "layer": "30/0",
+      "role": "gate",
+      "active_layer": "22/0",
+      "label_layer": "30/10"
+    },
+    {
+      "name": "metal1",
+      "layer": "34/0"
+    },
+    {
+      "name": "metal2",
+      "layer": "36/0"
+    },
+    {
+      "name": "metal3",
+      "layer": "42/0"
+    },
+    {
+      "name": "metal4",
+      "layer": "46/0"
+    },
+    {
+      "name": "metal5",
+      "layer": "81/0",
+      "label_layer": "81/10"
+    }
+  ],
+  "vias": [
+    {
+      "name": "con",
+      "layer": "33/0",
+      "between": [
+        "poly2",
+        "metal1"
+      ]
+    },
+    {
+      "name": "via1",
+      "layer": "35/0",
+      "between": [
+        "metal1",
+        "metal2"
+      ]
+    },
+    {
+      "name": "via2",
+      "layer": "38/0",
+      "between": [
+        "metal2",
+        "metal3"
+      ]
+    },
+    {
+      "name": "via3",
+      "layer": "40/0",
+      "between": [
+        "metal3",
+        "metal4"
+      ]
+    },
+    {
+      "name": "via4",
+      "layer": "41/0",
+      "between": [
+        "metal4",
+        "metal5"
+      ]
+    }
+  ],
+  "nets": [
+    {
+      "name": "VIN",
+      "kind": "supply"
+    },
+    {
+      "name": "VOUT",
+      "kind": "supply"
+    },
+    {
+      "name": "ISNS",
+      "kind": "signal"
+    },
+    {
+      "name": "PASS_GATE",
+      "kind": "signal",
+      "roles": [
+        "poly2"
+      ]
+    }
+  ],
+  "ties": [
+    {
+      "_comment": [
+        "The array's single n-well, tied to VIN through the n+",
+        "guard ring: tap sites are COMP & NPLUS (the ring, told",
+        "apart from the p+ source/drain diffusion by its",
+        "implant), reaching metal1 only through drawn contact",
+        "cuts (through: con) and the VIN straps only through",
+        "drawn via1 landings on both ring arms."
+      ],
+      "name": "nwell_vin_tie",
+      "well_layer": "21/0",
+      "tap_layer": "22/0",
+      "tap_requires": [
+        "32/0"
+      ],
+      "connect_to": "metal1",
+      "through": "con",
+      "net": "VIN"
+    }
+  ],
+  "ties_disclosure": {
+    "kind": "unexpressible",
+    "reason": "p_substrate: PASS_ARRAY draws no p-substrate tap and no pwell (pfet-only; the generator's docstring says so) -- its only bulk terminal is the n-well tied to VIN by the guard ring, and the substrate tie lands at ldo_core assembly (issue #288). There is no tap geometry to name.",
+    "undeclared_classes": [
+      "p_substrate"
+    ]
+  }
+}
