@@ -1,7 +1,7 @@
 # Work Plan
 
 <!-- guide:plan-body:start -->
-_Generated: 2026-11-22T19:46:13Z (snapshot; compare against live labels)_
+_Generated: 2026-11-23T13:10:11Z (snapshot; compare against live labels)_
 ## Operator Attention: Merge-Risk-Hold Pileup
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
@@ -27,6 +27,7 @@ _None._
 Human-approved issues (`loom:issue`) ready for implementation — excluding held (`loom:blocked`/`loom:operator`/`loom:frozen`), `loom:building`, and issues closed by an open `loom:pr` PR (listed under Approved).
 
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
+- **#787**: Use one description of the soft-start loop-gain variants in generated reports
 
 ## In Progress
 
@@ -34,30 +35,26 @@ Issues currently being built (`loom:building`).
 
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
+- **#607**: Pin DR-0025 per-finger model binning in the four remaining standalone decks
+- **#610**: Delegate fleet-capacity retries to klt with a 600-second request default
 - **#783**: DR-0037 bias servo: reconcile #320's remaining evidence against the records now on main, run only what is missing, and open the ratification PR
 - **#786**: T1 item 7 groundwork: `klt pex` schematic-vs-extracted delta on `pass_array` (dropout and on-resistance), ahead of the full post-layout re-run
-- **#787**: Use one description of the soft-start loop-gain variants in generated reports
 - **#790**: Answer gf180-opamp DR-0007 questions Q1 to Q3 (error-amp offset share, divider ratio and VCM, noise allowance) from this repo's committed sources
-- **#796**: Share the simulation resume check so a changed circuit cannot reuse an old report
 - **#798**: Share the per-corner bounds check so staged simulation summaries reject NaN and infinity
-- **#807**: Share dimension parsing across LVS negative controls so resistor widths double consistently
-- **#809**: Ignore Loom’s generated .loom/account-ranking.codex file
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
 - **#795**: docs: submit the VREF servo evidence for ratification review *(held)*
+- **#815**: sim: pin DR-0025 wnflag in the four remaining standalone decks
+- **#817**: Hand fleet-capacity retries to klt via a 600 s request default
 
 ## Approved (Awaiting Merge)
 
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
 - **#794**: docs(spec): add DR-0045 answering gf180-opamp's amplifier-slot offset, divider and noise questions
-- **#797**: test: compare bench DUT device cards against the design export
-- **#799**: fix(sim): identity-check resumes against the staged circuit, not just the request
-- **#808**: fix(layout): double divider resistor widths with the shared dimension grammar
-- **#810**: chore: ignore the daemon's .loom/account-ranking.codex runtime file
 
 ## Proposed
 
@@ -76,24 +73,21 @@ Issues carrying `loom:curated`.
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin) *(curated)*
 - **#484**: mc-output-accuracy: divider-identity residual is ~2 uV (bound 1 uV) at all 45 points, and ff/sf 125C 3.63V leave the mean and sigma bounds, on the DR-0037 DUT *(curated)* *(held)*
 - **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)* *(held)*
+- **#607**: Pin DR-0025 per-finger model binning in the four remaining standalone decks *(curated)*
+- **#610**: Delegate fleet-capacity retries to klt with a 600-second request default *(curated)*
 - **#743**: Merge queue: add the merge_group trigger and adapt the PR-metadata gates *(curated)* *(held)*
 - **#783**: DR-0037 bias servo: reconcile #320's remaining evidence against the records now on main, run only what is missing, and open the ratification PR *(curated)*
 - **#784**: layout: commit `klt drc` and `klt lvs` reports (and the GDS) for pass_array, divider and passives, and move drclvs.py stages 4-5 onto klt *(curated)* *(held)*
-- **#785**: T1 item 11 groundwork: write the `klt erc` supply spec and run it on `pass_array` and `fb_divider` now, ahead of the ldo_core assembly *(curated)*
 - **#786**: T1 item 7 groundwork: `klt pex` schematic-vs-extracted delta on `pass_array` (dropout and on-resistance), ahead of the full post-layout re-run *(curated)*
 - **#790**: Answer gf180-opamp DR-0007 questions Q1 to Q3 (error-amp offset share, divider ratio and VCM, noise allowance) from this repo's committed sources *(curated)*
-- **#792**: CI has no gate comparing a committed testbench DUT against the pinned-xschem export it claims to come from *(curated)*
 - **#793**: Place the Doctor run for PR #791 on a batch-enabled worker *(curated)* *(held)*
-- **#809**: Ignore Loom’s generated .loom/account-ranking.codex file *(curated)*
 
 ## Proposed (Architect / Hermit)
 
 - **#170**: [Epic #542] 3A — gf180-ldo maturation + Challenge #5 brief *(architect)* *(held)*
 - **#595**: Remove the bash run.sh drivers and .control decks for current-limit and enable-shutdown: superseded by klt_run.py since October *(hermit)* *(held)*
-- **#607**: Define the deck preamble once: 8 byte-identical copies in the .spice.in templates, and DR-0025's wnflag=1 pin reached only 3 of them *(hermit)* *(held)*
-- **#610**: Remove the hand-rolled fleet-capacity retry loop in klt_batch.py: klt sim covers that refusal, and 89 of 98 committed requests set no capacity wait at all *(hermit)* *(held)*
 - **#637**: Define the compliance-limited load sink once: 10 hand copies in 9 decks, and #478's supply gate reached 1 of them *(hermit)* *(held)*
-- **#778**: Use the shared script loader for four sibling loads in simulation drivers *(hermit)* *(held)*
+- **#814**: Share the standalone SPICE deck preamble and regenerate item-9 evidence *(hermit)* *(held)*
 
 ## Epics
 
@@ -106,11 +100,11 @@ _None._
 | Operator merge-risk holds | 0 |
 | Very important | 1 |
 | Important | 3 |
-| Ready (`loom:issue`, net of holds/building/merge-pending) | 1 |
-| In Progress (`loom:building`) | 10 |
-| PRs awaiting review | 1 |
-| Approved PRs awaiting merge | 5 |
-| Curated | 22 |
-| Architect / Hermit proposals | 6 |
+| Ready (`loom:issue`, net of holds/building/merge-pending) | 2 |
+| In Progress (`loom:building`) | 8 |
+| PRs awaiting review | 3 |
+| Approved PRs awaiting merge | 1 |
+| Curated | 21 |
+| Architect / Hermit proposals | 4 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
