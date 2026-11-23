@@ -897,7 +897,7 @@ class TestFreshnessBindsToDesignatedDut(unittest.TestCase):
         )
 
     def test_parser_sees_every_section_of_the_writers_real_output(self):
-        snap = self._write_real_snapshot("zz-real", {"dut_netlist": "../../../design/netlist/ldo_core.spice"})
+        snap = self._write_real_snapshot("zz-real", {"dut_netlist": "design/netlist/ldo_core.spice"})
         kinds = [
             (m.group(1), m.group(2).strip())
             for m in bcr.SECTION_HEADER_RE.finditer(snap.read_bytes())
