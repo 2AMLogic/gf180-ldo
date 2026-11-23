@@ -272,6 +272,39 @@ class CurrentLimitDriver(_DriverCase, unittest.TestCase):
     SLUG = "current-limit"
 
 
+class CurrentLimitGrade(unittest.TestCase):
+    """Issue #823: the ``current-limit`` staged grader's one-sided
+    ``thermal_ok`` bound (``p_short_mw <= PSHORT_MAX_MW``) lets ``-inf`` pass
+    it, so a non-finite short-circuit current must fail closed, the way the
+    two-sided ``in_window`` / ``reg_ok`` already do."""
+
+    BASE = {"ilim_1764_ma": 80.0, "vout_50ma": 1.8}
+
+    def test_non_finite_short_current_fails_thermal_ok_only(self):
+        mod = _driver("current-limit")
+        for bad in (float("-inf"), float("inf"), float("nan")):
+            with self.subTest(ilim_0000_ma=bad):
+                out = mod.grade({**self.BASE, "ilim_0000_ma": bad}, 1.764)
+                self.assertIs(out["thermal_ok"], False)
+                # the two-sided checks keep their behaviour for these inputs
+                self.assertIs(out["in_window"], True)
+                self.assertIs(out["reg_ok"], True)
+
+    def test_finite_short_current_keeps_the_bounded_behaviour(self):
+        mod = _driver("current-limit")
+        cases = {
+            None: False,   # no measurement at all
+            5.0: True,     # 8.82 mW, at or below PSHORT_MAX_MW
+            250.0: False,  # 441.0 mW, above PSHORT_MAX_MW
+            -1.0: True,    # finite negative passes the guard (#823: in scope only
+                           # as "not rejected by this change")
+        }
+        for ilim, expected in cases.items():
+            with self.subTest(ilim_0000_ma=ilim):
+                out = mod.grade({**self.BASE, "ilim_0000_ma": ilim}, 1.764)
+                self.assertIs(out["thermal_ok"], expected)
+
+
 class EnableShutdownDriver(_DriverCase, unittest.TestCase):
     SLUG = "enable-shutdown"
 
