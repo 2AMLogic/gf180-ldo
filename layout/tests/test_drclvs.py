@@ -971,9 +971,6 @@ class GdsEqualModuloTimestampsTests(unittest.TestCase):
                 drclvs.gds_equal_modulo_timestamps(a, b)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 def fake_erc_summary(
     findings=(),
@@ -1227,3 +1224,7 @@ class ErcRecordRenderingTests(unittest.TestCase):
         summary = fake_summary("rid")
         self.assertEqual(drclvs.erc_result_rows(summary), "")
         self.assertEqual(drclvs.erc_section(summary), "")
+
+
+if __name__ == "__main__":
+    unittest.main()
