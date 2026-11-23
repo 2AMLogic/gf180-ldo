@@ -34,7 +34,7 @@ Xdut VIN VOUT VIN 0 LOOP LOOP VREF ldo_core
 * every corner rather than assumed. See sim/harness/README.md,
 * "Compliance-limited load sinks".
 Vilc ILC 0 DC 1m
-Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+@BLOAD@
 Vlmeas NLOAD 0 DC 0
 
 Resr VOUT n_esr 0.1

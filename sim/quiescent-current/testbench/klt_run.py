@@ -22,10 +22,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1]))
 from harness import klt_batch as kb  # noqa: E402
+from harness import load_sink  # noqa: E402
 from harness import tb_adapter  # noqa: E402
 
 # Bench-specific: three separate VREF sources so each state's VREF-port current is metered.
-BODY = "\n".join([kb.DESIGN_PARAMS, kb.WNFLAG, (HERE / "klt_body.spice").read_text()])
+BODY = "\n".join([kb.DESIGN_PARAMS, kb.WNFLAG, load_sink.render((HERE / "klt_body.spice").read_text(), source="klt_body.spice")])
 IREF = [{"name": f"iref_{s}_na", "expr": f"-i(vref_{s})*1e9"} for s in ("en", "dis", "full")]
 
 if __name__ == "__main__":

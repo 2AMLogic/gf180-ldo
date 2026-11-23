@@ -111,7 +111,7 @@ Xdut VIN VOUT VIN 0 LOOP LOOP VREF ldo_core
 * circuit at AC. Nothing is seeded (no .nodeset/.ic, #308/#311); dc_vout_v
 * and dc_iload_ma still read the .op plot at every corner.
 Vilc ILC 0 DC 50m
-Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05)) * 0.5 * (1 + tanh((v(vin) - 2.0) / 0.05))'
+@BLOAD_VIN_GATED@
 Vlmeas NLOAD 0 DC 0
 
 Resr VOUT n_esr 0.1

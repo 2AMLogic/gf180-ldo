@@ -95,7 +95,7 @@ Xdut VIN VOUT VIN 0 LOOP LOOP VREF ldo_core
 * reach", for the evidence and for the reltol-ladder recipe that tells a
 * false convergence from a genuine root.
 Vilc ILC 0 DC 1m
-Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+@BLOAD@
 Vlmeas NLOAD 0 DC 0
 
 Resr VOUT n_esr 0.1

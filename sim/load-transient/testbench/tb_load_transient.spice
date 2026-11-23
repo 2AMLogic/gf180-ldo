@@ -95,7 +95,7 @@ Xdut VIN VOUT VIN 0 LOOP LOOP VREF ldo_core
 * not add a load-side sub-ground clamp -- both were measured and ruled
 * out. See sim/harness/README.md, "What the bound cannot reach".
 Vilc ILC 0 PWL(0 1m 50u 1m 51u 50m 150u 50m 151u 1m 400u 1m)
-Bload VOUT NLOAD I = 'v(ilc) * 0.5 * (1 + tanh((v(vout) - 0.2) / 0.05))'
+@BLOAD@
 Vlmeas NLOAD 0 DC 0
 
 * Output network. esr_val / cout_val default (tb.json "params") to the

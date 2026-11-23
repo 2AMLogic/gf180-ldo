@@ -29,6 +29,7 @@ sys.path.insert(0, str(SIM_DIR))
 from harness import cli, corners, deck, klt_grid, klt_ab, klt_batch, paths, report, runner, testbench  # noqa: E402
 from harness import evidence_store as store_mod  # noqa: E402
 from harness import klt_record as kr  # noqa: E402
+from harness import load_sink  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
 from harness.pdk import Pdk, PdkNotFound  # noqa: E402
 from harness.pvt_log import (  # noqa: E402
@@ -2258,7 +2259,8 @@ class TestComplianceLimitedLoadSinks(unittest.TestCase):
     def _decks_with_compliance_sinks(self):
         for manifest in sorted(self.SIM.glob("*/testbench/tb.json")):
             tb = json.loads(manifest.read_text())
-            text = (manifest.parent / tb["netlist"]).read_text()
+            # The sink card is a rendered hole in the deck (#637), not typed text.
+            text = load_sink.render((manifest.parent / tb["netlist"]).read_text())
             if self.COMPLIANCE_SINK.search(text):
                 yield manifest, tb, text
 

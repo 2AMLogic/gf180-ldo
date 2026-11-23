@@ -928,10 +928,17 @@ def compose_deck(tb: Testbench, pdk: Pdk, point: PvtPoint) -> str:
         ]
         lines += [f'.include "{path}"' for path in tb.design_netlists]
 
+    fragment = tb.fragment_text()
+    # A fragment with sink holes (#637) cannot be `.include`d raw: ngspice would
+    # read the literal ``@BLOAD@``. Paste the rendered text instead.
     lines += [
         "",
         "* ---- testbench ------------------------------------------------------",
-        f'.include "{tb.netlist}"',
+        *(
+            [f"* {tb.netlist}, sink holes filled by harness/load_sink.py", fragment]
+            if fragment != tb.netlist.read_text()
+            else [f'.include "{tb.netlist}"']
+        ),
         "",
         "* ---- measurement ----------------------------------------------------",
         ".control",
