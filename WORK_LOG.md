@@ -6,8 +6,21 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-24
+
+- **PR #836**: fix: guard simulator boundaries against unrendered @TOKEN@ decks
+- **Issue #827** (closed): No final @TOKEN@ guard before a deck body reaches the simulator
+- **PR #833**: fix: accept labelled sha256 lines in the report's snapshot header regex
+- **Issue #832** (closed): Characterization report's snapshot section regex stops matching the testbench-fragment header
+
 ### 2026-11-23
 
+- **PR #835**: fix: validate evidence manifests before installing run records
+- **Issue #834** (closed): Use the CI manifest schema in the evidence writer before installing run records
+- **PR #830**: test: run batch resume and retry tests from the focused test_klt_batch.py
+- **Issue #828** (closed): Group batch resume and retry tests in test_klt_batch.py
+- **PR #829**: fix: label committed and rendered sha256 in netlist snapshot fragment chunk
+- **Issue #826** (closed): Netlist snapshot records the committed fragment sha256 above rendered fragment text
 - **PR #825**: refactor: render the load-sink Bload card from one harness definition
 - **Issue #637** (closed): Define the compliance-limited load sink once: 10 hand copies in 9 decks, and #478's supply gate reached 1 of them
 - **PR #824**: fix: fail current-limit thermal_ok closed on non-finite short-circuit power
@@ -485,15 +498,4 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 - **Issue #335** (closed): floorplan §8.3's 'DR-0030 still quotes 25.0 µA / 5.2×' note goes stale once #332 lands
 - **Issue #333** (closed): Remove duplicate _fail/_rd/_load_pdk_pcells/_label helpers in passives and pass_array gen_gds.py
 - **Issue #332** (closed): DR-0030's contact-layer margin (25.0 µA / 5.2×) is stated at the superseded 2 mm device
-
-### 2026-09-24
-
-- **PR #331**: layout(#330): floorplan §3 re-keyed to the shipped 70 µm unit, and its IR split replaced by the measured one
-- **PR #329**: layout(#285): the pass array and its Msense replica, as one DRC/LVS-clean cell
-- **PR #328**: sim: scope the compliance-sink guarantee in five sibling decks and gate the missing vout half
-- **PR #326**: sim(#304): the compliance sink never had a root to delete at fs_125c_3.63v -- it is a false convergence, and the claims now say so
-- **Issue #330** (closed): floorplan §3 still describes the superseded 50 µm unit cell, and its IR split is 3.3 mΩ optimistic against the as-drawn array
-- **Issue #325** (closed): sim: five sibling decks still assert the unscoped compliance-sink guarantee #304 disproved
-- **Issue #304** (closed): sim/psrr-vs-freq lands on the sub-ground DC root at fs_125c_3.63v -- the compliance-limited sink does not delete it under FB injection
-- **Issue #285** (closed): [Parent #173] Lay out the pass-device array and its Msense replica as one DRC/LVS-clean cell
 
