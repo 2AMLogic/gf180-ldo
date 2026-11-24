@@ -246,7 +246,7 @@ pinned by content hash, `klt drc/lvs --check`-verifiable):
 | --- | --- | --- | --- | --- |
 | `pass_array` | committed | `clean` | `clean`, categories asserted, raw-parity equal | `match` (engine `klayout`) |
 | `divider` | committed | `clean` | `clean`, categories asserted, raw-parity equal | `match` (engine `klayout`) |
-| `passives` | committed | `clean` | `clean`, categories asserted, raw-parity equal | *none* — raw PDK runset route only, see below |
+| `passives` | committed | `clean` | `clean`, categories asserted, raw-parity equal | `match` (engine `klayout`, `layout.join_same_named_nets`) |
 
 These are **sub-cell** results. Items 2-4 grade `ldo_core`, and
 `signoff/block-manifest.json` deliberately cites none of the above for them.
@@ -263,14 +263,18 @@ this same route, nothing bespoke:
   netlist, engine named, `provenance.input.content_hash` pinning the item-2
   GDS — plus the negative controls the flow runs around every compare.
 
-One sub-cell stays off the klt LVS route for now: `passives`, whose reference
-relies on the PDK runset's implicit-connect label join, which `klt lvs` cannot
-express ([klayout-tools#7030](https://github.com/2AMLogic/klayout-tools/issues/7030);
-the MIM class spelling it will also need is
-[#7031](https://github.com/2AMLogic/klayout-tools/issues/7031)). Its LVS
-evidence remains the raw-runset verdict in its run record; the curated route
-has not been chosen around a finding — there is no curated-deck finding to
-avoid, the route simply cannot express the reference yet.
+`passives` joined the klt LVS route once
+[klayout-tools#7030](https://github.com/2AMLogic/klayout-tools/issues/7030)
+(`layout.join_same_named_nets`, the counterpart of the PDK runset's implicit
+label join; the report discloses the join) and
+[#7031](https://github.com/2AMLogic/klayout-tools/issues/7031) (the PDK's
+`cap_mim_2f0fF` spelling) landed. Its pair, record `20261124-033325-a8ddd2f`, passes
+`klt signoff <curated drc> <lvs>`; all four negative controls mismatch through
+the same route. Its reference card carries the capacitor geometry as
+`c_length=`/`c_width=` because the subckt-call conversion derives the MIM
+class's `A`/`P` only from that spelling. The evidence was produced with a klt
+built at klayout-tools `94f6832` (the merge of #7461), ahead of a PyPI
+release carrying it.
 
 Item 11's sub-cell groundwork (#785) rides the same route: `pass_array` and
 `divider` each have a committed `klt erc` supply spec

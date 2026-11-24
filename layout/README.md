@@ -506,13 +506,12 @@ the spec.
   run commits the report (`<record-id>.lvs.json`); its
   `provenance.input.content_hash` pins the committed GDS bytes, and
   `klt lvs --check <report>` re-verifies it.
-- **`pdk-deck` (raw `klayout -b -r`, the pre-#784 path)** — kept only for
-  `passives`, whose reference relies on the runset's implicit-connect label
-  join (`connect_implicit('*')`), which `klt lvs` cannot express
-  ([klayout-tools#7030](https://github.com/2AMLogic/klayout-tools/issues/7030));
-  when that lands, the cell flips to `klt` and additionally needs a
-  `reference.device_map` entry for the MIM cap's PDK-current class spelling
-  ([klayout-tools#7031](https://github.com/2AMLogic/klayout-tools/issues/7031)).
+- **`pdk-deck` (raw `klayout -b -r`, the pre-#784 path)** — no cell uses it
+  now. `passives` moved to `klt` with `layout.join_same_named_nets`
+  ([klayout-tools#7030](https://github.com/2AMLogic/klayout-tools/issues/7030))
+  and the PDK's `cap_mim_2f0fF` spelling
+  ([#7031](https://github.com/2AMLogic/klayout-tools/issues/7031)); the route
+  stays available for a future named klt gap.
   The deck reports its own verdict in its log and exits 0 either way, so the
   log is the contract; `drclvs.py` demands exactly one of the two verdict
   strings, so a deck that fell over before comparing is an error rather than
@@ -665,8 +664,7 @@ GDS they pin:
   accompanies. Append-only like records; `klt drc --check` /
   `klt lvs --check` re-verify a report against the committed inputs, and
   `klt signoff <drc-report> <lvs-report>` aggregates a cell's pair into one
-  verdict. `passives` has no klt LVS report yet (the #7030 route above); its
-  DRC reports are committed all the same.
+  verdict.
 
 ## Friction filed upstream
 
@@ -702,11 +700,9 @@ which is newer than stages 4 and 5 here. **Collapsing those two stages into
 `klt` calls was real, available work, but not a free swap** — and it is done
 (#784): stage 4 drives the PDK deck through `klt drc --engine klayout` with
 the declared rule-category set asserted, stage 5 routes per cell (`klt lvs`
-everywhere except `passives`, below), the negative controls run through the
+for all three cells), the negative controls run through the
 same route as their stage 5, the raw deck invocation survives as
 `--parity-raw-deck` and all three cells' records show both routes agreeing.
-The one cell still on the raw LVS path is `passives`, blocked by
-[#7030](https://github.com/2AMLogic/klayout-tools/issues/7030) (implicit-
-connect label join has no `klt lvs` counterpart; also
-[#7031](https://github.com/2AMLogic/klayout-tools/issues/7031) for the MIM
-class spelling it will need once unblocked).
+`passives` was the last cell on the raw LVS path; it moved once
+[#7030](https://github.com/2AMLogic/klayout-tools/issues/7030) and
+[#7031](https://github.com/2AMLogic/klayout-tools/issues/7031) landed.

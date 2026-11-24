@@ -871,6 +871,13 @@ class KltLvsRequestTests(unittest.TestCase):
         self.assertEqual(options["mim_cap"], "cap_mim_2f0_m4m5_noshield")
         self.assertEqual(options["metal_top"], "11K")
 
+    def test_passives_requests_the_same_name_net_join(self):
+        self.assertTrue(
+            self.request_for("passives")["layout"]["join_same_named_nets"]
+        )
+        for key in ("pass_array", "divider"):
+            self.assertNotIn("join_same_named_nets", self.request_for(key)["layout"])
+
     def test_reference_side_uses_the_subckt_call_conversion(self):
         request = self.request_for("pass_array")
         self.assertEqual(request["reference"]["form"], "subckt-call")
@@ -911,12 +918,8 @@ class LvsRouteRegistryTests(unittest.TestCase):
         self.assertIsNone(drclvs.CELLS["testcell"].gds_path)
 
     def test_the_default_route_is_klt(self):
-        for key in ("testcell", "pass_array", "divider"):
+        for key in ("testcell", "pass_array", "divider", "passives"):
             self.assertEqual(drclvs.CELLS[key].lvs_route, "klt", key)
-
-    def test_passives_stays_raw_for_the_implicit_connect_gap(self):
-        spec = drclvs.CELLS["passives"]
-        self.assertEqual(spec.lvs_route, "pdk-deck")
 
     def test_an_unknown_route_is_refused(self):
         with tempfile.TemporaryDirectory():

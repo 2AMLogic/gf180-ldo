@@ -1,0 +1,476 @@
+{
+  "schema_version": 3,
+  "engine": "klayout",
+  "layout": {
+    "path": "layout/passives/drclvs_passives.gds",
+    "scope": "repo"
+  },
+  "join_same_named_nets": true,
+  "reference": {
+    "path": "layout/passives/netlist/drclvs_passives.spice",
+    "scope": "repo"
+  },
+  "top": "DRCLVS_PASSIVES",
+  "reference_top": "DRCLVS_PASSIVES",
+  "reference_conversion": {
+    "form": "subckt-call",
+    "deck": "gf180mcu",
+    "device_map": null
+  },
+  "parameter_tolerance": null,
+  "options": {
+    "combine_devices": true,
+    "combine_devices_per_circuit": null,
+    "combine_devices_max_attempts": 5,
+    "flatten_layout": false,
+    "flatten_reference": false,
+    "netgen_setup": null,
+    "parameter_tolerance": null,
+    "compare_parameters": {
+      "ppolyf_u_1k": [
+        "L",
+        "W"
+      ],
+      "cap_mim_2f0_m4m5_noshield": [
+        "A",
+        "P"
+      ]
+    },
+    "power_connectivity": null,
+    "anchor_top_level_pins": null,
+    "strict_top_level_pin_count": false,
+    "compare_mos_flavour": false,
+    "ignore_mos_bulk": false,
+    "supply_nets": [
+      "GND",
+      "VCC",
+      "VDD",
+      "VGND",
+      "VPWR",
+      "VSS"
+    ],
+    "finfet_bulk": null
+  },
+  "hints_applied": null,
+  "constant_nets_applied": null,
+  "status": "match",
+  "power_connectivity": {
+    "status": "unchecked",
+    "reason": "reference.form is 'subckt-call', whose reference netlist carries its own power/ground pins and nets -- they take part in the ordinary compare, so this check (which exists to cover the signal-only 'gate-level-verilog' form) does not apply",
+    "power_pins": [],
+    "power_pins_derivation": null,
+    "instance_count": 0,
+    "expected_nets": null,
+    "unchecked_expected_pins": [],
+    "excluded_pins": [],
+    "findings": [],
+    "finding_count": 0
+  },
+  "body_verification": {
+    "status": "verified",
+    "reason": null,
+    "device_classes": [],
+    "device_count": 0,
+    "inspected_count": 1,
+    "findings": [],
+    "finding_count": 0
+  },
+  "device_parameter_coverage": [
+    {
+      "class": "cap_mim_2f0_m4m5_noshield",
+      "device_kind": "capacitor",
+      "layout_devices": 1,
+      "reference_devices": 1,
+      "compared": [
+        "A",
+        "P"
+      ],
+      "not_compared": [
+        {
+          "parameter": "C",
+          "reason": "placeholder_value"
+        }
+      ]
+    },
+    {
+      "class": "nfet",
+      "device_kind": "mos",
+      "layout_devices": 1,
+      "reference_devices": 1,
+      "compared": [
+        "L",
+        "W"
+      ],
+      "not_compared": [
+        {
+          "parameter": "AS",
+          "reason": "secondary"
+        },
+        {
+          "parameter": "AD",
+          "reason": "secondary"
+        },
+        {
+          "parameter": "PS",
+          "reason": "secondary"
+        },
+        {
+          "parameter": "PD",
+          "reason": "secondary"
+        }
+      ]
+    },
+    {
+      "class": "ppolyf_u_1k",
+      "device_kind": "resistor",
+      "layout_devices": 1,
+      "reference_devices": 1,
+      "compared": [
+        "L",
+        "W"
+      ],
+      "not_compared": [
+        {
+          "parameter": "R",
+          "reason": "placeholder_value"
+        },
+        {
+          "parameter": "A",
+          "reason": "secondary"
+        },
+        {
+          "parameter": "P",
+          "reason": "secondary"
+        }
+      ]
+    }
+  ],
+  "mismatches_omitted": false,
+  "mismatch_count": 8,
+  "error_count": 0,
+  "category_counts": {
+    "device.geometry_not_compared": 1,
+    "device.parameter_excluded": 2,
+    "device.placeholder_value": 2,
+    "layout.join_same_named_nets_applied": 1,
+    "topology": 2
+  },
+  "category_error_counts": {},
+  "counts": {
+    "nets": {
+      "layout": 8,
+      "reference": 8,
+      "matched": 8
+    },
+    "devices": {
+      "layout": 3,
+      "reference": 3,
+      "matched": 3
+    },
+    "pins": {
+      "layout": 8,
+      "reference": 8,
+      "matched": 8
+    }
+  },
+  "pin_set_difference": {
+    "deck_synthesized_layout_pins": [],
+    "layout_only_pins": [],
+    "layout_only_pins_count": 0,
+    "layout_only_pins_truncated": false,
+    "reference_only_pins": [],
+    "reference_only_pins_count": 0,
+    "reference_only_pins_truncated": false
+  },
+  "ignored_layers": [],
+  "warnings": [],
+  "device_classes": [
+    "nfet",
+    "pfet",
+    "bjt",
+    "cap_mim_2f0_m4m5_noshield",
+    "cap_nmos_03v3",
+    "cap_nmos_03v3_dn",
+    "cap_pmos_03v3",
+    "cap_pmos_03v3_dn",
+    "cap_nmos_06v0",
+    "cap_nmos_06v0_dn",
+    "cap_pmos_06v0",
+    "cap_pmos_06v0_dn",
+    "cap_nmos_03v3_b",
+    "cap_pmos_03v3_b",
+    "cap_nmos_06v0_b",
+    "cap_pmos_06v0_b",
+    "resistor",
+    "diode_nd2ps_06v0",
+    "diode_pd2nw_06v0"
+  ],
+  "environment": {
+    "engine": "klayout",
+    "engine_version": "0.30.14",
+    "netgen_binary": null,
+    "layout_sha256": "7f6b6d29f3bd6bb06f87bba2ca8c757bc9fa062d44f4ccc678e757f0411136f7",
+    "reference_sha256": "85f703a5f5874ede808dc81f9502c9bb7bfa2e860ac8722be204a1930ad5f022",
+    "extracted_netlist": null
+  },
+  "provenance": {
+    "klt_version": "0.9.3.dev4728+g94f6832fb981",
+    "klt_git_commit": "94f6832fb981a463dd6e2e14817da4af4ae222af",
+    "klt_reinstall_spec": "klayout-tools @ git+https://github.com/2AMLogic/klayout-tools@94f6832fb981a463dd6e2e14817da4af4ae222af",
+    "klayout_version": "0.30.14",
+    "pdk": null,
+    "deck": {
+      "name": "gf180mcu",
+      "content_hash": "sha256:778e9a4eba34b67a0427367917b4c9c2602d44ff085d663affd302a8d0f197cd",
+      "released": false,
+      "options": {
+        "metal_top": "11K",
+        "mim_cap": "cap_mim_2f0_m4m5_noshield",
+        "poly_res": "1k"
+      },
+      "options_explicit": {
+        "metal_top": true,
+        "mim_cap": true,
+        "poly_res": true
+      },
+      "options_hash": "sha256:89cb6001bb2512394da175a3e1f170dfa7b97d8a9470378e9fc2180f6358e7d2"
+    },
+    "input": {
+      "content_hash": "sha256:7f6b6d29f3bd6bb06f87bba2ca8c757bc9fa062d44f4ccc678e757f0411136f7",
+      "role": "layout"
+    },
+    "klayout_version_mismatch": true
+  },
+  "mismatches": [
+    {
+      "category": "device.geometry_not_compared",
+      "severity": "warning",
+      "description": "device class 'ppolyf_u_1k' is a resistor class, whose ['A', 'P'] parameter(s) KLayout declares *secondary*: kdb.NetlistComparer compares primary parameters only, so none of them took part in this compare and each is NOT verified -- this resistor's geometry could differ between the two sides by any amount and this run would still report 'match'. The compared parameter(s) were ['L', 'W']. Name them in options.compare_parameters to compare them (see docs/cli/lvs.md, 'device.geometry_not_compared')",
+      "side": "both",
+      "net": null,
+      "device": {
+        "layout": null,
+        "reference": null,
+        "class": "ppolyf_u_1k"
+      },
+      "property": null,
+      "details": {
+        "device_kind": "resistor",
+        "compared_parameters": [
+          "L",
+          "W"
+        ],
+        "not_compared_parameters": [
+          "A",
+          "P"
+        ],
+        "layout_devices": 1,
+        "reference_devices": 1
+      },
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    },
+    {
+      "category": "device.parameter_excluded",
+      "severity": "warning",
+      "description": "options.compare_parameters scoped device class 'ppolyf_u_1k' to compare only ['L', 'W'] -- 'R' was excluded from this compare and is NOT verified; a 'match' does not confirm the two sides agree on it (see docs/cli/lvs.md, 'device.parameter_excluded')",
+      "side": "both",
+      "net": null,
+      "device": {
+        "layout": null,
+        "reference": null,
+        "class": "ppolyf_u_1k"
+      },
+      "property": null,
+      "details": {
+        "parameter": "R",
+        "compared_parameters": [
+          "L",
+          "W"
+        ]
+      },
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    },
+    {
+      "category": "device.parameter_excluded",
+      "severity": "warning",
+      "description": "options.compare_parameters scoped device class 'cap_mim_2f0_m4m5_noshield' to compare only ['A', 'P'] -- 'C' was excluded from this compare and is NOT verified; a 'match' does not confirm the two sides agree on it (see docs/cli/lvs.md, 'device.parameter_excluded')",
+      "side": "both",
+      "net": null,
+      "device": {
+        "layout": null,
+        "reference": null,
+        "class": "cap_mim_2f0_m4m5_noshield"
+      },
+      "property": null,
+      "details": {
+        "parameter": "C",
+        "compared_parameters": [
+          "A",
+          "P"
+        ]
+      },
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    },
+    {
+      "category": "device.placeholder_value",
+      "severity": "warning",
+      "description": "reference device class 'CAP_MIM_2F0_M4M5_NOSHIELD' was converted from a subcircuit call (request.reference.form: \"subckt-call\"), so its 'C' value is the literal 0 placeholder on all 1 reference instance(s) -- klt lvs has no PDK sheet-resistance/capacitance-per-area data to compute a real one. 'C' was therefore excluded from this compare on both sides (layout: 1 instance(s), C 8.15064e-13) and the two sides were paired on topology alone -- that dimension of the compare is not independently verified. Supply a reference in the plain-element form carrying real 'C' values to compare it (see docs/cli/lvs.md, 'device.placeholder_value')",
+      "side": "reference",
+      "net": null,
+      "device": {
+        "layout": null,
+        "reference": null,
+        "class": "CAP_MIM_2F0_M4M5_NOSHIELD"
+      },
+      "property": null,
+      "details": {
+        "parameter": "C",
+        "device_kind": "capacitor",
+        "reference_devices": 1,
+        "layout_devices": 1,
+        "layout_values": [
+          8.15064e-13
+        ]
+      },
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    },
+    {
+      "category": "device.placeholder_value",
+      "severity": "warning",
+      "description": "reference device class 'PPOLYF_U_1K' was converted from a subcircuit call (request.reference.form: \"subckt-call\"), so its 'R' value is the literal 0 placeholder on all 1 reference instance(s) -- klt lvs has no PDK sheet-resistance/capacitance-per-area data to compute a real one. 'R' was therefore excluded from this compare on both sides (layout: 1 instance(s), R 10000) and the two sides were paired on topology alone -- that dimension of the compare is not independently verified. Supply a reference in the plain-element form carrying real 'R' values to compare it (see docs/cli/lvs.md, 'device.placeholder_value')",
+      "side": "reference",
+      "net": null,
+      "device": {
+        "layout": null,
+        "reference": null,
+        "class": "PPOLYF_U_1K"
+      },
+      "property": null,
+      "details": {
+        "parameter": "R",
+        "device_kind": "resistor",
+        "reference_devices": 1,
+        "layout_devices": 1,
+        "layout_values": [
+          10000.0
+        ]
+      },
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    },
+    {
+      "category": "topology",
+      "severity": "warning",
+      "description": "device class has no counterpart on the other side, but no devices of this class were extracted either -- not a real topology mismatch: 'pfet'",
+      "side": "layout",
+      "net": null,
+      "device": {
+        "layout": null,
+        "reference": null,
+        "class": "pfet"
+      },
+      "property": null,
+      "details": null,
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    },
+    {
+      "category": "topology",
+      "severity": "warning",
+      "description": "device class has no counterpart on the other side, but no devices of this class were extracted either -- not a real topology mismatch: 'bjt'",
+      "side": "layout",
+      "net": null,
+      "device": {
+        "layout": null,
+        "reference": null,
+        "class": "bjt"
+      },
+      "property": null,
+      "details": null,
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    },
+    {
+      "category": "layout.join_same_named_nets_applied",
+      "severity": "warning",
+      "description": "Inline extraction joined same-named top-level nets by their labels. Verify drawn metal continuity between those labels independently.",
+      "side": "layout",
+      "net": null,
+      "device": null,
+      "property": null,
+      "details": null,
+      "circuit": null,
+      "instance": null,
+      "subcircuit": null
+    }
+  ],
+  "net_correspondence": [
+    {
+      "layout": "CB",
+      "layout_id": 0,
+      "reference": "CB",
+      "reference_id": 3,
+      "pin": true
+    },
+    {
+      "layout": "CT",
+      "layout_id": 6,
+      "reference": "CT",
+      "reference_id": 2,
+      "pin": true
+    },
+    {
+      "layout": "D",
+      "layout_id": 5,
+      "reference": "D",
+      "reference_id": 4,
+      "pin": true
+    },
+    {
+      "layout": "G",
+      "layout_id": 4,
+      "reference": "G",
+      "reference_id": 5,
+      "pin": true
+    },
+    {
+      "layout": "RM",
+      "layout_id": 2,
+      "reference": "RM",
+      "reference_id": 1,
+      "pin": true
+    },
+    {
+      "layout": "RP",
+      "layout_id": 1,
+      "reference": "RP",
+      "reference_id": 0,
+      "pin": true
+    },
+    {
+      "layout": "S",
+      "layout_id": 3,
+      "reference": "S",
+      "reference_id": 6,
+      "pin": true
+    },
+    {
+      "layout": "VSS",
+      "layout_id": 7,
+      "reference": "VSS",
+      "reference_id": 7,
+      "pin": true
+    }
+  ]
+}

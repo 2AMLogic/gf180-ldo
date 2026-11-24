@@ -378,6 +378,13 @@ class CellSpec:
     # erase exactly the structure the layout exists to prove (the same
     # reason simplify_extracted is False there).
     lvs_combine_devices: bool = False
+    # Request ``layout.join_same_named_nets``: KLayout's implicit join of
+    # same-named label shapes before extraction -- the `klt lvs` counterpart
+    # of the PDK runset's ``connect_implicit('*')`` (2AMLogic/klayout-tools#7030).
+    # Needed by a cell whose reference expects disconnected same-named shapes
+    # (passives' two S straps / two G labels) to land on one net. The report
+    # discloses the join; it stays False wherever the layout is strapped.
+    lvs_join_same_named_nets: bool = False
     # The `klt erc` supply-spec contract (issue #785), or None for a cell
     # with no committed supply spec (the flow vehicles). Registers the
     # cell's declared ties, its disclosed expected findings, and the ERC
@@ -681,7 +688,9 @@ def export_netlist(pdk: Pdk, spec: CellSpec, outdir: Path) -> str:
     # This runs BEFORE the SIM_FORM_RE guard on purpose: whatever
     # rewrite_passives() declined to touch is still a hard failure below.
     try:
-        text, rewritten = rewrite_passives(text)
+        text, rewritten = rewrite_passives(
+            text, cap_pdk_params=spec.lvs_route == "klt"
+        )
     except LvsFormError as exc:
         raise StageError(f"{exc}\n--- exported ---\n{text}") from exc
 
@@ -822,7 +831,9 @@ def _dimension_token_re(param: str) -> re.Pattern[str]:
 
 
 W_TOKEN_RE = _dimension_token_re("W")
-L_TOKEN_RE = _dimension_token_re("l")
+# `l=` (primitive form) or the PDK capacitor spelling `c_length=` that the
+# klt route's reference carries (layout/lvs_form.py, cap_pdk_params).
+L_TOKEN_RE = _dimension_token_re("(?:c_length|l)")
 
 
 def _double(value: str) -> str:
@@ -972,7 +983,11 @@ def control_passive(letter: str):
         if found is None:
             raise ControlNotApplicable(missing)
         line, tokens = found
-        resized = _double_first_dimension(tokens, L_TOKEN_RE, "l=", missing)
+        # keep the token's own spelling (`l=` or the PDK's `c_length=`)
+        spelled = next(t for t in tokens if L_TOKEN_RE.match(t)).split("=")[0]
+        resized = _double_first_dimension(
+            tokens, L_TOKEN_RE, f"{spelled}=", missing
+        )
         return text.replace(line, " ".join(resized))
 
     return mutate
@@ -1141,22 +1156,22 @@ PASSIVES_SPEC = CellSpec(
         "devices are not all FETs; no block-level layout exists yet."
     ),
     gds_path=PASSIVES_DIR / "drclvs_passives.gds",
-    # The raw PDK-runset LVS route, not `klt lvs`: this cell's reference
-    # relies on the runset's implicit-connect label join
-    # (`connect_implicit('*')`, `$implicit_connect`) to land its two `S`
-    # straps / two `G` labels on one net each, and `klt lvs` has no way to
-    # express that join -- 2AMLogic/klayout-tools#7030. When that lands,
-    # flip this back to "klt" and carry the cell's request knobs: the
-    # deck_options below plus a reference.device_map entry for the MIM
-    # cap's PDK-current class spelling (`cap_mim_2f0fF` vs the curated
-    # deck's `cap_mim_2f0_m4m5_noshield`,
-    # 2AMLogic/klayout-tools#7031).
-    lvs_route="pdk-deck",
+    # The curated `klt lvs` route. The cell's two `S` straps / two `G` labels
+    # rely on the PDK runset's implicit label join, which klt now expresses as
+    # layout.join_same_named_nets (2AMLogic/klayout-tools#7030); the MIM cap's
+    # PDK-current `cap_mim_2f0fF` spelling is accepted by the reference
+    # converter (2AMLogic/klayout-tools#7031).
+    lvs_join_same_named_nets=True,
+    # The 2-finger nfet extracts as two unit devices against one nf=2
+    # reference card; fold them as pass_array does.
+    lvs_combine_devices=True,
     # Geometry compare for the H-poly resistor class (the LVS-deck analogue
-    # of divider's entry; the raw route already compares W/L via the deck's
-    # own BResistor class, so this is only read once the cell flips to the
-    # klt route).
-    lvs_compare_parameters={"ppolyf_u_1k": ("L", "W")},
+    # of divider's entry; the raw route compares W/L via the deck's own
+    # BResistor class).
+    lvs_compare_parameters={
+        "ppolyf_u_1k": ("L", "W"),
+        MIMCAP_CURATED_OPTION: ("A", "P"),
+    },
 )
 
 PASS_ARRAY_SPEC = CellSpec(
@@ -1676,6 +1691,8 @@ def build_klt_lvs_request(
         },
         "options": {"combine_devices": spec.lvs_combine_devices},
     }
+    if spec.lvs_join_same_named_nets:
+        request["layout"]["join_same_named_nets"] = True
     if spec.lvs_compare_parameters:
         request["options"]["compare_parameters"] = {
             device_class: list(params)
@@ -2566,8 +2583,9 @@ def write_record(rid: str, summary: dict, pdk: Pdk, spec: CellSpec) -> Path:
         skipped = coverage.get("rules_skipped") or []
         scope = coverage.get("deck_scope") or []
         if skipped:
-            shown = ", ".join(skipped[:6]) + (", ..." if len(skipped) > 6 else "")
-            skipped_text = f"{shown} ({len(skipped)} rule(s))"
+            # Quote the whole field: a truncated list would let "clean" read
+            # as covering rules the report says were skipped.
+            skipped_text = f"{', '.join(skipped)} ({len(skipped)} rule(s))"
         else:
             skipped_text = "none"
         return (

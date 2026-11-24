@@ -222,8 +222,14 @@ def _split_params(tokens: list[str]) -> tuple[list[str], list[str]]:
     return tokens, []
 
 
-def _rewrite_line(line: str) -> str | None:
-    """Return the LVS-form rendering of ``line``, or None to leave it alone."""
+def _rewrite_line(line: str, cap_pdk_params: bool = False) -> str | None:
+    """Return the LVS-form rendering of ``line``, or None to leave it alone.
+
+    ``cap_pdk_params`` renders a capacitor's geometry as the PDK's own
+    ``c_length=``/``c_width=`` instead of ``l=``/``w=``: klt's subckt-call
+    reference conversion only derives a MIM capacitor's A/P from the former
+    (the latter converts with the geometry dropped).
+    """
     tokens = line.split()
     if not tokens or tokens[0][:1] not in ("X", "x"):
         return None
@@ -278,12 +284,20 @@ def _rewrite_line(line: str) -> str | None:
         for key in order
         if key not in (width_key, length_key)
     ]
+    length_name, width_name = ("l", "w")
+    if cap_pdk_params and letter == "C":
+        length_name, width_name = ("c_length", "c_width")
     return " ".join(
-        [name, *nets, model, f"l={values[length_key]}", f"w={values[width_key]}", *rest]
+        [
+            name, *nets, model,
+            f"{length_name}={values[length_key]}",
+            f"{width_name}={values[width_key]}",
+            *rest,
+        ]
     )
 
 
-def rewrite_passives(text: str) -> tuple[str, int]:
+def rewrite_passives(text: str, cap_pdk_params: bool = False) -> tuple[str, int]:
     """Rewrite every simulation-form passive line in ``text``.
 
     Returns ``(text, count)`` where ``count`` is how many lines were
@@ -293,7 +307,7 @@ def rewrite_passives(text: str) -> tuple[str, int]:
     out: list[str] = []
     count = 0
     for line in text.splitlines():
-        rewritten = _rewrite_line(line)
+        rewritten = _rewrite_line(line, cap_pdk_params)
         if rewritten is None:
             out.append(line)
         else:
