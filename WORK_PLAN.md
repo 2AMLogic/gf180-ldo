@@ -1,7 +1,7 @@
 # Work Plan
 
 <!-- guide:plan-body:start -->
-_Generated: 2026-11-24T03:30:00Z (snapshot; compare against live labels)_
+_Generated: 2026-11-24T11:30:00Z (snapshot; compare against live labels)_
 ## Operator Attention: Merge-Risk-Hold Pileup
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
@@ -20,7 +20,6 @@ _None._
 
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 - **#320**: ldo_ilimit's Fbias / ldo_softstart's Fss_ramp: replace the idealized VREF-derived bias-current mirror with a real device (blocks #290, #291) *(held)*
-- **#784**: layout: commit `klt drc` and `klt lvs` reports (and the GDS) for pass_array, divider and passives, and move drclvs.py stages 4-5 onto klt
 
 ## Ready
 
@@ -28,8 +27,6 @@ Human-approved issues (`loom:issue`) ready for implementation — excluding held
 
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 - **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
-- **#784**: layout: commit `klt drc` and `klt lvs` reports (and the GDS) for pass_array, divider and passives, and move drclvs.py stages 4-5 onto klt
-- **#837**: Split layout/drclvs.py: extract LVS negative controls and ERC stage into sibling modules
 
 ## In Progress
 
@@ -71,7 +68,6 @@ Issues carrying `loom:curated`.
 - **#501**: Recompensate the 50 mA loop for ceramic (low-ESR) output caps so the full Load-transient row can be restored (follow-up to #483) *(curated)* *(held)*
 - **#743**: Merge queue: add the merge_group trigger and adapt the PR-metadata gates *(curated)* *(held)*
 - **#783**: DR-0037 bias servo: reconcile #320's remaining evidence against the records now on main, run only what is missing, and open the ratification PR *(curated)*
-- **#784**: layout: commit `klt drc` and `klt lvs` reports (and the GDS) for pass_array, divider and passives, and move drclvs.py stages 4-5 onto klt *(curated)*
 - **#786**: T1 item 7 groundwork: `klt pex` schematic-vs-extracted delta on `pass_array` (dropout and on-resistance), ahead of the full post-layout re-run *(curated)*
 - **#793**: Place the Doctor run for PR #791 on a batch-enabled worker *(curated)* *(held)*
 
@@ -91,12 +87,12 @@ _None._
 |------|-------|
 | Operator merge-risk holds | 0 |
 | Very important | 1 |
-| Important | 3 |
-| Ready (`loom:issue`, net of holds/building/merge-pending) | 4 |
+| Important | 2 |
+| Ready (`loom:issue`, net of holds/building/merge-pending) | 2 |
 | In Progress (`loom:building`) | 4 |
 | PRs awaiting review | 1 |
 | Approved PRs awaiting merge | 0 |
-| Curated | 18 |
+| Curated | 17 |
 | Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
