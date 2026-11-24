@@ -8,6 +8,10 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-24
 
+- **PR #841**: refactor(layout): split LVS controls and ERC stage out of drclvs.py
+- **Issue #837** (closed): Split layout/drclvs.py: extract LVS negative controls and ERC stage into sibling modules
+- **PR #840**: layout: passives LVS on klt route with same-name net join; commit klt reports
+- **Issue #784** (closed): layout: commit `klt drc` and `klt lvs` reports (and the GDS) for pass_array, divider and passives, and move drclvs.py stages 4-5 onto klt
 - **PR #836**: fix: guard simulator boundaries against unrendered @TOKEN@ decks
 - **Issue #827** (closed): No final @TOKEN@ guard before a deck body reaches the simulator
 - **PR #833**: fix: accept labelled sha256 lines in the report's snapshot header regex
