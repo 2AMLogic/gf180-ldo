@@ -1,7 +1,7 @@
 # Work Plan
 
 <!-- guide:plan-body:start -->
-_Generated: 2026-11-24T11:30:00Z (snapshot; compare against live labels)_
+_Generated: 2026-11-24T12:40:43Z (snapshot; compare against live labels)_
 ## Operator Attention: Merge-Risk-Hold Pileup
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
@@ -26,7 +26,7 @@ _None._
 Human-approved issues (`loom:issue`) ready for implementation — excluding held (`loom:blocked`/`loom:operator`/`loom:frozen`), `loom:building`, and issues closed by an open `loom:pr` PR (listed under Approved).
 
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
-- **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
+- **#595**: Remove the bash run.sh drivers and .control decks for current-limit and enable-shutdown: superseded by klt_run.py since October
 
 ## In Progress
 
@@ -74,7 +74,6 @@ Issues carrying `loom:curated`.
 ## Proposed (Architect / Hermit)
 
 - **#170**: [Epic #542] 3A — gf180-ldo maturation + Challenge #5 brief *(architect)* *(held)*
-- **#595**: Remove the bash run.sh drivers and .control decks for current-limit and enable-shutdown: superseded by klt_run.py since October *(hermit)* *(held)*
 - **#814**: Share the standalone SPICE deck preamble and regenerate item-9 evidence *(hermit)* *(held)*
 
 ## Epics
@@ -93,6 +92,6 @@ _None._
 | PRs awaiting review | 1 |
 | Approved PRs awaiting merge | 0 |
 | Curated | 17 |
-| Architect / Hermit proposals | 3 |
+| Architect / Hermit proposals | 2 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
