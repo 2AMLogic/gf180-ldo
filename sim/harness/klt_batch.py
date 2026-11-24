@@ -49,6 +49,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import deck
 from .corners import CORNERS, format_corner_id
 
 #: The process axis the three standalone PVT benches sweep (bjt_ff/bjt_ss
@@ -194,6 +195,7 @@ class Job:
 
 
 def stage(job: Job, workdir: Path) -> Path:
+    deck.require_substituted(job.body, source=f"klt job {job.name!r}")
     workdir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(job.dut_netlist, workdir / "dut.spice")
     (workdir / "body.spice").write_text(job.body)

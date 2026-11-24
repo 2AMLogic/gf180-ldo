@@ -119,6 +119,30 @@ class RequestOptions(unittest.TestCase):
                          {"capacity_wait_s": kb.DEFAULT_CAPACITY_WAIT_S})
 
 
+class StageTokenGuard(unittest.TestCase):
+    """#827: an unrendered @TOKEN@ never reaches the staged deck."""
+
+    def _job(self, body):
+        return kb.Job(name="t", body=body, dut_netlist=Path(__file__),
+                      analysis={"kind": "op", "args": ""}, measurements=[])
+
+    def test_unfilled_token_raises_and_writes_nothing(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            wd = Path(d) / "w"
+            with self.assertRaises(SystemExit) as cm:
+                kb.stage(self._job("Bload out 0 @BLOAD@\n"), wd)
+            self.assertIn("BLOAD", str(cm.exception))
+            self.assertFalse((wd / "body.spice").exists())
+
+    def test_bare_at_syntax_still_stages(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            wd = Path(d) / "w"
+            kb.stage(self._job("* bench @ tt_27c\nalter @Vinj[acmag] = 1\n"), wd)
+            self.assertTrue((wd / "body.spice").exists())
+
+
 def _report():
     """A fresh one-corner klt report (a new dict per call)."""
     return {"corners": [{
