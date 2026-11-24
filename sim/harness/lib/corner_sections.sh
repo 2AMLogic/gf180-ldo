@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Shared "corner name -> model-section codegen" step for the three
-# PVT-sweep testbenches:
+# Shared "corner name -> model-section codegen" step for the PVT-sweep
+# testbenches:
 #
-#   sim/current-limit/testbench/run.sh
-#   sim/enable-shutdown/testbench/run.sh
 #   sim/soft-start/testbench/run.sh
 #
 # (sim/op-point-sanity/testbench/run.sh doesn't need this -- it hardcodes a
-# single nominal corner.) Each of the three scripts shelled out to python3
+# single nominal corner; current-limit's and enable-shutdown's bash drivers
+# were removed in #595, their benches now run through klt_run.py.) Each of
+# the original caller scripts shelled out to python3
 # to print a `corner_sections() { case "$1" in ... esac }` shell function
 # body from sim/harness/corners.py's CORNERS dict, then `eval`'d it. That
 # block had drifted into three identical copies (issue #207) -- this file

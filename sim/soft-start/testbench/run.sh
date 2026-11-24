@@ -13,8 +13,8 @@
 # see its docstring). Local JOBS defaults to 2.
 #
 # Same structure, and the same standalone-rather-than-sim/harness rationale,
-# as sim/enable-shutdown/testbench/run.sh and sim/current-limit/testbench/run.sh
-# -- see those scripts' headers. Each experiment directory under sim/ is meant
+# as sim/op-point-sanity/testbench/run.sh -- see that script's header. Each
+# experiment directory under sim/ is meant
 # to be self-contained evidence.
 #
 # Axes:

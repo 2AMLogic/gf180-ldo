@@ -51,8 +51,9 @@ fi
 echo
 echo "== 2/4 shell driver gate tests (no PDK required) =="
 # sim/harness/lib/run_point.sh / sim/devchar/lib/devchar.sh drive ngspice
-# directly (deliberately standalone -- see sim/current-limit/testbench/run.sh
-# and sim/devchar/lib/devchar.sh's own headers) rather than through
+# directly (deliberately standalone -- see sim/soft-start/testbench/run.sh,
+# sim/op-point-sanity/testbench/run.sh and sim/devchar/lib/devchar.sh's own
+# headers) rather than through
 # sim/harness/runner.py, so python3 -m unittest above never exercises them.
 # This is their own regression coverage for issue #310's DC-continuation-
 # ladder-exhaustion gate (propagated to these standalone drivers by issue

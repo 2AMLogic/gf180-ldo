@@ -4,10 +4,10 @@
     python3 sim/enable-shutdown/testbench/klt_run.py --record-id <id> \\
         [--dut design/netlist/ldo_core.spice] [--baseline-ref origin/main] [--only tt,27,3.30]
 
-The same 63-point grid run.sh sweeps (7 process x -40/27/125 C x 2.97/3.30/3.63 V).
-tb_enable_shutdown.spice.in chains four analyses in one ``.control`` block;
-``klt sim`` runs one analysis per corner, so each analysis state is its own
-request over the same grid (klt_body.spice.in is the shared circuit):
+The 63-point PVT grid (7 process x -40/27/125 C x 2.97/3.30/3.63 V).
+``klt sim`` runs one analysis per corner and the bench needs four analysis
+states of one circuit, so each analysis state is its own request over the
+same grid (klt_body.spice.in is the shared circuit):
 
 * ``enabled``  -- op, full rated load;
 * ``disabled`` -- op, output free;
@@ -15,13 +15,15 @@ request over the same grid (klt_body.spice.in is the shared circuit):
 * ``tran``     -- 1 us .. 9 ms enable/disable transitions at the rated load.
 
 The returned values are merged per corner into ``<corner-id>.log`` files of
-``m_<name> = <value>`` lines -- the names run.sh's ngspice logs carry -- so
-summarize.py rolls them up unchanged into ``summary.csv`` and its report.
-The deck's ``let`` / ``meas`` lines are expressed as ``klt`` ``expr`` /
-top-level ``.meas`` measurements of the same definitions. Nothing is dropped
-or approximated; the one structural difference is that EN is a behavioural
-source (``v(vin) * v(enctl)``) instead of a source set to the supply value,
-which is the same voltage. With ``--baseline-ref`` both DUTs run on the same
+``m_<name> = <value>`` lines -- the log-name convention summarize.py's
+rollup (and the committed bash-era logs it still re-rolls) is built on --
+so summarize.py rolls them up unchanged into ``summary.csv`` and its report.
+Each measurement is expressed as a ``klt`` ``expr`` or a top-level
+``.meas`` of the same definition the bench has always taken; nothing is
+dropped or approximated. The one structural difference from the retired
+bash deck is that EN is a behavioural source (``v(vin) * v(enctl)``)
+instead of a source set to the supply value, which is the same voltage.
+With ``--baseline-ref`` both DUTs run on the same
 backend (baseline logs go to ``baseline/``). Raw per-state reports and logs:
 ``klt-<state>/<new|baseline>/``. Those bytes land in the git-ignored staging
 tree ``sim/.work/.stage/enable-shutdown/`` (DR-0044, issue #646), never under
@@ -118,7 +120,7 @@ def job(state: str, tag: str, dut: Path, axes: dict) -> kb.Job:
 
 
 def write_logs(per_state: dict, dest: Path) -> list[str]:
-    """Merge the states' values per corner into run.sh-style ``m_<name> = <value>`` logs.
+    """Merge the states' values per corner into ``m_<name> = <value>`` logs.
 
     Returns problems (non-ok corner, missing measurement) for the caller to print;
     a measurement with no value is omitted so summarize.py fails loud on it.

@@ -2,11 +2,11 @@
 # Shared "substitute deck template, run ngspice, check the log for fatal
 # lines" driver for the per-PVT-point sweep testbenches:
 #
-#   sim/current-limit/testbench/run.sh
-#   sim/enable-shutdown/testbench/run.sh
 #   sim/soft-start/testbench/run.sh
 #
-# These three testbenches (deliberately standalone rather than
+# (current-limit's and enable-shutdown's bash drivers were removed in #595;
+# those benches run through their klt_run.py.) The standalone testbenches
+# (deliberately standalone rather than
 # sim/harness/ fragments -- see their own headers) each drove an
 # independent copy of the same substitute/run/fatal-check body. This file
 # is the single implementation, following the same shape as
