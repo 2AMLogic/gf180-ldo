@@ -1,0 +1,32 @@
+{
+  "layout": {
+    "file": "../../../passives/drclvs_passives.gds",
+    "deck": "gf180mcu",
+    "top": "DRCLVS_PASSIVES",
+    "deck_options": {
+      "poly_res": "1k",
+      "mim_cap": "cap_mim_2f0_m4m5_noshield",
+      "metal_top": "11K"
+    },
+    "join_same_named_nets": true
+  },
+  "reference": {
+    "netlist": "../../../passives/netlist/drclvs_passives.spice",
+    "top": "drclvs_passives",
+    "form": "subckt-call",
+    "deck": "gf180mcu"
+  },
+  "options": {
+    "combine_devices": true,
+    "compare_parameters": {
+      "ppolyf_u_1k": [
+        "L",
+        "W"
+      ],
+      "cap_mim_2f0_m4m5_noshield": [
+        "A",
+        "P"
+      ]
+    }
+  }
+}

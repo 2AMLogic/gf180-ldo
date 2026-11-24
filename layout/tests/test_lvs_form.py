@@ -54,6 +54,21 @@ class RewritePassivesTests(unittest.TestCase):
             out, "Cc NZ OUT cap_mim_2f0fF l=48u w=48u m=1\n"
         )
 
+    def test_cap_pdk_params_keeps_the_pdk_capacitor_spelling(self):
+        """klt's subckt-call conversion derives A/P only from c_length/c_width;
+        resistors keep l=/w= either way."""
+        out, count = lvs_form.rewrite_passives(
+            "XCc NZ OUT cap_mim_2f0_m2m3_noshield c_width=48u c_length=40u m=1\n"
+            "XRb A B VSS ppolyf_u_1k r_width=1u r_length=10u m=1\n",
+            cap_pdk_params=True,
+        )
+        self.assertEqual(count, 2)
+        self.assertEqual(
+            out,
+            "Cc NZ OUT cap_mim_2f0fF c_length=40u c_width=48u m=1\n"
+            "Rb A B VSS ppolyf_u_1k l=10u w=1u m=1\n",
+        )
+
     def test_length_and_width_are_not_transposed(self):
         """r_length -> l and r_width -> w, which is the whole point.
 
