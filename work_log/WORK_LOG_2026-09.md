@@ -2,6 +2,17 @@
 
 Sections moved byte-for-byte from [WORK_LOG.md](../WORK_LOG.md) by `loom-daemon work-docs archive`.
 
+### 2026-09-24
+
+- **PR #331**: layout(#330): floorplan §3 re-keyed to the shipped 70 µm unit, and its IR split replaced by the measured one
+- **PR #329**: layout(#285): the pass array and its Msense replica, as one DRC/LVS-clean cell
+- **PR #328**: sim: scope the compliance-sink guarantee in five sibling decks and gate the missing vout half
+- **PR #326**: sim(#304): the compliance sink never had a root to delete at fs_125c_3.63v -- it is a false convergence, and the claims now say so
+- **Issue #330** (closed): floorplan §3 still describes the superseded 50 µm unit cell, and its IR split is 3.3 mΩ optimistic against the as-drawn array
+- **Issue #325** (closed): sim: five sibling decks still assert the unscoped compliance-sink guarantee #304 disproved
+- **Issue #304** (closed): sim/psrr-vs-freq lands on the sub-ground DC root at fs_125c_3.63v -- the compliance-limited sink does not delete it under FB injection
+- **Issue #285** (closed): [Parent #173] Lay out the pass-device array and its Msense replica as one DRC/LVS-clean cell
+
 ### 2026-09-23
 
 - **PR #323**: spec: propose a VIN-referenced soft-start ramp ceiling (DR-0035)
