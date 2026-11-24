@@ -14,6 +14,22 @@
 Exit status is 0 only if **every** stage passed. See layout/README.md for what
 each stage means and what it does and does not prove.
 
+Where the code lives
+-------------------
+This file is the driver: the stage sequence in ``run()``, the ``CELLS``
+registry, the DRC and LVS stage invocations and ``write_record``. Two
+self-contained subsystems live in sibling modules beside it and are
+re-exported here under their original names, so ``drclvs.<name>`` still
+reaches every one of them (issue #837):
+
+- ``layout/lvs_controls.py`` -- the LVS negative controls (stages 6..N):
+  pure mutations of the exported netlist text.
+- ``layout/erc_stage.py`` -- the ``klt erc`` supply stage (5b and the ERC
+  negative control) and the run record's ERC rows and section.
+- ``layout/drclvs_common.py`` -- what the three share: ``StageError``,
+  ``repo_arg`` and the repo/layout root paths.
+
+
 Driving a real block through this flow
 ---------------------------------------
 This file used to be hardcoded to the one-transistor bring-up test cell
@@ -148,8 +164,55 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-LAYOUT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = LAYOUT_DIR.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from drclvs_common import (  # noqa: E402
+    LAYOUT_DIR as LAYOUT_DIR,
+    REPO_ROOT as REPO_ROOT,
+    StageError as StageError,
+    repo_arg as repo_arg,
+)
+from erc_stage import (  # noqa: E402
+    ERC_REPORTS_DIR as ERC_REPORTS_DIR,
+    ERC_SPECS_DIR as ERC_SPECS_DIR,
+    GEN_ERC_SPEC_SCRIPT as GEN_ERC_SPEC_SCRIPT,
+    MUTATE_ERC_SCRIPT as MUTATE_ERC_SCRIPT,
+    ErcSpec as ErcSpec,
+    check_erc_control_findings as check_erc_control_findings,
+    erc_finding_keys as erc_finding_keys,
+    erc_result_rows as erc_result_rows,
+    erc_section as erc_section,
+    run_erc_control as run_erc_control,
+    run_erc_spec_gen as run_erc_spec_gen,
+    run_klt_erc as run_klt_erc,
+    validate_erc_report as validate_erc_report,
+)
+from lvs_controls import (  # noqa: E402
+    L_TOKEN_RE as L_TOKEN_RE,
+    MOS_CONTROLS as MOS_CONTROLS,
+    PASSIVE_CONTROLS as PASSIVE_CONTROLS,
+    PASSIVE_ELEMENTS as PASSIVE_ELEMENTS,
+    REQUIRED_CONTROL_TAGS as REQUIRED_CONTROL_TAGS,
+    W_TOKEN_RE as W_TOKEN_RE,
+    Control as Control,
+    ControlNotApplicable as ControlNotApplicable,
+    apply_control as apply_control,
+    build_controls as build_controls,
+    check_controls_apply as check_controls_apply,
+    control_parameter as control_parameter,
+    control_passive as control_passive,
+    control_short_adjacent_taps as control_short_adjacent_taps,
+    control_topology as control_topology,
+    control_unit_width as control_unit_width,
+    require_control_pair as require_control_pair,
+)
+from lvs_form import (  # noqa: E402
+    LvsFormError,
+    MIMCAP_CURATED_OPTION,
+    MIMCAP_SWITCH,
+    rewrite_passives,
+    unrendered_device_lines,
+)
+
 TESTCELL_DIR = LAYOUT_DIR / "testcell"
 PASSIVES_DIR = LAYOUT_DIR / "passives"
 PASS_ARRAY_DIR = LAYOUT_DIR / "pass_array"
@@ -172,14 +235,6 @@ XSCHEMRC = LAYOUT_DIR / "xschemrc"
 SIM_NETLIST_DIR = REPO_ROOT / "design" / "netlist"
 
 
-# A registered cell must carry one negative control of each kind: one that
-# corrupts the connection graph and one that corrupts a device parameter
-# while leaving the graph alone. Those are two independent ways for an LVS
-# invocation to be comparing less than it appears to, and a cell with only
-# one of them has only half an evidence chain (layout/README.md, "6 onwards.
-# Negative controls").
-REQUIRED_CONTROL_TAGS = ("topology", "parameter")
-
 #: The two routes stage 5 (and the negative controls) can take (issue #784):
 #: "klt" drives the curated gf180mcu deck through `klt lvs` (engine
 #: "klayout", JSON report, committed under layout/lvs/reports/); "pdk-deck"
@@ -187,69 +242,6 @@ REQUIRED_CONTROL_TAGS = ("topology", "parameter")
 #: runset. A cell stays on the raw route only for a named klt gap (see
 #: CellSpec.lvs_route).
 LVS_ROUTES = ("klt", "pdk-deck")
-
-
-class StageError(RuntimeError):
-    """A stage could not run at all (missing tool, bad invocation)."""
-
-
-@dataclasses.dataclass(frozen=True)
-class Control:
-    """One LVS negative control: a deliberate corruption that MUST mismatch.
-
-    ``mutate`` takes the exported netlist text and returns a corrupted copy.
-    It is a per-:class:`CellSpec` field rather than a module-global, because
-    what counts as a corruption is a property of the cell's *devices*: the
-    MOS pair below keys off an ``M*`` element line and does not exist in an
-    all-passive cell, while the resistor pair keys off an ``R*`` line and
-    does not exist in a cell with no resistors.
-    """
-
-    tag: str
-    # Raises StageError when it cannot be applied to this netlist at all.
-    mutate: Callable[[str], str]
-    # One line, quoted in the stage output and in the --record run record.
-    what: str
-    # What a MATCH from this control would prove about the LVS invocation.
-    implication: str
-
-
-class ControlNotApplicable(StageError):
-    """A registered negative control cannot corrupt this cell's netlist.
-
-    Deliberately NOT a silent skip. A control that does not fire leaves the
-    stage it belongs to reporting nothing, and an LVS ``MATCH`` with no
-    working control behind it is not evidence at all -- so this is raised
-    (and, via ``StageError`` handling in ``main()``, exits nonzero) rather
-    than letting the run report a pass.
-    """
-
-
-@dataclasses.dataclass(frozen=True)
-class ErcSpec:
-    """The ``klt erc`` supply stage's per-cell contract (issue #785).
-
-    A cell registers one of these (``CellSpec.erc``) when it has a committed
-    supply spec; the stages themselves are generic, exactly like the LVS
-    controls. T1 item 11 stays ``unmet`` on these sub-cell runs -- they are
-    the groundwork #524's top-level run reuses, not the item's evidence.
-    """
-
-    # The spec's declared ties, by name. Each must land in the intact run's
-    # ``erc_coverage.checked`` (and NOT in ``skipped`` -- a skipped tie is a
-    # degenerate declaration the docs refuse to read as a pass).
-    ties: tuple[str, ...]
-    # ``(rule, net)`` findings the INTACT cell legitimately reports, so the
-    # stage can tell a disclosed finding from a new defect: pass_array's
-    # standalone gate bus is a label-only port, which is one real
-    # erc.floating_gate by design (gate routing lands at ldo_core assembly).
-    expected_findings: tuple[tuple[str, str], ...] = ()
-    # One line naming the ERC negative control's mutation, quoted in the
-    # record beside the LVS controls' own descriptions.
-    control_mutation: str = ""
-
-    def tie_id(self, name: str) -> str:
-        return f'erc.missing_tie:["{name}"]'
 
 
 @dataclasses.dataclass(frozen=True)
@@ -422,15 +414,6 @@ class CellSpec:
                 f"{LAYOUT_DIR / self.key / 'netlist'}."
             )
 
-
-sys.path.insert(0, str(LAYOUT_DIR))
-from lvs_form import (  # noqa: E402
-    LvsFormError,
-    MIMCAP_CURATED_OPTION,
-    MIMCAP_SWITCH,
-    rewrite_passives,
-    unrendered_device_lines,
-)
 
 sys.path.insert(0, str(REPO_ROOT / "sim"))
 from harness.loader import load_script  # noqa: E402
@@ -754,367 +737,6 @@ def export_netlist(pdk: Pdk, spec: CellSpec, outdir: Path) -> str:
 
 
 # --------------------------------------------------------------------------
-# the LVS negative controls (stages 6..N)
-#
-# Each registered cell carries its own topology/parameter pair, because a
-# mutation is only a control if it can actually be applied to that cell's
-# devices: the MOS pair below cannot corrupt a resistor-only cell, and the
-# passive pair cannot corrupt a cell with no resistors. build_controls() then
-# adds one passive-geometry control per R/C element class the netlist
-# contains. `check_controls_apply()` makes "this control does not apply" a
-# hard error up front rather than a stage that quietly reports nothing.
-# --------------------------------------------------------------------------
-
-def _element_line(text: str, letter: str, what: str) -> tuple[str, list[str]]:
-    """The first SPICE element line of class ``letter`` (`M`, `R`, ...)."""
-    for line in text.splitlines():
-        tokens = line.split()
-        if len(tokens) >= 6 and tokens[0].upper().startswith(letter.upper()):
-            return line, tokens
-    raise ControlNotApplicable(
-        f"no {what} element line (`{letter.upper()}*`) in the exported netlist"
-    )
-
-
-def _mos_line(text: str) -> tuple[str, list[str]]:
-    return _element_line(text, "M", "MOS")
-
-
-def _resistor_line(text: str) -> tuple[str, list[str]]:
-    return _element_line(text, "R", "resistor")
-
-
-def _subckt_ports(text: str) -> set[str]:
-    """The cell's own port names -- nets a control must not rename away."""
-    for line in text.splitlines():
-        tokens = line.split()
-        if tokens and tokens[0].lower() == ".subckt":
-            return set(tokens[2:])
-    return set()
-
-
-def _rename_net(text: str, victim: str, survivor: str) -> str:
-    return re.sub(rf"(?<![\w.]){re.escape(victim)}(?![\w.])", survivor, text)
-
-
-def control_topology(text: str) -> str:
-    """Tie the device's gate to its drain -- a topology corruption.
-
-    NOT a gate/drain *swap*: this deck's compare is purely structural, so a
-    swap is a valid graph isomorphism (relabel the two nets) and legitimately
-    still matches -- verified, see layout/README.md, "What LVS here does not
-    check". Shorting the two nets changes the graph itself (4 nets become 3),
-    which no relabelling can undo.
-    """
-    line, tokens = _mos_line(text)
-    shorted = list(tokens)
-    shorted[2] = shorted[1]
-    return text.replace(line, " ".join(shorted))
-
-
-def _dimension_token_re(param: str) -> re.Pattern[str]:
-    """Compile the shared ``<param>=<number>[unit]`` dimension-token grammar.
-
-    One grammar for every dimension control -- MOS ``W=``, divider-resistor
-    ``W=``, passive ``l=`` (the spelling layout/lvs_form.py renders): 2u,
-    0.22u, 2.u, 6u, 2e-6, 360U. The unit suffix is its own group so a
-    doubled value stays in the original units. Case-insensitive because this
-    repo's netlists spell the MOS convention uppercase (`L=`/`W=`) while the
-    passive convention the LVS deck's SPICE reader delegate reads is
-    lowercase (`l=`/`w=`); the split between the two constants below is about
-    which parameter each control corrupts, not about case.
-    """
-    return re.compile(
-        rf"^{param}=([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([a-zA-Z]*)$",
-        re.IGNORECASE,
-    )
-
-
-W_TOKEN_RE = _dimension_token_re("W")
-# `l=` (primitive form) or the PDK capacitor spelling `c_length=` that the
-# klt route's reference carries (layout/lvs_form.py, cap_pdk_params).
-L_TOKEN_RE = _dimension_token_re("(?:c_length|l)")
-
-
-def _double(value: str) -> str:
-    """Render ``value`` doubled, without gaining a spurious `.0`."""
-    doubled = float(value) * 2
-    if doubled.is_integer():
-        return str(int(doubled))
-    # repr() keeps the shortest round-tripping decimal (0.22 -> 0.44, not
-    # 0.44000000000000006), which matters because this text goes into a
-    # netlist a human may read in a failure report.
-    return repr(doubled)
-
-
-def _double_first_dimension(
-    tokens: list[str], param_re: re.Pattern[str], prefix: str, missing: str
-) -> list[str]:
-    """Replace the first token matching ``param_re`` with its doubled value.
-
-    The shared body of every parameter-doubling control: find the first
-    dimension token on the element line, scale its number with ``_double``
-    and carry the unit suffix through unchanged. ``prefix`` re-spells the
-    parameter name in the control's output spelling (`W=`, `l=`); ``missing``
-    is that control's own no-parameter diagnostic, raised verbatim.
-    """
-    for index, token in enumerate(tokens):
-        match = param_re.match(token)
-        if match is None:
-            continue
-        resized = list(tokens)
-        resized[index] = f"{prefix}{_double(match.group(1))}{match.group(2)}"
-        return resized
-    raise ControlNotApplicable(missing)
-
-
-def control_parameter(text: str) -> str:
-    """Double the device width -- a device-parameter corruption.
-
-    Topologically identical to the real netlist, so this control fails only if
-    the compare is actually checking device parameters and not just the
-    connection graph.
-
-    The width is *parsed and scaled*, not matched against a literal: the
-    first registered cell was one W=2u transistor, and a hardcoded `W=2u` ->
-    `W=4u` substitution made this stage die on every other cell (issue #313).
-    """
-    line, tokens = _mos_line(text)
-    resized = _double_first_dimension(
-        tokens,
-        W_TOKEN_RE,
-        "W=",
-        "expected a `W=<number>[unit]` parameter on the first MOS element "
-        f"line, got: {line}",
-    )
-    return text.replace(line, " ".join(resized))
-
-
-def control_short_adjacent_taps(text: str) -> str:
-    """Short the first resistor's two taps together -- a topology corruption.
-
-    The all-passive counterpart of ``control_topology``. Renaming one of the
-    first unit's terminals to the other collapses two adjacent taps of the
-    string into one node: the unit is shorted out and the graph loses a net,
-    which no relabelling can undo -- the same reason ``control_topology``
-    shorts rather than swaps (layout/README.md, "What LVS here does not
-    check").
-
-    The renamed net must not be one of the cell's own ports: renaming a port
-    would change the *pin list* rather than the internal topology, which is a
-    different (and weaker) corruption.
-    """
-    _line, tokens = _resistor_line(text)
-    ports = _subckt_ports(text)
-    a, b = tokens[1], tokens[2]
-    if b not in ports:
-        victim, survivor = b, a
-    elif a not in ports:
-        victim, survivor = a, b
-    else:
-        raise ControlNotApplicable(
-            f"both taps of the first resistor ({a}, {b}) are cell ports, so "
-            "shorting them would change the pin list rather than the internal "
-            "topology"
-        )
-    return _rename_net(text, victim, survivor)
-
-
-def control_unit_width(text: str) -> str:
-    """Double the first resistor's drawn width -- a parameter corruption.
-
-    The all-passive counterpart of ``control_parameter``, and deliberately
-    **not** a change to the resistance value: the gf180mcu LVS deck's own
-    ``BResistor`` class (rule_decks/custom_classes.lvs) does
-    ``enable_parameter('R', false)`` and compares only ``W`` and ``L``, so a
-    scaled ``R=`` would be a control that never fires. Doubling ``W`` leaves
-    the connection graph untouched, so this control isolates the parameter
-    compare exactly as stage 7's MOS version does.
-    """
-    line, tokens = _resistor_line(text)
-    resized = _double_first_dimension(
-        tokens,
-        W_TOKEN_RE,
-        "W=",
-        "expected a `W=` parameter on the first resistor element line, "
-        f"got: {line}",
-    )
-    return text.replace(line, " ".join(resized))
-
-
-PASSIVE_ELEMENTS = {"R": "resistor", "C": "capacitor"}
-
-
-def _passive_line(text: str, letter: str) -> tuple[str, list[str]] | None:
-    """First primitive ``letter`` element line carrying an ``l=`` parameter."""
-    for line in text.splitlines():
-        tokens = line.split()
-        if len(tokens) < 4 or tokens[0][:1].upper() != letter:
-            continue
-        if any(L_TOKEN_RE.match(token) for token in tokens):
-            return line, tokens
-    return None
-
-
-def control_passive(letter: str):
-    """Build a control that doubles the first ``letter`` device's length.
-
-    The MOS controls above say nothing about whether the compare looks at a
-    *passive*'s geometry, and a compare that silently ignored it would wave
-    through a mis-sized resistor or MIM cap -- exactly the devices
-    layout/lvs_form.py exists to get into the netlist at all (issue #313). One
-    of these is registered per passive element class present in the netlist, so
-    a FET-only cell (layout/testcell) is unaffected.
-
-    Length rather than width because the LVS deck's SPICE reader delegate
-    derives the capacitor's compared parameters from *both* (``A = W*L*M``,
-    ``P = 2*(W+L)*M``) and the resistor's ``L`` directly -- so doubling ``l``
-    moves a compared parameter for either class. It does NOT touch ``r=``/``c=``:
-    the delegate registers both with that parameter disabled, so a wrong
-    resistance or capacitance legitimately still matches.
-    """
-
-    def mutate(text: str) -> str:
-        missing = (
-            f"no primitive {letter} element line with an `l=` parameter "
-            "in the exported netlist"
-        )
-        found = _passive_line(text, letter)
-        if found is None:
-            raise ControlNotApplicable(missing)
-        line, tokens = found
-        # keep the token's own spelling (`l=` or the PDK's `c_length=`)
-        spelled = next(t for t in tokens if L_TOKEN_RE.match(t)).split("=")[0]
-        resized = _double_first_dimension(
-            tokens, L_TOKEN_RE, f"{spelled}=", missing
-        )
-        return text.replace(line, " ".join(resized))
-
-    return mutate
-
-
-MOS_CONTROLS = (
-    Control(
-        tag="topology",
-        mutate=control_topology,
-        what="gate shorted to drain",
-        implication="a 4-net circuit compared equal to a 3-net one",
-    ),
-    Control(
-        tag="parameter",
-        mutate=control_parameter,
-        what="device width doubled",
-        implication="device parameters are not being compared at all",
-    ),
-)
-
-PASSIVE_CONTROLS = (
-    Control(
-        tag="topology",
-        mutate=control_short_adjacent_taps,
-        what="two adjacent taps shorted",
-        implication="a string with one unit shorted out compared equal to the "
-        "intact one",
-    ),
-    Control(
-        tag="parameter",
-        mutate=control_unit_width,
-        what="unit resistor width doubled",
-        implication="device parameters are not being compared at all",
-    ),
-)
-
-
-def build_controls(
-    text: str, base: tuple[Control, ...] = MOS_CONTROLS
-) -> dict[str, Control]:
-    """The LVS negative controls this netlist can support, keyed by tag.
-
-    ``base`` is the cell's own topology/parameter pair (``CellSpec.controls``:
-    ``MOS_CONTROLS`` for a cell with FETs, ``PASSIVE_CONTROLS`` for an
-    all-resistor one). On top of it, one passive-geometry control is
-    registered per element class the netlist actually contains, so the
-    control set is a property of the cell rather than a fixed list.
-    """
-    controls = {control.tag: control for control in base}
-    for letter, noun in PASSIVE_ELEMENTS.items():
-        if _passive_line(text, letter) is not None:
-            tag = f"passive-{letter.lower()}"
-            controls[tag] = Control(
-                tag=tag,
-                mutate=control_passive(letter),
-                what=f"{noun} length doubled",
-                implication=f"{noun} geometry is not being compared at all",
-            )
-    return controls
-
-
-def require_control_pair(spec: CellSpec) -> None:
-    """Every registered cell must carry one control of each required kind."""
-    tags = [control.tag for control in spec.controls]
-    missing = [tag for tag in REQUIRED_CONTROL_TAGS if tag not in tags]
-    duplicated = sorted({tag for tag in tags if tags.count(tag) > 1})
-    if missing or duplicated:
-        raise StageError(
-            f"cell {spec.key!r} registers controls {tags} -- it must register "
-            f"exactly one of each of {list(REQUIRED_CONTROL_TAGS)}"
-            + (f"; missing {missing}" if missing else "")
-            + (f"; duplicated {duplicated}" if duplicated else "")
-        )
-
-
-def apply_control(spec: CellSpec, control: Control, text: str) -> str:
-    """Corrupt ``text`` with ``control``, or fail loudly.
-
-    Two ways to fail, both hard errors rather than skips:
-
-    * the mutation cannot be applied at all (no element of the right class,
-      no parameter of the right name) -- ``ControlNotApplicable``;
-    * the mutation *runs* but returns the netlist unchanged. That is the
-      dangerous one: an unchanged "corrupted" netlist compares MATCH, and a
-      loop that treated MATCH-on-a-no-op as a pass would report a stage that
-      proved nothing. There is no netlist for which a no-op mutation is
-      correct, so this is always a bug in the registered control.
-    """
-    try:
-        mutated = control.mutate(text)
-    except ControlNotApplicable as exc:
-        raise ControlNotApplicable(
-            f"cell {spec.key!r} registers the {control.tag} control "
-            f"({control.what}), but it does not apply to this cell's netlist: "
-            f"{exc}.\n"
-            "  An LVS MATCH is not evidence unless a known-wrong netlist "
-            "demonstrably fails, so a control that cannot corrupt this cell is "
-            "a hard error, not a skipped stage. Register a control pair that "
-            "matches the cell's devices (see MOS_CONTROLS / PASSIVE_CONTROLS)."
-        ) from exc
-    if mutated == text:
-        raise ControlNotApplicable(
-            f"cell {spec.key!r}'s {control.tag} control ({control.what}) ran "
-            "but produced a netlist identical to the original -- it would "
-            "'mismatch' nothing and the stage would prove nothing."
-        )
-    return mutated
-
-
-def check_controls_apply(spec: CellSpec, text: str) -> dict[str, Control]:
-    """Prove every control this run will use corrupts this netlist, before any LVS.
-
-    Run up front, so a cell whose controls do not apply fails *before* stage
-    5 prints ``lvs: MATCH`` -- the failure mode this guards against is a run
-    that reports a match and only afterwards discovers its controls were
-    inert. Covers both the cell's registered pair and the passive-geometry
-    controls build_controls() adds, and returns that full set so the stages
-    run exactly what was checked.
-    """
-    require_control_pair(spec)
-    controls = build_controls(text, spec.controls)
-    for control in controls.values():
-        apply_control(spec, control, text)
-    return controls
-
-
-# --------------------------------------------------------------------------
 # the cell registry
 # --------------------------------------------------------------------------
 
@@ -1269,16 +891,6 @@ CELLS: dict[str, CellSpec] = {
     PASS_ARRAY_SPEC.key: PASS_ARRAY_SPEC,
     DIVIDER_SPEC.key: DIVIDER_SPEC,
 }
-
-
-def repo_arg(path: Path) -> Path:
-    """A path argument for a repo-root-cwd subprocess: repo-relative when
-    the path lives in this repo (so reports record machine-independent,
-    repo-scoped paths), absolute when it does not (scratch dirs elsewhere)."""
-    try:
-        return Path(os.path.relpath(path, REPO_ROOT))
-    except ValueError:
-        return path
 
 
 # --------------------------------------------------------------------------
@@ -1757,296 +1369,6 @@ def run_klt_lvs(
 
 
 # --------------------------------------------------------------------------
-# stage 5 -- klt erc supply spec (issue #785)
-# --------------------------------------------------------------------------
-
-#: Committed ERC spec tree (``layout/erc/specs/<key>.erc.json``), emitted by
-#: ``layout/erc/gen_spec.py`` from the committed GDS -- a source artifact the
-#: eventual ``ldo_core`` supply run extends, not per-run evidence (the reports
-#: under ``layout/erc/reports/`` are the append-only evidence, named by record
-#: id exactly like the DRC/LVS report trees).
-ERC_SPECS_DIR = LAYOUT_DIR / "erc" / "specs"
-ERC_REPORTS_DIR = LAYOUT_DIR / "erc" / "reports"
-GEN_ERC_SPEC_SCRIPT = LAYOUT_DIR / "erc" / "gen_spec.py"
-MUTATE_ERC_SCRIPT = LAYOUT_DIR / "erc" / "mutate_gds.py"
-
-
-def erc_finding_keys(report: dict) -> set[tuple[str, str]]:
-    """The ``(rule, net)`` identity set of a report's ``erc_findings``."""
-    return {(f["rule"], f["net"]) for f in report.get("erc_findings", [])}
-
-
-def validate_erc_report(report: dict, spec: CellSpec) -> tuple[list[str], dict]:
-    """Check an intact-run ERC envelope against this cell's contract.
-
-    Returns ``(failures, summary)``; ``failures`` is empty when every claim
-    below held. The checks are the issue #785 acceptance criteria made
-    mechanical, so a green ``--record`` run cannot quietly mean less than
-    the record says:
-
-    - the finding set is exactly the cell's disclosed ``expected_findings``
-      -- in particular no ``erc.unconnected_net``, ``erc.supply_short`` or
-      ``erc.missing_tie`` anywhere, and a disclosed finding that vanished
-      is a failure too (the disclosure would have rotted);
-    - every declared net resolved ``matched_islands == expected_islands``
-      (both are labelled-island counts by the ERC contract; the report
-      carries them whether or not a finding fired);
-    - every declared tie is in ``erc_coverage.checked`` and none is in
-      ``skipped`` (a degenerate/skipped tie "does not count as checked");
-    - ``layers_in_stream_without_declaration`` is empty: the spec generator
-      declares every routing layer the stream draws, so a non-empty list
-      means the spec has rotted behind the layout.
-    """
-    erc = spec.erc
-    assert erc is not None  # the stage only runs for cells that registered one
-    failures: list[str] = []
-    findings = erc_finding_keys(report)
-    expected = set(erc.expected_findings)
-    unexpected = findings - expected
-    missing = expected - findings
-    if unexpected:
-        failures.append(
-            "the ERC run reported findings the cell does not disclose: "
-            + ", ".join(f"{rule} on {net}" for rule, net in sorted(unexpected))
-        )
-    if missing:
-        failures.append(
-            "the cell's disclosed ERC findings are no longer reported (the "
-            "disclosure has rotted): "
-            + ", ".join(f"{rule} on {net}" for rule, net in sorted(missing))
-        )
-    nets_summary = []
-    for net in report.get("nets", []):
-        nets_summary.append(
-            {
-                "name": net["name"],
-                "matched_islands": net["matched_islands"],
-                "expected_islands": net["expected_islands"],
-            }
-        )
-        if net["matched_islands"] != net["expected_islands"]:
-            failures.append(
-                f"net {net['name']} resolved {net['matched_islands']} "
-                f"island(s) carrying its label, expected "
-                f"{net['expected_islands']}"
-            )
-    coverage = report.get("erc_coverage") or {}
-    checked = coverage.get("checked") or []
-    skipped = coverage.get("skipped") or []
-    skipped_ids = [entry["id"] if isinstance(entry, dict) else entry
-                   for entry in skipped]
-    for tie in erc.ties:
-        if erc.tie_id(tie) not in checked:
-            failures.append(
-                f"tie {tie!r} is not in erc_coverage.checked -- its "
-                "erc.missing_tie work was not graded as checked"
-            )
-        if erc.tie_id(tie) in skipped_ids:
-            failures.append(
-                f"tie {tie!r} is listed in erc_coverage.skipped -- a skipped "
-                "tie does not count as checked (degenerate declaration)"
-            )
-    undeclared = coverage.get("layers_in_stream_without_declaration") or []
-    if undeclared:
-        failures.append(
-            "the stream draws layers the spec declares nowhere: "
-            f"{undeclared}"
-        )
-    summary = {
-        "erc_status": report.get("erc_status"),
-        "findings": [
-            {"rule": rule, "net": net} for rule, net in sorted(findings)
-        ],
-        "nets": nets_summary,
-        "ties_checked": [
-            name for name in erc.ties if spec.erc.tie_id(name) in checked
-        ],
-        "ties_by_well_assertion": coverage.get("checked_by_well_assertion") or [],
-        "ties_skipped": skipped_ids,
-        "inapplicable": coverage.get("inapplicable") or [],
-        "layers_in_stream_without_declaration": undeclared,
-        "deck": (report.get("provenance") or {}).get("deck"),
-        "klt_version": (report.get("provenance") or {}).get("klt_version"),
-    }
-    return failures, summary
-
-
-def run_erc_spec_gen(spec: CellSpec, gds: Path, out_json: Path) -> str:
-    """Emit the cell's supply spec from the committed GDS (issue #785).
-
-    ``layout/erc/gen_spec.py`` under ``klayout -b -r``: one parameterized
-    source per cell, measuring the GDS (the divider's asserted substrate
-    region) and asserting every spec claim the tool cannot check (COMP
-    draws only the divider's tap ring, the array's well/tap/via landings
-    exist, the supply labels are where the spec says). A nonzero exit is a
-    StageError carrying the generator's message.
-    """
-    ERC_SPECS_DIR.mkdir(parents=True, exist_ok=True)
-    rel_script = repo_arg(GEN_ERC_SPEC_SCRIPT)
-    proc = subprocess.run(
-        [
-            "klayout", "-b", "-r", str(rel_script),
-            "-rd", f"cell={spec.key}",
-            "-rd", f"gds={repo_arg(gds)}",
-            "-rd", f"out={repo_arg(out_json)}",
-        ],
-        capture_output=True, text=True, cwd=REPO_ROOT,
-    )
-    if proc.returncode != 0:
-        raise StageError(
-            f"the ERC spec generator failed for {spec.key} "
-            f"(exit {proc.returncode})\n{proc.stdout}\n{proc.stderr}"
-        )
-    if not out_json.is_file():
-        raise StageError(f"the ERC spec generator wrote no spec at {out_json}")
-    return proc.stdout.strip()
-
-
-def run_klt_erc(
-    spec: CellSpec, gds: Path, spec_json: Path, out_json: Path
-) -> dict:
-    """One ``klt erc`` findings-only run, report captured to ``out_json``.
-
-    Same invocation shape the test plan fixes: ``--deck gf180mcu`` (whose
-    resistor recognition carves the divider's ppolyf_u bodies out of poly2)
-    plus ``--findings-only``. ``klt erc`` writes its JSON to stdout (no
-    ``-o``), so the report is captured here and written to ``out_json`` --
-    the committed-report artifact for a ``--record`` run. Exit 3 (findings)
-    and 4 (antenna not checked, every findings-only run) are both
-    successful runs; the verdict read is ``erc_status`` in the payload.
-    """
-    proc = subprocess.run(
-        [
-            "klt", "erc", str(repo_arg(gds)), str(repo_arg(spec_json)),
-            "--top", spec.top_cell,
-            "--deck", "gf180mcu",
-            "--findings-only", "--format", "json",
-        ],
-        capture_output=True, text=True, cwd=REPO_ROOT,
-    )
-    if proc.returncode not in (0, 3, 4):
-        raise StageError(
-            f"klt erc failed for {spec.key} (exit {proc.returncode})\n"
-            f"{proc.stdout}\n{proc.stderr}"
-        )
-    try:
-        report = json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
-        raise StageError(
-            f"klt erc wrote no readable JSON report for {spec.key}: {exc}"
-        )
-    out_json.parent.mkdir(parents=True, exist_ok=True)
-    out_json.write_text(proc.stdout.rstrip("\n") + "\n")
-    return report
-
-
-def run_erc_control(
-    spec: CellSpec,
-    stage_gds: Path,
-    spec_json: Path,
-    intact: dict,
-    run_dir: Path,
-) -> dict:
-    """The ERC negative control: sever the declared tie, expect the finding.
-
-    Mirrors the LVS controls' contract ("a run that cannot fail is not
-    evidence") on the layout side: ``layout/erc/mutate_gds.py`` writes a
-    disposable copy with every cut landing on the FIRST declared tie's tap
-    region deleted (the tie's path to its net, not its labelled metal and
-    not the tap itself), the copy is run with the **intact** spec, and the
-    run passes only when the finding set grew by exactly one new
-    ``erc.missing_tie`` on that tie -- a skipped check, a malformed report
-    or any unrelated new finding fails the control.
-    """
-    erc = spec.erc
-    assert erc is not None
-    tie = erc.ties[0]
-    mutated = run_dir / f"{spec.cell}.erc-control.gds"
-    proc = subprocess.run(
-        [
-            "klayout", "-b", "-r", str(repo_arg(MUTATE_ERC_SCRIPT)),
-            "-rd", f"cell={spec.key}",
-            "-rd", f"src={repo_arg(stage_gds)}",
-            "-rd", f"dst={repo_arg(mutated)}",
-        ],
-        capture_output=True, text=True, cwd=REPO_ROOT,
-    )
-    if proc.returncode != 0:
-        raise StageError(
-            f"the ERC control mutation failed for {spec.key} "
-            f"(exit {proc.returncode})\n{proc.stdout}\n{proc.stderr}"
-        )
-    report = run_klt_erc(
-        spec, mutated, spec_json,
-        run_dir / f"{spec.cell}.erc-control.erc.json",
-    )
-    failures, tie_nets = check_erc_control_findings(report, intact, erc)
-    return {
-        "mutation": erc.control_mutation,
-        "finding": f"erc.missing_tie on {tie}" if tie_nets else None,
-        "net": sorted(tie_nets),
-        "removed": proc.stdout.strip().splitlines()[-1]
-        if proc.stdout.strip() else "",
-        "failures": failures,
-        "report_path": run_dir / f"{spec.cell}.erc-control.erc.json",
-    }
-
-
-def check_erc_control_findings(
-    mutant: dict, intact: dict, erc: ErcSpec
-) -> tuple[list[str], set[str]]:
-    """Grade the ERC negative control's report against the intact one.
-
-    Returns ``(failures, nets)`` where ``nets`` are the declared nets the
-    intended ``erc.missing_tie`` finding named. The control passes only
-    when the finding set grew by exactly one new ``erc.missing_tie`` **on
-    the declared tie** (the finding's ``layer`` names the tie): a skipped
-    check, an absent finding, or any unrelated new finding fails it -- the
-    ERC counterpart of the LVS controls' "a control that matches is a
-    failed run".
-    """
-    tie = erc.ties[0]
-    findings = erc_finding_keys(mutant)
-    # Anything the intact run already reported (disclosed or not -- an
-    # undisclosed intact finding already failed the intact stage) is
-    # baseline; the control must add exactly one new erc.missing_tie.
-    new = findings - erc_finding_keys(intact)
-    failures: list[str] = []
-    tie_nets = {
-        f["net"]
-        for f in mutant.get("erc_findings", [])
-        if f["rule"] == "erc.missing_tie" and f.get("layer") == tie
-    }
-    if not tie_nets:
-        failures.append(
-            f"severing the tie ({erc.control_mutation}) produced no "
-            f"erc.missing_tie on {tie!r} -- the ERC run cannot fail on this "
-            "defect, so its clean verdict on the intact layout is not "
-            "evidence"
-        )
-    unrelated = {
-        (rule, net)
-        for rule, net in new
-        if not (rule == "erc.missing_tie" and net in tie_nets)
-    }
-    if unrelated:
-        failures.append(
-            "the ERC control run reported unrelated new findings: "
-            + ", ".join(f"{rule} on {net}" for rule, net in sorted(unrelated))
-        )
-    skipped_ids = [
-        entry["id"] if isinstance(entry, dict) else entry
-        for entry in (mutant.get("erc_coverage") or {}).get("skipped") or []
-    ]
-    if erc.tie_id(tie) in skipped_ids:
-        failures.append(
-            f"the control run's tie {tie!r} landed in erc_coverage.skipped -- "
-            "the control did not actually grade the severed tie"
-        )
-    return failures, tie_nets
-
-
-# --------------------------------------------------------------------------
 # plumbing
 # --------------------------------------------------------------------------
 
@@ -2461,90 +1783,6 @@ def control_rows(summary: dict) -> str:
             f"| LVS negative control, {tag} ({result['mutation']}) | **{verdict}** |"
         )
     return "\n".join(rows)
-
-
-def erc_result_rows(summary: dict) -> str:
-    """The Results-table rows for a cell with an ERC run (issue #785)."""
-    if "erc" not in summary:
-        return ""
-    erc = summary["erc"]
-    findings = ", ".join(f"`{f['rule']}` on `{f['net']}`" for f in erc["findings"])
-    if not findings:
-        findings = "none"
-    rows = [
-        f"| ERC -- `klt erc --deck gf180mcu --findings-only` vs. `{erc['spec']}`"
-        f" | **`{erc['erc_status']}`**; finding(s): {findings} |"
-    ]
-    control = summary.get("erc_control")
-    if control:
-        verdict = (
-            "**erc.missing_tie on the intended tie, as required**"
-            if control["finding"] and not control["failures"]
-            else "**NO EXPECTED FINDING -- INVALID RUN**"
-        )
-        rows.append(
-            f"| ERC negative control ({control['mutation']}) | {verdict} |"
-        )
-    return "\n".join(rows)
-
-
-def erc_section(summary: dict) -> str:
-    """The record's ERC section, quoting the envelope's own coverage block.
-
-    Quotes ``erc_coverage`` and ``provenance.deck`` verbatim (issue #785's
-    record contract), so a "clean" claim can never silently mean "clean
-    under a tie that was skipped" or "run without the deck's device
-    carve-outs".
-    """
-    if "erc" not in summary:
-        return ""
-    erc = summary["erc"]
-    by_assertion = ", ".join(erc["ties_by_well_assertion"]) or "none"
-    inapplicable = "; ".join(
-        f"{entry['id']} ({entry['reason']})"
-        if isinstance(entry, dict) else str(entry)
-        for entry in erc["inapplicable"]
-    ) or "none"
-    deck = erc.get("deck") or {}
-    deck_text = (
-        f"`{deck.get('name')}` (content hash `{deck.get('content_hash')}`)"
-        if deck.get("name") else "none"
-    )
-    control = summary.get("erc_control")
-    control_par = ""
-    if control:
-        control_par = (
-            "\nThe ERC negative control severed the declared tie's connection "
-            f"({control['mutation']}) in a disposable copy of the committed "
-            "GDS, ran it against the intact spec, and required exactly one "
-            f"new `erc.missing_tie` on the declared tie (net "
-            f"{', '.join(control['net']) or 'n/a'}). The intact layout's "
-            "clean tie verdict is therefore falsifiable, not vacuous.\n"
-        )
-    nets_rows = "\n".join(
-        f"| `{n['name']}` | {n['matched_islands']} | {n['expected_islands']} |"
-        for n in erc["nets"]
-    )
-    return f"""
-## The ERC supply run
-
-Committed spec `{erc['spec']}` (emitted from the committed GDS by
-`layout/erc/gen_spec.py`), report `{erc['report']}`. The verdict field read
-is `erc_status`; the antenna half is `not_checked` by design on a
-`--findings-only` run.
-
-| Net | `matched_islands` | `expected_islands` |
-| --- | --- | --- |
-{nets_rows}
-
-`erc_coverage`: `checked` includes `{', '.join(erc['ties_checked']) or 'none'}`;
-`checked_by_well_assertion`: {by_assertion};
-`skipped`: {erc['ties_skipped'] or 'none'};
-`inapplicable`: {inapplicable};
-`layers_in_stream_without_declaration`: {erc['layers_in_stream_without_declaration'] or 'none'}.
-`provenance.deck`: {deck_text}; `provenance.klt_version`: `{erc.get('klt_version')}`.
-{control_par}
-"""
 
 
 def write_record(rid: str, summary: dict, pdk: Pdk, spec: CellSpec) -> Path:

@@ -70,6 +70,12 @@ it.
 ```
 layout/
   drclvs.py                          the one command (see "The stages")
+  lvs_controls.py                    its LVS negative controls (stages 6..N): netlist
+                                     mutations that MUST mismatch
+  erc_stage.py                       its klt erc supply stage (issue #785) and the
+                                     run record's ERC rows/section
+  drclvs_common.py                   StageError, repo_arg and the repo/layout roots
+                                     shared by the three files above
   lvs_form.py                        renders passives as primitive R/C elements
   floorplan.md                       the floorplan and matching plan (issue #15)
   area_estimate.py                   core-area estimate from design/netlist/
