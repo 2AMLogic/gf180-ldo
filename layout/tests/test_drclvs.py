@@ -13,6 +13,7 @@ cell's netlist must be a hard error, never a silently skipped stage), and
 from __future__ import annotations
 
 import dataclasses
+import io
 import json
 import os
 import re
@@ -20,7 +21,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 LAYOUT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(LAYOUT_DIR))
@@ -110,6 +113,45 @@ class WriteRecordTests(unittest.TestCase):
                 self.assertEqual(path.read_text(), first_text)
             finally:
                 drclvs.RECORDS_DIR = original_records_dir
+
+
+class CheckEnvTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.pdk = fake_pdk(Path(tmp.name))
+        tech = self.pdk.klayout_dir
+        (tech / "drc" / "rule_decks").mkdir(parents=True)
+        (tech / "pymacros").mkdir()
+        (tech / "lvs").mkdir()
+        self.drc = tech / "drc" / "gf180mcu.drc"
+        self.lvs = tech / "lvs" / "gf180mcu.lvs"
+        self.drc.touch()
+        self.lvs.touch()
+
+    def check_cell(self, cell, expected_status):
+        raw = dataclasses.replace(drclvs.TESTCELL_SPEC, key="raw", lvs_route="pdk-deck")
+        with (
+            patch.dict(drclvs.CELLS, {raw.key: raw}),
+            patch.object(drclvs, "find_pdk", return_value=self.pdk),
+            patch.object(drclvs, "tool_path", side_effect=lambda name: f"/bin/{name}"),
+            redirect_stdout(io.StringIO()) as output,
+        ):
+            status = drclvs.main(["--cell", cell, "--check-env"])
+        self.assertEqual(status, expected_status, output.getvalue())
+        return output.getvalue()
+
+    def test_only_raw_lvs_requires_the_runset(self):
+        self.check_cell("raw", 0)
+        self.lvs.unlink()
+        self.check_cell("testcell", 0)
+        self.assertIn(f"MISSING LVS deck: {self.lvs}", self.check_cell("raw", 2))
+
+    def test_both_routes_require_the_drc_driver(self):
+        self.drc.unlink()
+        for cell in ("testcell", "raw"):
+            with self.subTest(cell=cell):
+                self.assertIn(f"MISSING DRC deck driver: {self.drc}", self.check_cell(cell, 2))
 
 
 class DeckEnvTests(unittest.TestCase):

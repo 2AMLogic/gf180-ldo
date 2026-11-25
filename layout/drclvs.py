@@ -450,8 +450,8 @@ def tool_path(name: str) -> str | None:
     return shutil.which(name)
 
 
-def check_env(verbose: bool = True) -> tuple[bool, Pdk | None]:
-    """Report tool + PDK availability. Returns (ok, pdk)."""
+def check_env(lvs_route: str, verbose: bool = True) -> tuple[bool, Pdk | None]:
+    """Check the tools and PDK files required for the selected LVS route."""
     ok = True
     rows = []
     for tool, why in (
@@ -472,12 +472,14 @@ def check_env(verbose: bool = True) -> tuple[bool, Pdk | None]:
         pdk_line = f"NOT FOUND -- {exc}"
     else:
         pdk_line = f"{pdk.path} (variant {pdk.variant})"
-        for sub, label in (
+        required_paths = [
             (pdk.klayout_dir / "drc" / "gf180mcu.drc", "DRC deck driver"),
             (pdk.klayout_dir / "drc" / "rule_decks", "DRC rule decks"),
-            (pdk.klayout_dir / "lvs" / "gf180mcu.lvs", "LVS deck"),
             (pdk.klayout_dir / "pymacros", "PCell library"),
-        ):
+        ]
+        if lvs_route == "pdk-deck":
+            required_paths.append((pdk.klayout_dir / "lvs" / "gf180mcu.lvs", "LVS deck"))
+        for sub, label in required_paths:
             if not sub.exists():
                 ok = False
                 pdk_line += f"\n    MISSING {label}: {sub}"
@@ -1393,13 +1395,13 @@ def run_logged(
 
 def run(args: argparse.Namespace) -> int:
     spec = CELLS[args.cell]
-    ok, pdk = check_env(verbose=args.check_env)
+    ok, pdk = check_env(spec.lvs_route, verbose=args.check_env)
     if args.check_env:
         return 0 if ok else 2
     if not ok or pdk is None:
         print(
             "layout/drclvs.py: environment is incomplete. Run "
-            "`python3 layout/drclvs.py --check-env` for details.",
+            f"`python3 layout/drclvs.py --cell {spec.key} --check-env` for details.",
             file=sys.stderr,
         )
         return 2
