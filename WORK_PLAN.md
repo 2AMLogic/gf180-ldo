@@ -1,7 +1,7 @@
 # Work Plan
 
 <!-- guide:plan-body:start -->
-_Generated: 2026-11-24T21:00:51Z (snapshot; compare against live labels)_
+_Generated: 2026-11-25T19:05:00Z (snapshot; compare against live labels)_
 ## Operator Attention: Merge-Risk-Hold Pileup
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
@@ -25,6 +25,7 @@ _None._
 
 Human-approved issues (`loom:issue`) ready for implementation — excluding held (`loom:blocked`/`loom:operator`/`loom:frozen`), `loom:building`, and issues closed by an open `loom:pr` PR (listed under Approved).
 
+- **#79**: Track the gap to T1 sim-validated / bronze (klayout-tools design-evidence tiers)
 - **#312**: error_amp mixes ppolyf_u_1k and ppolyf_u_3k, which gf180mcu cannot build on one die — DR-0033 needs amending (blocks #284)
 - **#786**: T1 item 7 groundwork: `klt pex` schematic-vs-extracted delta on `pass_array` (dropout and on-resistance), ahead of the full post-layout re-run
 
@@ -34,7 +35,6 @@ Issues currently being built (`loom:building`).
 
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
-- **#595**: Remove the bash run.sh drivers and .control decks for current-limit and enable-shutdown: superseded by klt_run.py since October
 - **#783**: DR-0037 bias servo: reconcile #320's remaining evidence against the records now on main, run only what is missing, and open the ratification PR
 
 ## PRs Awaiting Review
@@ -74,7 +74,7 @@ Issues carrying `loom:curated`.
 ## Proposed (Architect / Hermit)
 
 - **#170**: [Epic #542] 3A — gf180-ldo maturation + Challenge #5 brief *(architect)* *(held)*
-- **#814**: Share the standalone SPICE deck preamble and regenerate item-9 evidence *(hermit)* *(held)*
+- **#814**: Share the standalone SPICE deck preamble and regenerate item-9 evidence *(hermit)*
 
 ## Epics
 
@@ -87,8 +87,8 @@ _None._
 | Operator merge-risk holds | 0 |
 | Very important | 1 |
 | Important | 2 |
-| Ready (`loom:issue`, net of holds/building/merge-pending) | 2 |
-| In Progress (`loom:building`) | 4 |
+| Ready (`loom:issue`, net of holds/building/merge-pending) | 3 |
+| In Progress (`loom:building`) | 3 |
 | PRs awaiting review | 1 |
 | Approved PRs awaiting merge | 0 |
 | Curated | 17 |
