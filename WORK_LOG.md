@@ -6,6 +6,11 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-25
+
+- **PR #845**: sim: remove the current-limit and enable-shutdown bash drivers and .control decks
+- **Issue #595** (closed): Remove the bash run.sh drivers and .control decks for current-limit and enable-shutdown: superseded by klt_run.py since October
+
 ### 2026-11-24
 
 - **PR #841**: refactor(layout): split LVS controls and ERC stage out of drclvs.py
