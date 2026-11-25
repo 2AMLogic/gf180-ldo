@@ -58,11 +58,16 @@
 * Retired 0 mA / 25 mA points (#595): this bench's bash-driven predecessor
 * (removed by the same issue) also took four ungraded diagnostic values --
 * Vout and I(Vin) at 0 mA external load, Vout and Iload at 25 mA. They were
-* retired, not ported: none is a graded spec row, no-load supply current is
-* the quiescent-current bench's graded iq_en_ua claim, and the output-
-* inside-the-window claim across the rated 0-50 mA load range is the
-* load-regulation bench's ratified row. No klt-path record under
-* sim/current-limit/corners/ ever carried them.
+* retired, not ported: none is a graded spec row, and no klt-path record
+* under sim/current-limit/corners/ ever carried them. The surviving
+* benches do NOT re-cover these two load points; their actual coverage is
+* narrower. The quiescent-current bench grades the enabled no-load supply
+* current (its iq_en_ua claim). The load-regulation bench sweeps
+* `dc Vilc 1m 50m 7m` (neither 0 mA nor 25 mA is a sweep point) and grades
+* only the 1 mA-to-50 mA endpoint drift against 18 mV, plus 1.7-1.9 V
+* harness-integrity bounds on the two endpoint voltages -- not absolute
+* output accuracy across the 0-50 mA range. What is dropped is therefore
+* the ungraded 0 mA and 25 mA diagnostic values themselves.
 
 .include "dut.spice"
 
