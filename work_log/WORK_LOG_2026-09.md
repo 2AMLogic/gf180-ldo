@@ -2,6 +2,15 @@
 
 Sections moved byte-for-byte from [WORK_LOG.md](../WORK_LOG.md) by `loom-daemon work-docs archive`.
 
+### 2026-09-25
+
+- **PR #337**: layout(#335): align floorplan §8.3 to DR-0030's updated margin
+- **PR #336**: layout(#333): dedupe _fail/_rd/_load_pdk_pcells/_label into gen_gds_common.py
+- **PR #334**: docs: restate DR-0030's contact EM margin at the shipped 2.8 mm device
+- **Issue #335** (closed): floorplan §8.3's 'DR-0030 still quotes 25.0 µA / 5.2×' note goes stale once #332 lands
+- **Issue #333** (closed): Remove duplicate _fail/_rd/_load_pdk_pcells/_label helpers in passives and pass_array gen_gds.py
+- **Issue #332** (closed): DR-0030's contact-layer margin (25.0 µA / 5.2×) is stated at the superseded 2 mm device
+
 ### 2026-09-24
 
 - **PR #331**: layout(#330): floorplan §3 re-keyed to the shipped 70 µm unit, and its IR split replaced by the measured one
