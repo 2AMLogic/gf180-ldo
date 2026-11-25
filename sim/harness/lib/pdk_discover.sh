@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Shared "discover the gf180mcu PDK and ngspice, and pull out this run's
-# fatal-log-line pattern" step for the four sim testbenches:
+# fatal-log-line pattern" step for the standalone sim testbenches:
 #
-#   sim/current-limit/testbench/run.sh
-#   sim/enable-shutdown/testbench/run.sh
 #   sim/soft-start/testbench/run.sh
 #   sim/op-point-sanity/testbench/run.sh
 #
+# (current-limit's and enable-shutdown's bash drivers were removed in #595;
+# those benches now run through their klt_run.py.)
 # Each of these scripts shelled out to python3 to resolve the PDK
 # (sim/harness/pdk.py's find_pdk()) and pull FATAL_LOG_PATTERN /
 # ngspice_version() out of sim/harness/runner.py, then parsed the six-line

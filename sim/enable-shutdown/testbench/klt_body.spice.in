@@ -1,10 +1,17 @@
 * enable-shutdown -- klt sim circuit body template (issue #366).
 *
-* tb_enable_shutdown.spice.in's circuit, in the shape `klt sim` accepts (no
-* .control block, ONE analysis per corner -- see sim/harness/klt_batch.py).
-* The deck chains four analyses (op / alter+op / alter+op / alter+tran) in one
-* .control block, so klt_run.py submits this body four times, one per
-* analysis state, substituting the three tokens below:
+* Enable/disable behaviour and shutdown quiescent current for ldo_core with
+* Xilimit (issue #11). Substantiates the ratified "Enable / shutdown" row of
+* README.md's target specification: shutdown Iq, the settled disabled output
+* state (pass device off, NO internal active discharge), and Vin->Vout
+* leakage; plus the enable->active and active->disable transitions,
+* including enable toggled at the full rated load, which is the condition
+* under which a foldback limit could latch the regulator low.
+*
+* The shape `klt sim` accepts: no .control block, ONE analysis per corner
+* (see sim/harness/klt_batch.py). The bench needs four analysis states
+* (op / op / op / tran) of one circuit, so klt_run.py submits this body
+* four times, one per analysis state, substituting the three tokens below:
 *
 *   state     @ENCTL@   @RLOAD@   @RFORCE@   analysis
 *   enabled   1         36        1G         op
@@ -12,10 +19,58 @@
 *   leakage   0         1G        1m         op     (Vin->Vout, output held at 0 V)
 *   tran      PWL       36        1G         tran 1u 9m
 *
+* TRANSIENT WINDOW (widened by issue #38)
+*
+* Issue #11 wrote this bench against a design with no soft start, where the
+* output reached regulation 28-64 us after the enable edge, and sized the
+* enable window at 400 us accordingly. Issue #38 added design/ldo_softstart.sch,
+* whose whole purpose is to turn that edge into a millisecond-scale controlled
+* ramp, so the window here is 100 us -> 8 ms with a 1 ms disabled tail. The
+* DC operating-point states (settled enabled, settled disabled, Vin->Vout
+* leakage) are unaffected by that change -- they are `op` analyses -- so the
+* shutdown-Iq and leakage numbers this bench owns stay directly comparable
+* to the pre-#38 record. The per-clause startup measurements (ramp rate,
+* inrush into C_out, overshoot, and the DR-0001 capacitor window) live in
+* sim/soft-start/, the experiment that owns the ratified Startup row.
+*
+* THE LOOP-TIE AMMETER
+*
+* ldo_core's ERRAMP_OUT and PASS_GATE are deliberately separate loop-break
+* ports that normal operation ties together (see design/README.md). This
+* bench ties them through Vloop, a 0 V source, which is electrically the
+* same plain wire sim/op-point-sanity uses but also meters the current
+* crossing the tie.
+*
+* That meter is a diagnostic on the disabled state specifically. While
+* disabled, Men holds PASS_GATE at VIN and the amplifier's output stage sits
+* on the other side of the tie; any current crossing it is current the
+* amplifier is still sinking from the pass-gate node, i.e. exactly the
+* failure mode #9's un-gated amplifier had (its bias branch stayed alive and
+* its M2N kept sinking). With #11's EN gating inside error_amp it should be
+* leakage-level, and the bench prints it at every corner rather than
+* asserting it.
+*
+* THE REFERENCE CURRENT IS METERED SEPARATELY AND ADDED IN
+*
+* VREF is an ideal 1.2 V source standing in for a bandgap that does not
+* exist yet, so current drawn from it does NOT appear in i(vin) -- a real
+* bandgap would source it from VIN. It is therefore added into the reported
+* quiescent numbers rather than silently dropped. The bandgap's OWN
+* quiescent current is not in any number here and never can be until that
+* block exists.
+*
+* Issue #174 / DR-0021 moved that source from inside ldo_core (Vref1) to
+* this body (Vref), so the meter reads i(vref) at the body level. Same
+* source,
+* same node, same sign convention, same number -- but it is metered AT THE
+* PORT, which is what makes the iref_* measurements the load this block
+* presents to whatever drives VREF (e.g. the Chipalooza Challenge #5
+* bandgap-referenced bias slot) rather than an internal-node curiosity.
+*
 * EN follows VIN through an ideal behavioural source gated by ENCTL, so the
-* request's supply axis can `alter vin` alone (the deck's Ven carries VIN_V).
-* The tran state's ENCTL is the deck's exact edges (low to 100 us, high 101 us
-* .. 8 ms, low after 8.001 ms), scaled by VIN. Solver options are the deck's.
+* request's supply axis can `alter vin` alone. The tran state's ENCTL is
+* the exact edge shape (low to 100 us, high 101 us .. 8 ms, low after
+* 8.001 ms), scaled by VIN. Solver options are the bench's own.
 
 .include "dut.spice"
 .options reltol=1e-3 vntol=1e-5 abstol=1e-11 chgtol=1e-14
@@ -38,5 +93,5 @@ Vforce VF 0 DC 0
 Rforce VOUT VF @RFORCE@
 
 * Supply current in mA as a node voltage, so a top-level .meas can take its
-* MAX (the deck's `let ivin_ma = -i(vin)*1e3`).
+* MAX (the bench's supply-current definition, -i(vin)*1e3 in mA).
 Bivin IVIN 0 V = '-i(vin)*1e3'

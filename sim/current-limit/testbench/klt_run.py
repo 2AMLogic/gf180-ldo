@@ -4,7 +4,7 @@
     python3 sim/current-limit/testbench/klt_run.py --record-id <id> \\
         [--dut design/netlist/ldo_core.spice] [--baseline-ref origin/main]
 
-Submits ``klt_body.spice`` over the 63-point matrix run.sh sweeps (7 process x
+Submits ``klt_body.spice`` over the 63-point PVT matrix (7 process x
 3 temperatures x 3 supplies), for the committed DUT and -- with
 ``--baseline-ref`` -- for the DUT at that git ref too, as two jobs on the same
 backend, so the comparison is same-binary by construction. Logs, the klt
@@ -15,8 +15,9 @@ when ``sim/run_store_evidence.py --kind corners`` mints it, committing the
 manifest, the hand-written Markdown record and the ``klt-report.json``
 envelopes; an unminted run leaves the tree clean. Grading imports
 summarize.py's ratified DR-0005 bounds
-(``ILIM_WINDOW_MA`` / ``PSHORT_MAX_MW``) rather than restating them, so the two
-graders for the same spec rows cannot disagree.
+(``ILIM_WINDOW_MA`` / ``PSHORT_MAX_MW``) rather than restating them, so this
+grader and summarize.py's ``checks()`` -- still the rollup for the committed
+bash-era logs under ``corners/`` -- cannot disagree on the same spec rows.
 """
 
 from __future__ import annotations

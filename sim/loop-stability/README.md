@@ -554,8 +554,9 @@ result. `sim/devchar/CONCLUSIONS.md` §2 puts `ppolyf_u_1k` process spread at
 
 `20260802-151515-2a08fce` closes that gap: `res_ff`/`res_ss` added to the
 process axis (5 → 7 corners, 3240 → 4536 points), the same
-`CORNERS="tt ff ss fs sf res_ff res_ss"` pattern
-`sim/enable-shutdown/testbench/run.sh` already used. **Measured: the
+`CORNERS="tt ff ss fs sf res_ff res_ss"` seven-process set the harness's
+PVT grid uses (`sim/harness/klt_batch.py`'s `LDO_PROCESS`, from
+`sim/harness/corners.py`'s `CORNERS`). **Measured: the
 resistor-corner axis introduces zero new failures** — grouped by the 648
 non-process operating points, the 136 that pass at all 5 MOS corners also
 pass at both `res_ff` and `res_ss`, and the MOS-only vs. resistor-corner pass

@@ -19,10 +19,11 @@ Runs the Tian dual-injection loop-gain testbench
     compensation parameter rather than a second-order one -- and
     `sim/devchar/CONCLUSIONS.md` section 2 puts `ppolyf_u_1k`'s process
     (ff/ss) spread at ~40%, close to the ~17% margin the measured pass/fail
-    boundary in `Rz` leaves. These two corners follow
-    `sim/enable-shutdown/testbench/run.sh`'s existing
-    ``CORNERS="tt ff ss fs sf res_ff res_ss"`` pattern; ``bjt_ff``/``bjt_ss``
-    are omitted here for the same reason enable-shutdown omits them -- this
+    boundary in `Rz` leaves. These two corners follow the same
+    ``CORNERS="tt ff ss fs sf res_ff res_ss"`` seven-process set as the
+    harness's PVT grid (``sim/harness/klt_batch.py``'s ``LDO_PROCESS``, from
+    ``sim/harness/corners.py``'s ``CORNERS``); ``bjt_ff``/``bjt_ss``
+    are omitted from that set for the same reason they are omitted here -- this
     design has no bipolar devices in the loop.
 
 The load x cap x ESR axes are swept *inside* one ngspice deck per PVT point

@@ -22,8 +22,8 @@
 # netlist design/netlist.py exported from design/ldo_core.sch. This script
 # instead substitutes @TOKENS@ in tb_op_point_sanity.spice.in and runs the
 # result with a plain `ngspice -b` via sim/harness/lib/run_point.sh -- the
-# same shared substitute/run/fatal-check driver the current-limit,
-# enable-shutdown and soft-start testbenches use (issues #193, #202) -- then
+# same shared substitute/run/fatal-check driver the soft-start testbench
+# uses (issues #193, #202) -- then
 # writes the evidence record by hand in the sim/README.md format.
 
 set -euo pipefail
