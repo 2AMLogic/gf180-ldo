@@ -35,9 +35,11 @@ name: CI
 #                                       signoff/records or layout/records
 #                                       embed /home/<user> paths; tests in
 #                                       sim/tests, issues #365/#413/#743)
-#   - sim/check_record_reading.py    (PR + merge-queue, same pathspecs:
-#                                       fails if a record added/modified in
-#                                       the diff still carries klt_record's
+#   - sim/check_record_reading.py    (PR + merge-queue, same pathspecs
+#                                       via sim/record_selection.py,
+#                                       issue #854: fails if a record
+#                                       added/modified in the diff still
+#                                       carries klt_record's
 #                                       "(to be written)"
 #                                       placeholder, or has a `## Reading`
 #                                       heading with an empty body. A record
@@ -202,9 +204,12 @@ jobs:
         # merge_group.base_sha (empty on other events, unused there), and
         # the script fails closed on an empty or unavailable base --
         # sky130-comparator@8e33733d pattern. PR behavior is unchanged.
-        # Needs full history for the base diff. Pathspecs live in
-        # sim/check_record_host_paths.py (incl. top-level layout/records/,
-        # issue #413); tests: sim/tests/test_check_record_host_paths.py
+        # Needs full history for the base diff. Pathspecs and the git query
+        # selecting changed records live in sim/record_selection.py, shared
+        # with sim/check_record_reading.py so the two gates cannot disagree
+        # (issue #854; incl. top-level layout/records/, issue #413); tests:
+        # sim/tests/test_check_record_host_paths.py and
+        # sim/tests/test_record_selection.py
         # (discovered by sim/selftest.sh).
 
       - name: Verify new/modified records have a written Reading section

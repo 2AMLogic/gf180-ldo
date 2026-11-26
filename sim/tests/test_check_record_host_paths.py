@@ -19,6 +19,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness.loader import load_script  # noqa: E402
+import record_selection as sel  # noqa: E402  -- the shared changed-record selector (#854)
 
 crhp = load_script(
     "check_record_host_paths", REPO / "sim" / "check_record_host_paths.py")
@@ -96,7 +97,7 @@ class HostPathGuardTests(unittest.TestCase):
     def test_selector_covers_top_level_layout_records(self):
         self.write(LAYOUT, GOOD)
         self.git("add", "-A")
-        listed = self.git("ls-files", "--", *crhp.PATHSPECS).split()
+        listed = self.git("ls-files", "--", *sel.PATHSPECS).split()
         self.assertIn(LAYOUT, listed)
 
     # --- merge-queue bases (issue #743, sky130-comparator@8e33733d) -----
