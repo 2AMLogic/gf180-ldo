@@ -2233,6 +2233,76 @@ class RecordRenderingTests(unittest.TestCase):
         self.assertIn("not evidence about PVT sensitivity", text)
 
 
+class PsrrSpreadWaiverRenderingTests(unittest.TestCase):
+    """Issue #860's fixture through the local writer.
+
+    The real ``sim/psrr-dc/testbench/tb.json`` checks over synthetic
+    completed points -- every measurement 1, ``adiff_1k_db`` 60 and
+    ``psrr_ldo_1k_db`` 56, so every per-point bound holds and only the
+    ``adiff_1k_db`` minimum-spread floor distinguishes the verdicts. The
+    same fixture ``sim/tests/test_klt_record.py`` runs through the batch
+    writer; the two record formats must not disagree about what a
+    degenerate grid waived. A rendering fixture -- no claim about silicon.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.pdk = fake_pdk(root / "gf180mcuD")
+        self.tb = testbench.load(SIM_DIR / "psrr-dc" / "testbench")
+
+    def _record(self, adiff_by_corner):
+        """One completed 27 C / 3.30 V point per named process corner."""
+        points = corners.build_grid(
+            corners.resolve_corners(list(adiff_by_corner)), (27,), (3.3,)
+        )
+        results = []
+        for point in points:
+            measurements = dict.fromkeys(self.tb.measure, 1.0)
+            measurements["adiff_1k_db"] = adiff_by_corner[point.corner.name]
+            measurements["psrr_ldo_1k_db"] = 56.0
+            results.append(
+                runner.PointResult(point=point, status="ok", measurements=measurements)
+            )
+        return report.build_record(
+            tb=self.tb,
+            pdk=self.pdk,
+            points=points,
+            results=results,
+            ngspice="ngspice-47",
+            repo_root=SIM_DIR,
+            record_id="20260101-090000-860fix0",
+            started_utc="2026-01-01T09:00:00+00:00",
+            wall_seconds=1.0,
+            subset_reason="rendering fixture for issue #860, not a spec claim",
+        )
+
+    def test_a_one_point_psrr_grid_names_the_waived_spread_check(self):
+        text = report.render_record(self._record({"tt": 60.0}), "psrr-dc")
+        self.assertIn("Grid-level checks NOT evaluated", text)
+        self.assertIn(
+            "adiff_1k_db min_spread_pct=5 (spread is undefined over "
+            "1 completed point; needs at least 2)",
+            text,
+        )
+        self.assertIn("not evidence about PVT sensitivity", text)
+
+    def test_a_second_equal_point_grades_the_floor_instead_of_waiving_it(self):
+        text = report.render_record(self._record({"tt": 60.0, "ff": 60.0}), "psrr-dc")
+        self.assertIn(
+            "Grid-level check failures: adiff_1k_db min_spread_pct=5 (got 0).", text
+        )
+        self.assertIn("- **Overall: FAIL**", text)
+        self.assertNotIn("NOT evaluated", text)
+
+    def test_a_grid_that_spreads_renders_no_waiver_note(self):
+        text = report.render_record(self._record({"tt": 60.0, "ff": 64.0}), "psrr-dc")
+        self.assertNotIn("NOT evaluated", text)
+        self.assertNotIn("Grid-level check failures", text)
+        self.assertIn("- **Overall: PASS**", text)
+
+
 class DutNetlistProvenanceTests(unittest.TestCase):
     """#12: Netlist provenance reads schematic/extracted from dut_netlist."""
 

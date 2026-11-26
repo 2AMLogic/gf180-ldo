@@ -24,6 +24,7 @@ from harness import klt_record as kr  # noqa: E402
 from harness import pdk  # noqa: E402
 from harness import report  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
+from harness import testbench as tbmod  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_evidence_store import fake_klt  # noqa: E402
@@ -524,6 +525,63 @@ class CompareEnvironment(_RepoTree):
         text = self._render(prior, self.CUR_SHA)
         self.assertIn("match on every environment axis", text)
         self.assertNotIn("differ in", text)
+
+
+class RenderSpreadChecks(_RepoTree):
+    """Issue #860: the batch record discloses what a degenerate grid waived.
+
+    The fixture is the real ``sim/psrr-dc/testbench/tb.json`` checks over
+    synthetic completed points: every measurement 1, ``adiff_1k_db`` 60 and
+    ``psrr_ldo_1k_db`` 56, so every per-point bound holds and only the
+    ``adiff_1k_db`` minimum-spread floor distinguishes the verdicts. A
+    rendering fixture -- no claim about silicon or minted records.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tb = tbmod.load(kr.REPO / "sim" / "psrr-dc" / "testbench")
+
+    def _points(self, corner_ids, adiff=60.0):
+        meas = dict.fromkeys(self.tb.measure, 1.0)
+        meas["adiff_1k_db"], meas["psrr_ldo_1k_db"] = adiff, 56.0
+        return [SimpleNamespace(status="ok", measurements=dict(meas),
+                                point=SimpleNamespace(corner_id=c),
+                                message="pass", diagnostics="")
+                for c in corner_ids]
+
+    def _render(self, points):
+        return kr.render(self.tb, NEW_RID, points, [_job()], None,
+                         "design/netlist/error_amp.spice", "c" * 64, "driver")
+
+    def test_a_one_point_grid_discloses_the_waived_spread_check(self):
+        text = self._render(self._points(["tt_27c_3.30v"]))
+        self.assertIn("Grid-level checks NOT evaluated", text)
+        self.assertIn("adiff_1k_db min_spread_pct=5 (spread is undefined over "
+                      "1 completed point; needs at least 2)", text)
+        self.assertIn("not evidence about PVT sensitivity", text)
+
+    def test_the_overall_verdict_is_qualified_when_a_check_is_waived(self):
+        text = self._render(self._points(["tt_27c_3.30v"]))
+        self.assertIn("**Overall: PASS**", text)
+        self.assertIn("per-point `tb.json` bound", text)
+        self.assertIn("1 grid-level check not evaluated", text)
+        self.assertNotIn("points meet every `tb.json` bound).", text)
+
+    def test_a_second_equal_point_grades_the_floor_instead_of_waiving_it(self):
+        text = self._render(self._points(["tt_27c_3.30v", "ff_27c_3.30v"]))
+        self.assertIn("Grid-level check failures: adiff_1k_db min_spread_pct=5 "
+                      "(got 0).", text)
+        self.assertIn("**Overall: FAIL**", text)
+        self.assertNotIn("NOT evaluated", text)
+
+    def test_a_grid_that_spreads_keeps_its_unqualified_pass(self):
+        points = (self._points(["tt_27c_3.30v"], adiff=60.0)
+                  + self._points(["ff_27c_3.30v"], adiff=64.0))
+        text = self._render(points)
+        self.assertIn("**Overall: PASS** (2/2 points meet every `tb.json` bound).",
+                      text)
+        self.assertNotIn("NOT evaluated", text)
+        self.assertNotIn("Grid-level check failures", text)
 
 
 if __name__ == "__main__":
