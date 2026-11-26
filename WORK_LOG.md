@@ -8,6 +8,10 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-26
 
+- **PR #870**: fix(sim): share .meas card emission between both tb_adapter paths
+- **Issue #869** (closed): Emit each .meas card once in the single-analysis testbench adapter
+- **PR #868**: test(sim): resolve the runnable ngspice fixture through PATH in CLI provenance tests
+- **Issue #867** (closed): Use the runnable ngspice fixture for PATH and version in CLI provenance tests
 - **PR #865**: refactor(sim): route the four driver-routing suites through one corners-mint check
 - **Issue #861** (closed): Route test_klt_run_drivers.py through driver_routing.py and share corners-mint assertions
 - **PR #863**: refactor(sim): share grid-check rendering so batch records disclose waived checks
