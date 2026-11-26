@@ -576,7 +576,7 @@ def ngspice_major_int(version: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
-# Retained positive form of the floor: counterpart to below_ngspice_floor, tested in sim/tests/test_harness.py.
+# Retained positive form of the floor: counterpart to below_ngspice_floor, tested in sim/tests/test_ngspice_provenance.py.
 def meets_ngspice_floor(version: str | None) -> bool:
     """True when ``version`` is a known major at or above the floor."""
     major = ngspice_major_int(version)
