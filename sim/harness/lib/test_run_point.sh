@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regression tests for harness_run_point()'s DC-continuation-ladder-
+# Regression tests for PVT corner naming and the DC-continuation-ladder
 # exhaustion gate (issue #310's pseudo-transient `op` rung check,
 # propagated to this standalone-bench driver by issue #317).
 #
@@ -27,7 +27,7 @@ set -uo pipefail   # deliberately NOT -e: several cases assert a non-zero
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
 
-WORK="$(mktemp -d)"
+WORK="$(mktemp -d)" || exit 1
 trap 'rm -rf "$WORK"' EXIT
 
 FAILURES=0
@@ -179,9 +179,46 @@ else
   not_ok "T5: the gate fires across the real xargs/bash -c fan-out boundary (rc=$xargs_rc, stderr: $(cat "$WORK/t5.err"))"
 fi
 
+# Each spelling gets fresh output directories, including the two that
+# should produce the same filenames. Keep the original values in the deck.
+# shellcheck source=./corner_sections.sh
+source "$HERE/corner_sections.sh"
+harness_load_corner_sections "$REPO_ROOT"
+DESIGN_INCLUDE=design.ngspice MODEL_LIB=models.ngspice LDO_NETLIST=ldo.spice
+printf '.temp @TEMP_C@\nVs in 0 @VIN_V@\n.end\n' > "$WORK/pvt.spice.in"
+export FAKE_NGSPICE_LOG="$WORK/clean.log"
+
+check_pvt_name() {
+  local temp="$1" expected="$2" out
+  local WORKDIR="$WORK/decks-$temp" LOG_DIR="$WORK/logs-$temp"
+  mkdir -p "$WORKDIR" "$LOG_DIR"
+  if out="$(harness_run_pvt_point "$WORK/pvt.spice.in" tt "$temp" 3.3)" &&
+      [[ "$out" == "$expected" ]] &&
+      grep -Fxq ".temp $temp" "$WORKDIR/$expected.spice" &&
+      grep -Fxq 'Vs in 0 3.3' "$WORKDIR/$expected.spice" &&
+      cmp -s "$FAKE_NGSPICE_LOG" "$LOG_DIR/$expected.log"; then
+    ok "PVT $temp emits and writes $expected"
+  else
+    not_ok "PVT $temp expected $expected (out=$out)"
+  fi
+}
+check_pvt_name 27 tt_27c_3.30v
+check_pvt_name 27.0 tt_27c_3.30v
+check_pvt_name -0.0 tt_0c_3.30v
+check_pvt_name 27.123456 tt_27.123456c_3.30v
+
+WORKDIR="$WORK/invalid" LOG_DIR="$WORK/invalid"
+mkdir -p "$WORKDIR"
+if harness_run_pvt_point "$WORK/pvt.spice.in" tt invalid 3.3 > /dev/null 2>&1 ||
+    [[ -n "$(ls -A "$WORKDIR")" ]]; then
+  not_ok "invalid temperature reached the deck or log writer"
+else
+  ok "invalid temperature fails before writing a deck or log"
+fi
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
-  echo "PASS: sim/harness/lib/test_run_point.sh (5/5)"
+  echo "PASS: sim/harness/lib/test_run_point.sh"
   exit 0
 else
   echo "FAIL: sim/harness/lib/test_run_point.sh ($FAILURES failing)"

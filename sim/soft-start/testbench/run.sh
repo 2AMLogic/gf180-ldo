@@ -130,7 +130,8 @@ run_point() {
   local cout esr rload
   IFS='/' read -r cout esr rload <<<"$cap"
   local corner_id
-  corner_id="$(printf '%s_%sc_%.2fv_%s' "$corner" "$temp" "$vin" "$(echo "$cap" | tr '/' '_')")"
+  corner_id="$(harness_format_corner_id "$corner" "$temp" "$vin")" || return 1
+  corner_id+="_${cap//\//_}"
   local deck="$WORKDIR/${corner_id}.spice"
   local log="$LOG_DIR/${corner_id}.log"
 
