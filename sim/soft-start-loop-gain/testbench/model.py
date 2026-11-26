@@ -178,9 +178,7 @@ SSR_POINT_LABEL = {
     0.6: "(a2) mid-ramp",
     1.15: "(b) VREF - 50 mV, just before the ideal element's hand-over",
     1.25: "(c) VREF + 50 mV, just after the ideal element's hand-over",
-    1.8: "(d) VREF + 600 mV, a conservative margin past BOTH variants' "
-         "hand-over (pre-#231 this was specifically past the device-level "
-         "chain's own, later, hand-over -- see `PHASES['sink']['why']`)",
+    1.8: "(d) VREF + 600 mV, a sampled operating point",
 }
 
 # --- landing rule -----------------------------------------------------------
