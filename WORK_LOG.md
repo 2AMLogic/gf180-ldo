@@ -8,6 +8,12 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-26
 
+- **PR #865**: refactor(sim): route the four driver-routing suites through one corners-mint check
+- **Issue #861** (closed): Route test_klt_run_drivers.py through driver_routing.py and share corners-mint assertions
+- **PR #863**: refactor(sim): share grid-check rendering so batch records disclose waived checks
+- **Issue #860** (closed): Share spread reporting so batch records disclose waived checks
+- **PR #862**: test(sim): assert --check-env exit status with a valid PDK
+- **Issue #858** (closed): Replace six missing-PDK mocks that mask ngspice provenance exit codes
 - **PR #859**: refactor(sim): build every completed-run PointResult through one constructor
 - **Issue #857** (closed): Consolidate the five PointResult constructors for completed ngspice corners
 - **PR #856**: refactor: share the changed-record selector between the record CI gates
