@@ -599,73 +599,21 @@ def write_matrix_csv(path: Path, rows: list[Row]) -> None:
 # element-removal sensitivity the record's attribution rests on; it is a
 # measurement, not a reading of the schematic.
 #
-# RESOLVED (issue #234, was tracked here since #231/PR #233): this set used
-# to have two more rows, `acopen-fb-inj` (Binj_ss AC-opened from FB) and
-# `acshort-gmsum` (the device-level chain's GMSUM mirror node AC-shorted to
-# VIN). Both are DROPPED, not re-derived, for reasons specific to each:
+# `acopen-fb-inj` is the `XMgmc_ss` row since #246, retargeted from
+# `XMgmo_ss`: the DR-0023 cascode's drain is what sits on FB now, and
+# opening it is the measurement that target T6
+# (`design/softstart_injection_compensation.md` section 3) is written
+# against. Issue #234 had dropped the row because, with `device` back on the
+# ideal `Binj_ss` source (#231), it was a structural no-op: an ideal current
+# source has no small-signal admittance out of FB for a series inductor to
+# remove.
 #
-#   * `acopen-fb-inj` is a structural no-op against `Binj_ss`, and there is no
-#     honest replacement in the same "remove a coupling" shape. `Binj_ss`'s
-#     defining expression --
-#         I = max(0, (v(VREF) - v(SSR)) * 5.0e-6) * (v(EN) > 1.4)
-#     -- depends on VREF, SSR and EN only. It has NO dependence on v(FB), so
-#     its small-signal admittance out of FB is already exactly zero and the
-#     current it injects does not vary with anything this deck's AC probe
-#     perturbs. That is not a small coupling this experiment failed to
-#     remove; it is the source having no AC coupling to attribute in the
-#     first place -- an ideal current source already IS an AC open. A 1 GH
-#     series inductor (`ac_open()`'s only shape) cannot demonstrate that any
-#     more precisely than the algebra above already has, which is why
-#     `ac_open()` now refuses a `B`-prefixed instance outright instead of
-#     applying and reporting a zero.
-#   * `acshort-gmsum` targeted a node (`GMSUM`) that exists only in the
-#     post-#195 device-level Mgm* transconductor chain #231 reverted. There is
-#     nothing left in `ldo_softstart` to short. `add_cap()` (shared by
-#     `ac_short()`/`ac_load()`) now refuses a node that is not already a
-#     token in the netlist, so this class of mistake can no longer apply
-#     silently either.
-#
-# Net effect: with `Binj_ss` in place, the only REAL FB couplings left to
-# attribute are `XMpre_b_ss`'s drain (`acopen-fb-pre`, below) and the
-# deliberate `FB_CAP_LADDER_F` parasitic budget further down this file --
-# which is exactly the legitimate "both rows drop" outcome this issue's
-# acceptance criteria named as acceptable. Both guard rails above are
-# regression-tested by `TestNetlistTransforms` in
-# `sim/tests/test_soft_start_loop_gain.py`, including reproducing these two
-# exact historical calls and asserting they now raise.
-#
-# `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` is untouched:
-# it was measured against the device-level chain, for which both rows were
-# real measurements, and stays valid for that netlist.
-#
-# `acopen-fb-inj` IS RESTORED BY #246; `acshort-gmsum` IS NOT. DR-0023's
-# cascoded mirror puts the device-level chain back into
-# `design/ldo_softstart.sch`, so both retired rows have a real target again --
-# and the two are restored on different evidence, so they are treated
-# differently rather than as a pair:
-#
-#   * `acopen-fb-inj` is RESTORED, retargeted from `XMgmo_ss` to `XMgmc_ss`.
-#     The cascode's drain is what sits on FB now, so this row measures exactly
-#     what target T6 (`design/softstart_injection_compensation.md` section 3)
-#     is written against: the element's ENTIRE small-signal loading of the
-#     feedback node, with the operating-point shift held out (a 1 GH series
-#     inductor is a short at DC). Without it, nothing in this repo can issue a
-#     T6 verdict on the cascoded element, and issue #246's own acceptance
-#     criteria ask for one. It is a real instance with a real drain on a real
-#     node, so `ac_open()`'s #234 guard rails admit it; the B-source refusal
-#     that retired it applied to `Binj_ss`, which no longer exists.
-#   * `acshort-gmsum` stays RETIRED. `GMSUM` is a netlist token again, so
-#     `add_cap()` would no longer refuse it -- but #234 retired it for the
-#     stronger of its two reasons as well: the row never resolved a pole or a
-#     zero (max |dT| 0.003 dB over 0.01 Hz - 1 GHz, below the 0.02 dB
-#     numerical floor, `design/softstart_injection_compensation.md` section 1).
-#     A row that returns a null result at ten times the cost of the guard that
-#     replaced it is not worth re-running merely because its target exists
-#     again. If a later record needs it, restoring it is one line here.
-#
-# `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` is untouched
-# either way: it was measured against the UNCASCODED device-level chain, and
-# both rows were real measurements for that netlist.
+# `acshort-gmsum` (`GMSUM`, the mirror node, AC-shorted to VIN) stays
+# retired. Against the device-level chain it never resolved a pole or a
+# zero: max |dT| 0.003 dB over 0.01 Hz - 1 GHz, below the 0.02 dB numerical
+# floor -- measured in section 1 of that document. `GMSUM` is a netlist
+# token again, so `add_cap()` would no longer refuse it; the row is absent
+# because the measurement was null.
 ATTRIBUTIONS = (
     ("acopen-fb-inj", "XMgmc_ss's drain AC-opened from FB",
      lambda t: nv.ac_open(t, "XMgmc_ss", "FB", "acopeninj")),
