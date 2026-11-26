@@ -842,6 +842,64 @@ class TestRenderRecordSmoke(unittest.TestCase):
         self.assertIn("**FAIL** (1/2 corners pass)", analysis)
         self.assertIn("60.00 deg at `tt_27c_3.30v`", analysis)
 
+    def test_configuration_table_reports_each_margin_at_its_own_corner(self):
+        md = self._render(rows=[
+            row(),
+            row(corner="ss", corner_id="ss_27c_3.30v", phase_at_f0_deg=-100.0,
+                f180_hz=2e6, gain_at_f180_db=-8.0),
+        ])
+        self.assertIn(
+            "| I_load | C_eff | ESR | worst PM (deg) | worst PM at PVT corner | "
+            "worst GM (dB) | worst GM at PVT corner | result |\n"
+            "|---|---|---|---|---|---|---|---|\n"
+            "| 1mA | 1uF | 0.05 ohm | 60.00 | `tt_27c_3.30v` | 8.00 | "
+            "`ss_27c_3.30v` | **FAIL** |",
+            md)
+
+    def test_per_corner_table_reports_each_margin_at_its_own_configuration(self):
+        md = self._render(rows=[
+            row(),
+            row(iload_a=2e-3, phase_at_f0_deg=-100.0,
+                f180_hz=2e6, gain_at_f180_db=-8.0),
+        ])
+        self.assertIn(
+            "| corner-id | worst PM (deg) | worst PM at (I_load / C_eff / ESR) | "
+            "f_crossover at worst PM (Hz) | worst GM (dB) | "
+            "worst GM at (I_load / C_eff / ESR) | result |\n"
+            "|---|---|---|---|---|---|---|\n"
+            "| `tt_27c_3.30v` | 60.00 | 1mA / 1uF / 0.05 ohm | 1e+05 | 8.00 | "
+            "2mA / 1uF / 0.05 ohm | **FAIL** |",
+            md)
+
+    def test_gain_only_failures_are_counted_against_the_gain_margin_bar_alone(self):
+        md = self._render(rows=[
+            row(),
+            row(corner="ss", corner_id="ss_27c_3.30v", phase_at_f0_deg=-100.0,
+                f180_hz=2e6, gain_at_f180_db=-8.0),
+        ])
+        self.assertIn(
+            "0/2 points miss the >= 45 deg phase-margin bar and 1/2 miss the "
+            ">= 10 dB gain-margin bar", md)
+        self.assertIn(
+            "1/2 points have no -180 deg crossing in 0.01 Hz - 1 GHz and so "
+            "report an infinite gain margin", md)
+        self.assertNotIn("**Both** of DR-0001's bars are broken", md)
+
+    def test_all_pass_reports_zero_failures_against_each_margin(self):
+        md = self._render()
+        self.assertIn(
+            "0/2 points miss the >= 45 deg phase-margin bar and 0/2 miss the "
+            ">= 10 dB gain-margin bar", md)
+
+    def test_a_point_missing_both_bars_is_counted_against_each(self):
+        md = self._render(rows=[
+            row(phase_at_f0_deg=-150.0, f180_hz=2e6, gain_at_f180_db=-5.0),
+        ])
+        self.assertIn("0/1 points pass, 1 fail", md)
+        self.assertIn(
+            "1/1 points miss the >= 45 deg phase-margin bar and 1/1 miss the "
+            ">= 10 dB gain-margin bar", md)
+
     def test_no_klt_renders_the_environment_block_in_order(self):
         md = self._render()
         self.assertIn("## Environment", md)

@@ -835,30 +835,44 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
     def _pm_key(r: Row) -> float:
         return -1e9 if r.pm_deg is None else r.pm_deg
 
+    def _worst_gm(bucket: list[Row]) -> Row:
+        return min(bucket, key=lambda r: (r.gm_db, _pm_key(r)))
+
+    def _verdict(bucket: list[Row]) -> str:
+        return "PASS" if all(r.passes for r in bucket) else "**FAIL**"
+
+    def _at(r: Row) -> str:
+        return f"{fmt_ma(r.iload_a)} / {fmt_uf(r.ceff_f)} / {r.esr_ohm:g} ohm"
+
     def _hz(v) -> str:
         return "n/a" if v is None else f"{v:.4g}"
 
-    corner_tbl = ["| corner-id | worst PM (deg) | GM (dB) | f_crossover (Hz) | at (I_load / C_eff / ESR) | result |",
-                  "|---|---|---|---|---|---|"]
+    corner_tbl = ["| corner-id | worst PM (deg) | worst PM at (I_load / C_eff / ESR) | "
+                  "f_crossover at worst PM (Hz) | worst GM (dB) | "
+                  "worst GM at (I_load / C_eff / ESR) | result |",
+                  "|---|---|---|---|---|---|---|"]
     for cid in sorted(by_corner, key=lambda c: _pm_key(worst_of(by_corner[c]))):
-        w = worst_of(by_corner[cid])
+        bucket = by_corner[cid]
+        w_pm, w_gm = worst_of(bucket), _worst_gm(bucket)
         corner_tbl.append(
-            f"| `{cid}` | {pm_str(w)} | {gm_str(w)} | {_hz(w.f0_hz)} | "
-            f"{fmt_ma(w.iload_a)} / {fmt_uf(w.ceff_f)} / {w.esr_ohm:g} ohm | "
-            f"{'PASS' if w.passes else '**FAIL**'} |"
+            f"| `{cid}` | {pm_str(w_pm)} | {_at(w_pm)} | {_hz(w_pm.f0_hz)} | "
+            f"{gm_str(w_gm)} | {_at(w_gm)} | {_verdict(bucket)} |"
         )
 
     # worst config across all PVT, per (load, cap, ESR) cell
     by_cfg: dict[tuple, list[Row]] = {}
     for r in rows:
         by_cfg.setdefault((r.iload_a, r.ceff_f, r.esr_ohm), []).append(r)
-    cfg_tbl = ["| I_load | C_eff | ESR | worst PM (deg) | worst GM (dB) | worst PVT corner | result |",
-               "|---|---|---|---|---|---|---|"]
+    cfg_tbl = ["| I_load | C_eff | ESR | worst PM (deg) | worst PM at PVT corner | "
+               "worst GM (dB) | worst GM at PVT corner | result |",
+               "|---|---|---|---|---|---|---|---|"]
     for key in sorted(by_cfg):
-        w = worst_of(by_cfg[key])
+        bucket = by_cfg[key]
+        w_pm, w_gm = worst_of(bucket), _worst_gm(bucket)
         cfg_tbl.append(
-            f"| {fmt_ma(key[0])} | {fmt_uf(key[1])} | {key[2]:g} ohm | {pm_str(w)} | "
-            f"{gm_str(w)} | `{w.corner_id}` | {'PASS' if w.passes else '**FAIL**'} |"
+            f"| {fmt_ma(key[0])} | {fmt_uf(key[1])} | {key[2]:g} ohm | {pm_str(w_pm)} | "
+            f"`{w_pm.corner_id}` | {gm_str(w_gm)} | `{w_gm.corner_id}` | "
+            f"{_verdict(bucket)} |"
         )
 
     # DR-0008's precondition check, per load current: the axis DR-0008's own
@@ -893,31 +907,14 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
     # crossing fails both bars at once, and saying so is the whole point.
     n_gm_fail = sum(1 for r in rows if r.gm_db < GM_MIN_DB)
     n_pm_fail = sum(1 for r in rows if r.pm_deg is None or r.pm_deg < PM_MIN_DEG)
-    if n_gm_fail == 0:
-        gm_reading = (
-            f"Gain margin is **not** the limiting criterion anywhere in this "
-            f"matrix: at {n_inf_gm}/{len(rows)} points the loop phase never "
-            f"reaches -180 deg in 0.01 Hz - 1 GHz (a loop that approaches "
-            f"-180 deg from above), so no finite gain multiplier drives T to "
-            f"-1; where a -180 deg crossing does exist the gain there is below "
-            f"0 dB. Every failure below is a **phase-margin** failure."
-        )
-    else:
-        gm_reading = (
-            f"**Both** of DR-0001's bars are broken here, and by the same "
-            f"mechanism: {n_pm_fail}/{len(rows)} points miss the "
-            f">= {PM_MIN_DEG:g} deg phase-margin bar and "
-            f"{n_gm_fail}/{len(rows)} miss the >= {GM_MIN_DB:g} dB gain-margin "
-            f"bar. A negative gain margin means the phase reaches -180 deg "
-            f"while |T| is still above 0 dB -- the -180 deg crossing sits "
-            f"*below* the 0 dB crossing rather than above it. Only "
-            f"{n_inf_gm}/{len(rows)} points have no -180 deg crossing in "
-            f"0.01 Hz - 1 GHz at all. This record reports the two Bode margins "
-            f"DR-0001 asks for and nothing beyond them: a closed-loop "
-            f"stability verdict would need a Nyquist reading, which is not "
-            f"attempted here and is not what the ratified criterion is written "
-            f"in terms of."
-        )
+    margin_counts = (
+        f"Each margin is counted against its own bar: {n_pm_fail}/{len(rows)} "
+        f"points miss the >= {PM_MIN_DEG:g} deg phase-margin bar and "
+        f"{n_gm_fail}/{len(rows)} miss the >= {GM_MIN_DB:g} dB gain-margin bar "
+        f"(a point that misses both is in both counts). {n_inf_gm}/{len(rows)} "
+        f"points have no -180 deg crossing in 0.01 Hz - 1 GHz and so report "
+        f"an infinite gain margin."
+    )
 
     if klt_info:
         klt_md = (
@@ -1135,16 +1132,20 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
     phase margin {pm_str(best)} deg.
   - Phase margin across the whole matrix spans
     {min(pms):.2f} deg to {max(pms):.2f} deg.
-  - {gm_reading}{multi_md}
+  - {margin_counts}{multi_md}
 
   Per-PVT-corner worst case (worst over that corner's
-  {len(iloads) * len(ceffs) * len(esrs)} load/cap/ESR configurations),
+  {len(iloads) * len(ceffs) * len(esrs)} load/cap/ESR configurations; each
+  margin is minimised on its own, so the two may name different
+  configurations, and the result covers every one of them),
   sorted worst-first:
 
 {chr(10).join(corner_tbl)}
 
   Worst case per load/cap/ESR configuration (worst over all {len(grid)} PVT
-  points), which is where the structure of the failure is visible:
+  points; each margin is minimised on its own, so the two may name
+  different PVT corners, and the result covers every PVT point), which is
+  where the structure of the failure is visible:
 
 {chr(10).join(cfg_tbl)}
 {resurgence_md}
