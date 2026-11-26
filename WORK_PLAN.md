@@ -1,7 +1,7 @@
 # Work Plan
 
 <!-- guide:plan-body:start -->
-_Generated: 2026-11-26T05:40:00Z (snapshot; compare against live labels)_
+_Generated: 2026-11-26T15:36:54Z (snapshot; compare against live labels)_
 ## Operator Attention: Merge-Risk-Hold Pileup
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
@@ -34,16 +34,14 @@ Issues currently being built (`loom:building`).
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
 - **#783**: DR-0037 bias servo: reconcile #320's remaining evidence against the records now on main, run only what is missing, and open the ratification PR
-- **#858**: Replace six missing-PDK mocks that mask ngspice provenance exit codes
-- **#860**: Share spread reporting so batch records disclose waived checks
-- **#861**: Route test_klt_run_drivers.py through driver_routing.py and share corners-mint assertions
+- **#871**: Report independent phase and gain margins in loop-stability summaries
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
 - **#795**: docs: submit the VREF servo evidence for ratification review *(held)*
-- **#862**: test(sim): assert --check-env exit status with a valid PDK
+- **#872**: fix(sim): report phase and gain margins independently in loop-stability records
 
 ## Approved (Awaiting Merge)
 
@@ -90,7 +88,7 @@ _None._
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`, net of holds/building/merge-pending) | 1 |
-| In Progress (`loom:building`) | 6 |
+| In Progress (`loom:building`) | 4 |
 | PRs awaiting review | 2 |
 | Approved PRs awaiting merge | 0 |
 | Curated | 17 |
