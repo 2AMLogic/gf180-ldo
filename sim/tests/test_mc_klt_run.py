@@ -260,25 +260,7 @@ class McDriverRouting(unittest.TestCase):
     def test_a_minted_run_commits_only_manifest_summary_and_envelopes(self):
         rc = self._main(["--record-id", self.rid], lambda repo: None)
         self.assertEqual(rc, 0)
-        staged = self._staged()
-        rc2, root, committed = drt.mint("mc-output-accuracy", self.rid, staged)
-        self.assertEqual(rc2, 0)
-        envelopes = sorted(p.relative_to(staged).as_posix() for p in staged.rglob("klt-report.json"))
-        self.assertEqual(committed, sorted(
-            [f"manifests/artifacts/mc-output-accuracy-{self.rid}.manifest.json",
-             f"sim/mc-output-accuracy/corners/{self.rid}.md"]
-            + [f"sim/mc-output-accuracy/corners/{self.rid}/{e}" for e in envelopes]))
-        for env in staged.rglob("klt-report.json"):
-            dst = root / "sim" / "mc-output-accuracy" / "corners" / self.rid / env.relative_to(staged)
-            self.assertEqual(dst.read_bytes(), env.read_bytes())
-        staged_files = sorted(p.relative_to(staged).as_posix()
-                              for p in staged.rglob("*") if p.is_file())
-        m = json.loads((root / "manifests" / "artifacts"
-                        / f"mc-output-accuracy-{self.rid}.manifest.json").read_text())
-        self.assertEqual(sorted(e["name"] for e in m["entries"]),
-                         [f"sim/mc-output-accuracy/corners/{self.rid}/{f}"
-                          for f in staged_files if not f.endswith("klt-report.json")])
-        self.assertEqual(drt.check_manifests(root), 0)
+        drt.assert_corners_mint(self, "mc-output-accuracy", self.rid, self._staged())
 
 
 class ProbeFbCurrentRouting(unittest.TestCase):
@@ -351,15 +333,7 @@ class ProbeFbCurrentRouting(unittest.TestCase):
         rc = self._main(["--out", str(self.out)], lambda repo: None)
         self.assertEqual(rc, 0)
         rid = "20261117-zz-probe-mint"
-        rc2, root, committed = drt.mint("mc-output-accuracy", rid, self.out)
-        self.assertEqual(rc2, 0)
-        envelopes = sorted(p.relative_to(self.out).as_posix()
-                           for p in self.out.rglob("klt-report.json"))
-        self.assertEqual(committed, sorted(
-            [f"manifests/artifacts/mc-output-accuracy-{rid}.manifest.json",
-             f"sim/mc-output-accuracy/corners/{rid}.md"]
-            + [f"sim/mc-output-accuracy/corners/{rid}/{e}" for e in envelopes]))
-        self.assertEqual(drt.check_manifests(root), 0)
+        drt.assert_corners_mint(self, "mc-output-accuracy", rid, self.out)
 
 
 class McSummarizeInput(unittest.TestCase):

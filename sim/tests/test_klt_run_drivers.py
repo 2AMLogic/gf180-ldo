@@ -16,10 +16,8 @@ from __future__ import annotations
 import contextlib
 import csv
 import io
-import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import types
@@ -30,25 +28,14 @@ from unittest import mock
 SIM_DIR = Path(__file__).resolve().parents[1]
 REPO = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from harness import evidence_store as es  # noqa: E402
 from harness import pdk as pdk_mod  # noqa: E402
 from harness import tb_adapter as ta  # noqa: E402
 from harness.loader import load_script  # noqa: E402
 from harness.klt_ab import write_summary_csv  # noqa: E402
-
-# fake_klt is shared with the store's own tests rather than duplicated: both
-# files fake the same `klt artifact put` contract.
-_tes = load_script(
-    "test_evidence_store", Path(__file__).resolve().parent / "test_evidence_store.py")
-fake_klt = _tes.fake_klt
-
-_GIT_ENV = {
-    **os.environ,
-    "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-    "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
-    "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
-}
+import driver_routing as drt  # noqa: E402
 
 _DRIVERS: dict[str, object] = {}
 
@@ -188,7 +175,8 @@ class _DriverCase:
         for tag in ("new", "baseline"):
             self.assertTrue(list(staged.rglob(f"{tag}/klt-report.json")),
                             f"no staged envelope for the {tag} DUT")
-        rc, root, committed = self._mint()
+        rc, root, committed = drt.mint(self.SLUG, self.rid, self._staged(),
+                                        cleanup=self.addCleanup)
         self.assertEqual(rc, 0)
         for env in staged.rglob("klt-report.json"):
             rel = f"sim/{self.SLUG}/corners/{self.rid}/{env.relative_to(staged)}"
@@ -196,76 +184,10 @@ class _DriverCase:
 
     # -- the mint, through run_store_evidence.py --kind corners (#645) ------
 
-    def _mint(self):
-        """Mint this run's staged tree into a scratch repo root, with the
-        store's ``klt artifact put`` calls faked. Returns (rc, root, the
-        sorted list of committed repo-relative paths)."""
-        store_cli = load_script(
-            "run_store_evidence_drivers", SIM_DIR / "run_store_evidence.py")
-        td = tempfile.TemporaryDirectory()
-        self.addCleanup(td.cleanup)
-        base = Path(td.name).resolve()
-        root = base / "repo"
-        root.mkdir()
-        (root / "sim" / self.SLUG).mkdir(parents=True)
-        store_cli.REPO_ROOT = root
-        summary = base / f"{self.SLUG}-{self.rid}.md"
-        summary.write_text("# record\n")
-        store = {}
-        real_put = es.put_files
-
-        def put(files, r):
-            return real_put(files, r, run=fake_klt(store))
-
-        with mock.patch.object(es, "preflight", side_effect=None), \
-                mock.patch.object(es, "put_files", side_effect=put), \
-                contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(io.StringIO()):
-            rc = store_cli.main([self.SLUG, self.rid, str(self._staged()),
-                                 "--summary", str(summary), "--kind", "corners"])
-        committed = sorted(p.relative_to(root).as_posix()
-                           for p in root.rglob("*") if p.is_file())
-        return rc, root, committed
-
-    def _check_manifests(self, root: Path) -> int:
-        """``check_artifact_manifests.py check`` over the minted scratch repo."""
-        chk = load_script(
-            "check_artifact_manifests_drivers",
-            REPO / "scripts" / "check_artifact_manifests.py")
-        for cmd in (["git", "-C", str(root), "init", "-q", "-b", "main"],
-                    ["git", "-C", str(root), "add", "-A"],
-                    ["git", "-C", str(root), "commit", "-q", "-m", "t"]):
-            subprocess.run(cmd, env=_GIT_ENV, check=True, capture_output=True)
-        with contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(io.StringIO()):
-            return chk.main(["check", "--repo", str(root), "--tree", "HEAD"])
-
     def test_a_minted_run_commits_only_manifest_summary_and_envelopes(self):
-        self._main(["--record-id", self.rid], lambda repo: None)
-        rc, root, committed = self._mint()
+        rc = self._main(["--record-id", self.rid], lambda repo: None)
         self.assertEqual(rc, 0)
-        staged = self._staged()
-        # The file count, not an eyeball: exactly the manifest, the summary,
-        # and one committed envelope per staged klt-report.json.
-        envelopes = sorted(p.relative_to(staged).as_posix()
-                           for p in staged.rglob("klt-report.json"))
-        self.assertEqual(committed, sorted(
-            [f"manifests/artifacts/{self.SLUG}-{self.rid}.manifest.json",
-             f"sim/{self.SLUG}/corners/{self.rid}.md"]
-            + [f"sim/{self.SLUG}/corners/{self.rid}/{e}" for e in envelopes]))
-        for env in staged.rglob("klt-report.json"):
-            dst = root / "sim" / self.SLUG / "corners" / self.rid / env.relative_to(staged)
-            self.assertEqual(dst.read_bytes(), env.read_bytes())
-        # Everything else went to the store: every staged file that is not an
-        # envelope is a manifest entry, and no entry names a committed path.
-        staged_files = sorted(p.relative_to(staged).as_posix()
-                              for p in staged.rglob("*") if p.is_file())
-        m = json.loads((root / "manifests" / "artifacts"
-                        / f"{self.SLUG}-{self.rid}.manifest.json").read_text())
-        self.assertEqual(sorted(e["name"] for e in m["entries"]),
-                         [f"sim/{self.SLUG}/corners/{self.rid}/{f}"
-                          for f in staged_files if not f.endswith("klt-report.json")])
-        self.assertEqual(self._check_manifests(root), 0)
+        drt.assert_corners_mint(self, self.SLUG, self.rid, self._staged())
 
 
 class CurrentLimitDriver(_DriverCase, unittest.TestCase):
@@ -414,8 +336,7 @@ class SoftStartDriver(_DriverCase, unittest.TestCase):
         staged = self._staged()
         self.assertTrue((staged / "main-tt" / "new" / "klt-report.json").is_file())
         self.assertTrue((staged / "main-ff" / "new" / "klt-report.json").is_file())
-        rc, root, committed = self._mint()
-        self.assertEqual(rc, 0)
+        committed, _ = drt.assert_corners_mint(self, self.SLUG, self.rid, staged)
         self.assertEqual(committed, sorted([
             f"manifests/artifacts/{self.SLUG}-{self.rid}.manifest.json",
             f"sim/{self.SLUG}/corners/{self.rid}.md",
