@@ -36,7 +36,7 @@ and `--cell passives` are *flow vehicles* rather than design blocks;
 and its `Msense` replica (issue #285, under epic #173) — and `--cell divider`
 is the feedback divider, the first all-passive one. A block's layout registers
 its own `CellSpec` in `drclvs.py`'s `CELLS` dict and drives it with
-`--cell <key>` — see that file's module docstring for the exact contract.
+`--cell <key>` — see the `CellSpec` dataclass in that file for the exact contract.
 
 The stage **count** is a property of the cell, and the driver derives it rather
 than hard-coding it: five stages are common to every cell (build the layout,
