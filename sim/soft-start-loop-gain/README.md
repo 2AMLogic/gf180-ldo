@@ -10,32 +10,28 @@ two DUT variants:
 | `device` | `design/netlist/ldo_softstart.spice` as committed: the device-level transconductor with DR-0023's cascoded output mirror (`Mgmr_ss`/`Mgmrc_ss` reference leg, `Mgmo_ss`/`Mgmc_ss` output leg); there is no behavioural injection source in it |
 | `binj` | the ideal behavioural injection source `Binj_ss`, frozen at commit `bfc4a0a` -- pre-#195 and pre-DR-0024 cap sizing |
 
-**What this A/B isolates has changed twice, so date any record against this
-list.** The same two variant names have meant three different comparisons:
+**Which differences can a record attribute to the injection element?** The
+answer depends on the injection element and capacitor sizes in its two netlists.
 
-- **Post-#195, pre-#231:** `device` was the device-level transconductor
-  (`Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss`)
-  and `binj` the ideal `Binj_ss` behavioural source; the two differed in the
-  injection element and nothing else. That is the comparison
-  `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` was measured
-  under.
-- **#231 (PR #233) to #246 (issue #234):** the chain was reverted, so
-  `device` also carried `Binj_ss` and the two differed only in the DR-0024
-  MIM-cap resize (`XCss`/`XCh_ss`/`XCr_ss`). The A/B had no injection-element
-  content at all in that era.
-- **#246 onward, the current tree:** DR-0023's cascoded mirror lands, so
-  `device` carries the device-level chain again -- `Mgmr_ss`/`Mgmrc_ss` in the
-  reference leg, `Mgmo_ss`/`Mgmc_ss` in the output leg -- and `binj` still
-  carries `Binj_ss`. The A/B is an injection-element comparison again, **but
-  it is confounded by the DR-0024 cap resize**, which `binj` (frozen at
-  `bfc4a0a`) predates. No commit has the cascoded element without the resize,
-  so the confound is named in every record rather than removed.
+- **After #195, before #223.** The September 10 record compared the
+  device-level transconductor in `device` with the ideal `Binj_ss` source in
+  `binj`. Both used the original capacitor sizes, so this record isolated
+  the injection element. [Record 20260910-015601-2387ece](records/20260910-015601-2387ece.md)
+- **PR #223** applied the DR-0024 resize to `device`. It shortened the MIM
+  capacitor lengths of `XCss`, `XCh_ss`, and `XCr_ss` from 60, 70, and 70 µm
+  to 12, 14, and 14 µm, respectively. The device-level transconductor stayed
+  in place. Comparisons with the frozen `binj` now included both differences.
+- **PR #233 (issue #231)** restored `Binj_ss` in `device` and kept the
+  resized capacitors. With the same injection source in both variants, the
+  A/B isolated the capacitor resize.
+- **PR #250 (issue #246)** restored the device-level chain in `device` with
+  DR-0023's cascoded output mirror. The current A/B compares injection
+  elements again, **confounded by the DR-0024 cap resize** because `binj`
+  still uses the original capacitor sizes.
 
-`netlist_variants.py`'s module docstring and `VARIANT_BLURB` are the authority
-for that list and for the terms used below; `TestDutVariantAB` in
-`sim/tests/test_soft_start_loop_gain.py` asserts both halves of the current
-comparison -- that `device` has no `Binj_ss`, and that the confound is still
-present -- so a record cannot silently describe the wrong one.
+`VARIANT_BLURB` in `netlist_variants.py` describes the variants for current
+records. `TestDutVariantAB` in `sim/tests/test_soft_start_loop_gain.py` checks
+the current injection elements and the capacitor-size difference.
 
 ```bash
 python3 sim/run_corners.py --check-env          # is ngspice + the gf180mcu PDK present?
