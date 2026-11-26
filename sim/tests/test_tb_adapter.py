@@ -200,6 +200,48 @@ class Measurements(unittest.TestCase):
             _, specs = ta.measurements(tb)
             self.assertTrue(set(tb.measure) <= {s["name"] for s in specs}, slug)
 
+    def _gain_card(self, expr: str) -> testbench.Testbench:
+        """The amplifier bench reduced to its ``ac`` gain card and one ``measure`` entry."""
+        return dataclasses.replace(
+            _tb("amp-openloop"),
+            analyses=("ac dec 40 0.1 1e9", "meas ac a0_db find vdb(vg1) at=0.1"),
+            measure={"a0_db": expr},
+        )
+
+    def test_a_card_referenced_under_its_own_name_is_emitted_once(self):
+        card = {"name": "a0_db", "spice": ".meas ac a0_db find vdb(vg1) at=0.1"}
+        for expr in ("a0_db", "ac1.a0_db"):
+            with self.subTest(expr=expr):
+                tb = self._gain_card(expr)
+                _, specs = ta.measurements(tb)
+                (state,), _ = ta.states(tb)
+                self.assertEqual(specs, [card])
+                self.assertEqual(state.specs, [card])
+
+    def test_a_self_reference_is_refused_even_when_a_card_has_the_same_name(self):
+        for expr in ("m_a0_db", "ac1.m_a0_db"):
+            tb = self._gain_card(expr)
+            for adapter in (ta.measurements, ta.states):
+                with self.subTest(expr=expr, adapter=adapter.__name__), self.assertRaises(ta.UnsupportedTb):
+                    adapter(tb)
+
+    def test_a_card_name_reused_for_another_expression_is_refused(self):
+        for expr in ("ac1.a0_db + 1", "ac1.g1k_db"):
+            with self.assertRaises(ta.UnsupportedTb) as cm:
+                ta.measurements(self._gain_card(expr))
+            self.assertIn("measure 'a0_db' reuses the name of a .meas card in ac1", str(cm.exception), expr)
+
+    def test_both_paths_agree_on_every_single_analysis_bench(self):
+        # The six benches main() runs through job()/supply_jobs(): the same cards
+        # and ordered measure names give states() and measurements() the same specs.
+        for slug in ("dropout-vs-load", "line-regulation", "load-regulation", "load-transient",
+                     "quiescent-current", "startup"):
+            tb = _tb(slug)
+            _, specs = ta.measurements(tb)
+            (state,), _ = ta.states(tb)
+            self.assertEqual(state.specs,
+                             [{k: v for k, v in s.items() if k not in ("limits", "spec_row")} for s in specs], slug)
+
 
 class JobGrid(unittest.TestCase):
     def test_grid_sizes_match_the_local_records(self):

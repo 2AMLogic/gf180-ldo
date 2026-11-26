@@ -236,21 +236,29 @@ def param_expr(expr: str) -> str:
     return expr
 
 
-def measurements(tb: tbmod.Testbench) -> tuple[dict, list[dict]]:
-    """(``request.analysis``, ``request.measurements``) for ``tb``.
+def measurement_specs(tb: tbmod.Testbench, cards: list[dict], names, kind: str, n: int = 1) -> list[dict]:
+    """``cards`` followed by the ``measure`` entries ``names``, in order, as
+    ``request.measurements`` specs.
 
     A ``meas`` card's result is a scalar ngspice prints, not a vector a later
     ``let`` can read, so a ``measure`` entry built from card results (``(vin_knee_v
     - 1.764)*1e3``) is emitted as a ``.meas <kind> <name> param='<expr>'`` card,
     which does see them. An entry that mixes card results with vector reads
-    (``v(...)``/``i(...)``) has no single-request spelling and is refused.
+    (``v(...)``/``i(...)``) has no single-request spelling and is refused, and so
+    is an entry that reuses the name of one of ``cards`` for anything but that
+    card itself (``a0_db: ac1.a0_db`` is the card, emitted once).
     """
-    analysis, cards = split_analyses(tb.analyses)
-    kind = analysis["kind"]
-    specs = list(cards)
     scalars = {c["name"] for c in cards}
-    for name, expr in tb.measure.items():
-        mapped = map_expr(expr, kind, tb.measure)
+    specs = list(cards)
+    for name in names:
+        expr = tb.measure[name]
+        mapped = map_expr(expr, kind, tb.measure, n)
+        if name in scalars:
+            # map_expr checked the plot. Only that qualifier can precede a card alias.
+            plot = _PLOT_REF.match(expr)
+            if expr == name or (plot and expr[plot.end():] == name):
+                continue
+            raise UnsupportedTb(f"measure {name!r} reuses the name of a .meas card in {kind}{n}")
         if scalars & set(_IDENT.findall(mapped)):
             if _VECTOR_READ.search(mapped):
                 raise UnsupportedTb(
@@ -260,7 +268,18 @@ def measurements(tb: tbmod.Testbench) -> tuple[dict, list[dict]]:
             scalars.add(name)
         else:
             specs.append({"name": name, "expr": mapped})
-    return analysis, with_spec_rows(tb, specs)
+    return specs
+
+
+def measurements(tb: tbmod.Testbench) -> tuple[dict, list[dict]]:
+    """(``request.analysis``, ``request.measurements``) for ``tb``: the bench's
+    one analysis, its ``meas`` cards and ``measure`` entries emitted by
+    :func:`measurement_specs` (the rules :func:`states` applies to each of a
+    chained bench's states), with ``limits`` / ``spec_row`` declared on the
+    bench's spec rows (:func:`with_spec_rows`).
+    """
+    analysis, cards = split_analyses(tb.analyses)
+    return analysis, with_spec_rows(tb, measurement_specs(tb, cards, list(tb.measure), analysis["kind"]))
 
 
 def with_spec_rows(tb: tbmod.Testbench, specs: list[dict]) -> list[dict]:
@@ -367,24 +386,7 @@ def states(tb: tbmod.Testbench) -> tuple[list[State], list[str]]:
     for name in tb.measure:
         resolve(name).names.append(name)
     for s in sts:
-        kind = s.kind
-        scalars = {c["name"] for c in s.cards}
-        s.specs = list(s.cards)
-        for name in s.names:
-            mapped = map_expr(tb.measure[name], kind, tb.measure, s.n)
-            if mapped == name and name in scalars:
-                continue                      # `a0_db: ac1.a0_db`: the card already is the measurement
-            if name in scalars:
-                raise UnsupportedTb(f"measure {name!r} reuses the name of a .meas card in {s.name}")
-            if scalars & set(_IDENT.findall(mapped)):
-                if _VECTOR_READ.search(mapped):
-                    raise UnsupportedTb(
-                        f"measure {name!r} = {tb.measure[name]!r} mixes .meas results with vector reads"
-                    )
-                s.specs.append({"name": name, "spice": f".meas {kind} {name} param='{param_expr(mapped)}'"})
-                scalars.add(name)
-            else:
-                s.specs.append({"name": name, "expr": mapped})
+        s.specs = measurement_specs(tb, s.cards, s.names, s.kind, s.n)
     return [s for s in sts if s.names], init
 
 
