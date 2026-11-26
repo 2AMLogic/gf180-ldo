@@ -216,6 +216,130 @@ git -C "$repo" checkout -q -- .loom/config.json
 assert_eq "$(loom_resolve_config "$repo")" '{"a":1}' "diverged HEAD reads the working copy"
 rm -rf "$repo"
 
+# --- Tests 13-16: oversized tiers must not hit the argv limit (#15313) ---
+# Linux caps each argv string at MAX_ARG_STRLEN (131072 bytes). The resolver
+# used to pass every tier as a `jq --argjson` argument, so a tier at/over that
+# size failed with "Argument list too long" (rc 126). Fixtures are generated
+# at run time; nothing over 128 KiB is committed.
+
+# write_sized_tier <path> <bytes> -> compact JSON object of exactly <bytes>.
+write_sized_tier() {
+    local path="$1" size="$2" pad
+    mkdir -p "$(dirname "$path")"
+    pad=$(head -c $((size - 8)) /dev/zero | tr '\0' 'x')
+    printf '{"x":"%s"}' "$pad" > "$path"
+    [[ "$(wc -c < "$path")" -eq "$size" ]] || fail "fixture $path is not $size bytes"
+}
+
+# Tier-relative path for each of the five positions (defaults is handled via
+# LOOM_CONFIG_DEFAULTS_FILE, so its "relative" path lives under the repo dir
+# purely for fixture storage).
+declare -A TIER_PATH=(
+    [defaults]="defaults-fixture.json"
+    [legacy]="$LOOM_CONFIG_LEGACY_REL"
+    [project]="$LOOM_CONFIG_PROJECT_REL"
+    [fleet]=".loom-local/fleet-repo.json"
+    [local]="$LOOM_CONFIG_LOCAL_REL"
+)
+
+echo "Test 13: oversized tier (131071 / 131072 / 137977 bytes) in each of the five positions round-trips"
+for tier in defaults legacy project fleet local; do
+    for size in 131071 131072 137977; do
+        repo=$(new_repo)
+        write_sized_tier "$repo/${TIER_PATH[$tier]}" "$size"
+        if [[ "$tier" == "defaults" ]]; then
+            export LOOM_CONFIG_DEFAULTS_FILE="$repo/${TIER_PATH[$tier]}"
+        fi
+        rc=0
+        actual=$(loom_resolve_config "$repo" 2>/dev/null) || rc=$?
+        export LOOM_CONFIG_DEFAULTS_FILE=""
+        assert_eq "$rc" "0" "$tier tier of $size bytes resolves with exit 0"
+        if [[ "$rc" -eq 0 ]] && [[ "$actual" == "$(jq -c . "$repo/${TIER_PATH[$tier]}")" ]]; then
+            pass "$tier tier of $size bytes: output equals input"
+        else
+            fail "$tier tier of $size bytes: output differs from input"
+        fi
+        rm -rf "$repo"
+    done
+done
+
+echo "Test 14: oversized defaults tier + higher-tier nested override keeps unrelated keys"
+repo=$(new_repo)
+pad=$(head -c 140000 /dev/zero | tr '\0' 'x')
+printf '{"pad":"%s","autonomous":{"a":1,"b":2}}' "$pad" > "$repo/defaults-fixture.json"
+mkdir -p "$repo/.loom-local"
+echo '{"autonomous":{"b":9,"c":3}}' > "$repo/.loom-local/local.json"
+export LOOM_CONFIG_DEFAULTS_FILE="$repo/defaults-fixture.json"
+actual=$(loom_resolve_config "$repo")
+export LOOM_CONFIG_DEFAULTS_FILE=""
+assert_eq "$(printf '%s' "$actual" | jq -c '.autonomous')" '{"a":1,"b":9,"c":3}' "nested merge preserved: override applied, unrelated keys kept"
+assert_eq "$(printf '%s' "$actual" | jq -r '.pad | length')" "140000" "oversized defaults payload retained"
+rm -rf "$repo"
+
+echo "Test 15: missing/malformed tier next to an oversized one falls back to {} for that tier only"
+repo=$(new_repo)
+write_sized_tier "$repo/defaults-fixture.json" 137977
+mkdir -p "$repo/.loom" "$repo/.loom-local"
+echo '{not json' > "$repo/.loom/config.json"          # malformed legacy
+echo '{"keep": true}' > "$repo/.loom-local/local.json" # valid local; project/fleet missing
+export LOOM_CONFIG_DEFAULTS_FILE="$repo/defaults-fixture.json"
+rc=0
+actual=$(loom_resolve_config "$repo" 2>/dev/null) || rc=$?
+export LOOM_CONFIG_DEFAULTS_FILE=""
+assert_eq "$rc" "0" "resolves with exit 0"
+assert_eq "$(printf '%s' "$actual" | jq -c '.keep')" "true" "valid higher tier still applied"
+assert_eq "$(printf '%s' "$actual" | jq -r '.x | length')" "137969" "oversized defaults tier still applied"
+assert_eq "$(printf '%s' "$actual" | jq -c 'keys')" '["keep","x"]' "malformed/missing tiers contributed nothing"
+rm -rf "$repo"
+
+echo "Test 16: resolver passes no tier JSON on jq's argv"
+if grep -v '^[[:space:]]*#' "$CONFIG_RESOLVER_LIB" | grep -q -e '--argjson'; then
+    fail "config-resolver.sh still uses --argjson"
+else
+    pass "config-resolver.sh does not use --argjson"
+fi
+
+echo "Test 17: loom_config_get propagates a resolver failure (#15321)"
+repo=$(new_repo)
+errf="$repo/stderr.txt"
+# Subshell-scoped stub: the override never leaks into the other tests.
+rc=0
+out=$(
+    # shellcheck disable=SC2317  # invoked indirectly by loom_config_get
+    loom_resolve_config() { echo "stub resolver: boom" >&2; return 37; }
+    loom_config_get "$repo" sample.key fallback 2>"$errf"
+) || rc=$?
+assert_eq "$rc" "37" "getter returns the resolver's status"
+assert_eq "$out" "" "getter emits nothing on stdout (no fallback)"
+assert_eq "$(cat "$errf")" "stub resolver: boom" "resolver diagnostic reaches stderr"
+
+# Same failure, but with the getter tested in an `if` condition.
+cond=$(
+    # shellcheck disable=SC2317  # invoked indirectly by loom_config_get
+    loom_resolve_config() { echo "stub resolver: boom" >&2; return 37; }
+    if got=$(loom_config_get "$repo" sample.key fallback 2>/dev/null); then
+        echo "treated-as-success:$got"
+    else
+        echo "failed:$?"
+    fi
+)
+assert_eq "$cond" "failed:37" "failure is visible when the getter is an if condition"
+
+# Successful resolution still yields value / default with status 0.
+mkdir -p "$repo/.loom" "$repo/.loom-local"
+echo '{"present": "configured", "scalar": 1}' > "$repo/.loom/config.json"
+rc=0
+assert_eq "$(loom_config_get "$repo" present fallback)" "configured" "configured value returned"
+loom_config_get "$repo" present fallback >/dev/null || rc=$?
+assert_eq "$rc" "0" "configured value returns status 0"
+rc=0
+out=$(loom_config_get "$repo" absent fallback) || rc=$?
+assert_eq "$out/$rc" "fallback/0" "absent key returns default with status 0"
+rc=0
+out=$(loom_config_get "$repo" scalar.child fallback) || rc=$?
+assert_eq "$out/$rc" "fallback/0" "path through a scalar returns default with status 0"
+rm -rf "$repo"
+
 # --- Summary ---
 echo ""
 echo "────────────────────────────────"
