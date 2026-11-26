@@ -80,7 +80,6 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "sim"))
 from harness import klt_batch as kb  # noqa: E402
-from harness import evidence_store as store  # noqa: E402
 from harness import tb_adapter  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -517,19 +516,9 @@ def main(argv=None, *, preflight=None) -> int:
         # append-only evidence tree is the one destination raw bytes may never
         # take (DR-0041, issue #686): refused before the store is even probed.
         tb_adapter.refuse_protected_out(REPO, Path(args.dest), flag="--dest", slug="soft-start")
-    # An evidence run must be storable before any fleet time is spent (DR-0044):
-    # no broker, no `klt artifact` verb, or an unreachable broker refuses now.
-    # There is no commit-the-bytes fallback. An `--only` debug point is not
-    # evidence and needs no store.
-    if args.only is None:
-        try:
-            (preflight or store.preflight)(REPO)
-        except store.StoreError as exc:
-            print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
-                  "Evidence bytes go to the artifact store only (sim/README.md, "
-                  '"Stored evidence"); an --only debug point needs no store.',
-                  file=sys.stderr)
-            return tb_adapter.EXIT_NOT_STORED
+    refused = tb_adapter.refuse_unstorable_run(REPO, args.only, preflight)
+    if refused is not None:
+        return refused
     axes = kb.only_axes(args.only)
     if args.axes:
         p, t, vv = args.axes.split(",")

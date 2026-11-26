@@ -502,6 +502,38 @@ def grade(tb: tbmod.Testbench, values: dict) -> bool:
                for key, lim in tb.checks.items())
 
 
+def refuse_unstorable_run(repo: Path, only: str | None, preflight=None) -> int | None:
+    """Fail closed before any fleet time is spent unless the run is storable.
+
+    Issue #511 / DR-0044, in one place for :func:`main` and the drivers that
+    import this adapter: an evidence run must be storable before any fleet
+    time is spent. No broker, no ``klt artifact`` verb, or a broker that is
+    unreachable or refuses: refuse now. There is no commit-the-bytes
+    fallback. An ``--only`` debug point is not evidence and needs no store --
+    the probe is skipped. ``preflight`` is the store probe, injected by the
+    routing tests.
+
+    Returns :data:`EXIT_NOT_STORED` -- the same diagnostic on stderr, having
+    written nothing -- when the run must be refused, ``None`` when it may
+    proceed.
+    """
+    if only is not None:
+        return None
+    import sys
+
+    from . import evidence_store as store
+
+    try:
+        (preflight or store.preflight)(repo)
+    except store.StoreError as exc:
+        print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
+              "Evidence bytes go to the artifact store only (sim/README.md, "
+              '"Stored evidence"); an --only debug point needs no store.',
+              file=sys.stderr)
+        return EXIT_NOT_STORED
+    return None
+
+
 def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None = None,
          extra_measurements: list[dict] | None = None, preflight=None, **job_opts) -> int:
     """The whole ``klt_run.py`` for a bench: grid -> fleet -> staging tree.
@@ -514,7 +546,8 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
 
     Fail closed: unless this is an ``--only`` debug point, the evidence store
     is probed before any fleet time is spent, and an unstorable run exits
-    :data:`EXIT_NOT_STORED` having written nothing.
+    :data:`EXIT_NOT_STORED` having written nothing
+    (:func:`refuse_unstorable_run`).
 
     ``body_override`` / ``extra_measurements`` are :func:`job`'s; only a
     single-analysis bench with a swept supply supports them.
@@ -523,9 +556,7 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
     by the tests.
     """
     import argparse
-    import sys
 
-    from . import evidence_store as store
     from . import pdk
     from .klt_ab import add_ab_args, parse_params, run_ab, write_summary_csv
 
@@ -554,18 +585,10 @@ def main(testbench_dir: Path, doc: str, argv=None, *, body_override: str | None 
         raise SystemExit(f"sim/{tb.experiment}/corners/{args.record_id}/ already exists; "
                          "append-only evidence is never rewritten -- choose another --record-id")
     # Issue #511 / DR-0044: an evidence run must be storable before any fleet
-    # time is spent. No broker, no `klt artifact` verb, or a broker that is
-    # unreachable or refuses: refuse now. There is no commit-the-bytes
-    # fallback. An `--only` debug point is not evidence and needs no store.
-    if args.only is None:
-        try:
-            (preflight or store.preflight)(repo)
-        except store.StoreError as exc:
-            print(f"EVIDENCE STORE UNAVAILABLE -- refusing to simulate: {exc}. "
-                  "Evidence bytes go to the artifact store only (sim/README.md, "
-                  '"Stored evidence"); an --only debug point needs no store.',
-                  file=sys.stderr)
-            return EXIT_NOT_STORED
+    # time is spent; an `--only` debug point is not evidence and needs no store.
+    refused = refuse_unstorable_run(repo, args.only, preflight)
+    if refused is not None:
+        return refused
     hooks = {"body_override": body_override, "extra_measurements": extra_measurements}
     if (body_override is not None or extra_measurements) and (chained or supply_in_waveform(tb)):
         raise UnsupportedTb(f"{tb.name}: body_override/extra_measurements need a single-analysis bench with a swept supply")
