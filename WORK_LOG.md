@@ -6,6 +6,17 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 - [2026-09](work_log/WORK_LOG_2026-09.md)
 
+### 2026-11-26
+
+- **PR #859**: refactor(sim): build every completed-run PointResult through one constructor
+- **Issue #857** (closed): Consolidate the five PointResult constructors for completed ngspice corners
+- **PR #856**: refactor: share the changed-record selector between the record CI gates
+- **Issue #854** (closed): Share the changed-record selector between the two evidence checks
+- **PR #855**: refactor(sim): share the evidence-store preflight gate across the seven entry points
+- **Issue #853** (closed): Share the evidence-store preflight across seven simulation entry points
+- **PR #851**: fix(sim): report measured loop margins at the light-load point
+- **Issue #850** (closed): Remove fixed failure claims from loop-stability reports
+
 ### 2026-11-25
 
 - **PR #849**: fix(layout): check the raw LVS runset only for pdk-deck cells
