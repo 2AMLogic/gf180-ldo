@@ -38,14 +38,17 @@ import argparse
 import re
 import subprocess
 import sys
+from pathlib import Path
 
-# Single source of truth for the CI gate and its regression test. Kept
-# identical to sim/check_record_host_paths.py's PATHSPECS.
-PATHSPECS = (
-    "sim/*/records/*",
-    "signoff/records/*",
-    "layout/records/*",
-)
+# Which files are evidence records, and the git query that selects the
+# added/modified ones, are shared with sim/check_record_host_paths.py via
+# sim/record_selection.py (issue #854): one definition, so the two gates
+# can never disagree about which files they inspect. Until #854 this file
+# carried its own copy of the pathspecs with a comment asking maintainers
+# to keep it identical to the host-path check's -- an agreement with no
+# mechanism behind it.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from record_selection import changed_files  # noqa: E402  -- needs the sys.path insert above
 
 # Literal placeholders a record writer emits for a human to replace before the
 # record is committed. Shared with sim/tests/test_check_record_reading.py --
@@ -63,14 +66,6 @@ ANY_HEADING = re.compile(r"^#{1,6}\s")
 # Fenced code blocks: a `## Reading` inside one is sample text, not a heading,
 # and a fence must not end the section it sits in.
 FENCE = re.compile(r"^\s*(?:```|~~~)")
-
-
-def changed_files(base: str) -> list[str]:
-    out = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=AM", f"{base}...HEAD",
-         "--", *PATHSPECS],
-        check=True, capture_output=True, text=True).stdout
-    return [line for line in out.splitlines() if line]
 
 
 def read_lines(path: str) -> list[str]:

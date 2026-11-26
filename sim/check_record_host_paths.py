@@ -17,22 +17,16 @@ import argparse
 import re
 import subprocess
 import sys
+from pathlib import Path
 
-# Single source of truth for the CI gate and its regression test.
-PATHSPECS = (
-    "sim/*/records/*",
-    "signoff/records/*",
-    "layout/records/*",
-)
+# Which files are evidence records, and the git query that selects the
+# added/modified ones, are shared with sim/check_record_reading.py via
+# sim/record_selection.py (issue #854): one definition, so the two gates
+# can never disagree about which files they inspect.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from record_selection import changed_files  # noqa: E402  -- needs the sys.path insert above
+
 HOST_PATH = re.compile(r"/home/[a-z]|/Users/[a-z]")
-
-
-def changed_files(base: str) -> list[str]:
-    out = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=AM", f"{base}...HEAD",
-         "--", *PATHSPECS],
-        check=True, capture_output=True, text=True).stdout
-    return [line for line in out.splitlines() if line]
 
 
 def offenders(files: list[str]) -> list[str]:
