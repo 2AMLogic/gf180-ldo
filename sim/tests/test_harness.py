@@ -2919,12 +2919,13 @@ class CheckEnvProvenanceTests(unittest.TestCase):
     """
 
     def setUp(self):
-        # One valid PDK for the whole class, so each case's ngspice inputs
-        # alone decide the exit status (#858: a missing-PDK mock forced
-        # EXIT_ENVIRONMENT in all six cases, masking the status contract).
-        self._tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._tmp.cleanup)
-        self.pdk = fake_pdk(Path(self._tmp.name) / "pdk")
+        # Default to a valid PDK so the ngspice checks determine the exit status.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        pdk = fake_pdk(Path(tmp.name) / "pdk")
+        patcher = unittest.mock.patch.object(cli, "find_pdk", return_value=pdk)
+        self.find_pdk = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _run_check_env(self):
         buffer = io.StringIO()
@@ -2949,7 +2950,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             exe = fake_ngspice_install(root)
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", return_value=self.pdk), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -2972,7 +2972,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             shadow_exe = fake_ngspice_install(Path(tmp) / "local-build")
             with unittest.mock.patch("shutil.which", return_value=str(shadow_exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", return_value=self.pdk), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -2995,7 +2994,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             prefixes = {runner.DRIFTING_HOMEBREW_FORMULA: str(drifted)}
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", return_value=self.pdk), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", side_effect=prefixes.get), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -3022,7 +3020,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             env[runner.NGSPICE_ROOT_ENV] = str(blessed)
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", return_value=self.pdk), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(drifted)), \
                 unittest.mock.patch.dict(os.environ, env, clear=True):
                 status, out = self._run_check_env()
@@ -3037,7 +3034,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             exe.write_bytes(b"fake\n")
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", return_value=self.pdk), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -3058,7 +3054,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             exe.write_bytes(b"fake\n")
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-42"), \
-                unittest.mock.patch.object(cli, "find_pdk", return_value=self.pdk), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -3073,12 +3068,12 @@ class CheckEnvProvenanceTests(unittest.TestCase):
     def test_missing_pdk_alone_drives_the_exit_status(self):
         """The missing-PDK branch on its own (#858): ngspice provenance
         matches, so a non-zero exit has exactly one cause -- the PDK."""
+        self.find_pdk.side_effect = PdkNotFound("no pdk")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "homebrew"
             exe = fake_ngspice_install(root)
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -3086,6 +3081,7 @@ class CheckEnvProvenanceTests(unittest.TestCase):
                 status, out = self._run_check_env()
             self.assertEqual(status, cli.EXIT_ENVIRONMENT)
             self.assertIn("ngspice : OK", out)
+            self.assertIn("provenance OK", out)
             self.assertIn("PDK     : MISSING", out)
 
 
