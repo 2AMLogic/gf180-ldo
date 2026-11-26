@@ -433,6 +433,7 @@ def xcheck_section(xcheck: dict) -> str:
     if "error" in xcheck:
         lines.append(f"  The same-host re-run could not be made: "
                      f"{xcheck['error']}.\n")
+    compared: set[str] = set()
     for label, key, caveat in (
         ("Same host, same session, same ngspice binary", "here",
          "This comparison has **no toolchain term in it at all**: "
@@ -448,9 +449,16 @@ def xcheck_section(xcheck: dict) -> str:
          "reported for completeness, and the bar it is held to is #182's own "
          "~2 deg / ~1 dB movement class."),
     ):
-        deltas = xcheck.get(key)
-        if not deltas:
+        if key not in xcheck:
             continue
+        deltas = xcheck[key]
+        if not deltas:
+            lines.append(f"  **{label}** -- **0 shared points**: this grid "
+                         f"shares no (corner, C_eff, ESR) with the "
+                         f"cross-check, so neither a delta nor a verdict is "
+                         f"reported for this reference.\n")
+            continue
+        compared.add(key)
         ok, wpm, wgm, wf0, n, mism = xcheck[f"{key}_verdict"]
         worst = max((d for d in deltas if d[2] is not None),
                     key=lambda d: abs(d[2]), default=None)
@@ -473,25 +481,38 @@ def xcheck_section(xcheck: dict) -> str:
         lines.extend(xcheck_mismatch_lines(n, mism))
         lines.append(f"  - **verdict: {'AGREES' if ok else 'DISAGREES'}**")
         lines.append(f"\n  {caveat}\n")
+    if "committed" in compared:
+        reference = ("  The most recent loop-stability record that shares points with\n"
+                     "  this run is `20260906-071437-fff0bf0`, compared above")
+    else:
+        reference = ("  The loop-stability record this experiment's default grid is\n"
+                     "  built to overlap is `20260906-071437-fff0bf0`")
+        if "committed" in xcheck:
+            reference += ("; this run's join\n"
+                          "  against it produced no shared points, so no comparison with it\n"
+                          "  is claimed")
     lines.append(
-        f"  **Why the comparison is against `20260906-071437-fff0bf0` and not\n"
-        f"  against `{LS_DIAGNOSTIC_RECORD}`, which is `sim/loop-stability/`'s\n"
+        f"  **Why `20260906-071437-fff0bf0` is the reference instead of\n"
+        f"  `{LS_DIAGNOSTIC_RECORD}`, which is `sim/loop-stability/`'s\n"
         f"  latest record.** `{LS_DIAGNOSTIC_RECORD}` is a *diagnostic* record\n"
         f"  (issue #182's toolchain-provenance investigation): its own\n"
         f"  \"Netlist provenance\" field says **diagnostic -- no new full-matrix\n"
         f"  simulation**, it has no `-matrix.csv`, and its evidence is\n"
         f"  re-simulations of a single control point, `ff_125c_2.97v` at\n"
         f"  I_load = 1 mA / C_eff = 0.33 uF / ESR = 0.2 ohm. That point shares no\n"
-        f"  (load, C_eff) coordinate with this experiment, which measures the\n"
-        f"  rated 50 mA load at 1 uF and 4.7 uF because that is the operating\n"
-        f"  point `sim/soft-start/` runs and therefore the one the #191\n"
-        f"  regression is about. There is consequently **no shared grid point**\n"
-        f"  between the two records to compare, and the honest statement is that\n"
-        f"  this is a discrepancy of coverage, not of result. The most recent\n"
-        f"  loop-stability record that *does* have shared points is\n"
-        f"  `20260906-071437-fff0bf0`, compared above; and the same-host re-run\n"
-        f"  above is a stronger check than either, because it removes the\n"
-        f"  toolchain term `{LS_DIAGNOSTIC_RECORD}` exists to document.\n"
+        f"  (load, C_eff) coordinate with this experiment's default grid, which\n"
+        f"  is the rated 50 mA load at 1 uF and 4.7 uF because that is the\n"
+        f"  operating point `sim/soft-start/` runs and therefore the one the\n"
+        f"  #191 regression is about (the grid this run actually used is listed\n"
+        f"  under *Corner matrix run*). There is consequently **no shared grid\n"
+        f"  point** between the two records to compare, and the honest\n"
+        f"  statement is that this is a discrepancy of coverage, not of result.\n"
+        + reference
+        + ("; and the same-host re-run\n  above is a stronger check than "
+           "either, because it removes the\n  toolchain term "
+           f"`{LS_DIAGNOSTIC_RECORD}` exists to document"
+           if "here" in compared else "")
+        + ".\n"
     )
     return "\n".join(lines) + "\n"
 
@@ -925,8 +946,8 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   Each variant exposes the ramp node `SSR` through the `ldo_softstart` and
   `ldo_core` port lists and the `Xsoftstart` instance line. `SSR` is already a
   node of the cell, so promoting it to a port renames nothing and connects
-  nothing; the `anchor` phase leaves the new port unconnected and **measures**
-  that this is so (see the cross-check below). Nothing under `design/` is
+  nothing; the `anchor` phase leaves the new port unconnected so that the
+  cross-check below can test whether that is so. Nothing under `design/` is
   modified by this experiment. The netlist snapshots are linked below.
   The idealizations in the loop are the ones every other record here names:
   the deck's ideal 1.2 V `VREF` source (#174 / DR-0021) and `Fbias` inside
@@ -1066,7 +1087,8 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
 {f'''  - Full {sum(len(c.points) for c in curves)}-point DC hand-over transfer,
     machine-readable:
     `sim/soft-start-loop-gain/records/{record_id}-handover.csv`''' if curves else '  - (no hand-over transfer in this run)'}
-  - The experiment this one is built from and cross-checked against:
+  - The experiment this one is built from, and the reference its anchor is
+    compared with when the join has matches (see above):
     `sim/loop-stability/` (record `20260906-071437-fff0bf0`, and the
     toolchain-provenance investigation `{LS_DIAGNOSTIC_RECORD}`)
   - The large-signal record this one exists to explain:

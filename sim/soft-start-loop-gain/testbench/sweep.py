@@ -887,6 +887,10 @@ def xcheck_verdict(deltas):
 def print_xcheck(label: str, verdict) -> None:
     """Print one anchor comparison's console summary and its crossing mismatches."""
     ok, wpm, wgm, wf0, n, mism = verdict
+    if not n:
+        print(f"  {label} : 0 shared points: this grid shares no "
+              f"(corner, C_eff, ESR) with the cross-check")
+        return
     print(f"  {label} : {n} shared points, worst |dPM| {wpm:.3f} deg, "
           f"|dGM| {wgm:.3f} dB, |df0| {100 * wf0:.3f}%, "
           f"{len(mism)} GM crossing mismatch{'' if len(mism) == 1 else 'es'}"
