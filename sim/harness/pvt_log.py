@@ -26,6 +26,8 @@ import re
 from collections.abc import Callable, Sequence
 from typing import NamedTuple
 
+from .corners import format_corner_id
+
 # ngspice `print`s a length-1 vector measurement as "m_foo = 1.234e+00",
 # sometimes with trailing `targ=`/`trig=`/`at=` context on the same line
 # (soft-start's .meas TRIG/TARG lines) that this pattern deliberately does
@@ -105,6 +107,29 @@ def read_measurements(log: pathlib.Path, scalars: Sequence[str]) -> dict[str, fl
     return vals
 
 
+def _corner_log(
+    log_dir: pathlib.Path, corner: str, temp: str, vin: float
+) -> tuple[str, pathlib.Path]:
+    """``(corner_id, log)`` for one grid point of :func:`grid_rollup`.
+
+    ``corner_id`` is the canonical ``<corner>_<temp>c_<vin>v`` spelling from
+    :func:`harness.corners.format_corner_id` -- the id the grid and the
+    ``klt`` report join on -- so every numerically equal spelling of the
+    temperature (``27``, ``27.0``, ``27.00``) names the same point and reads
+    the same ``<log_dir>/<corner_id>.log``. A log an older shell run wrote
+    under the caller's own spelling (``tt_27.0c_3.30v.log``) is read instead
+    when no canonical file exists, so those records keep replaying. With
+    neither present the canonical path is returned, so the
+    ``FileNotFoundError`` names the file to look for.
+    """
+    cid = format_corner_id(corner, float(temp), vin)
+    canonical = log_dir / f"{cid}.log"
+    literal = log_dir / f"{corner}_{temp}c_{vin:.2f}v.log"
+    if not canonical.exists() and literal.exists():
+        return cid, literal
+    return cid, canonical
+
+
 def grid_rollup(
     log_dir: pathlib.Path,
     corners: str,
@@ -113,11 +138,17 @@ def grid_rollup(
     scalars: Sequence[str],
     derive: Callable[[dict], None],
 ) -> list[tuple]:
-    """Read ``<log_dir>/<corner>_<temp>c_<vin>v.log`` for every point of the
-    full-factorial ``corners x temps x supplies`` grid and return
-    ``(cid, corner, temp, vin, vals)`` rows. ``derive(vals)`` adds the
-    testbench's derived columns to each point's ``vals`` in place.
-    Pure: no printing, no writing.
+    """Read the log of every point of the full-factorial ``corners x temps
+    x supplies`` grid and return ``(cid, corner, temp, vin, vals)`` rows.
+    ``derive(vals)`` adds the testbench's derived columns to each point's
+    ``vals`` in place. Pure: no printing, no writing.
+
+    Each log is looked up under its canonical corner id -- the shared
+    formatter's spelling (:func:`harness.corners.format_corner_id`), so ``27``
+    and ``27.0`` both read ``tt_27c_3.30v.log`` -- falling back to the
+    caller's own spelling for older logs (:func:`_corner_log`). ``cid`` is
+    that canonical id; ``temp`` and ``vin`` stay the caller's strings, as the
+    CSV's ``temp_c`` / ``vin_v`` columns have always printed them.
 
     Fails loud on a missing log (``FileNotFoundError``), on a log with a
     missing or unparsable measurement (``SystemExit``, via
@@ -125,13 +156,15 @@ def grid_rollup(
     required.
     """
     rows = []
+    log_dir = pathlib.Path(log_dir)
     for c in corners.split():
         for t in temps.split():
             for v in supplies.split():
-                cid = "%s_%sc_%.2fv" % (c, t, float(v))
-                vals = read_measurements(pathlib.Path(log_dir) / f"{cid}.log", scalars)
+                vin = float(v)
+                cid, log = _corner_log(log_dir, c, t, vin)
+                vals = read_measurements(log, scalars)
                 derive(vals)
-                vals["_vin"] = float(v)
+                vals["_vin"] = vin
                 rows.append((cid, c, t, v, vals))
     if not rows:
         raise SystemExit("FATAL: empty corner grid")

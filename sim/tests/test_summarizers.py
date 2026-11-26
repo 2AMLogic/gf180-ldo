@@ -26,6 +26,12 @@ partial rollup.
 Nothing here writes under ``sim/*/records`` or ``sim/*/corners``: fixtures
 are read in place and every output goes to a ``TemporaryDirectory``.
 
+The current-limit and enable-shutdown rollups also get a corner-log lookup
+case each: both resolve a point's log through ``harness.pvt_log.grid_rollup``,
+which names it with the shared corner-id formatter, so a temperature spelled
+``27.0`` reads the same committed ``tt_27c_3.30v.log`` as ``27`` -- while a
+log an older run named with its caller's literal spelling still replays.
+
 The ``klt_run.py`` wrappers (soft-start, current-limit, quiescent-current)
 submit work to ``klt sim`` and cannot run here; only their pure
 post-processing (``derive`` / ``grade``) is tested, against the committed
@@ -581,6 +587,55 @@ class EnableShutdownMalformed(unittest.TestCase):
             (Path(tmp) / src.name).write_text("\n".join(lines[:last_meas]) + "\n")
             with self.assertRaisesRegex(SystemExit, "missing measurements"):
                 es.rollup(Path(tmp), "ff", "125", "3.63")
+
+
+# --- corner log lookup (harness.pvt_log.grid_rollup) ---------------------------
+
+# bench -> its rollup and the committed record it is golden-tested against.
+# Both standalone rollups resolve a point's log through the shared grid_rollup.
+_ROLLUPS = (("current-limit", cl.rollup, CL_DIR / "corners" / CL_RECORD),
+            ("enable-shutdown", es.rollup, ES_DIR / "corners" / ES_RECORD))
+
+
+class CornerLogLookup(unittest.TestCase):
+    """A point's log is named by the shared corner-id formatter, so ``27.0``
+    and ``27`` read the same file and report the same canonical corner id."""
+
+    def test_decimal_temperature_spelling_reads_the_same_log(self):
+        for bench, rollup, log_dir in _ROLLUPS:
+            with self.subTest(bench=bench):
+                whole = rollup(log_dir, "tt", "27 -40", "3.30")
+                decimal = rollup(log_dir, "tt", "27.0 -40.0", "3.30")
+                self.assertEqual([r[0] for r in whole], ["tt_27c_3.30v", "tt_-40c_3.30v"])
+                self.assertEqual([r[0] for r in decimal], [r[0] for r in whole])
+                self.assertEqual([r[-1] for r in decimal], [r[-1] for r in whole])
+
+    def test_literal_spelling_log_still_replays(self):
+        # No canonical file: a log an older run named with its caller's own
+        # temperature spelling is read, under the canonical id.
+        for bench, rollup, log_dir in _ROLLUPS:
+            with self.subTest(bench=bench), tempfile.TemporaryDirectory() as tmp:
+                (Path(tmp) / "tt_27.0c_3.30v.log").write_text((log_dir / "tt_27c_3.30v.log").read_text())
+                rows = rollup(Path(tmp), "tt", "27.0", "3.30")
+                self.assertEqual(rows[0][0], "tt_27c_3.30v")
+                self.assertEqual(rows[0][-1], rollup(log_dir, "tt", "27", "3.30")[0][-1])
+
+    def test_canonical_log_is_preferred_over_the_literal_spelling(self):
+        # The literal-named copy is half a log, which would fail loud if read.
+        src = CL_DIR / "corners" / CL_RECORD / "tt_27c_3.30v.log"
+        lines = src.read_text().splitlines()
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / src.name).write_text(src.read_text())
+            (Path(tmp) / "tt_27.0c_3.30v.log").write_text("\n".join(lines[: len(lines) // 2]) + "\n")
+            rows = cl.rollup(Path(tmp), "tt", "27.0", "3.30")
+        self.assertEqual(rows[0][-1], cl.rollup(src.parent, "tt", "27", "3.30")[0][-1])
+
+    def test_missing_log_fails_naming_the_canonical_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for bench, rollup, _ in _ROLLUPS:
+                with self.subTest(bench=bench), \
+                        self.assertRaisesRegex(FileNotFoundError, r"tt_27c_3[.]30v[.]log"):
+                    rollup(Path(tmp), "tt", "27.0", "3.30")
 
 
 # --- klt_run.py wrappers: pure post-processing only ----------------------------
