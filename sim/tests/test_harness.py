@@ -700,8 +700,8 @@ class DcPathClassificationTests(unittest.TestCase):
     """#301: which rung of ngspice's DC continuation ladder a corner used.
 
     No ngspice and no PDK: every case is a canned log. The phrases these
-    assert on are ngspice's own, and ``test_the_committed_corpus_still_...``
-    below pins them against real committed evidence so a phrase change in a
+    assert on are ngspice's own, and ``CommittedLadderPhraseTests`` below
+    pins them against real committed evidence so a phrase change in a
     future ngspice cannot rot the classifier silently.
     """
 
@@ -842,22 +842,6 @@ class DcPathClassificationTests(unittest.TestCase):
             },
             path.as_dict(),
         )
-
-    def test_the_committed_corpus_still_matches_these_phrases(self):
-        """Pin the phrase list against real, already-committed ngspice output.
-
-        Every phrase in ``CONTINUATION_LADDER`` is asserted to occur in at
-        least one committed corner log under ``sim/*/corners/``. If a future
-        ngspice reworded one, this fails loudly instead of quietly
-        reclassifying every corner as ``direct``.
-        """
-        corpus = list((SIM_DIR).glob("*/corners/*/*.log"))
-        self.assertTrue(corpus, "no committed corner logs to pin against")
-        blob = "\n".join(p.read_text(errors="replace") for p in corpus).lower()
-        for name, phrase in runner.CONTINUATION_LADDER:
-            with self.subTest(rung=name):
-                self.assertIn(phrase.lower(), blob)
-        self.assertIn(runner.LADDER_ENTRY_PHRASE.lower(), blob)
 
     def test_two_committed_logs_classify_as_the_rungs_they_show(self):
         """End-to-end over real evidence, not a fixture the test wrote itself.
@@ -1334,17 +1318,65 @@ class RunPointLadderGateTests(unittest.TestCase):
             offenders, "the committed #310 evidence log no longer shows the rung"
         )
 
-    def test_the_committed_corpus_still_matches_these_phrases(self):
-        """Pin the gate's phrases against real committed ngspice output, the
-        same way DcPathClassificationTests pins the ladder's -- if a future
-        ngspice reworded one, this fails loudly instead of quietly passing
-        every pseudo-transient corner."""
-        corpus = list(SIM_DIR.glob("*/corners/*/*.log"))
-        self.assertTrue(corpus, "no committed corner logs to pin against")
-        blob = "\n".join(p.read_text(errors="replace") for p in corpus).lower()
-        for phrase in ("transient op", "source stepping failed"):
-            with self.subTest(phrase=phrase):
-                self.assertIn(phrase, blob)
+
+class CommittedLadderPhraseTests(unittest.TestCase):
+    """#901: every ladder phrase occurs in a real, committed ngspice log.
+
+    The classification and gate tests above assert on canned logs whose
+    ladder lines are hand-written copies of ``runner``'s phrases, so a
+    rewording applied to both stays green even though ngspice never printed
+    it. Committed evidence cannot be edited in lockstep. This pins each
+    phrase the classifier (:data:`runner.CONTINUATION_LADDER`,
+    :data:`runner.LADDER_ENTRY_PHRASE`) and the #310 gate
+    (:data:`runner._LADDER_EXHAUSTION_RE`) match on to a real ngspice log,
+    so a reworded phrase fails here by name instead of quietly
+    reclassifying every corner as ``direct`` or passing every
+    pseudo-transient corner.
+
+    Two logs cover all seven phrases between them and are read directly.
+    ``ss_27c_3.63v.log`` (quiescent-current record ``20260923-125526-8225d5d``)
+    fell through dynamic gmin and solved on true gmin stepping -- the one
+    completion the other log lacks. ``res_ff_-40c_2.10v.log`` (dropout-vs-load
+    record ``20260923-092452-7093caa``) is a supply sweep whose points
+    stopped at dynamic gmin, at source stepping and, past a
+    ``source stepping failed``, at the pseudo-transient rung. The corpus scan
+    this replaces read all 9,944 committed corner logs (170 MB) twice per
+    suite, a cost that grew with the archive. A missing log fails rather
+    than skips: this is the only pin, and a skipped pin protects nothing.
+    """
+
+    TRUE_GMIN_LOG = (
+        SIM_DIR / "quiescent-current" / "corners" / "20260923-125526-8225d5d"
+        / "ss_27c_3.63v.log"
+    )
+    FULL_DESCENT_LOG = (
+        SIM_DIR / "dropout-vs-load" / "corners" / "20260923-092452-7093caa"
+        / "res_ff_-40c_2.10v.log"
+    )
+
+    def test_every_ladder_phrase_occurs_in_a_committed_ngspice_log(self):
+        """Every phrase is checked against the committed log cited for it,
+        so a failure names the phrase and the log it was expected in. A
+        phrase the descent log does not show cites its own log."""
+        shown_by = {"true-gmin": self.TRUE_GMIN_LOG}
+        pinned = [
+            (f"rung {rung}", phrase, shown_by.get(rung, self.FULL_DESCENT_LOG))
+            for rung, phrase in runner.CONTINUATION_LADDER
+        ]
+        pinned.append(
+            ("ladder entry", runner.LADDER_ENTRY_PHRASE, self.FULL_DESCENT_LOG)
+        )
+        pinned += [
+            ("ladder exhaustion", phrase, self.FULL_DESCENT_LOG)
+            for phrase in runner._LADDER_EXHAUSTION_RE.pattern.split("|")
+        ]
+        text = {}
+        for log in {log for _, _, log in pinned}:
+            self.assertTrue(log.is_file(), f"{log} is not committed any more")
+            text[log] = log.read_text(errors="replace").lower()
+        for label, phrase, log in pinned:
+            with self.subTest(label=label, phrase=phrase, log=log.name):
+                self.assertIn(phrase.lower(), text[log])
 
 
 class PvtLogTests(unittest.TestCase):
