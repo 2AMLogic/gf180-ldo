@@ -210,9 +210,20 @@ class Measurements(unittest.TestCase):
 
     def test_a_card_referenced_under_its_own_name_is_emitted_once(self):
         card = {"name": "a0_db", "spice": ".meas ac a0_db find vdb(vg1) at=0.1"}
-        for expr in ("ac1.a0_db", "m_a0_db"):
-            _, specs = ta.measurements(self._gain_card(expr))
-            self.assertEqual(specs, [card], expr)
+        for expr in ("a0_db", "ac1.a0_db"):
+            with self.subTest(expr=expr):
+                tb = self._gain_card(expr)
+                _, specs = ta.measurements(tb)
+                (state,), _ = ta.states(tb)
+                self.assertEqual(specs, [card])
+                self.assertEqual(state.specs, [card])
+
+    def test_a_self_reference_is_refused_even_when_a_card_has_the_same_name(self):
+        for expr in ("m_a0_db", "ac1.m_a0_db"):
+            tb = self._gain_card(expr)
+            for adapter in (ta.measurements, ta.states):
+                with self.subTest(expr=expr, adapter=adapter.__name__), self.assertRaises(ta.UnsupportedTb):
+                    adapter(tb)
 
     def test_a_card_name_reused_for_another_expression_is_refused(self):
         for expr in ("ac1.a0_db + 1", "ac1.g1k_db"):

@@ -251,15 +251,18 @@ def measurement_specs(tb: tbmod.Testbench, cards: list[dict], names, kind: str, 
     scalars = {c["name"] for c in cards}
     specs = list(cards)
     for name in names:
-        mapped = map_expr(tb.measure[name], kind, tb.measure, n)
-        if mapped == name and name in scalars:
-            continue                      # `a0_db: ac1.a0_db`: the card already is the measurement
+        expr = tb.measure[name]
+        mapped = map_expr(expr, kind, tb.measure, n)
         if name in scalars:
+            # map_expr checked the plot. Only that qualifier can precede a card alias.
+            plot = _PLOT_REF.match(expr)
+            if expr == name or (plot and expr[plot.end():] == name):
+                continue
             raise UnsupportedTb(f"measure {name!r} reuses the name of a .meas card in {kind}{n}")
         if scalars & set(_IDENT.findall(mapped)):
             if _VECTOR_READ.search(mapped):
                 raise UnsupportedTb(
-                    f"measure {name!r} = {tb.measure[name]!r} mixes .meas results with vector reads"
+                    f"measure {name!r} = {expr!r} mixes .meas results with vector reads"
                 )
             specs.append({"name": name, "spice": f".meas {kind} {name} param='{param_expr(mapped)}'"})
             scalars.add(name)
