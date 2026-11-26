@@ -8,6 +8,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-25
 
+- **PR #849**: fix(layout): check the raw LVS runset only for pdk-deck cells
+- **Issue #848** (closed): Require the raw LVS runset only for cells that select it
 - **PR #845**: sim: remove the current-limit and enable-shutdown bash drivers and .control decks
 - **Issue #595** (closed): Remove the bash run.sh drivers and .control decks for current-limit and enable-shutdown: superseded by klt_run.py since October
 
@@ -498,13 +500,4 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 - **Issue #339** (closed): sim harness: soft-start's hand-over and transient drivers have no --dut-netlist override, so an A/B of the injection element needs a dirty design/ tree
 - **Issue #287** (closed): [Parent #173] Lay out the current-limit and soft-start blocks as DRC/LVS-clean cells
 - **Issue #286** (closed): [Parent #173] Lay out the feedback divider, and give drclvs.py LVS negative controls that work on an all-passive cell
-
-### 2026-09-25
-
-- **PR #337**: layout(#335): align floorplan §8.3 to DR-0030's updated margin
-- **PR #336**: layout(#333): dedupe _fail/_rd/_load_pdk_pcells/_label into gen_gds_common.py
-- **PR #334**: docs: restate DR-0030's contact EM margin at the shipped 2.8 mm device
-- **Issue #335** (closed): floorplan §8.3's 'DR-0030 still quotes 25.0 µA / 5.2×' note goes stale once #332 lands
-- **Issue #333** (closed): Remove duplicate _fail/_rd/_load_pdk_pcells/_label helpers in passives and pass_array gen_gds.py
-- **Issue #332** (closed): DR-0030's contact-layer margin (25.0 µA / 5.2×) is stated at the superseded 2 mm device
 
