@@ -7,28 +7,31 @@ two DUT variants:
 
 | variant | what it is |
 |---|---|
-| `device` | `design/netlist/ldo_softstart.spice` as committed |
-| `binj` | `Binj_ss`, frozen pre-DR-0024 cap sizing from commit `bfc4a0a` |
+| `device` | `design/netlist/ldo_softstart.spice` as committed: the device-level transconductor with DR-0023's cascoded output mirror (`Mgmr_ss`/`Mgmrc_ss` reference leg, `Mgmo_ss`/`Mgmc_ss` output leg); there is no behavioural injection source in it |
+| `binj` | the ideal behavioural injection source `Binj_ss`, frozen at commit `bfc4a0a` -- pre-#195 and pre-DR-0024 cap sizing |
 
-**Update (issue #234):** this pair used to be an injection-**element** A/B --
-`device` was the post-#195 device-level transconductor
-(`Rgma_ss/Mgma_ss/Mgmd_ss/Rgmb_ss/Mgmb_ss/Mgmm_ss/Mgmr_ss/Mgmo_ss/Mgme_ss`) and
-`binj` the ideal `Binj_ss` behavioural source. Issue #231 (PR #233) reverted
-the device-level chain back to `Binj_ss`, so **`device` now uses `Binj_ss`
-too**: the two variants differ ONLY in the DR-0024 MIM-cap resize
-(`XCss`/`XCh_ss`/`XCr_ss`), not in the injection element. Everywhere below
-that reads "the device-level chain" / "the two injection elements" is
-describing `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md`,
-minted before that revert, for which it is still accurate; it is not a
-description of the current tree. See `netlist_variants.py`'s module
-docstring and `VARIANT_BLURB` for the up-to-date detail, and the "Pole/zero
-attribution" section below for what changed there. **Update (issue #239):**
-the follow-up rewrite this note promised is done -- `sweep.py`'s generated
-record narrative (headline, A/B section, DC hand-over commentary) now
-describes the current cap-resize A/B rather than the pre-#231
-injection-element premise, and the `V(GMSUM)` row further down this file
-(and the matching `has_gmsum` code path) is retired outright, not just
-disclaimed.
+**Which differences can a record attribute to the injection element?** The
+answer depends on the injection element and capacitor sizes in its two netlists.
+
+- **After #195, before #223.** The September 10 record compared the
+  device-level transconductor in `device` with the ideal `Binj_ss` source in
+  `binj`. Both used the original capacitor sizes, so this record isolated
+  the injection element. [Record 20260910-015601-2387ece](records/20260910-015601-2387ece.md)
+- **PR #223** applied the DR-0024 resize to `device`. It shortened the MIM
+  capacitor lengths of `XCss`, `XCh_ss`, and `XCr_ss` from 60, 70, and 70 µm
+  to 12, 14, and 14 µm, respectively. The device-level transconductor stayed
+  in place. Comparisons with the frozen `binj` now included both differences.
+- **PR #233 (issue #231)** restored `Binj_ss` in `device` and kept the
+  resized capacitors. With the same injection source in both variants, the
+  A/B isolated the capacitor resize.
+- **PR #250 (issue #246)** restored the device-level chain in `device` with
+  DR-0023's cascoded output mirror. The current A/B compares injection
+  elements again, **confounded by the DR-0024 cap resize** because `binj`
+  still uses the original capacitor sizes.
+
+`VARIANT_BLURB` in `netlist_variants.py` describes the variants for current
+records. `TestDutVariantAB` in `sim/tests/test_soft_start_loop_gain.py` checks
+the current injection elements and the capacitor-size difference.
 
 ```bash
 python3 sim/run_corners.py --check-env          # is ngspice + the gf180mcu PDK present?
@@ -94,7 +97,7 @@ through the hand-over are we".
 | `ramp` | 0.6 V | 36 ohm resistor | mid-ramp, where the loop is genuinely live and the injection is genuinely on. |
 | `ramp` | 1.15 V | 36 ohm resistor | **(b)** `VREF - 50 mV`, just before the ideal element's hand-over. |
 | `ramp` | 1.25 V | 36 ohm resistor | **(c)** `VREF + 50 mV`, just after the ideal element's hand-over. |
-| `sink` | 1.15 / 1.25 / 1.8 V | ideal 50 mA sink | the hand-over points again under `sim/loop-stability/`'s own load model, so the margins are comparable with its records. 1.8 V is a conservative margin past `VREF` where `Binj_ss`'s injection has fully decayed away in BOTH current variants; pre-#231, when `device` was the post-#195 device-level chain, this was specifically where *that* chain's injection had decayed away (later than the ideal source's, at 1.25 V). |
+| `sink` | 1.15 / 1.25 / 1.8 V | ideal 50 mA sink | the hand-over points again under `sim/loop-stability/`'s own load model, so the margins are comparable with its records. 1.8 V (`VREF + 600 mV`) is a sampled operating point past `VREF`; where an element's injection has decayed away is a measured property of the netlist and of the record that produced it, not of this table. In `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` (pre-#231: `device` was the post-#195 device-level chain) `I_inj` falls below 50 nA and stays there at `V(SSR)` = 1.200 V for the ideal `Binj_ss` source and at 1.250 V to 2.300 V (never, in 2 of 63 corners) for that chain. Those thresholds belong to that record and those two netlists; the chain `device` has carried since #246 is a different element. |
 | `anchor` | not pinned | ideal 50 mA sink | the settled state, `SSR` wherever `Mtop_ss`'s ceiling clamp puts it — i.e. `sim/loop-stability/`'s own measurement, reached through an SSR port connected to nothing. |
 
 `EN` is high throughout, so `HG` is at `VIN` and `Mhold_ss`/`Mhold_bg_ss` are in
@@ -222,18 +225,22 @@ operating point by the same KCL as `iinj_ua`:
 | `V(SSR)` at which `I_inj` drops below 50 nA **and stays there** | where the element actually lets go. "and stays there" matters: a threshold crossing that is not final is a dip, not a release |
 | highest `V(SSR)` at which the loop is out of regulation | the over-injection region at the bottom of the ramp. It has no loop gain and therefore no phase margin, which is why it can only be found this way |
 
-**Update (issue #239): the `V(GMSUM)` row above is retired, not merely
-undocumented.** It used to report `VIN − V(GMSUM)`, `Mgmo_ss`'s source–gate
-drive for the `device` variant only, against the post-#195 device-level
-Mgm* chain issue #231 reverted. There is no `GMSUM` node left in
-`ldo_softstart` for either variant to name. An actual PDK run
+**The `V(GMSUM)` row above is still retired (issue #239), but the reason it
+stays out has changed.** It used to report `VIN − V(GMSUM)`, `Mgmo_ss`'s
+source–gate drive for the `device` variant only, against the post-#195
+device-level Mgm* chain. It was dropped when issue #231 reverted that chain
+and no variant had a `GMSUM` node to name: an actual PDK run
 (`./sim/soft-start-loop-gain/testbench/run.sh`, `--variants device`)
 confirmed ngspice does not hard-error against the resulting undefined
 `v(xdut.xsoftstart.gmsum)` reference; it prints a per-point error to the
 deck's own log and exits 0, with the field silently coming out empty --
 the same "floating/NaN, not a hard failure" shape issue #234 found for the
-margin deck's `acshort-gmsum` row. `sweep.py`'s `has_gmsum`/`GMSUM_*`
-substitution machinery and this table row are both removed.
+margin deck's `acshort-gmsum` row. `GMSUM` is a `device`-variant node again
+since #246 -- the gate of `XMgmc_ss` in `design/netlist/ldo_softstart.spice`
+-- but `binj` has no such node, and one `HOV` line serves both variants, so a
+probe only `device` could answer cannot be in it (`HOV_FIELDS` in `model.py`).
+The row therefore stays out, and the harness now fails a run on that
+undefined-vector log diagnostic instead of letting the field go empty.
 
 The `binj` variant is the known answer for all of it: `Binj_ss` computes
 `I = max(0, (V(VREF) − V(SSR)) · 5 µA/V)` in closed form, so its measured
@@ -258,44 +265,16 @@ the hand-over is actually about.
 ## Pole/zero attribution: element removal that does not move the bias point
 
 At the worst measured device-variant point, the record re-simulates that same
-operating point through the netlist as committed (`Binj_ss` with the
-DR-0024 MIM-cap resize), through `binj` (the same `Binj_ss` source frozen at
-its pre-DR-0024 cap sizing), and through one netlist per **AC-only** removal
-of a single coupling:
+operating point through the netlist as committed (the device-level chain
+with the DR-0024 MIM-cap resize), through `binj` (the ideal `Binj_ss` source
+frozen at `bfc4a0a`, before both #195 and DR-0024), and through one netlist
+per **AC-only** removal of a single coupling:
 
 | case | what it removes |
 |---|---|
+| `acopen-fb-inj` | `XMgmc_ss`'s drain, AC-opened from `FB` |
 | `acopen-fb-pre` | `XMpre_b_ss`'s drain, AC-opened from `FB` |
 | `acopen-hold` | `XMhold_ss`'s drain, AC-opened from `PASS_GATE` |
-
-**Update (issue #234): two rows dropped, not re-derived.** This table used to
-also carry `acopen-fb-inj` (`XMgmo_ss`'s drain AC-opened from `FB`) and
-`acshort-gmsum` (the `GMSUM` mirror node AC-shorted to `VIN`) -- both written
-against the post-#195 device-level Mgm* chain. Issue #231/PR #233 reverted
-that chain back to the ideal `Binj_ss` behavioural source, and neither row
-survives that revert as a real measurement:
-
-- `acopen-fb-inj` against `Binj_ss` is a structural no-op, not a small
-  coupling. `Binj_ss`'s defining expression, `I = max(0, (V(VREF) - V(SSR)) *
-  5.0e-6) * (V(EN) > 1.4)`, depends on `VREF`, `SSR` and `EN` only -- it has
-  NO dependence on `V(FB)`, so its small-signal admittance out of `FB` is
-  already exactly zero. An ideal current source with a target-independent
-  output already IS an AC open; a 1 GH series inductor cannot demonstrate
-  that any more precisely than the algebra already has, and `ac_open()` now
-  refuses a `B`-prefixed (behavioural) instance outright rather than
-  reporting the zero it would otherwise measure.
-- `acshort-gmsum` targeted a node that exists only in the device-level chain
-  #231 removed; there is nothing left in `ldo_softstart` to short.
-  `add_cap()` (shared by `ac_short()`/`ac_load()`) now refuses a node absent
-  from the supplied netlist for the same reason.
-
-With `Binj_ss` in place, the only real `FB` couplings left to attribute are
-`XMpre_b_ss`'s drain (`acopen-fb-pre`, in the table above) and the deliberate
-`FB_CAP_LADDER_F` parasitic budget below -- both rows drop is a legitimate
-outcome of #234's own acceptance criteria, not a reduction in coverage.
-`sim/soft-start-loop-gain/records/20260910-015601-2387ece.md` is unaffected:
-it was measured against the device-level chain, for which both dropped rows
-were real measurements, and stays valid for that netlist.
 
 and then, in the other direction, **adds** known capacitance from `FB` to `VSS`
 on a ladder from 10 fF to 1 nF. Removing this element's coupling only says
@@ -320,6 +299,43 @@ on one node produces — with the fit residual printed, so the single-pole/zero
 reading is a claim the data can refute. Where the model-free difference is below
 the numerical floor (0.02 dB / 0.1 deg) **no fit is attempted**: there is no
 pole or zero to attribute and reporting one anyway would be fitting noise.
+
+**`acopen-fb-inj` is back since #246, and `acshort-gmsum` stays retired for
+the measurement it returned (issue #234).** The table above once carried both,
+written against the post-#195 device-level Mgm* chain -- `acopen-fb-inj` as
+`XMgmo_ss`'s drain AC-opened from `FB`, `acshort-gmsum` as the `GMSUM` mirror
+node AC-shorted to `VIN`. Issue #234 dropped both when issue #231/PR #233
+reverted that chain to the ideal `Binj_ss` behavioural source, because neither
+row survived that revert as a real measurement:
+
+- `acopen-fb-inj` returns retargeted, from `XMgmo_ss` to `XMgmc_ss`: the
+  DR-0023 cascode's drain is what sits on `FB` now, and opening it is the
+  measurement target T6 (`design/softstart_injection_compensation.md`
+  section 3) is written against. Against `Binj_ss` it was a structural no-op,
+  not a small coupling. `Binj_ss`'s defining expression,
+  `I = max(0, (V(VREF) - V(SSR)) * 5.0e-6) * (V(EN) > 1.4)`, depends on
+  `VREF`, `SSR` and `EN` only -- it has NO dependence on `V(FB)`, so its
+  small-signal admittance out of `FB` is already exactly zero. An ideal
+  current source with a target-independent output already IS an AC open; a
+  1 GH series inductor cannot demonstrate that any more precisely than the
+  algebra already has, and `ac_open()` still refuses a `B`-prefixed
+  (behavioural) instance outright rather than reporting the zero it would
+  otherwise measure.
+- `acshort-gmsum` stays retired because its measurement was null, not because
+  the node is gone. Against the device-level chain it never resolved a pole
+  or a zero: in section 6 of
+  `sim/soft-start-loop-gain/records/20260910-015601-2387ece.md`, measured
+  before #231, the model-free magnitude difference peaked at 0.003 dB over
+  0.01 Hz – 1 GHz, below the 0.02 dB numerical floor, so no fit was
+  attempted. `GMSUM` is a netlist token again, so `add_cap()` (shared by
+  `ac_short()`/`ac_load()`) would no longer refuse it -- its refusal of a node
+  absent from the supplied netlist is what issue #234 added -- but the row is
+  absent because the measurement was null.
+
+That record is history and is unaffected: it was measured against the
+post-#195 device-level chain, when `acopen-fb-inj` opened `XMgmo_ss` and
+`acshort-gmsum` was a real measurement that came out null, and it stays valid
+for that netlist.
 
 ## Model binning: `wnflag`, and why every deck here pins it
 

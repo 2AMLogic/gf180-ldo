@@ -142,7 +142,7 @@ class CellSpec:
     # symbol references resolve (e.g. design/ for a cell that instantiates
     # design/error_amp.sym and friends).
     xschem_library_paths: tuple[Path, ...]
-    # The two (or more) LVS negative controls stages 6..N run against this
+    # The two (or more) LVS negative controls run against this
     # cell. See REQUIRED_CONTROL_TAGS: a cell must register a topology
     # control and a parameter control, and every one of them must actually
     # apply to this cell's netlist (check_controls_apply, called before any
@@ -1354,10 +1354,10 @@ def run(args: argparse.Namespace) -> int:
         if line and line[0].upper() in "MRCDQ" and not line.startswith("*")
     ]
     # ---- the evidence contract, checked before anything can report a pass -
-    # Stages 6.. only mean something if every control this run will use can
-    # actually corrupt this cell's netlist. Prove that NOW, so that a cell
-    # whose controls do not apply fails here rather than after stage 5 has
-    # already printed `lvs: MATCH`.
+    # The LVS negative controls only mean something if every control this
+    # run will use can actually corrupt this cell's netlist. Prove that NOW,
+    # so that a cell whose controls do not apply fails here rather than
+    # after the intact LVS comparison has already printed `lvs: MATCH`.
     controls = check_controls_apply(spec, netlist_text)
     total = 5 + len(controls) + (2 if spec.erc else 0)
     stage_no = 1
@@ -1533,7 +1533,7 @@ def run(args: argparse.Namespace) -> int:
     if not lvs["match"]:
         failures.append(f"LVS reported a mismatch; {mismatch_where}")
 
-    # ---- 6.. LVS negative controls --------------------------------------
+    # ---- LVS negative controls ------------------------------------------
     # The set was chosen, and proven applicable, by check_controls_apply()
     # back at stage 2: the cell's own topology/parameter pair (MOS_CONTROLS,
     # or PASSIVE_CONTROLS for an all-passive cell such as the divider), plus

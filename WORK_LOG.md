@@ -8,6 +8,8 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-26
 
+- **PR #872**: fix(sim): report phase and gain margins independently in loop-stability records
+- **Issue #871** (closed): Report independent phase and gain margins in loop-stability summaries
 - **PR #870**: fix(sim): share .meas card emission between both tb_adapter paths
 - **Issue #869** (closed): Emit each .meas card once in the single-analysis testbench adapter
 - **PR #868**: test(sim): resolve the runnable ngspice fixture through PATH in CLI provenance tests

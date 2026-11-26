@@ -38,13 +38,18 @@ is the feedback divider, the first all-passive one. A block's layout registers
 its own `CellSpec` in `drclvs.py`'s `CELLS` dict and drives it with
 `--cell <key>` — see the `CellSpec` dataclass in that file for the exact contract.
 
-The stage **count** is a property of the cell. Stages 1–5 always run; stage 6
-onwards is one LVS negative control per corruption the netlist can express, so
-a FET-only cell has 7 stages, one that also contains a resistor and a
-capacitor has 9, and the all-resistor divider has 8. The topology/parameter
-pair at stages 6 and 7 is the cell's own (`CellSpec.controls`): the MOS pair
-keys off the netlist's first `M*` element line, so an all-passive cell
-registers the passive pair instead (see "6 onwards. Negative controls").
+The stage **count** is a property of the cell, and the driver derives it rather
+than hard-coding it: five stages are common to every cell (build the layout,
+export the netlist, the two DRC runs and LVS), each LVS negative control the
+netlist can express adds one, and a cell that registers `CellSpec.erc` adds two
+more — the intact ERC supply run before LVS, and the ERC negative control after
+the LVS controls. The topology/parameter pair is the cell's own
+(`CellSpec.controls`): the MOS pair keys off the netlist's first `M*` element
+line, so an all-passive cell registers the passive pair instead. The numbering
+shifts with those optional stages, so it is given once, in
+[The stages](https://github.com/2AMLogic/gf180-ldo/blob/main/layout/README.md#the-stages);
+per-cell totals are deliberately not quoted here, because they drift whenever a
+cell gains a control or an ERC run.
 
 A run takes about a minute and prints one line per stage:
 
@@ -70,7 +75,7 @@ it.
 ```
 layout/
   drclvs.py                          the one command (see "The stages")
-  lvs_controls.py                    its LVS negative controls (stages 6..N): netlist
+  lvs_controls.py                    its LVS negative controls (topology and parameter): netlist
                                      mutations that MUST mismatch
   erc_stage.py                       its klt erc supply stage (issue #785) and the
                                      run record's ERC rows/section
@@ -619,7 +624,7 @@ The practical consequence: **"LVS clean" does not establish that a block's
 top-level pinout is right.** Something else has to check pin order. In this repo
 that something is `design/netlist.py --check`, which asserts the ratified port
 list and order and that every symbol's pins match its schematic's ports. That is
-why stage 6's control shorts two nets instead of swapping two — a swap would
+why the topology control shorts two nets instead of swapping two — a swap would
 have been a control that never fires.
 
 ## The database-unit trap in `klt drc`
