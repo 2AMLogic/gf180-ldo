@@ -75,7 +75,7 @@ it.
 ```
 layout/
   drclvs.py                          the one command (see "The stages")
-  lvs_controls.py                    its LVS negative controls (stages 6..N): netlist
+  lvs_controls.py                    its LVS negative controls (topology and parameter): netlist
                                      mutations that MUST mismatch
   erc_stage.py                       its klt erc supply stage (issue #785) and the
                                      run record's ERC rows/section
@@ -624,7 +624,7 @@ The practical consequence: **"LVS clean" does not establish that a block's
 top-level pinout is right.** Something else has to check pin order. In this repo
 that something is `design/netlist.py --check`, which asserts the ratified port
 list and order and that every symbol's pins match its schematic's ports. That is
-why stage 6's control shorts two nets instead of swapping two — a swap would
+why the topology control shorts two nets instead of swapping two — a swap would
 have been a control that never fires.
 
 ## The database-unit trap in `klt drc`
