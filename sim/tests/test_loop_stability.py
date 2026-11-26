@@ -757,10 +757,9 @@ class TestRenderRecordSmoke(unittest.TestCase):
     test called it: a wrong key or a bad template splice in it raised only
     after the entire PVT grid had run, at record-write time -- the most
     expensive possible place to discover that, and invisible to a green
-    `unittest` run before it. These smoke tests call it with a one-cell
-    fabricated matrix and assert on structure only: the `## Environment`
-    block is present with its canonical bullets in order, and the no-klt /
-    klt-local / klt-batch variants all render without raising. Deliberately
+    `unittest` run before it. These smoke tests render fabricated matrices
+    and check the measured analysis, the order of environment bullets and
+    the no-klt / klt-local / klt-batch variants. Deliberately
     no golden file -- the record prose evolves (the #609 Champion ruling
     accepted exactly such a change), so pinning the full text would only
     make this test churn on every wording edit.
@@ -777,11 +776,9 @@ class TestRenderRecordSmoke(unittest.TestCase):
     COMMAND_BULLET = "- Command: `./sim/loop-stability/testbench/run.sh`"
     PDK_BULLET = "- PDK: gf180mcuD @ open_pdks `unittest`"
 
-    def _render(self, klt_info=None) -> str:
-        rows = [
-            row(),
-            row(iload_a=2e-3, phase_at_f0_deg=-100.0),
-        ]
+    def _render(self, klt_info=None, *, rows=None) -> str:
+        if rows is None:
+            rows = [row(), row(iload_a=2e-3, phase_at_f0_deg=-100.0)]
         args = SimpleNamespace(ac_dec=int(sweep.AC_DEC), author="unittest",
                                subset_reason="", supersedes=None)
         pdk = SimpleNamespace(
@@ -799,13 +796,51 @@ class TestRenderRecordSmoke(unittest.TestCase):
                                            lambda: "0" * 64):
             return sweep.render_record(
                 record_id=self.RECORD_ID, rows=rows,
-                worst=sweep.worst_of(rows), failing=[], multi_cross=[],
-                resurging=[], grid=["tt_27c_3.30v"], iloads=[1e-3],
-                ceffs=[1e-6], esrs=[0.05], pdk=pdk, dirty=False, args=args,
+                worst=sweep.worst_of(rows), failing=[r for r in rows if not r.passes],
+                multi_cross=[], resurging=[], grid=sorted({r.corner_id for r in rows}),
+                iloads=sorted({r.iload_a for r in rows}), ceffs=sorted({r.ceff_f for r in rows}),
+                esrs=sorted({r.esr_ohm for r in rows}), pdk=pdk, dirty=False, args=args,
                 curve_log=sweep.REPO_ROOT / "sim" / "loop-stability" / "testbench" / "sweep.py",
                 prov={"commit": "abc1234", "short": "abc1234",
                       "branch": "unittest", "dirty": False},
                 klt_info=klt_info)
+
+    def test_all_pass_subset_reports_only_measured_margins(self):
+        md = self._render()
+        self.assertIn("2/2 points pass, 0 fail", md)
+        analysis = md.split("## Structure of the result")[1].split("## Environment")[0]
+        self.assertNotIn("1 mOhm", analysis)
+        self.assertNotIn("heaviest-load column", analysis)
+        self.assertNotIn("healthiest", analysis)
+        for label, pm in [("1mA", "60.00"), ("2mA", "80.00"),
+                          ("1uF", "60.00"), ("0.05 ohm", "60.00")]:
+            self.assertIn(f"| {label} | {pm} | 1e+05 | `tt_27c_3.30v` |", analysis)
+        self.assertIn("1mA / 1uF / 0.05 ohm", analysis)
+        self.assertIn("**PASS** (1/1 corners pass)", analysis)
+
+    def test_only_the_light_load_point_fails(self):
+        rows = [row(iload_a=iload, ceff_f=ceff, esr_ohm=esr)
+                for iload in (2e-3, 1e-3) for ceff in (1e-6, 0.33e-6)
+                for esr in (0.1, 0.02)]
+        rows[-1].phase_at_f0_deg = -150.0  # 30 deg at the three minima
+        md = self._render(rows=rows)
+        self.assertIn("7/8 points pass, 1 fail", md)
+        analysis = md.split("## Structure of the result")[1].split("## Environment")[0]
+        self.assertNotIn("first measurement", analysis)
+        self.assertNotIn("heaviest-load column", analysis)
+        self.assertIn("1mA / 0.33uF / 0.02 ohm", analysis)
+        self.assertIn("**FAIL** (0/1 corners pass)", analysis)
+        self.assertIn("30.00 deg at `tt_27c_3.30v`", analysis)
+        self.assertIn("| 2mA | 60.00 |", analysis)
+
+    def test_light_load_gain_margin_failure_at_a_different_corner_from_worst_pm(self):
+        analysis = sweep.render_analysis([
+            row(),  # Lower PM (60 deg), passing GM.
+            row(corner="ss", corner_id="ss_27c_3.30v", phase_at_f0_deg=-100.0,
+                f180_hz=2e6, gain_at_f180_db=-8.0),
+        ])
+        self.assertIn("**FAIL** (1/2 corners pass)", analysis)
+        self.assertIn("60.00 deg at `tt_27c_3.30v`", analysis)
 
     def test_no_klt_renders_the_environment_block_in_order(self):
         md = self._render()

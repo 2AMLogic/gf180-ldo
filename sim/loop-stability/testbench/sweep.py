@@ -406,154 +406,41 @@ def axis_table(rows: list[Row], axis: str, label: str, fmt) -> list[str]:
     return out
 
 
-def render_analysis(rows: list[Row], failing: list[Row]) -> str:
-    """A data-derived reading of *where* the matrix passes and fails.
-
-    Everything here is computed from the sweep, not asserted: the point is to
-    say which axis actually drives the result, so the next design iteration on
-    the loop's compensation is aimed at the right thing rather than at the
-    a-priori guess.
-    """
-    by_load: dict[float, list[Row]] = {}
-    for r in rows:
-        by_load.setdefault(r.iload_a, []).append(r)
-    loads = sorted(by_load)
-    pm_heavy = worst_of(by_load[loads[-1]])
-    f0s = [r.f0_hz for r in rows if r.f0_hz is not None]
-
-    # Is the worst-PM-vs-load trend monotonic (heavier load => worse)?
-    seq = [worst_of(by_load[k]).pm_deg for k in loads]
-    monotonic = all(
-        a is not None and b is not None and b <= a + 1e-9 for a, b in zip(seq, seq[1:])
-    )
-
-    # The a-priori worst point named in #10: lightest load, smallest C_eff,
-    # smallest ESR -- the classic "no ESR zero, output pole at its lowest"
-    # argument. Reported explicitly whether or not it turns out to be worst.
+def render_analysis(rows: list[Row]) -> str:
+    """Report worst phase margins by axis and the DR-0001 result at the #10 point."""
+    min_load = min(r.iload_a for r in rows)
     min_ceff = min(r.ceff_f for r in rows)
     min_esr = min(r.esr_ohm for r in rows)
-    apriori_rows = [
+    light_rows = [
         r for r in rows
-        if r.iload_a == loads[0] and r.ceff_f == min_ceff and r.esr_ohm == min_esr
+        if r.iload_a == min_load and r.ceff_f == min_ceff and r.esr_ohm == min_esr
     ]
-    apriori = worst_of(apriori_rows)
-    apriori_verdict = "PASSES" if apriori.passes else "FAILS"
-    trend = (
-        "monotonically with load current (each heavier load point is worse than "
-        "the one below it)"
-        if monotonic
-        else "non-monotonically with load current"
-    )
-
-    # Is the no-ESR-zero column (minimum ESR) the worst ESR column at every
-    # load? Computed, not assumed -- the sentence below cites it either way.
-    def _pm(rs: list[Row]) -> float:
-        pm = worst_of(rs).pm_deg
-        return -1e9 if pm is None else pm
-
-    min_esr_worst_everywhere = all(
-        _pm([r for r in by_load[k] if r.esr_ohm == min_esr])
-        <= _pm([r for r in by_load[k] if r.esr_ohm == e]) + 1e-9
-        for k in loads
-        for e in sorted({r.esr_ohm for r in rows})
-    )
-    esr_clause = (
-        "which is why the 1 mOhm column is the worst ESR column at every load"
-        if min_esr_worst_everywhere
-        else "though the minimum-ESR column is not uniformly the worst one here"
-    )
+    worst = worst_of(light_rows)
+    n_pass = sum(r.passes for r in light_rows)
+    verdict = "PASS" if n_pass == len(light_rows) else "FAIL"
 
     lines = [
         "## Structure of the result",
         "",
-        "Which axis actually drives the verdict, minimised over every other axis.",
+        "Each table shows the worst phase margin over the other sampled axes and PVT corners.",
         "",
-        "**By load current** (the axis DR-0001 and #10 flagged as most likely to",
-        "decide the result):",
+        "**By load current**",
         "",
         *axis_table(rows, "iload_a", "I_load", fmt_ma),
         "",
-        "**By effective output capacitance:**",
+        "**By effective output capacitance**",
         "",
         *axis_table(rows, "ceff_f", "C_eff", fmt_uf),
         "",
-        "**By ESR:**",
+        "**By ESR**",
         "",
         *axis_table(rows, "esr_ohm", "ESR", lambda v: f"{v:g} ohm"),
         "",
-        f"Read together: the worst phase margin degrades {trend},",
-        "while the 0 dB crossover frequency moves over",
-        f"{min(f0s):.4g} Hz - {max(f0s):.4g} Hz across",
-        "the matrix. Crossover rising with load current is the pass device's gm",
-        "rising with its drain current; phase margin falling as it rises means",
-        "the loop is meeting poles that do not move with load. The external ESR",
-        "zero cannot rescue the 1 mOhm end -- that zero sits at ~500 MHz there and",
-        f"supplies no phase lead in band -- {esr_clause}.",
-        "",
-        "Note that the a-priori worst point named in issue #10 and in",
-        "`spec/architecture-survey.md` section 4.1 -- light load, minimum C_eff,",
-        f"no ESR zero, i.e. {{{fmt_ma(loads[0])}, {fmt_uf(min_ceff)}, {min_esr:g} ohm}} --",
-        f"**{apriori_verdict}** here (worst-corner PM {pm_str(apriori)} deg at",
-        f"`{apriori.corner_id}`), whereas the heaviest-load column is where the",
-        f"matrix fails (worst-corner PM {pm_str(pm_heavy)} deg at",
-        f"{fmt_ma(pm_heavy.iload_a)} / {fmt_uf(pm_heavy.ceff_f)} / {pm_heavy.esr_ohm:g} ohm,",
-        f"`{pm_heavy.corner_id}`).",
-        "The classic light-load argument assumes a crossover that does not move",
-        "much with load; this loop's does, because the pass device's gm -- and",
-        "with it the loop's unity-gain frequency -- rises with load current",
-        "while the poles that eat the phase do not move with it. So the load",
-        "axis runs the *opposite* way to the a-priori expectation"
-        + (
-            ", and the a-priori point is in fact the healthiest corner of the "
-            "matrix rather than its worst."
-            if apriori.passes
-            else ", even though the a-priori point fails on its own account "
-                 "here too: the matrix is short of margin along its whole "
-                 "length, not just at one end of it."
-        ),
+        "At the lightest sampled load, minimum C_eff and minimum ESR (issue #10),",
+        f"{fmt_ma(min_load)} / {fmt_uf(min_ceff)} / {min_esr:g} ohm,",
+        f"the DR-0001 result is **{verdict}** ({n_pass}/{len(light_rows)} corners pass).",
+        f"The worst phase margin there is {pm_str(worst)} deg at `{worst.corner_id}`.",
     ]
-
-    if failing:
-        lines += [
-            "",
-            "## What this record asks of the next design step",
-            "",
-            "This is a measurement of `design/ldo_core.sch` **as committed** --",
-            "the transistor-level `design/error_amp.sch` and the",
-            "`design/ldo_ilimit.sch` limit block, both real. No behavioural",
-            "amplifier stands in for anything, so the failures tabulated above are",
-            "a property of this compensation as designed, not an artifact of a",
-            "placeholder.",
-            "",
-            "That is not a contradiction of the amplifier's own record: the",
-            "amplifier was sized against the offset, PSRR and quiescent-current",
-            "budgets (`sim/amp-openloop/records/`, `sim/psrr-vs-freq/records/`,",
-            "`sim/quiescent-current/records/`), and closing the LDO loop around it",
-            "is a separate requirement that nothing has yet been sized against.",
-            "This record is the first measurement of that requirement, and it is",
-            "what the compensation step has to be designed against.",
-            "",
-            "DR-0001 called the mechanism in advance: \"with no minimum ESR, phase",
-            "margin must come from pole placement, not from the external zero: the",
-            "pass-gate pole `p2 = 1/(2*pi*Rgate*Cgate)` must sit well above",
-            "crossover at the 0.33 uF corner\". Issue #10's own guidance says a",
-            "broad failure of this shape is a compensation problem to fix in the",
-            "design, not something this testbench should work around -- so this",
-            "record tunes nothing to make the matrix pass.",
-            "",
-            "The concrete, measured requirement it hands to the compensation step",
-            "is therefore: with the loop's non-dominant poles where they are, the",
-            "crossover frequencies tabulated above must be brought below them (or",
-            f"the poles above the crossovers) -- crossover reaches {max(f0s):.3g} Hz",
-            f"somewhere in this matrix and is {worst_of(rows).f0_hz:.3g} Hz at the",
-            "worst-margin point itself -- by enough margin to leave PM >= 45 deg at",
-            "every point of the matrix, the 1 mOhm ESR column included. The levers",
-            "are the amplifier's Miller network (`XCc`/`XRz` in",
-            "`design/error_amp.sch`), a lower-impedance pass-gate drive, or a lower",
-            "loop unity-gain frequency (`spec/architecture-survey.md` section 5,",
-            "candidates 2 and 3). Re-running this same sweep against the",
-            "recompensated loop mints the record that supersedes this one.",
-        ]
     return "\n".join(lines) + "\n"
 
 
@@ -997,7 +884,7 @@ def render_record(*, record_id, rows, worst, failing, multi_cross, resurging,
     temps_seen = ", ".join(f"{t:g}" for t in sorted({r.temp_c for r in rows}))
     supplies_seen = ", ".join(f"{v:.2f}" for v in sorted({r.vin_v for r in rows}))
     n_inf_gm = sum(1 for r in rows if math.isinf(r.gm_db))
-    analysis = render_analysis(rows, failing)
+    analysis = render_analysis(rows)
 
     # Which of DR-0001's two bars actually bites is a property of the loop
     # being measured, not a constant -- so read it off the data rather than
