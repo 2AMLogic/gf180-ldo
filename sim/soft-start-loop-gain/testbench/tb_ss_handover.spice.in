@@ -45,16 +45,19 @@
 *             reported so a reader can see the break is a short, not a gap.
 *   isup_a    Supply current, the same quantity every other bench here reports.
 *
-* RETIRED (issue #239): this list used to have one more field, gmsum_v, ONLY
-* for the post-#195 device-level variant -- the mirror node
-* Mgmr_ss/Mgmo_ss shared as a gate, reverted by issue #231. There is no
-* GMSUM node left in ldo_softstart for any variant to name. An actual PDK
-* run confirmed ngspice does not hard-error on the resulting undefined
-* `.let`/`v(...)` reference; it prints a per-point error to the deck's own
-* log and the field silently comes out empty, which is exactly the
+* RETIRED (issue #239): the field list above used to end with gmsum_v, a
+* probe of the mirror node `GMSUM`. That node belongs to the `device`
+* variant only -- since #246 it is the gate of XMgmc_ss in
+* design/netlist/ldo_softstart.spice -- while the `binj` variant (the ideal
+* Binj_ss source, frozen at bfc4a0a) has no such node. One template and one
+* HOV line serve both variants, so both emit the fields listed above and
+* nothing only `device` could answer. A probe of a node the netlist lacks
+* fails quietly: an actual PDK run confirmed ngspice does not hard-error on
+* the `.let`/`v(...)` reference; it prints a per-point error to the deck's
+* own log and the field silently comes out empty, which is exactly the
 * "floating/NaN, not a hard failure" shape issue #234 already found for the
-* margin deck's acshort-gmsum row. See sweep.py's HOV_FIELDS comment for the
-* full account.
+* margin deck's acshort-gmsum row (the harness now fails the run on that log
+* diagnostic). See the HOV_FIELDS comment in model.py for the full account.
 *
 * Template: the at-sign-delimited placeholders are substituted by sweep.py.
 
