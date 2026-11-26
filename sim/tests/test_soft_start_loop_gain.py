@@ -1024,15 +1024,23 @@ class TestHandoverDeck(unittest.TestCase):
         self.assertIn(".options wnflag=1", self.TEMPLATE)
 
     def test_neither_variant_names_the_retired_mirror_node(self):
-        """Issue #239: `has_gmsum`/the `GMSUM_*` substitutions are retired.
+        """Neither rendered deck probes the mirror node, in either variant.
 
-        Pre-#231 `device` was the post-#195 device-level chain and had a real
-        `GMSUM` mirror node; post-#231 it is `Binj_ss`, same as `binj`, and
-        there is no such node in either variant's netlist for a deck to name.
-        An actual PDK run confirmed the pre-fix `device` deck's
-        `v(xdut.xsoftstart.gmsum)` reference did not error but silently
-        produced an empty field -- this is the node-existence check that
-        closes that gap, not just a template-substitution check.
+        Issue #239 retired `has_gmsum`/the `GMSUM_*` substitutions. The node
+        itself is back in one variant: since #246 `device` carries
+        `design/netlist/ldo_softstart.spice`, where `GMSUM` is the gate of
+        `XMgmc_ss`, while `binj` (the ideal `Binj_ss` source, frozen at
+        `bfc4a0a`) has no such node. One template serves both, so the shared
+        `HOV` line cannot carry a field only `device` could answer.
+
+        What must be absent from BOTH rendered decks is any executable
+        reference to the node: the retired `v(xdut.xsoftstart.gmsum)` probe,
+        the `let gmsum_dc` alias it was stored under and the `gmsum_v` field
+        it fed. In `binj` such a reference would hit a node the netlist
+        lacks, and an actual PDK run (issue #239) confirmed ngspice does not
+        fail the run for it: it prints a per-point diagnostic and the field
+        comes out empty. So this is a check on the rendered text itself, not
+        on a run completing.
         """
         dev, binj = self.render("device"), self.render("binj")
         for text in (dev, binj):
@@ -1091,10 +1099,16 @@ class TestHovParsing(unittest.TestCase):
                          set(sweep.HOV_FIELDS))
 
     def test_the_retired_mirror_node_field_is_now_unknown(self):
-        """Issue #239, reconstructed: `gmsum_v` used to be optional (the
-        `device` variant's now-removed `GMSUM` mirror node); with `has_gmsum`
-        retired there is no variant that can legitimately emit it any more,
-        so it must be rejected exactly like any other unknown field."""
+        """`gmsum_v` is an unknown field on the shared `HOV` line.
+
+        It was optional once, reading the `device` variant's `GMSUM` mirror
+        node, and issue #239 retired it. #246 brought the node back, but only
+        to `device`: `binj` has no `GMSUM` to measure, and one line shape
+        parses for both variants. So `HOV_FIELDS` leaves it out, and the
+        strictness that makes a missing field an error makes an extra one an
+        error too -- adding `gmsum_v` to a row that is otherwise valid
+        raises `ValueError` rather than being ignored, the same as any other
+        unknown field."""
         with self.assertRaises(ValueError):
             sweep.parse_hov_fields(self.GOOD + " gmsum_v=2.3")
 
