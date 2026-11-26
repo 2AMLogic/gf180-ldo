@@ -341,10 +341,13 @@ def render(tb, rid, points, grid_jobs, prior, dut_rel, dut_sha, driver) -> str:
     names = list(tb.measure)
     summary = report.summarize(points, names)
     failures = report.evaluate_checks(tb.checks, points, summary)
+    # The same waiver rule the local writer grades with (issue #253), so a
+    # degenerate grid is disclosed in this format too, not silently read as
+    # "every bound met" (issue #860).
+    waived = report.waived_checks(tb.checks, summary)
     at: dict[str, list[str]] = {}
     for f in failures:
-        at.setdefault(f["at"], []).append(f"{f['measurement']} {f['kind']}={report._fmt(f['limit'])} "
-                                          f"(got {report._fmt(f['value'])})")
+        at.setdefault(f["at"], []).append(report.format_check_failure(f))
     n_ok = sum(1 for p in points if p.status == "ok" and p.point.corner_id not in at)
     errors = [p for p in points if p.status != "ok"]
     canon = ["tt", "ff", "ss", "fs", "sf", "res_ff", "res_ss", "bjt_ff", "bjt_ss"]
@@ -402,21 +405,20 @@ def render(tb, rid, points, grid_jobs, prior, dut_rel, dut_sha, driver) -> str:
                    else "FAIL — " + "; ".join(at[cid]) if cid in at else "PASS")
         out.append(f"  | `{cid}` | " + " | ".join(report._fmt(p.measurements.get(n)) for n in names)
                    + f" | {verdict} |")
-    if at.get("grid"):
-        out += ["", "  Grid-level check failures: " + "; ".join(at["grid"]) + "."]
-    out += ["", "  Spread across the grid:", "", "  | measurement | min | max | mean | spread % | limits |",
-            "  |---|---|---|---|---|---|"]
-    for n, s in summary.items():
-        spec = tb.checks.get(n, {})
-        limits = ", ".join(f"{k}={report._fmt(spec[k])}" for k in
-                           ("min", "max", "max_spread_pct", "min_spread_pct") if k in spec) or "—"
-        if not s.get("n"):
-            out.append(f"  | `{n}` | no data | | | | {limits} |")
-        else:
-            out.append(f"  | `{n}` | {report._fmt(s['min'])} (`{s['min_at']}`) | {report._fmt(s['max'])} "
-                       f"(`{s['max_at']}`) | {report._fmt(s['mean'])} | {report._fmt(s['spread_pct'])} | {limits} |")
+    out += report.grid_check_lines(failures, waived, summary, tb.checks)
     overall = "ERROR" if errors else ("FAIL" if failures else "PASS")
-    out += ["", f"**Overall: {overall}** ({n_ok}/{len(points)} points meet every `tb.json` bound).", "",
+    # Issue #860: a waived spread check is a `tb.json` bound too, so with a
+    # waiver the count says "per-point" and names what was not evaluated,
+    # instead of claiming every bound was met. The waiver lines above carry
+    # the detail; without a waiver the line is exactly as it always was.
+    if waived:
+        bounds = (f"{n_ok}/{len(points)} points meet every per-point `tb.json` "
+                  f"bound; {len(waived)} grid-level check"
+                  f"{'' if len(waived) == 1 else 's'} not evaluated -- "
+                  "bounds graded, spread ungraded")
+    else:
+        bounds = f"{n_ok}/{len(points)} points meet every `tb.json` bound"
+    out += ["", f"**Overall: {overall}** ({bounds}).", "",
             "## Old-vs-new", ""] + compare(tb, points, prior, dut_sha, grid_jobs)
     out += ["", "## Reading", "", "(to be written)", ""]
     return "\n".join(out)

@@ -878,38 +878,40 @@ def _dc_path_lines(record: dict) -> list[str]:
     return lines
 
 
-def _result_lines(record: dict) -> list[str]:
-    measure_names = list(record["measure"])
-    failures_at: dict[str, list[str]] = {}
-    for failure in record["checks"]["failures"]:
-        failures_at.setdefault(failure["at"], []).append(
-            f"{failure['measurement']} {failure['kind']}={_fmt(failure['limit'])} "
-            f"(got {_fmt(failure['value'])})"
-        )
-
-    lines = ["- **Result**:", ""]
-    lines.append(
-        "  | corner-id | " + " | ".join(measure_names) + " | dc path | pass/fail |"
+def format_check_failure(failure: dict) -> str:
+    """One check failure as the ``measurement kind=limit (got value)`` string
+    both record writers print."""
+    return (
+        f"{failure['measurement']} {failure['kind']}={_fmt(failure['limit'])} "
+        f"(got {_fmt(failure['value'])})"
     )
-    lines.append("  |---|" + "---|" * (len(measure_names) + 2))
-    for point in record["points"]:
-        cells = [_fmt(point["measurements"].get(name)) for name in measure_names]
-        problems = failures_at.get(point["corner_id"], [])
-        if point["status"] != "ok":
-            verdict = f"ERROR — {point.get('message', point['status'])}"
-        elif problems:
-            verdict = "FAIL — " + "; ".join(problems)
-        else:
-            verdict = "PASS"
-        cells.append(_dc_path_cell(point.get("dc_path")))
-        lines.append(f"  | `{point['corner_id']}` | " + " | ".join(cells) + f" | {verdict} |")
 
-    grid_failures = failures_at.get("grid", [])
+
+def grid_check_lines(
+    failures: list[dict],
+    waived: list[dict],
+    summary: dict,
+    checks: dict[str, dict],
+) -> list[str]:
+    """The grid-level failure, waiver and spread-summary lines of a Result
+    section.
+
+    The one renderer behind both record writers (issue #860): the local
+    record's :func:`_result_lines` and the batch record's
+    ``klt_record.render`` print the same grid-level facts from the same
+    graded inputs, so a degenerate grid can never read as "every bound
+    met" in one format while the other discloses the waived spread checks
+    (issue #253's ``waived_checks`` rule). ``failures`` is
+    :func:`evaluate_checks`' list -- only the ``at == "grid"`` entries are
+    rendered here; the per-corner rows, DC diagnostics and provenance stay
+    in each writer's own format.
+    """
+    lines: list[str] = []
+    grid_failures = [format_check_failure(f) for f in failures if f.get("at") == "grid"]
     if grid_failures:
         lines.append("")
         lines.append("  Grid-level check failures: " + "; ".join(grid_failures) + ".")
 
-    waived = record["checks"].get("waived") or []
     if waived:
         lines.append("")
         lines.append(
@@ -928,8 +930,8 @@ def _result_lines(record: dict) -> list[str]:
     lines.append("")
     lines.append("  | measurement | min | max | mean | spread % | limits |")
     lines.append("  |---|---|---|---|---|---|")
-    for name, stats in record["summary"].items():
-        spec = record["checks"]["spec"].get(name, {})
+    for name, stats in summary.items():
+        spec = checks.get(name, {})
         limits = ", ".join(
             f"{key}={_fmt(spec[key])}"
             for key in ("min", "max", "max_spread_pct", "min_spread_pct")
@@ -943,6 +945,38 @@ def _result_lines(record: dict) -> list[str]:
             f"| {_fmt(stats['max'])} (`{stats['max_at']}`) "
             f"| {_fmt(stats['mean'])} | {_fmt(stats['spread_pct'])} | {limits} |"
         )
+    return lines
+
+
+def _result_lines(record: dict) -> list[str]:
+    measure_names = list(record["measure"])
+    failures_at: dict[str, list[str]] = {}
+    for failure in record["checks"]["failures"]:
+        failures_at.setdefault(failure["at"], []).append(format_check_failure(failure))
+
+    lines = ["- **Result**:", ""]
+    lines.append(
+        "  | corner-id | " + " | ".join(measure_names) + " | dc path | pass/fail |"
+    )
+    lines.append("  |---|" + "---|" * (len(measure_names) + 2))
+    for point in record["points"]:
+        cells = [_fmt(point["measurements"].get(name)) for name in measure_names]
+        problems = failures_at.get(point["corner_id"], [])
+        if point["status"] != "ok":
+            verdict = f"ERROR — {point.get('message', point['status'])}"
+        elif problems:
+            verdict = "FAIL — " + "; ".join(problems)
+        else:
+            verdict = "PASS"
+        cells.append(_dc_path_cell(point.get("dc_path")))
+        lines.append(f"  | `{point['corner_id']}` | " + " | ".join(cells) + f" | {verdict} |")
+
+    lines += grid_check_lines(
+        record["checks"]["failures"],
+        record["checks"].get("waived") or [],
+        record["summary"],
+        record["checks"]["spec"],
+    )
 
     lines += _dc_path_lines(record)
 
