@@ -2988,6 +2988,15 @@ class CheckEnvProvenanceTests(unittest.TestCase):
     ``OK`` on the happy path.
     """
 
+    def setUp(self):
+        # Default to a valid PDK so the ngspice checks determine the exit status.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        pdk = fake_pdk(Path(tmp.name) / "pdk")
+        patcher = unittest.mock.patch.object(cli, "find_pdk", return_value=pdk)
+        self.find_pdk = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _run_check_env(self):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
@@ -3011,7 +3020,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             exe = fake_ngspice_install(root)
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -3019,9 +3027,8 @@ class CheckEnvProvenanceTests(unittest.TestCase):
                 status, out = self._run_check_env()
             self.assertIn("provenance OK", out)
             self.assertNotIn("MISMATCH", out)
-            # PDK is deliberately missing in this test env; only ngspice's own
-            # branch of the exit status is under test here.
             self.assertIn("ngspice : OK", out)
+            self.assertEqual(status, cli.EXIT_OK)
 
     def test_shadowing_binary_fails_loudly_not_silently(self):
         """The core #182/#184 repro: a different build resolves first on
@@ -3035,7 +3042,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             shadow_exe = fake_ngspice_install(Path(tmp) / "local-build")
             with unittest.mock.patch("shutil.which", return_value=str(shadow_exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -3058,7 +3064,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             prefixes = {runner.DRIFTING_HOMEBREW_FORMULA: str(drifted)}
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", side_effect=prefixes.get), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -3085,13 +3090,13 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             env[runner.NGSPICE_ROOT_ENV] = str(blessed)
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(drifted)), \
                 unittest.mock.patch.dict(os.environ, env, clear=True):
                 status, out = self._run_check_env()
             self.assertIn("provenance OK", out)
             self.assertIn(runner.NGSPICE_ROOT_ENV, out)
             self.assertNotIn("MISMATCH", out)
+            self.assertEqual(status, cli.EXIT_OK)
 
     def test_no_homebrew_and_no_override_reports_unverified_not_ok(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -3099,7 +3104,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             exe.write_bytes(b"fake\n")
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -3107,6 +3111,7 @@ class CheckEnvProvenanceTests(unittest.TestCase):
                 status, out = self._run_check_env()
             self.assertIn("provenance not verified", out)
             self.assertNotIn("MISMATCH", out)
+            self.assertEqual(status, cli.EXIT_OK)
 
     def test_unverifiable_host_off_the_pin_notes_it_without_failing(self):
         """CI's own ``pvt-smoke`` job runs Ubuntu's apt ngspice-42 on purpose
@@ -3119,7 +3124,6 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             exe.write_bytes(b"fake\n")
             with unittest.mock.patch("shutil.which", return_value=str(exe)), \
                 unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-42"), \
-                unittest.mock.patch.object(cli, "find_pdk", side_effect=PdkNotFound("no pdk")), \
                 unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
                 unittest.mock.patch.dict(
                     os.environ, self._env_without_ngspice_root_override(), clear=True
@@ -3129,6 +3133,26 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             self.assertIn("ngspice-42", out)
             self.assertIn(runner.NGSPICE_FLOOR_TOKEN, out)
             self.assertNotIn("MISMATCH", out)
+            self.assertEqual(status, cli.EXIT_OK)
+
+    def test_missing_pdk_alone_drives_the_exit_status(self):
+        """The missing-PDK branch on its own (#858): ngspice provenance
+        matches, so a non-zero exit has exactly one cause -- the PDK."""
+        self.find_pdk.side_effect = PdkNotFound("no pdk")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "homebrew"
+            exe = fake_ngspice_install(root)
+            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
+                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
+                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
+                unittest.mock.patch.dict(
+                    os.environ, self._env_without_ngspice_root_override(), clear=True
+                ):
+                status, out = self._run_check_env()
+            self.assertEqual(status, cli.EXIT_ENVIRONMENT)
+            self.assertIn("ngspice : OK", out)
+            self.assertIn("provenance OK", out)
+            self.assertIn("PDK     : MISSING", out)
 
 
 class ExclusiveRecordWriteTests(unittest.TestCase):
