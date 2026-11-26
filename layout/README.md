@@ -38,13 +38,18 @@ is the feedback divider, the first all-passive one. A block's layout registers
 its own `CellSpec` in `drclvs.py`'s `CELLS` dict and drives it with
 `--cell <key>` — see that file's module docstring for the exact contract.
 
-The stage **count** is a property of the cell. Stages 1–5 always run; stage 6
-onwards is one LVS negative control per corruption the netlist can express, so
-a FET-only cell has 7 stages, one that also contains a resistor and a
-capacitor has 9, and the all-resistor divider has 8. The topology/parameter
-pair at stages 6 and 7 is the cell's own (`CellSpec.controls`): the MOS pair
-keys off the netlist's first `M*` element line, so an all-passive cell
-registers the passive pair instead (see "6 onwards. Negative controls").
+The stage **count** is a property of the cell, and the driver derives it rather
+than hard-coding it: five stages are common to every cell (build the layout,
+export the netlist, the two DRC runs and LVS), each LVS negative control the
+netlist can express adds one, and a cell that registers `CellSpec.erc` adds two
+more — the intact ERC supply run before LVS, and the ERC negative control after
+the LVS controls. The topology/parameter pair is the cell's own
+(`CellSpec.controls`): the MOS pair keys off the netlist's first `M*` element
+line, so an all-passive cell registers the passive pair instead. The numbering
+shifts with those optional stages, so it is given once, in
+[The stages](https://github.com/2AMLogic/gf180-ldo/blob/main/layout/README.md#the-stages);
+per-cell totals are deliberately not quoted here, because they drift whenever a
+cell gains a control or an ERC run.
 
 A run takes about a minute and prints one line per stage:
 
