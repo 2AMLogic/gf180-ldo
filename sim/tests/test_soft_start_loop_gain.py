@@ -8,7 +8,8 @@ parts of ``sim/soft-start-loop-gain/testbench/`` that decide whether a number
 becomes a claim in an evidence record -- the landing rule, the derived
 injection current, the netlist transforms, the ``device``/``binj`` variant
 A/B, the deck template's substitution, the hand-over metrics, the ``klt sim``
-batch front end, and the fact that the margin semantics are *imported* from
+batch front end, the anchor cross-check's treatment of an infinite gain
+margin, and the fact that the margin semantics are *imported* from
 ``sim/harness/loop_margin.py`` (the same single source
 ``sim/loop-stability/`` reads) rather than re-implemented.
 
@@ -30,7 +31,10 @@ selftest, which needs ngspice. Nothing here does: no PDK, no simulator.
 
 from __future__ import annotations
 
+import contextlib
+import csv
 import difflib
+import io
 import math
 import re
 import sys
@@ -48,6 +52,7 @@ sys.path.insert(0, str(_TB))
 import netlist_variants as nv  # noqa: E402
 from harness import klt_grid  # noqa: E402
 from harness import loop_margin  # noqa: E402
+from harness import record_compare  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
 from harness.loader import load_script  # noqa: E402
 
@@ -95,6 +100,22 @@ def row(**kw) -> "sweep.Row":
     )
     base.update(kw)
     return sweep.Row(**base)
+
+
+def anchor_deltas(*pairs: tuple[float, float]) -> list[tuple]:
+    """`compare_anchor` over (anchor gain margin, reference gain margin) pairs.
+
+    `inf` on either side is that sweep's "no -180 deg crossing in band".
+    Each pair gets its own corner so the points stay distinct.
+    """
+    rows = [row(corner_id=f"c{i}_27c_3.30v", phase="anchor", ssr_cmd="free",
+                f180_hz=None if math.isinf(a) else 1e6,
+                gain_at_f180_db=None if math.isinf(a) else -a)
+            for i, (a, _) in enumerate(pairs)]
+    other = {(r.corner_id, r.ceff_f, r.esr_ohm):
+             {"vout_v": 1.8, "f0_hz": 1e5, "pm_deg": 60.0, "gm_db": g}
+             for r, (_, g) in zip(rows, pairs)}
+    return sweep.compare_anchor(rows, other)
 
 
 class TestMarginSemanticsAreNotForked(unittest.TestCase):
@@ -782,10 +803,187 @@ class TestCrossCheckTolerance(unittest.TestCase):
 
     def test_a_delta_inside_the_budget_agrees_and_outside_it_does_not(self):
         def d(pm):
-            return (None, {"pm_deg": 0.0}, pm, 0.0, 0.0)
+            return (row(phase="anchor"), {"pm_deg": 0.0}, pm, 0.0, 0.0, False)
         self.assertTrue(sweep.xcheck_verdict([d(1.9)])[0])
         self.assertFalse(sweep.xcheck_verdict([d(2.1)])[0])
         self.assertFalse(sweep.xcheck_verdict([])[0])
+
+
+class TestAnchorGainMarginDelta(unittest.TestCase):
+    """The anchor's gain-margin comparison against a margin of `inf` (#900).
+
+    `inf` means that sweep found no -180 deg crossing in band. Two of them
+    agree; one against a finite margin is a different loop, with no dB delta
+    at all. The comparison used to drop every pair containing `inf` and
+    report the maximum of the rest as 0 dB -- so a 9 dB margin against
+    `inf`, in either direction, came out AGREES.
+    """
+
+    def test_the_gain_margin_delta_is_the_shared_record_compare_delta(self):
+        self.assertIs(sweep.delta, record_compare.delta)
+        self.assertEqual(anchor_deltas((9.0, 12.0))[0][3], -3.0)
+        self.assertEqual(anchor_deltas((12.0, 11.5))[0][3], 0.5)
+
+    def test_ordinary_finite_pairs_are_judged_by_the_db_budget(self):
+        self.assertFalse(sweep.xcheck_verdict(anchor_deltas((9.0, 12.0)))[0])
+        self.assertTrue(sweep.xcheck_verdict(anchor_deltas((12.0, 11.5)))[0])
+
+    def test_two_infinite_margins_are_zero_db_apart_and_agree(self):
+        ok, _wpm, wgm, _wf0, n, mism = sweep.xcheck_verdict(
+            anchor_deltas((math.inf, math.inf)))
+        self.assertEqual((ok, wgm, n, mism), (True, 0.0, 1, []))
+
+    def test_a_finite_margin_against_infinity_disagrees_in_either_direction(self):
+        for anchor_gm, ref_gm in ((9.0, math.inf), (math.inf, 9.0)):
+            with self.subTest(anchor=anchor_gm, ref=ref_gm):
+                (d,) = anchor_deltas((anchor_gm, ref_gm))
+                ok, _wpm, wgm, _wf0, n, mism = sweep.xcheck_verdict([d])
+                self.assertIsNone(d[3])
+                self.assertEqual((ok, wgm, n), (False, 0.0, 1))
+                self.assertEqual(mism, [d])
+                here, there = (("9.00", "inf") if math.isinf(ref_gm)
+                               else ("inf", "9.00"))
+                self.assertEqual(sweep.gm_mismatch_at(d[0], d[1]["gm_db"]),
+                                 f"`c0_27c_3.30v` / 1uF_100mohm -- this record "
+                                 f"{here} dB, that one {there} dB")
+
+    def test_a_mixed_pair_disagrees_beside_a_finite_pair_within_tolerance(self):
+        d = anchor_deltas((9.0, math.inf), (12.0, 11.5))
+        ok, _wpm, wgm, _wf0, n, mism = sweep.xcheck_verdict(d)
+        self.assertEqual((ok, wgm, n), (False, 0.5, 2))
+        self.assertEqual([x[0].corner_id for x in mism], ["c0_27c_3.30v"])
+
+
+class TestAnchorCrossingMismatchIsReported(unittest.TestCase):
+    """The console line and the record section both name the mismatch (#900)."""
+
+    MISMATCH_AT_C0 = "`c0_27c_3.30v` / 1uF_100mohm -- this record 9.00 dB, that one inf dB"
+
+    @staticmethod
+    def section(deltas):
+        return sweep.record.xcheck_section(
+            {"here": deltas, "here_verdict": sweep.xcheck_verdict(deltas)})
+
+    @staticmethod
+    def console(deltas):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            sweep.print_xcheck("same-host re-run", sweep.xcheck_verdict(deltas))
+        return out.getvalue()
+
+    def test_the_console_names_the_mismatch_and_disagrees(self):
+        text = self.console(anchor_deltas((9.0, math.inf), (12.0, 11.5)))
+        self.assertIn("2 shared points", text)
+        self.assertIn("1 GM crossing mismatch -> DISAGREES", text)
+        self.assertIn(self.MISMATCH_AT_C0, text)
+        self.assertNotIn("-> AGREES", text)
+
+    def test_the_record_section_names_the_mismatch_and_disagrees(self):
+        md = self.section(anchor_deltas((9.0, math.inf), (12.0, 11.5)))
+        self.assertIn("**gain-margin crossing mismatch at 1 of 2 points**", md)
+        self.assertIn(self.MISMATCH_AT_C0, md)
+        self.assertIn("**verdict: DISAGREES**", md)
+        self.assertNotIn("**verdict: AGREES**", md)
+
+    def test_both_summaries_count_the_mismatches_when_there_are_none(self):
+        deltas = anchor_deltas((12.0, 11.5), (math.inf, math.inf))
+        self.assertIn("0 GM crossing mismatches -> AGREES", self.console(deltas))
+        md = self.section(deltas)
+        self.assertIn("gain-margin crossing mismatches: **0 of 2**", md)
+        self.assertIn("**verdict: AGREES**", md)
+        self.assertNotIn("DISAGREES", md)
+
+    def test_both_summaries_list_a_bounded_number_of_mismatches_and_count_the_rest(self):
+        n = sweep.XCHECK_MISMATCH_SHOWN + 2
+        deltas = anchor_deltas(*[(9.0, math.inf)] * n)
+        verdict = sweep.xcheck_verdict(deltas)
+        self.assertEqual(len(verdict[5]), n)
+        self.assertFalse(verdict[0])
+        md = self.section(deltas)
+        self.assertIn(f"**gain-margin crossing mismatch at {n} of {n} points**", md)
+        self.assertEqual(md.count("this record 9.00 dB"), sweep.XCHECK_MISMATCH_SHOWN)
+        self.assertIn(f"and {n - sweep.XCHECK_MISMATCH_SHOWN} more", md)
+        text = self.console(deltas)
+        self.assertEqual(text.count("this record 9.00 dB"), sweep.XCHECK_MISMATCH_SHOWN)
+        self.assertIn(f"and {n - sweep.XCHECK_MISMATCH_SHOWN} more", text)
+
+
+class TestCommittedRecordCrossCheckReplaysUnchanged(unittest.TestCase):
+    """Record `20260910-015601-2387ece` is the regression baseline (#900).
+
+    Its anchor cross-check is replayed through `compare_anchor` /
+    `xcheck_verdict` from what it committed: the anchor rows of its matrix
+    CSV, the same-host `sim/loop-stability/` re-run's `ROW` logs under
+    `corners/`, and the committed `20260906-071437-fff0bf0` matrix. No
+    simulator runs. The CSV stores PM and GM to two decimals, so the replayed
+    worst movements sit within 0.01 of the record's own (0.009 deg / 0.016 dB
+    and 0.726 deg / 0.252 dB, taken from unrounded values).
+    """
+
+    RECORD = "20260910-015601-2387ece"
+
+    @classmethod
+    def anchor_rows(cls) -> list:
+        def num(tok: str) -> float | None:
+            return None if tok == "" else float(tok)
+
+        rows = []
+        path = _TB.parent / "records" / f"{cls.RECORD}-matrix.csv"
+        with path.open(newline="") as fh:
+            for r in csv.DictReader(fh):
+                if (r["variant"], r["phase"]) != ("device", "anchor"):
+                    continue
+                pm, gm = num(r["phase_margin_deg"]), num(r["gain_margin_db"])
+                rows.append(row(
+                    corner_id=r["corner_id"], corner=r["process"],
+                    temp_c=float(r["temp_c"]), vin_v=float(r["vin_v"]),
+                    iload_a=float(r["iload_ma"]) * 1e-3,
+                    ceff_f=float(r["ceff_uf"]) * 1e-6, esr_ohm=float(r["esr_ohm"]),
+                    vout_v=float(r["vout_v"]), dcgain_db=float(r["dc_loop_gain_db"]),
+                    f0_hz=num(r["f_crossover_hz"]),
+                    phase_at_f0_deg=None if pm is None else pm - 180.0,
+                    f180_hz=num(r["f_180_hz"]),
+                    gain_at_f180_db=None if math.isinf(gm) else -gm,
+                    resurgence_db=num(r["resurgence_db"]),
+                    phase="anchor", ssr_cmd=r["ssr_cmd"], ssr_v=float(r["ssr_v"]),
+                    fb_v=float(r["fb_v"]), isup_a=float(r["isup_ma"]) * 1e-3,
+                    load_model=r["load_model"], rload_ohm=float(r["rload_ohm"])))
+        return rows
+
+    @classmethod
+    def same_host_rows(cls) -> dict:
+        """The re-run's ROW lines, as `run_loop_stability_here` reduces them."""
+        out = {}
+        for log in sorted((_TB.parent / "corners" / cls.RECORD
+                           / "loop-stability-rerun").glob("*.log")):
+            for line in log.read_text().splitlines():
+                if not line.startswith("ROW "):
+                    continue
+                f = loop_margin.parse_row_fields(line)
+                phase = loop_margin.parse_opt_float(f["phase_at_f0_deg"])
+                gain = loop_margin.parse_opt_float(f["gain_at_f180_db"])
+                out[(log.stem, float(f["ceff_f"]), float(f["esr_ohm"]))] = {
+                    "f0_hz": loop_margin.parse_opt_float(f["f0_hz"]),
+                    "pm_deg": None if phase is None else 180.0 + phase,
+                    "gm_db": math.inf if gain is None else -gain}
+        return out
+
+    def test_both_comparisons_still_agree_with_no_crossing_mismatch(self):
+        anchor = self.anchor_rows()
+        committed = sweep.read_committed_ls_matrix()
+        self.assertEqual(len(anchor), 620)
+        for label, other, n, wpm, wgm, wf0_pct in (
+            ("same host", self.same_host_rows(), 620, 0.013, 0.021, 0.044),
+            ("committed", committed, 496, 0.730, 0.250, 1.457),
+        ):
+            with self.subTest(label):
+                verdict = sweep.xcheck_verdict(sweep.compare_anchor(anchor, other))
+                ok, got_pm, got_gm, got_f0, got_n, mism = verdict
+                self.assertTrue(ok)
+                self.assertEqual((got_n, mism), (n, []))
+                self.assertAlmostEqual(got_pm, wpm, places=3)
+                self.assertAlmostEqual(got_gm, wgm, places=3)
+                self.assertAlmostEqual(100 * got_f0, wf0_pct, places=3)
 
 
 class TestPoleZeroFit(unittest.TestCase):
