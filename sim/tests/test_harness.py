@@ -3018,12 +3018,10 @@ class CheckEnvProvenanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "homebrew"
             exe = fake_ngspice_install(root)
-            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
-                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
-                unittest.mock.patch.dict(
-                    os.environ, self._env_without_ngspice_root_override(), clear=True
-                ):
+            env = self._env_without_ngspice_root_override()
+            env["PATH"] = str(exe.parent)
+            with unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
+                unittest.mock.patch.dict(os.environ, env, clear=True):
                 status, out = self._run_check_env()
             self.assertIn("provenance OK", out)
             self.assertNotIn("MISMATCH", out)
@@ -3040,12 +3038,10 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             root = Path(tmp) / "homebrew"
             fake_ngspice_install(root)
             shadow_exe = fake_ngspice_install(Path(tmp) / "local-build")
-            with unittest.mock.patch("shutil.which", return_value=str(shadow_exe)), \
-                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
-                unittest.mock.patch.dict(
-                    os.environ, self._env_without_ngspice_root_override(), clear=True
-                ):
+            env = self._env_without_ngspice_root_override()
+            env["PATH"] = str(shadow_exe.parent)
+            with unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
+                unittest.mock.patch.dict(os.environ, env, clear=True):
                 status, out = self._run_check_env()
             self.assertEqual(status, cli.EXIT_ENVIRONMENT)
             self.assertIn("MISMATCH", out)
@@ -3062,12 +3058,10 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             pinned_prefix = Path(tmp) / "pinned-46"
             exe = fake_ngspice_install(pinned_prefix, "ngspice-46")
             prefixes = {runner.DRIFTING_HOMEBREW_FORMULA: str(drifted)}
-            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
-                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(runner, "homebrew_prefix", side_effect=prefixes.get), \
-                unittest.mock.patch.dict(
-                    os.environ, self._env_without_ngspice_root_override(), clear=True
-                ):
+            env = self._env_without_ngspice_root_override()
+            env["PATH"] = str(exe.parent)
+            with unittest.mock.patch.object(runner, "homebrew_prefix", side_effect=prefixes.get), \
+                unittest.mock.patch.dict(os.environ, env, clear=True):
                 status, out = self._run_check_env()
             self.assertEqual(status, cli.EXIT_ENVIRONMENT)
             self.assertIn("MISMATCH", out)
@@ -3087,10 +3081,9 @@ class CheckEnvProvenanceTests(unittest.TestCase):
             drifted = Path(tmp) / "homebrew-ngspice-47"
             fake_ngspice_install(drifted, "ngspice-47")
             env = self._env_without_ngspice_root_override()
+            env["PATH"] = str(exe.parent)
             env[runner.NGSPICE_ROOT_ENV] = str(blessed)
-            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
-                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(drifted)), \
+            with unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(drifted)), \
                 unittest.mock.patch.dict(os.environ, env, clear=True):
                 status, out = self._run_check_env()
             self.assertIn("provenance OK", out)
@@ -3100,14 +3093,11 @@ class CheckEnvProvenanceTests(unittest.TestCase):
 
     def test_no_homebrew_and_no_override_reports_unverified_not_ok(self):
         with tempfile.TemporaryDirectory() as tmp:
-            exe = Path(tmp) / "ngspice"
-            exe.write_bytes(b"fake\n")
-            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
-                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
-                unittest.mock.patch.dict(
-                    os.environ, self._env_without_ngspice_root_override(), clear=True
-                ):
+            exe = fake_ngspice_install(Path(tmp) / "local-46", "ngspice-46")
+            env = self._env_without_ngspice_root_override()
+            env["PATH"] = str(exe.parent)
+            with unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
+                unittest.mock.patch.dict(os.environ, env, clear=True):
                 status, out = self._run_check_env()
             self.assertIn("provenance not verified", out)
             self.assertNotIn("MISMATCH", out)
@@ -3120,14 +3110,11 @@ class CheckEnvProvenanceTests(unittest.TestCase):
         *reported* there, never enforced -- that host has no pinned root to
         check against and is deliberately a different build."""
         with tempfile.TemporaryDirectory() as tmp:
-            exe = Path(tmp) / "ngspice"
-            exe.write_bytes(b"fake\n")
-            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
-                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-42"), \
-                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
-                unittest.mock.patch.dict(
-                    os.environ, self._env_without_ngspice_root_override(), clear=True
-                ):
+            exe = fake_ngspice_install(Path(tmp) / "apt-42", "ngspice-42")
+            env = self._env_without_ngspice_root_override()
+            env["PATH"] = str(exe.parent)
+            with unittest.mock.patch.object(runner, "homebrew_prefix", return_value=None), \
+                unittest.mock.patch.dict(os.environ, env, clear=True):
                 status, out = self._run_check_env()
             self.assertIn("provenance not verified", out)
             self.assertIn("ngspice-42", out)
@@ -3142,12 +3129,10 @@ class CheckEnvProvenanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "homebrew"
             exe = fake_ngspice_install(root)
-            with unittest.mock.patch("shutil.which", return_value=str(exe)), \
-                unittest.mock.patch.object(runner, "ngspice_version", return_value="ngspice-46"), \
-                unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
-                unittest.mock.patch.dict(
-                    os.environ, self._env_without_ngspice_root_override(), clear=True
-                ):
+            env = self._env_without_ngspice_root_override()
+            env["PATH"] = str(exe.parent)
+            with unittest.mock.patch.object(runner, "homebrew_prefix", return_value=str(root)), \
+                unittest.mock.patch.dict(os.environ, env, clear=True):
                 status, out = self._run_check_env()
             self.assertEqual(status, cli.EXIT_ENVIRONMENT)
             self.assertIn("ngspice : OK", out)
