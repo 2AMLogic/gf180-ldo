@@ -42,7 +42,9 @@ from harness.loop_margin import (  # noqa: E402
     VOUT_TOL_FRAC,
     fmt_esr,
     fmt_uf,
+    gm_str,
 )
+from harness.record_compare import fmt  # noqa: E402
 from harness.report import parse_row_fields as _harness_parse_row_fields  # noqa: E402
 
 VREF_V = 1.2                          # the deck's reference source
@@ -223,6 +225,26 @@ VOUT_CEIL_V = VOUT_NOM_V + 0.18
 XCHECK_PM_TOL_DEG = 2.0
 XCHECK_GM_TOL_DB = 1.0
 XCHECK_F0_TOL_FRAC = 0.02
+XCHECK_MISMATCH_SHOWN = 6
+
+
+def gm_crossing_mismatch(anchor_gm: float, ref_gm: float) -> bool:
+    """Do the two sweeps disagree about whether the loop reaches -180 deg in band?
+
+    A gain margin of ``inf`` is a sweep saying it found no -180 deg crossing
+    in band (``Row.gm_db``). Two of those agree, which is why
+    ``record_compare.delta`` makes them 0 dB apart; one of those against a
+    finite margin is a different loop, with no dB delta at all (``delta``
+    returns ``None``), so the anchor cross-check carries the pair as a
+    mismatch rather than dropping it from the comparison (issue #900).
+    """
+    return math.isinf(anchor_gm) != math.isinf(ref_gm)
+
+
+def gm_mismatch_at(r: Row, ref_gm: float) -> str:
+    """One crossing mismatch, named by the coordinates the record uses."""
+    return (f"`{r.corner_id}` / {r.cfg_id} -- this record {gm_str(r)} dB, "
+            f"that one {fmt(ref_gm)} dB")
 
 # ---------------------------------------------------------------------------
 # one measured point
