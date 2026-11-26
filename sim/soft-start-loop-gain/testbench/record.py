@@ -399,6 +399,7 @@ def xcheck_section(xcheck: dict) -> str:
     if "error" in xcheck:
         lines.append(f"  The same-host re-run could not be made: "
                      f"{xcheck['error']}.\n")
+    compared: set[str] = set()
     for label, key, caveat in (
         ("Same host, same session, same ngspice binary", "here",
          "This comparison has **no toolchain term in it at all**: "
@@ -414,10 +415,17 @@ def xcheck_section(xcheck: dict) -> str:
          "reported for completeness, and the bar it is held to is #182's own "
          "~2 deg / ~1 dB movement class."),
     ):
-        deltas = xcheck.get(key)
-        if not deltas:
+        if key not in xcheck:
             continue
+        deltas = xcheck[key]
         ok, wpm, wgm, wf0, n = xcheck[f"{key}_verdict"]
+        if not deltas:
+            lines.append(f"  **{label}** -- **0 shared points**: this grid "
+                         f"shares no (corner, C_eff, ESR) with the "
+                         f"cross-check, so neither a delta nor a verdict is "
+                         f"reported for this reference.\n")
+            continue
+        compared.add(key)
         worst = max((d for d in deltas if d[2] is not None),
                     key=lambda d: abs(d[2]), default=None)
         lines.append(f"  **{label}** -- {n} shared "
@@ -454,9 +462,13 @@ def xcheck_section(xcheck: dict) -> str:
         f"  between the two records to compare, and the honest statement is that\n"
         f"  this is a discrepancy of coverage, not of result. The most recent\n"
         f"  loop-stability record that *does* have shared points is\n"
-        f"  `20260906-071437-fff0bf0`, compared above; and the same-host re-run\n"
-        f"  above is a stronger check than either, because it removes the\n"
-        f"  toolchain term `{LS_DIAGNOSTIC_RECORD}` exists to document.\n"
+        f"  `20260906-071437-fff0bf0`"
+        + (", compared above" if "committed" in compared else "")
+        + ("; and the same-host re-run\n  above is a stronger check than "
+           "either, because it removes the\n  toolchain term "
+           f"`{LS_DIAGNOSTIC_RECORD}` exists to document"
+           if "here" in compared else "")
+        + ".\n"
     )
     return "\n".join(lines) + "\n"
 

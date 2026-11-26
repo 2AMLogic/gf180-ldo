@@ -863,6 +863,18 @@ def xcheck_verdict(deltas):
     return ok, wpm, wgm, wf0, len(deltas)
 
 
+def print_xcheck(label: str, verdict) -> None:
+    """Print one anchor comparison's console summary."""
+    ok, wpm, wgm, wf0, n = verdict
+    if not n:
+        print(f"  {label} : 0 shared points: this grid shares no "
+              f"(corner, C_eff, ESR) with the cross-check")
+        return
+    print(f"  {label} : {n} shared points, worst |dPM| "
+          f"{wpm:.3f} deg, |dGM| {wgm:.3f} dB, |df0| {100 * wf0:.3f}% "
+          f"-> {'AGREES' if ok else 'DISAGREES'}")
+
+
 # ---------------------------------------------------------------------------
 # driver
 # ---------------------------------------------------------------------------
@@ -1278,18 +1290,12 @@ def main() -> int:
         else:
             xcheck["here"] = compare_anchor(anchor_rows, here_rows)
             xcheck["here_verdict"] = xcheck_verdict(xcheck["here"])
-            ok, wpm, wgm, wf0, n = xcheck["here_verdict"]
-            print(f"  same-host re-run : {n} shared points, worst |dPM| "
-                  f"{wpm:.3f} deg, |dGM| {wgm:.3f} dB, |df0| {100 * wf0:.3f}% "
-                  f"-> {'AGREES' if ok else 'DISAGREES'}")
+            print_xcheck("same-host re-run", xcheck["here_verdict"])
         committed = read_committed_ls_matrix()
         if committed:
             xcheck["committed"] = compare_anchor(anchor_rows, committed)
             xcheck["committed_verdict"] = xcheck_verdict(xcheck["committed"])
-            ok, wpm, wgm, wf0, n = xcheck["committed_verdict"]
-            print(f"  committed record : {n} shared points, worst |dPM| "
-                  f"{wpm:.3f} deg, |dGM| {wgm:.3f} dB, |df0| {100 * wf0:.3f}% "
-                  f"-> {'AGREES' if ok else 'DISAGREES'}")
+            print_xcheck("committed record", xcheck["committed_verdict"])
 
     # --- summary -----------------------------------------------------------
     print()

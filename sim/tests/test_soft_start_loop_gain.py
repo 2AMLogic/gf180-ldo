@@ -30,7 +30,9 @@ selftest, which needs ngspice. Nothing here does: no PDK, no simulator.
 
 from __future__ import annotations
 
+import contextlib
 import difflib
+import io
 import math
 import re
 import sys
@@ -788,6 +790,133 @@ class TestCrossCheckTolerance(unittest.TestCase):
         self.assertFalse(sweep.xcheck_verdict([])[0])
 
 
+class TestCrossCheckEmptyJoin(unittest.TestCase):
+    """An attempted comparison that shares no point is reported, not crashed on or dropped (#905)."""
+
+    HERE_LABEL = "Same host, same session, same ngspice binary"
+    COMMITTED_LABEL = "Against the committed record `20260906-071437-fff0bf0`"
+    COMMITTED_HEAD = "`20260906-071437-fff0bf0`, compared above"
+    HERE_CLAIM = "is a stronger check than either"
+
+    def anchor(self, ceff_f: float) -> "sweep.Row":
+        return row(corner_id="ff_-40c_2.97v", corner="ff", temp_c=-40.0,
+                   vin_v=2.97, iload_a=sweep.RATED_LOAD_A, ceff_f=ceff_f,
+                   esr_ohm=0.001, f0_hz=1e5, phase_at_f0_deg=-121.0,
+                   f180_hz=5e6, gain_at_f180_db=-10.0, phase="anchor",
+                   ssr_cmd="free", load_model="ideal-sink-50mA",
+                   rload_ohm=sweep.OPEN_LOAD_OHM)
+
+    @staticmethod
+    def reference() -> dict:
+        return {("ff_-40c_2.97v", 1e-6, 0.001):
+                {"vout_v": 1.8, "f0_hz": 1e5, "pm_deg": 60.0, "gm_db": 10.0}}
+
+    def join(self, ceff_f: float) -> list:
+        return sweep.compare_anchor([self.anchor(ceff_f)], self.reference())
+
+    @staticmethod
+    def console(label: str, deltas: list) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            sweep.print_xcheck(label, sweep.xcheck_verdict(deltas))
+        return out.getvalue()
+
+    @staticmethod
+    def section(**xcheck) -> str:
+        for key in ("here", "committed"):
+            if key in xcheck:
+                xcheck[f"{key}_verdict"] = sweep.xcheck_verdict(xcheck[key])
+        return sweep.record.xcheck_section(xcheck)
+
+    def test_both_console_call_sites_go_through_the_one_formatter(self):
+        src = (_TB / "sweep.py").read_text()
+        self.assertIn('print_xcheck("same-host re-run", xcheck["here_verdict"])', src)
+        self.assertIn('print_xcheck("committed record", xcheck["committed_verdict"])', src)
+        self.assertEqual(src.count("{wpm:.3f}"), 1)
+
+    def test_an_anchor_off_the_reference_grid_joins_nothing_and_one_on_it_joins_one(self):
+        self.assertEqual(self.join(2.2e-6), [])
+        self.assertEqual(len(self.join(1e-6)), 1)
+
+    def test_two_empty_comparisons_each_say_so_on_the_console(self):
+        for label in ("same-host re-run", "committed record"):
+            with self.subTest(label=label):
+                line = self.console(label, self.join(2.2e-6))
+                self.assertIn(f"  {label} : 0 shared points", line)
+                self.assertNotIn("AGREES", line)
+                self.assertNotIn("worst |dPM|", line)
+
+    def test_two_empty_comparisons_each_say_so_in_the_record(self):
+        md = self.section(here=self.join(2.2e-6), committed=self.join(2.2e-6))
+        self.assertEqual(md.count("0 shared points"), 2)
+        for label in (self.HERE_LABEL, self.COMMITTED_LABEL):
+            with self.subTest(label=label):
+                self.assertIn(f"**{label}** -- **0 shared points**", md)
+        self.assertNotIn("AGREES", md)
+        self.assertNotIn("worst |dPM|", md)
+        self.assertNotIn(self.COMMITTED_HEAD, md)
+        self.assertNotIn(self.HERE_CLAIM, md)
+
+    def test_one_matching_reference_keeps_its_count_deltas_and_verdict_on_the_console(self):
+        line = self.console("committed record", self.join(1e-6))
+        self.assertIn("  committed record : 1 shared points, worst |dPM| 1.000 deg, "
+                      "|dGM| 0.000 dB, |df0| 0.000% -> AGREES", line)
+        other = self.console("same-host re-run", self.join(2.2e-6))
+        self.assertIn("  same-host re-run : 0 shared points", other)
+        self.assertNotIn("AGREES", other)
+
+    def test_one_matching_reference_keeps_its_count_deltas_and_verdict_in_the_record(self):
+        md = self.section(here=self.join(2.2e-6), committed=self.join(1e-6))
+        self.assertIn(f"**{self.COMMITTED_LABEL}** -- 1 shared (corner, C_eff, "
+                      "ESR) points at 50 mA:", md)
+        self.assertIn("- worst |dPM| **1.000 deg**", md)
+        self.assertIn("- **verdict: AGREES**", md)
+        self.assertEqual(md.count("0 shared points"), 1)
+        self.assertIn(f"**{self.HERE_LABEL}** -- **0 shared points**", md)
+        self.assertIn(self.COMMITTED_HEAD, md)
+        self.assertNotIn(self.HERE_CLAIM, md)
+
+    def test_the_record_conclusion_claims_only_the_comparisons_that_yielded_evidence(self):
+        empty, matched = self.join(2.2e-6), self.join(1e-6)
+        both = self.section(here=matched, committed=matched)
+        self.assertIn(self.COMMITTED_HEAD + "; and the same-host re-run", both)
+        self.assertIn(self.HERE_CLAIM, both)
+        only_committed = self.section(error="the re-run produced no ROW lines",
+                                      committed=matched)
+        self.assertIn(self.COMMITTED_HEAD + ".", only_committed)
+        self.assertNotIn(self.HERE_CLAIM, only_committed)
+        only_here = self.section(here=matched)
+        self.assertNotIn("compared above", only_here)
+        self.assertIn(self.HERE_CLAIM, only_here)
+        neither = self.section(error="the re-run produced no ROW lines",
+                               committed=empty)
+        self.assertNotIn("compared above", neither)
+        self.assertNotIn(self.HERE_CLAIM, neither)
+
+    def test_a_same_host_error_beside_an_attempted_committed_comparison(self):
+        md = self.section(error="the re-run produced no ROW lines",
+                          committed=self.join(2.2e-6))
+        self.assertIn("The same-host re-run could not be made: the re-run "
+                      "produced no ROW lines.", md)
+        self.assertNotIn(self.HERE_LABEL, md)
+        self.assertEqual(md.count("0 shared points"), 1)
+        self.assertIn(f"**{self.COMMITTED_LABEL}** -- **0 shared points**", md)
+
+    def test_a_skipped_cross_check_still_says_not_run(self):
+        md = self.section(skipped=True)
+        self.assertIn("**Not run** (`--skip-crosscheck`, or no anchor phase in "
+                      "this run)", md)
+        self.assertNotIn("0 shared points", md)
+
+    def test_a_missing_committed_matrix_still_says_nothing_about_it(self):
+        for xcheck in ({"here": self.join(1e-6)},
+                       {"error": "the re-run produced no ROW lines"}):
+            with self.subTest(xcheck=list(xcheck)):
+                md = self.section(**xcheck)
+                self.assertNotIn(self.COMMITTED_LABEL, md)
+                self.assertNotIn("0 shared points", md)
+
+
 class TestPoleZeroFit(unittest.TestCase):
     """The attribution's arithmetic, against a known answer."""
 
@@ -1373,7 +1502,7 @@ class TestRenderRecordSmoke(unittest.TestCase):
     PDK_BULLET = "- PDK: gf180mcuD @ open_pdks `unittest`"
 
     def _render(self, klt_info=None, *, device_phases=(-120.0, -120.0),
-                curves=()) -> str:
+                curves=(), xcheck=None) -> str:
         # device/binj mates at the same (phase, ramp state, corner, C_eff,
         # ESR), so `ab_table` has pairs to tabulate and `handover_table` has
         # a two-state transfer at the tt corner. VOUT follows the intended
@@ -1413,8 +1542,9 @@ class TestRenderRecordSmoke(unittest.TestCase):
                 ceffs=[1e-6], esrs=[0.1], pdk=pdk,
                 prov={"commit": "abc1234", "short": "abc1234",
                       "branch": "unittest", "dirty": False},
-                args=args, xcheck={"skipped": True}, attribution=[],
-                seeded=(), curves=curves, klt_info=klt_info)
+                args=args,
+                xcheck={"skipped": True} if xcheck is None else xcheck,
+                attribution=[], seeded=(), curves=curves, klt_info=klt_info)
 
     def test_provenance_and_handover_describe_the_measured_variants(self):
         md = self._render(curves=[ideal_curve("device", gm=4e-6), ideal_curve()])
@@ -1486,6 +1616,20 @@ class TestRenderRecordSmoke(unittest.TestCase):
         md = self._render()
         self.assertIn("wnflag=1", md)
         self.assertIn("model binning", md)
+
+    def test_an_empty_join_cross_check_renders_in_the_whole_record(self):
+        anchor = row(phase="anchor", ssr_cmd="free", ceff_f=2.2e-6)
+        reference = {(anchor.corner_id, 1e-6, anchor.esr_ohm):
+                     {"vout_v": 1.8, "f0_hz": 1e5, "pm_deg": 60.0, "gm_db": 10.0}}
+        empty = sweep.compare_anchor([anchor], reference)
+        self.assertEqual(empty, [])
+        verdict = sweep.xcheck_verdict(empty)
+        md = self._render(xcheck={"here": empty, "here_verdict": verdict,
+                                  "committed": empty, "committed_verdict": verdict})
+        self.assertEqual(md.count("0 shared points"), 2)
+        for label in ("Same host, same session, same ngspice binary",
+                      "Against the committed record `20260906-071437-fff0bf0`"):
+            self.assertIn(f"**{label}** -- **0 shared points**", md)
 
 
 if __name__ == "__main__":
