@@ -1096,6 +1096,25 @@ def run_point(
     measurements, nonfinite = parse_measurements_checked(output)
     missing = [name for name in tb.measure if name not in measurements]
 
+    # #857: every completed run -- ok or failed -- reports the same
+    # provenance (point, parsed measurements, missing names, elapsed time,
+    # deck, log, DC-path attribution), so each verdict below returns
+    # through this one constructor instead of its own PointResult call.
+    # The ok verdict is the default: no diagnostic, and ``missing`` is
+    # empty by the time control reaches it.
+    def completed(status: str, message: str = "") -> PointResult:
+        return PointResult(
+            point=point,
+            status=status,
+            measurements=measurements,
+            missing=missing,
+            seconds=elapsed,
+            deck=deck_path.name,
+            log=log_path.name,
+            message=message,
+            dc_path=dc_path,
+        )
+
     # #310: a DC-solve bench (no .tran analysis) whose log shows the ladder
     # fell through source stepping reports an unsettled transient snapshot
     # as its operating point. That must fail the corner even when every
@@ -1107,55 +1126,27 @@ def run_point(
     if not _runs_transient_analysis(*tb.analyses):
         exhausted = _ladder_exhaustion_lines(output)
         if exhausted:
-            return PointResult(
-                point=point,
-                status="failed",
-                measurements=measurements,
-                missing=missing,
-                seconds=elapsed,
-                deck=deck_path.name,
-                log=log_path.name,
-                message=(
-                    "pseudo-transient op fallback: DC continuation ladder "
-                    f"exhausted ({exhausted[0].strip()}); the reported "
-                    "operating point is an unsettled transient snapshot, "
-                    "not a converged DC solution"
-                ),
-                dc_path=dc_path,
+            return completed(
+                "failed",
+                "pseudo-transient op fallback: DC continuation ladder "
+                f"exhausted ({exhausted[0].strip()}); the reported "
+                "operating point is an unsettled transient snapshot, "
+                "not a converged DC solution",
             )
 
     # #406: a nonzero exit or fatal/undefined-vector diagnostic invalidates
     # the run even when every requested measurement parsed.
     problem = validate_process_output(returncode, output, log_path.name)
     if problem:
-        return PointResult(
-            point=point,
-            status="failed",
-            measurements=measurements,
-            missing=missing,
-            seconds=elapsed,
-            deck=deck_path.name,
-            log=log_path.name,
-            message=problem,
-            dc_path=dc_path,
-        )
+        return completed("failed", problem)
 
     bad_required = [name for name in tb.measure if name in nonfinite]
     if bad_required:
-        return PointResult(
-            point=point,
-            status="failed",
-            measurements=measurements,
-            missing=missing,
-            seconds=elapsed,
-            deck=deck_path.name,
-            log=log_path.name,
-            message=(
-                "non-finite measurement value (numeric overflow) for "
-                f"{', '.join(bad_required)} in {log_path.name} at "
-                f"{point.corner_id}"
-            ),
-            dc_path=dc_path,
+        return completed(
+            "failed",
+            "non-finite measurement value (numeric overflow) for "
+            f"{', '.join(bad_required)} in {log_path.name} at "
+            f"{point.corner_id}",
         )
 
     if missing:
@@ -1163,27 +1154,12 @@ def run_point(
         first_error = next(
             (line.strip() for line in output.splitlines() if _ERROR_RE.match(line)), ""
         )
-        return PointResult(
-            point=point,
-            status="failed",
-            measurements=measurements,
-            missing=missing,
-            seconds=elapsed,
-            deck=deck_path.name,
-            log=log_path.name,
-            message=first_error or errors or f"ngspice exit {returncode}, no measurements parsed",
-            dc_path=dc_path,
+        return completed(
+            "failed",
+            first_error or errors or f"ngspice exit {returncode}, no measurements parsed",
         )
 
-    return PointResult(
-        point=point,
-        status="ok",
-        measurements=measurements,
-        seconds=elapsed,
-        deck=deck_path.name,
-        log=log_path.name,
-        dc_path=dc_path,
-    )
+    return completed("ok")
 
 
 def run_grid(
