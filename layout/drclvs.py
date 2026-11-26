@@ -11,142 +11,9 @@
     python3 layout/drclvs.py --record            # also write layout/records/<record-id>.md
     python3 layout/drclvs.py --keep              # keep the run directory (default: keep only on failure)
 
-Exit status is 0 only if **every** stage passed. See layout/README.md for what
-each stage means and what it does and does not prove.
-
-Where the code lives
--------------------
-This file is the driver: the stage sequence in ``run()``, the ``CELLS``
-registry, the DRC and LVS stage invocations and ``write_record``. Two
-self-contained subsystems live in sibling modules beside it and are
-re-exported here under their original names, so ``drclvs.<name>`` still
-reaches every one of them (issue #837):
-
-- ``layout/lvs_controls.py`` -- the LVS negative controls (stages 6..N):
-  pure mutations of the exported netlist text.
-- ``layout/erc_stage.py`` -- the ``klt erc`` supply stage (5b and the ERC
-  negative control) and the run record's ERC rows and section.
-- ``layout/drclvs_common.py`` -- what the three share: ``StageError``,
-  ``repo_arg`` and the repo/layout root paths.
-
-
-Driving a real block through this flow
----------------------------------------
-This file used to be hardcoded to the one-transistor bring-up test cell
-(issue #14). It is now a **generalized driver**: the stages below take a
-:class:`CellSpec` -- a GDS generator script, an LVS reference schematic, a
-substrate net, this cell's own topology/parameter pair of LVS negative
-controls, and where the exported netlist is committed -- rather than
-module-level constants for the test cell specifically. ``CELLS`` is the
-registry a real block's layout plugs into; add an entry there (see
-``TESTCELL_SPEC`` / ``DIVIDER_SPEC`` for the shape) and drive it with
-``--cell <key>``.
-Nothing about the stages is test-cell-specific; only the registered
-cell specs and their generators are.
-
-The stage COUNT is a property of the cell, not a constant: stages 1-5 always
-run, and stage 6 onwards is one LVS negative control per corruption the
-netlist can express (see ``build_controls``). A FET-only cell has 7 stages; a
-cell that also contains a resistor and a capacitor has 9; the all-resistor
-feedback divider has 8.
-
-What this runs, in order
-------------------------
-
-1. **Build the layout.** ``klayout -b -r <the cell's gen_gds.py>``, which draws
-   the cell from the PDK's *own* PCells (correct by construction) and adds the
-   net labels LVS needs.
-2. **Export the schematic netlist.** ``xschem`` headless, ERC on, through
-   ``layout/xschemrc`` -- which is ``design/xschemrc`` plus ``lvs_netlist 1``,
-   so devices render from the PDK symbols' ``lvs_format`` (``M1 D G S VSS
-   nfet_03v3 L=.. W=.. nf=.. m=..``) rather than their ngspice ``format``
-   (``XM1 ... ad='int((nf+1)/2) * ...'``, which KLayout's SPICE reader cannot
-   evaluate). The xschem invocation itself is shared with
-   ``design/netlist.py`` via ``sim/harness/xschem_export.py``.
-3. **DRC, klt.** ``klt drc --deck gf180mcu --format json``. This is the
-   agent-facing, JSON-contracted path; it is also a **curated subset, not
-   signoff** -- 127 rules at klt ``0.9.3.dev2575`` (114 at the PyPI-pinned
-   ``0.8.0``); re-measure with ``klt drc --deck gf180mcu --list-rules``.
-   See "Coverage, honestly" in layout/README.md.
-4. **DRC, the PDK's own deck -- also through klt.** ``klt drc --engine
-   klayout --deck-file <the PDK's gf180mcu.drc>`` drives the PDK's own
-   DRC-DSL driver through the standalone klayout binary, with
-   the same ``decks=all,-antenna,-density`` table selection and variant
-   metal-stack switches the raw ``klayout -b -r`` invocation passed, and
-   with the deck's declared rule-category set asserted via
-   ``--expect-rule-categories-file`` from a ``--list-rule-categories``
-   listing of the same deck under the same switches -- so a deck that ran
-   zero categories is a hard error, not a clean pass. Hundreds of rule
-   categories. This is the DRC result worth quoting.
-5. **LVS.** ``klt lvs`` on the curated gf180mcu deck (engine ``klayout``),
-   layout against the committed reference netlist -- for every registered
-   cell whose reference the curated path can express. The one cell it
-   cannot express today (``passives``: the PDK deck's implicit-connect
-   label join has no ``klt lvs`` counterpart,
-   2AMLogic/klayout-tools#7030) keeps the raw ``klayout -b -r`` runset
-   path until that lands.
-5b. **ERC supply run** (issue #785, cells that register ``CellSpec.erc`` --
-   today ``pass_array`` and ``divider``): the cell's ``klt erc`` supply spec
-   is emitted from the committed GDS (``layout/erc/gen_spec.py``, one
-   parameterized source per cell), ``klt erc --deck gf180mcu
-   --findings-only`` runs against it, and the envelope is validated against
-   the cell's own contract -- every declared supply resolves to one
-   labelled island, every declared tie is in ``erc_coverage.checked``
-   (never ``skipped``), and the finding set is exactly the cell's disclosed
-   expected findings. A ``--record`` run commits the spec
-   (``layout/erc/specs/``) and the report (``layout/erc/reports/``). These
-   sub-cell runs are T1 item 11 *groundwork*, not its evidence: the item
-   stays ``unmet`` until #524's ``ldo_core`` run.
-6. **LVS negative control -- topology.** The same compare against a copy of that
-   netlist with the connection graph deliberately corrupted (for a MOS cell:
-   the device's gate shorted to its drain; for an all-passive one: two
-   adjacent taps of the string shorted). Must report a mismatch.
-7. **LVS negative control -- device parameters.** And against a copy with a
-   device dimension doubled (the MOS width; for an all-passive cell, the
-   first unit resistor's width) but the topology untouched. Must also report
-   a mismatch.
-8+. **LVS negative controls -- passive geometry.** One more per passive element
-   class the netlist contains (``R``, ``C``), each with that device's length
-   doubled. Registered only when the class is present, so a FET-only cell stops
-   at stage 7.
-last. **ERC negative control** (cells with ``CellSpec.erc``): a disposable
-   copy of the committed GDS with the declared tie's connection severed
-   (``layout/erc/mutate_gds.py``) is run with the intact spec and must
-   report exactly one new ``erc.missing_tie`` on the intended tie -- the
-   ERC counterpart of the LVS controls' "a run that cannot fail is not
-   evidence" contract.
-
-   None of these are decoration. Without them, "LVS passed" is not evidence
-   that the compare looked at anything: a mis-wired invocation that silently
-   compares nothing also "passes"; a compare that checks connectivity but
-   ignores device parameters would wave through a mis-sized transistor; and one
-   that compares MOS parameters but not passive geometry would wave through a
-   resistor of the wrong length -- which matters here because the deck
-   deliberately does NOT compare resistance or capacitance itself (see
-   ``layout/lvs_form.py``). Each control isolates one of those.
-
-   **Which stage 6/7 pair runs is a property of the cell**, not of this file:
-   ``CellSpec.controls``. A MOS-keyed mutation cannot corrupt a resistor-only
-   netlist and vice versa, so a cell registers the pair that matches its own
-   devices (``MOS_CONTROLS`` / ``PASSIVE_CONTROLS``); the passive-geometry
-   controls of stage 8+ are then added from the netlist. That every one of
-   those controls can in fact corrupt this cell's netlist is checked **before
-   stage 3** by ``check_controls_apply()``, and a control that cannot is a
-   hard error -- never a silently skipped stage, because a run that printed
-   ``lvs: MATCH`` with inert controls behind it would be reporting a pass it
-   has not earned.
-
-Nothing here is LDO-specific in the stages themselves: only the registered
-``CellSpec`` is. Two of the three cells registered today are flow vehicles
-rather than design blocks -- ``testcell`` (the default) is one transistor, and
-``passives`` adds an H-poly resistor and a MIM cap because a FET-only cell
-cannot notice that the flow is broken for anything else (issue #313).
-``pass_array`` is the first real block: the LDO's 40-unit-cell pass device and
-its ``Msense`` replica (issue #285, under epic #173). ``divider`` is the
-second, and the first all-passive one: layout/floorplan.md §4.1's
-common-centroid feedback-divider array (issue #286). Driving another block
-through this means registering that block's own ``CellSpec`` in ``CELLS``
-below.
+Exit status is 0 only if **every** stage passed. The stages are described in
+one place, "The stages" in layout/README.md: which run for a cell, in what
+order, and what each does and does not prove.
 """
 
 from __future__ import annotations
@@ -336,15 +203,7 @@ class CellSpec:
     # Which LVS route stage 5 (and the negative controls) take for this cell:
     # "klt" runs `klt lvs` on the curated gf180mcu deck; "pdk-deck" keeps the
     # raw `klayout -b -r` invocation of the PDK's own gf180mcu.lvs runset.
-    # A cell stays on the raw route only for a named klt gap -- today that is
-    # `passives`, whose reference the curated path cannot express because the
-    # PDK runset's implicit-connect label join (`connect_implicit('*')`,
-    # `$implicit_connect`) has no `klt lvs` counterpart, and the cell's two
-    # S straps / two G labels deliberately rely on that join
-    # (2AMLogic/klayout-tools#7030). When that lands, flip this field back
-    # and carry the cell's request knobs (deck_options plus, for the MIM
-    # cap's PDK-current class spelling, a reference.device_map entry --
-    # 2AMLogic/klayout-tools#7031).
+    # A cell stays on the raw route only for a named klt gap.
     lvs_route: str = "klt"
     # Per-device-class parameters the `klt lvs` compare is scoped to for
     # this cell (request ``options.compare_parameters``). KLayout declares a
