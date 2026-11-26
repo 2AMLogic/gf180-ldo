@@ -1357,7 +1357,7 @@ def run(args: argparse.Namespace) -> int:
     # The LVS negative controls only mean something if every control this
     # run will use can actually corrupt this cell's netlist. Prove that NOW,
     # so that a cell whose controls do not apply fails here rather than
-    # after stage 5 has already printed `lvs: MATCH`.
+    # after the intact LVS comparison has already printed `lvs: MATCH`.
     controls = check_controls_apply(spec, netlist_text)
     total = 5 + len(controls) + (2 if spec.erc else 0)
     stage_no = 1

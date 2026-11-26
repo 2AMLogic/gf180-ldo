@@ -3,10 +3,10 @@
 
 A control is a deliberate corruption of a cell's exported netlist that the
 compare MUST report as a mismatch -- the proof that an LVS ``MATCH`` on the
-intact netlist looked at something (layout/README.md, "The stages"),
-relocated verbatim from ``layout/drclvs.py`` by issue #837, which
-re-exports every public name here; ``layout/tests/test_drclvs.py`` still
-exercises the whole contract through ``drclvs.<name>``.
+intact netlist looked at something (layout/README.md, "The stages").
+Issue #837 moved these controls here from ``layout/drclvs.py``. The driver
+re-exports every public name here, and ``layout/tests/test_drclvs.py``
+still exercises the whole contract through ``drclvs.<name>``.
 
 Everything here is a pure transformation of netlist text: nothing runs a
 tool, reads a file or loads the PDK, and the only import from this repo is
@@ -67,8 +67,8 @@ __all__ = [
 # corrupts the connection graph and one that corrupts a device parameter
 # while leaving the graph alone. Those are two independent ways for an LVS
 # invocation to be comparing less than it appears to, and a cell with only
-# one of them has only half an evidence chain (layout/README.md, "The
-# stages").
+# one of them has only half an evidence chain
+# (layout/README.md, "The stages").
 REQUIRED_CONTROL_TAGS = ("topology", "parameter")
 
 
@@ -439,8 +439,8 @@ def apply_control(spec: CellSpec, control: Control, text: str) -> str:
 def check_controls_apply(spec: CellSpec, text: str) -> dict[str, Control]:
     """Prove every control this run will use corrupts this netlist, before any LVS.
 
-    Run up front, so a cell whose controls do not apply fails *before* stage
-    5 prints ``lvs: MATCH`` -- the failure mode this guards against is a run
+    Run up front, so a cell whose controls do not apply fails *before* the
+    intact LVS comparison prints ``lvs: MATCH``. This guards against a run
     that reports a match and only afterwards discovers its controls were
     inert. Covers both the cell's registered pair and the passive-geometry
     controls build_controls() adds, and returns that full set so the stages
