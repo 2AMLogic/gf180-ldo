@@ -8,6 +8,24 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-26
 
+- **Issue #893** (closed): sim/soft-start-loop-gain: the 1.8 V point label in model.py still calls 1.8 V a margin past both variants' hand-over
+- **PR #895**: fix(sim): label the 1.8 V soft-start sample as an operating point
+- **Issue #896** (closed): layout: "stages 6..N" and "6 onwards. Negative controls" references still number the LVS controls from 6
+- **PR #899**: docs(layout): name LVS negative controls by function instead of stage numbers
+- **Issue #885** (closed): Use the shared corner ID formatter when looking up summary logs
+- **PR #889**: fix(sim): resolve corner logs through the shared corner-id formatter
+- **Issue #890** (closed): layout/README.md intro: stage-count summary is stale for ERC cells (divider is 10, not 8)
+- **PR #898**: docs(layout): state the stage-count rule instead of per-cell totals
+- **Issue #880** (closed): Group ngspice provenance tests and share their PATH setup
+- **PR #892**: test(sim): move ngspice provenance suites to their own module
+- **Issue #883** (closed): soft-start loop-gain README still reads as if both variants use Binj_ss and no GMSUM node exists
+- **PR #887**: docs(sim): correct stale variant and GMSUM notes in loop-gain README
+- **Issue #882** (closed): Trim the duplicated stage guide in the layout DRC/LVS driver
+- **PR #891**: docs: shrink the layout DRC/LVS driver docstring to a README pointer
+- **Issue #878** (closed): Soft-start hand-over deck template and two test docstrings still describe GMSUM as absent
+- **PR #884**: docs(sim): correct the hand-over deck's GMSUM note and two docstrings
+- **Issue #876** (closed): Condense stale GMSUM history in the soft-start loop-gain testbench
+- **PR #879**: docs(sim): condense the GMSUM history notes in the soft-start loop-gain testbench
 - **PR #872**: fix(sim): report phase and gain margins independently in loop-stability records
 - **Issue #871** (closed): Report independent phase and gain margins in loop-stability summaries
 - **PR #870**: fix(sim): share .meas card emission between both tb_adapter paths

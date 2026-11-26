@@ -1,12 +1,12 @@
 # Work Plan
 
 <!-- guide:plan-body:start -->
-_Generated: 2026-11-26T15:36:54Z (snapshot; compare against live labels)_
+_Generated: 2026-11-26T21:06:58Z (snapshot; compare against live labels)_
 ## Operator Attention: Merge-Risk-Hold Pileup
 
 Judge-approved PRs under a hold (`loom:blocked` or `loom:operator`) — only a human merge decision is missing.
 
-_None._
+- **#875**: chore(loom): resync installed Loom to v0.20.37
 
 ## Very Important
 
@@ -34,20 +34,23 @@ Issues currently being built (`loom:building`).
 - **#302**: soft-start: make the FB-injection element's settled residual supply-independent, so the ratified 50 dB PSRR row closes (DR-0031 / T8)
 - **#483**: load-transient: 8 of 81 PVT points exceed the ratified 150 mV excursion on the DR-0037 DUT (old DUT passes 81/81 at the same pin)
 - **#783**: DR-0037 bias servo: reconcile #320's remaining evidence against the records now on main, run only what is missing, and open the ratification PR
-- **#871**: Report independent phase and gain margins in loop-stability summaries
+- **#873**: Resync installed Loom so large defaults no longer abort create-pr.sh with exit 126
+- **#886**: sim/soft-start-loop-gain: the sink phase rationale in model.py still says both variants carry Binj_ss
+- **#888**: Shell drivers still name corner logs with the caller's literal temperature spelling
 
 ## PRs Awaiting Review
 
 PRs waiting on Judge (`loom:review-requested`).
 
 - **#795**: docs: submit the VREF servo evidence for ratification review *(held)*
-- **#872**: fix(sim): report phase and gain margins independently in loop-stability records
 
 ## Approved (Awaiting Merge)
 
 PRs that passed review and are queued for Champion auto-merge (`loom:pr`).
 
-_None._
+- **#875**: chore(loom): resync installed Loom to v0.20.37 *(held)*
+- **#894**: docs(sim): correct the sink phase rationale in the loop-gain model
+- **#897**: fix(sim): use canonical corner IDs in shell sweep writers
 
 ## Proposed
 
@@ -70,11 +73,15 @@ Issues carrying `loom:curated`.
 - **#783**: DR-0037 bias servo: reconcile #320's remaining evidence against the records now on main, run only what is missing, and open the ratification PR *(curated)*
 - **#786**: T1 item 7 groundwork: `klt pex` schematic-vs-extracted delta on `pass_array` (dropout and on-resistance), ahead of the full post-layout re-run *(curated)* *(held)*
 - **#793**: Place the Doctor run for PR #791 on a batch-enabled worker *(curated)* *(held)*
+- **#873**: Resync installed Loom so large defaults no longer abort create-pr.sh with exit 126 *(curated)*
+- **#886**: sim/soft-start-loop-gain: the sink phase rationale in model.py still says both variants carry Binj_ss *(curated)*
+- **#888**: Shell drivers still name corner logs with the caller's literal temperature spelling *(curated)*
 
 ## Proposed (Architect / Hermit)
 
 - **#170**: [Epic #542] 3A — gf180-ldo maturation + Challenge #5 brief *(architect)* *(held)*
 - **#814**: Share the standalone SPICE deck preamble and regenerate item-9 evidence *(hermit)* *(held)*
+- **#900**: Reuse the shared gain-margin delta so the soft-start anchor flags a missing phase crossing *(hermit)*
 
 ## Epics
 
@@ -84,14 +91,14 @@ _None._
 
 | Bucket | Count |
 |------|-------|
-| Operator merge-risk holds | 0 |
+| Operator merge-risk holds | 1 |
 | Very important | 1 |
 | Important | 2 |
 | Ready (`loom:issue`, net of holds/building/merge-pending) | 1 |
-| In Progress (`loom:building`) | 4 |
-| PRs awaiting review | 2 |
-| Approved PRs awaiting merge | 0 |
-| Curated | 17 |
-| Architect / Hermit proposals | 2 |
+| In Progress (`loom:building`) | 6 |
+| PRs awaiting review | 1 |
+| Approved PRs awaiting merge | 3 |
+| Curated | 20 |
+| Architect / Hermit proposals | 3 |
 | Active epics | 0 |
 <!-- guide:plan-body:end -->
