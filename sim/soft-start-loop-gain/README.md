@@ -168,7 +168,12 @@ the new port left unconnected and the ideal 50 mA sink, which is electrically
    to check before reading a delta as evidence about the design. It is held to
    #182's own ~2 deg / ~1 dB movement class.
 
-Both verdicts go in the record.
+Both verdicts go in the record. A gain margin of `inf` — that sweep found no
+-180 deg crossing in band — is compared as the value it is: two of them agree
+(0 dB apart), but one `inf` against a finite margin is not a delta of any
+size. That pair is a **crossing mismatch**: it is reported with its
+coordinate, and it makes the verdict `DISAGREES` however small every finite
+delta is (#900).
 
 ## The landing rule (and why `sim/loop-stability/`'s could not be reused as-is)
 

@@ -85,7 +85,9 @@ VREF_V = model.VREF_V
 XCHECK_F0_TOL_FRAC = model.XCHECK_F0_TOL_FRAC
 XCHECK_GM_TOL_DB = model.XCHECK_GM_TOL_DB
 XCHECK_PM_TOL_DEG = model.XCHECK_PM_TOL_DEG
+XCHECK_MISMATCH_SHOWN = model.XCHECK_MISMATCH_SHOWN
 _hz = model._hz
+gm_mismatch_at = model.gm_mismatch_at
 group = model.group
 key_of = model.key_of
 
@@ -418,7 +420,6 @@ def xcheck_section(xcheck: dict) -> str:
         if key not in xcheck:
             continue
         deltas = xcheck[key]
-        ok, wpm, wgm, wf0, n = xcheck[f"{key}_verdict"]
         if not deltas:
             lines.append(f"  **{label}** -- **0 shared points**: this grid "
                          f"shares no (corner, C_eff, ESR) with the "
@@ -426,6 +427,7 @@ def xcheck_section(xcheck: dict) -> str:
                          f"reported for this reference.\n")
             continue
         compared.add(key)
+        ok, wpm, wgm, wf0, n, mism = xcheck[f"{key}_verdict"]
         worst = max((d for d in deltas if d[2] is not None),
                     key=lambda d: abs(d[2]), default=None)
         lines.append(f"  **{label}** -- {n} shared "
@@ -437,18 +439,29 @@ def xcheck_section(xcheck: dict) -> str:
         lines.append(f"  - worst |df0/f0| **{100 * wf0:.3f}%** (budget "
                      f"{100 * XCHECK_F0_TOL_FRAC:g}%)")
         if worst is not None:
-            r, ref, dpm, _dgm, _df0 = worst
+            r, ref, dpm, _dgm, _df0, _xgm = worst
             ref_pm = ref["pm_deg"]
             ref_pm_s = "n/a" if ref_pm is None else f"{ref_pm:.2f}"
             lines.append(
                 f"  - largest single mover: `{r.corner_id}` / {r.cfg_id} -- "
                 f"this record {pm_str(r)} deg, that one {ref_pm_s} deg "
                 f"({dpm:+.3f} deg)")
+        lines.extend(xcheck_mismatch_lines(n, mism))
         lines.append(f"  - **verdict: {'AGREES' if ok else 'DISAGREES'}**")
         lines.append(f"\n  {caveat}\n")
+    if "committed" in compared:
+        reference = ("  The most recent loop-stability record that shares points with\n"
+                     "  this run is `20260906-071437-fff0bf0`, compared above")
+    else:
+        reference = ("  The loop-stability record this experiment's default grid is\n"
+                     "  built to overlap is `20260906-071437-fff0bf0`")
+        if "committed" in xcheck:
+            reference += ("; this run's join\n"
+                          "  against it produced no shared points, so no comparison with it\n"
+                          "  is claimed")
     lines.append(
-        f"  **Why the comparison is against `20260906-071437-fff0bf0` and not\n"
-        f"  against `{LS_DIAGNOSTIC_RECORD}`, which is `sim/loop-stability/`'s\n"
+        f"  **Why `20260906-071437-fff0bf0` is the reference instead of\n"
+        f"  `{LS_DIAGNOSTIC_RECORD}`, which is `sim/loop-stability/`'s\n"
         f"  latest record.** `{LS_DIAGNOSTIC_RECORD}` is a *diagnostic* record\n"
         f"  (issue #182's toolchain-provenance investigation): its own\n"
         f"  \"Netlist provenance\" field says **diagnostic -- no new full-matrix\n"
@@ -462,13 +475,7 @@ def xcheck_section(xcheck: dict) -> str:
         f"  under *Corner matrix run*). There is consequently **no shared grid\n"
         f"  point** between the two records to compare, and the honest\n"
         f"  statement is that this is a discrepancy of coverage, not of result.\n"
-        + ("  The most recent loop-stability record that shares points with\n"
-           "  this run is `20260906-071437-fff0bf0`, compared above"
-           if "committed" in compared else
-           "  The loop-stability record this experiment's default grid is\n"
-           "  built to overlap is `20260906-071437-fff0bf0`; this run's join\n"
-           "  against it produced no shared points, so no comparison with it\n"
-           "  is claimed")
+        + reference
         + ("; and the same-host re-run\n  above is a stronger check than "
            "either, because it removes the\n  toolchain term "
            f"`{LS_DIAGNOSTIC_RECORD}` exists to document"
@@ -476,6 +483,23 @@ def xcheck_section(xcheck: dict) -> str:
         + ".\n"
     )
     return "\n".join(lines) + "\n"
+
+
+def xcheck_mismatch_lines(n: int, mism: list) -> list[str]:
+    """The gain-margin crossing-mismatch bullet of one anchor comparison."""
+    if not mism:
+        return [f"  - gain-margin crossing mismatches: **0 of {n}** (every shared "
+                "point has a -180 deg crossing in band on both sides or on neither)"]
+    return [
+        f"  - **gain-margin crossing mismatch at {len(mism)} of {n} points** -- "
+        "one sweep found a -180 deg crossing in band and the other did not. "
+        "Such a pair has no dB delta, so it stands outside the "
+        f"{XCHECK_GM_TOL_DB:g} dB budget whatever the finite deltas above say:\n",
+        *(f"    - {gm_mismatch_at(d[0], d[1]['gm_db'])}"
+          for d in mism[:XCHECK_MISMATCH_SHOWN]),
+        *((f"    - ... and {len(mism) - XCHECK_MISMATCH_SHOWN} more",)
+          if len(mism) > XCHECK_MISMATCH_SHOWN else ()),
+    ]
 
 
 def attribution_section(attribution: dict | None) -> str:

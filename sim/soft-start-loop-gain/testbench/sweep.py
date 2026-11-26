@@ -88,6 +88,7 @@ from harness.corners import build_grid, resolve_corners, supply_points  # noqa: 
 from harness.loader import load_script  # noqa: E402
 from harness.paths import display_path  # noqa: E402
 from harness.pdk import find_pdk  # noqa: E402
+from harness.record_compare import delta  # noqa: E402
 from harness.report import (  # noqa: E402
     allocate_record_id,
     format_record_id,
@@ -205,6 +206,9 @@ VOUT_CEIL_V = model.VOUT_CEIL_V
 XCHECK_PM_TOL_DEG = model.XCHECK_PM_TOL_DEG
 XCHECK_GM_TOL_DB = model.XCHECK_GM_TOL_DB
 XCHECK_F0_TOL_FRAC = model.XCHECK_F0_TOL_FRAC
+XCHECK_MISMATCH_SHOWN = model.XCHECK_MISMATCH_SHOWN
+gm_crossing_mismatch = model.gm_crossing_mismatch
+gm_mismatch_at = model.gm_mismatch_at
 FB_CAP_PM_TOL_DEG = model.FB_CAP_PM_TOL_DEG
 FB_CAP_GM_TOL_DB = model.FB_CAP_GM_TOL_DB
 ATTR_FLOOR_DB = model.ATTR_FLOOR_DB
@@ -835,7 +839,15 @@ def read_committed_ls_matrix() -> dict[tuple, dict]:
 
 
 def compare_anchor(anchor_rows: list[Row], other: dict[tuple, dict]):
-    """Join this experiment's anchor rows against a loop-stability matrix."""
+    """Join this experiment's anchor rows against a loop-stability matrix.
+
+    One ``(row, ref, dPM, dGM, df0/f0, crossing_mismatch)`` tuple per shared
+    (corner, C_eff, ESR) point. ``dGM`` is the shared ``record_compare.delta``
+    (issue #630), not a subtraction of this bench's own: two infinite gain
+    margins are 0 dB apart, and a finite-vs-infinite pair has no numeric
+    delta at all -- that pair is carried in ``crossing_mismatch`` instead of
+    being dropped from the comparison (issue #900).
+    """
     deltas = []
     for r in anchor_rows:
         ref = other.get((r.corner_id, r.ceff_f, r.esr_ohm))
@@ -843,36 +855,50 @@ def compare_anchor(anchor_rows: list[Row], other: dict[tuple, dict]):
             continue
         dpm = (None if r.pm_deg is None or ref["pm_deg"] is None
                else r.pm_deg - ref["pm_deg"])
-        dgm = (None if math.isinf(r.gm_db) or math.isinf(ref["gm_db"])
-               else r.gm_db - ref["gm_db"])
+        dgm = delta(ref["gm_db"], r.gm_db)
         df0 = (None if r.f0_hz is None or not ref["f0_hz"]
                else (r.f0_hz - ref["f0_hz"]) / ref["f0_hz"])
-        deltas.append((r, ref, dpm, dgm, df0))
+        deltas.append((r, ref, dpm, dgm, df0,
+                       gm_crossing_mismatch(r.gm_db, ref["gm_db"])))
     return deltas
 
 
 def xcheck_verdict(deltas):
-    """(ok, worst dPM, worst dGM, worst relative df0, n compared)."""
+    """(ok, worst dPM, worst dGM, worst relative df0, n compared, crossing mismatches).
+
+    ``crossing mismatches`` are the shared points where exactly one side's
+    gain margin is infinite: this sweep found a -180 deg crossing in band
+    and the reference did not, or the reverse. No dB budget covers such a
+    pair, so one of them makes the verdict DISAGREES however small every
+    finite delta is. They have no numeric ``dGM``, so they are not in the
+    worst-``dGM`` figure.
+    """
     if not deltas:
-        return False, None, None, None, 0
+        return False, None, None, None, 0, []
     wpm = max((abs(d[2]) for d in deltas if d[2] is not None), default=0.0)
     wgm = max((abs(d[3]) for d in deltas if d[3] is not None), default=0.0)
     wf0 = max((abs(d[4]) for d in deltas if d[4] is not None), default=0.0)
+    mism = [d for d in deltas if d[5]]
     ok = (wpm <= XCHECK_PM_TOL_DEG and wgm <= XCHECK_GM_TOL_DB
-          and wf0 <= XCHECK_F0_TOL_FRAC)
-    return ok, wpm, wgm, wf0, len(deltas)
+          and wf0 <= XCHECK_F0_TOL_FRAC and not mism)
+    return ok, wpm, wgm, wf0, len(deltas), mism
 
 
 def print_xcheck(label: str, verdict) -> None:
-    """Print one anchor comparison's console summary."""
-    ok, wpm, wgm, wf0, n = verdict
+    """Print one anchor comparison's console summary and its crossing mismatches."""
+    ok, wpm, wgm, wf0, n, mism = verdict
     if not n:
         print(f"  {label} : 0 shared points: this grid shares no "
               f"(corner, C_eff, ESR) with the cross-check")
         return
-    print(f"  {label} : {n} shared points, worst |dPM| "
-          f"{wpm:.3f} deg, |dGM| {wgm:.3f} dB, |df0| {100 * wf0:.3f}% "
-          f"-> {'AGREES' if ok else 'DISAGREES'}")
+    print(f"  {label} : {n} shared points, worst |dPM| {wpm:.3f} deg, "
+          f"|dGM| {wgm:.3f} dB, |df0| {100 * wf0:.3f}%, "
+          f"{len(mism)} GM crossing mismatch{'' if len(mism) == 1 else 'es'}"
+          f" -> {'AGREES' if ok else 'DISAGREES'}")
+    for d in mism[:XCHECK_MISMATCH_SHOWN]:
+        print(f"    {gm_mismatch_at(d[0], d[1]['gm_db'])}")
+    if len(mism) > XCHECK_MISMATCH_SHOWN:
+        print(f"    ... and {len(mism) - XCHECK_MISMATCH_SHOWN} more")
 
 
 # ---------------------------------------------------------------------------
