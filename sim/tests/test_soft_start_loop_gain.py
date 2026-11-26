@@ -1631,6 +1631,33 @@ class TestRenderRecordSmoke(unittest.TestCase):
                       "Against the committed record `20260906-071437-fff0bf0`"):
             self.assertIn(f"**{label}** -- **0 shared points**", md)
 
+    # Claims that are only true when the committed join has matches, or that
+    # state an outcome of the anchor check rather than its purpose.
+    OVERCLAIMS = ("*does* have shared points", "compared above",
+                  "**measures**\n  that this is so", "cross-checked against")
+
+    def _join_xcheck(self, ceff):
+        anchor = row(phase="anchor", ssr_cmd="free", ceff_f=ceff)
+        reference = {(anchor.corner_id, 1e-6, anchor.esr_ohm):
+                     {"vout_v": 1.8, "f0_hz": 1e5, "pm_deg": 60.0, "gm_db": 10.0}}
+        deltas = sweep.compare_anchor([anchor], reference)
+        verdict = sweep.xcheck_verdict(deltas)
+        return {"here": deltas, "here_verdict": verdict,
+                "committed": deltas, "committed_verdict": verdict}
+
+    def test_an_empty_join_record_makes_no_overlap_or_outcome_claims(self):
+        md = self._render(xcheck=self._join_xcheck(2.2e-6))
+        for claim in self.OVERCLAIMS:
+            with self.subTest(claim=claim):
+                self.assertNotIn(claim, md)
+        self.assertIn("no comparison with it\n  is claimed", md)
+
+    def test_a_matched_join_record_keeps_the_overlap_claim(self):
+        md = self._render(xcheck=self._join_xcheck(1e-6))
+        self.assertNotIn("0 shared points", md)
+        self.assertIn("shares points with", md)
+        self.assertIn("compared above", md)
+
 
 if __name__ == "__main__":
     unittest.main()

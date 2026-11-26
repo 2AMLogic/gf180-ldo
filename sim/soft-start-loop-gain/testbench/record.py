@@ -455,15 +455,20 @@ def xcheck_section(xcheck: dict) -> str:
         f"  simulation**, it has no `-matrix.csv`, and its evidence is\n"
         f"  re-simulations of a single control point, `ff_125c_2.97v` at\n"
         f"  I_load = 1 mA / C_eff = 0.33 uF / ESR = 0.2 ohm. That point shares no\n"
-        f"  (load, C_eff) coordinate with this experiment, which measures the\n"
-        f"  rated 50 mA load at 1 uF and 4.7 uF because that is the operating\n"
-        f"  point `sim/soft-start/` runs and therefore the one the #191\n"
-        f"  regression is about. There is consequently **no shared grid point**\n"
-        f"  between the two records to compare, and the honest statement is that\n"
-        f"  this is a discrepancy of coverage, not of result. The most recent\n"
-        f"  loop-stability record that *does* have shared points is\n"
-        f"  `20260906-071437-fff0bf0`"
-        + (", compared above" if "committed" in compared else "")
+        f"  (load, C_eff) coordinate with this experiment's default grid, which\n"
+        f"  is the rated 50 mA load at 1 uF and 4.7 uF because that is the\n"
+        f"  operating point `sim/soft-start/` runs and therefore the one the\n"
+        f"  #191 regression is about (the grid this run actually used is listed\n"
+        f"  under *Corner matrix run*). There is consequently **no shared grid\n"
+        f"  point** between the two records to compare, and the honest\n"
+        f"  statement is that this is a discrepancy of coverage, not of result.\n"
+        + ("  The most recent loop-stability record that shares points with\n"
+           "  this run is `20260906-071437-fff0bf0`, compared above"
+           if "committed" in compared else
+           "  The loop-stability record this experiment's default grid is\n"
+           "  built to overlap is `20260906-071437-fff0bf0`; this run's join\n"
+           "  against it produced no shared points, so no comparison with it\n"
+           "  is claimed")
         + ("; and the same-host re-run\n  above is a stronger check than "
            "either, because it removes the\n  toolchain term "
            f"`{LS_DIAGNOSTIC_RECORD}` exists to document"
@@ -882,8 +887,8 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
   Each variant exposes the ramp node `SSR` through the `ldo_softstart` and
   `ldo_core` port lists and the `Xsoftstart` instance line. `SSR` is already a
   node of the cell, so promoting it to a port renames nothing and connects
-  nothing; the `anchor` phase leaves the new port unconnected and **measures**
-  that this is so (see the cross-check below). Nothing under `design/` is
+  nothing; the `anchor` phase leaves the new port unconnected so that the
+  cross-check below can test whether that is so. Nothing under `design/` is
   modified by this experiment. The netlist snapshots are linked below.
   The idealizations in the loop are the ones every other record here names:
   the deck's ideal 1.2 V `VREF` source (#174 / DR-0021) and `Fbias` inside
@@ -1023,7 +1028,8 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
 {f'''  - Full {sum(len(c.points) for c in curves)}-point DC hand-over transfer,
     machine-readable:
     `sim/soft-start-loop-gain/records/{record_id}-handover.csv`''' if curves else '  - (no hand-over transfer in this run)'}
-  - The experiment this one is built from and cross-checked against:
+  - The experiment this one is built from, and the reference its anchor is
+    compared with when the join has matches (see above):
     `sim/loop-stability/` (record `20260906-071437-fff0bf0`, and the
     toolchain-provenance investigation `{LS_DIAGNOSTIC_RECORD}`)
   - The large-signal record this one exists to explain:
