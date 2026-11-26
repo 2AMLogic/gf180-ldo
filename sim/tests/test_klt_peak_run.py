@@ -142,8 +142,7 @@ class PeakDriverRouting(unittest.TestCase):
         # Both parts live in the same staged record; one mint commits both.
         self.assertTrue((staged / "main" / "new" / "klt-report.json").is_file())
         self.assertTrue((staged / "extra" / "new" / "klt-report.json").is_file())
-        rc2, root, committed = drt.mint("soft-start", self.rid, staged)
-        self.assertEqual(rc2, 0)
+        committed, _ = drt.assert_corners_mint(self, "soft-start", self.rid, staged)
         self.assertEqual(committed, sorted([
             f"manifests/artifacts/soft-start-{self.rid}.manifest.json",
             f"sim/soft-start/corners/{self.rid}.md",
@@ -152,7 +151,6 @@ class PeakDriverRouting(unittest.TestCase):
             f"sim/soft-start/corners/{self.rid}/main/baseline/klt-report.json",
             f"sim/soft-start/corners/{self.rid}/main/new/klt-report.json",
         ]))
-        self.assertEqual(drt.check_manifests(root), 0)
         # summary.csv holds both halves (issue #687): MAIN contributes 2 rows
         # (2 duts x its single config), EXTRA 10 (2 duts x 5 configs).
         with open(staged / "summary.csv", newline="") as f:

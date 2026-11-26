@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import json
 import math
 import shutil
 import sys
@@ -330,16 +329,13 @@ class Routing(unittest.TestCase):
                         lambda repo: None)
         self.assertEqual(rc, 0)
         staged = self._staged()
-        rc2, root, committed = drt.mint("soft-start", self.rid, staged)
-        self.assertEqual(rc2, 0)
+        committed, m = drt.assert_corners_mint(self, "soft-start", self.rid, staged)
         self.assertEqual(committed, sorted([
             f"manifests/artifacts/soft-start-{self.rid}.manifest.json",
             f"sim/soft-start/corners/{self.rid}.md",
             f"sim/soft-start/corners/{self.rid}/op/klt-report.json",
             f"sim/soft-start/corners/{self.rid}/powerup/klt-report.json",
         ]))
-        m = json.loads((root / "manifests" / "artifacts"
-                        / f"soft-start-{self.rid}.manifest.json").read_text())
         names = sorted(e["name"] for e in m["entries"])
         for stored in (f"sim/soft-start/corners/{self.rid}/op/body.spice",
                        f"sim/soft-start/corners/{self.rid}/op/request.json",
@@ -349,7 +345,6 @@ class Routing(unittest.TestCase):
             self.assertIn(stored, names)
         self.assertNotIn(f"sim/soft-start/corners/{self.rid}/op/klt-report.json", names,
                          "a kept envelope must never also be a manifest entry")
-        self.assertEqual(drt.check_manifests(root), 0)
 
     def test_a_waveform_run_stages_too(self):
         # --waveforms requests large per-corner rawfile extracts; with no
