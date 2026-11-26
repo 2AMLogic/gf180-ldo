@@ -319,23 +319,15 @@ def parse_row_fields(line: str) -> dict[str, str]:
 # --- the DC hand-over transfer's value types --------------------------------
 HOV_FIELDS = ("ssr_cmd", "ssr_v", "fb_v", "vout_v", "pg_v", "erramp_v", "isup_a")
 
-# RETIRED (issue #239): this set used to have an optional `gmsum_v` field,
-# read only for the `device` variant's `GMSUM` mirror node -- the post-#195
-# device-level Mgm* transconductor chain issue #231 reverted. There is
-# nothing left in `ldo_softstart` to name: an actual PDK run
-# (`./sim/soft-start-loop-gain/testbench/sweep.py --variants device`,
-# tt/27C/3.3V) confirmed ngspice does NOT hard-error on the resulting
-# `.let gmsum_dc = v(xdut.xsoftstart.gmsum)` against the undefined node --
-# it prints a per-point `Error: RHS "v(...)" invalid` / `Error: &gmsum_dc: no
-# such variable.` to the deck's own log (94 times over the 97-point sweep),
-# exits 0, and the echoed field silently comes out empty (`gmsum_v=` with no
-# value), which `_f()` then folds into `None` -- i.e. this bug was BOTH
-# non-fatal AND invisible in the record, the same "floating/NaN, not a hard
-# failure" shape issue #234 found for the margin deck's `acshort-gmsum` row.
-# `sim/harness/runner.py`'s `FATAL_LOG_PATTERNS` also does not catch it: it
-# matches "no such vector", not ngspice's actual wording here, "no such
-# variable" -- see issue #239's follow-up for that harness-wide gap. `GMSUM`
-# is not referenced anywhere below any more.
+# No `gmsum_v` field, deliberately. `GMSUM` is a node of the `device`
+# variant again since #246 -- the gate of `XMgmc_ss` in
+# `design/netlist/ldo_softstart.spice` -- but `binj` (the ideal `Binj_ss`
+# source, frozen at bfc4a0a) has no such node, and one `HOV` line serves
+# both variants, so a device-specific probe cannot be in it. Its retirement
+# (#239) followed a `v(...)` against a node the netlist lacked: ngspice
+# exited 0 with the field empty rather than failing. The harness now
+# recognizes that diagnostic (`sim/harness/runner.py`,
+# `_UNDEFINED_VECTOR_LET_RE`); the field stays out for the reason above.
 
 
 def parse_hov_fields(line: str) -> dict[str, str]:
