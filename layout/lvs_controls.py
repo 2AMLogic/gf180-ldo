@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""The LVS negative controls (stages 6..N) of the DRC/LVS flow.
+"""The LVS negative controls of the DRC/LVS flow.
 
 A control is a deliberate corruption of a cell's exported netlist that the
 compare MUST report as a mismatch -- the proof that an LVS ``MATCH`` on the
-intact netlist looked at something (layout/README.md, "6 onwards. Negative
-controls"). Relocated verbatim from ``layout/drclvs.py`` by issue #837, which
+intact netlist looked at something (layout/README.md, "The stages"),
+relocated verbatim from ``layout/drclvs.py`` by issue #837, which
 re-exports every public name here; ``layout/tests/test_drclvs.py`` still
 exercises the whole contract through ``drclvs.<name>``.
 
@@ -51,7 +51,7 @@ __all__ = [
 
 
 # --------------------------------------------------------------------------
-# the LVS negative controls (stages 6..N)
+# the LVS negative controls (the topology and parameter controls)
 #
 # Each registered cell carries its own topology/parameter pair, because a
 # mutation is only a control if it can actually be applied to that cell's
@@ -67,8 +67,8 @@ __all__ = [
 # corrupts the connection graph and one that corrupts a device parameter
 # while leaving the graph alone. Those are two independent ways for an LVS
 # invocation to be comparing less than it appears to, and a cell with only
-# one of them has only half an evidence chain (layout/README.md, "6 onwards.
-# Negative controls").
+# one of them has only half an evidence chain (layout/README.md, "The
+# stages").
 REQUIRED_CONTROL_TAGS = ("topology", "parameter")
 
 
@@ -268,7 +268,7 @@ def control_unit_width(text: str) -> str:
     ``enable_parameter('R', false)`` and compares only ``W`` and ``L``, so a
     scaled ``R=`` would be a control that never fires. Doubling ``W`` leaves
     the connection graph untouched, so this control isolates the parameter
-    compare exactly as stage 7's MOS version does.
+    compare exactly as the MOS parameter control does.
     """
     line, tokens = _resistor_line(text)
     resized = _double_first_dimension(
