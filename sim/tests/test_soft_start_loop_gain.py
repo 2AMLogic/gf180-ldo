@@ -48,6 +48,7 @@ sys.path.insert(0, str(_TB))
 import netlist_variants as nv  # noqa: E402
 from harness import klt_grid  # noqa: E402
 from harness import loop_margin  # noqa: E402
+from harness import record_compare  # noqa: E402
 from harness.deck import TOKEN_RE  # noqa: E402
 from harness.loader import load_script  # noqa: E402
 
@@ -1345,6 +1346,249 @@ class TestSharedLocalGridFlags(unittest.TestCase):
                      "--skip-handover", "--explore", "--ac-dec", "--author"):
             self.assertIn(flag, text)
 
+
+def gm_row(gm: float, **kw) -> "sweep.Row":
+    """A `row()` whose gain margin is `gm` dB.
+
+    `inf` is the sweep's own "no -180 deg crossing in band" (`Row.gm_db`):
+    the deck's `meas` found nothing, which is an empty `gain_at_f180_db`.
+    """
+    return row(f180_hz=None if math.isinf(gm) else 1e7,
+               gain_at_f180_db=None if math.isinf(gm) else -gm, **kw)
+
+
+def cells(line: str) -> list[str]:
+    """The cells of one rendered Markdown table row, stripped.
+
+    A row is read by position (`AB_N`, `AB_DPM`, `AB_AT`, `AB_DGM`: the
+    columns "n", "worst dPM", "at", "worst dGM"), so a test on it is a
+    statement about the table's shape as well as its text.
+    """
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+AB_N, AB_DPM, AB_AT, AB_DGM = 2, 3, 4, 5
+
+
+class TestAbGainMarginColumnCountsACrossingMismatch(unittest.TestCase):
+    """A -180 deg crossing only one variant has is reported, not dropped.
+
+    Issue #904. `ab_table` pairs every `device` row with the `binj` row at
+    the same (phase, ramp state, corner, C_eff, ESR). Making a -180 deg
+    crossing appear or disappear is the largest effect the injection element
+    can have on the gain margin, and the "worst dGM" cell used to drop such
+    a pair without a word: it showed the minimum over the pairs with two
+    finite margins, or `n/a` when there were none. The delta is now the
+    shared `record_compare.delta` -- two infinite margins are 0 dB apart,
+    one infinite against one finite is a crossing mismatch with no dB value
+    -- and the cell counts the mismatches beside the minimum whenever there
+    are any.
+    """
+
+    def gm_cell(self, *pairs: tuple[float, float]) -> str:
+        """The "worst dGM" cell over (device GM, binj GM) pairs.
+
+        Each pair gets its own ESR so the points stay distinct, and every
+        point has a measured phase margin.
+        """
+        rows = [gm_row(gm, variant=v, esr_ohm=0.1 * (i + 1))
+                for i, pair in enumerate(pairs)
+                for v, gm in zip(("device", "binj"), pair, strict=True)]
+        lines, _ = sweep.record.ab_table(rows)
+        self.assertEqual(len(lines), 3, lines)
+        return cells(lines[2])[AB_DGM]
+
+    def test_a_finite_pair_beside_a_crossing_mismatch_reports_both(self):
+        self.assertEqual(self.gm_cell((9.0, 12.0), (9.0, math.inf)),
+                         "-3.00 (1 crossing mismatch)")
+
+    def test_the_opposite_ordering_is_the_same_one_mismatch(self):
+        self.assertEqual(self.gm_cell((9.0, 12.0), (math.inf, 9.0)),
+                         "-3.00 (1 crossing mismatch)")
+
+    def test_an_all_mixed_bucket_reports_the_count_and_no_number(self):
+        self.assertEqual(self.gm_cell((9.0, math.inf), (math.inf, 9.0)),
+                         "*2 crossing mismatches*")
+
+    def test_a_lone_mixed_pair_is_identified_as_a_crossing_mismatch(self):
+        self.assertEqual(self.gm_cell((9.0, math.inf)),
+                         "*1 crossing mismatch*")
+        self.assertEqual(self.gm_cell((math.inf, 9.0)),
+                         "*1 crossing mismatch*")
+
+    def test_two_infinite_margins_are_zero_db_and_no_mismatch(self):
+        self.assertEqual(self.gm_cell((9.0, 12.0), (math.inf, math.inf)),
+                         "-3.00")
+        self.assertEqual(self.gm_cell((math.inf, math.inf)), "+0.00")
+
+    def test_two_infinite_margins_take_part_in_the_minimum(self):
+        self.assertEqual(self.gm_cell((12.0, 9.0), (math.inf, math.inf)),
+                         "+0.00")
+
+    def test_a_finite_only_bucket_is_unchanged(self):
+        self.assertEqual(self.gm_cell((9.0, 12.0), (9.0, 10.5)), "-3.00")
+        self.assertEqual(self.gm_cell((12.0, 9.0)), "+3.00")
+
+    def test_the_phase_margin_columns_keep_their_own_pairing_and_point(self):
+        rows = [
+            gm_row(9.0, variant="device", esr_ohm=0.1, phase_at_f0_deg=-114.0),
+            gm_row(12.0, variant="binj", esr_ohm=0.1, phase_at_f0_deg=-115.0),
+            gm_row(9.0, variant="device", esr_ohm=0.5, phase_at_f0_deg=-125.0,
+                   vout_v=0.901),
+            gm_row(math.inf, variant="binj", esr_ohm=0.5,
+                   phase_at_f0_deg=-122.0),
+        ]
+        lines, pairs = sweep.record.ab_table(rows)
+        c = cells(lines[2])
+        self.assertEqual(len(c), 8)
+        self.assertEqual(c[AB_N], "2")
+        self.assertEqual(c[AB_DPM], "**-3.00**")
+        self.assertEqual(c[AB_AT], "`tt_27c_3.30v` / 1uF_500mohm")
+        self.assertEqual(c[AB_DGM], "-3.00 (1 crossing mismatch)")
+        self.assertEqual(c[6], "+0.001")
+        self.assertEqual([p[3] for p in pairs], [-3.0, None])
+
+
+class TestAbGainMarginColumnWithoutAPairedPhaseMargin(unittest.TestCase):
+    """The row layout with no paired 0 dB crossing renders the gain margin.
+
+    Issue #904. At `V(SSR) = 0` the pass device is not conducting, so no
+    point there has a 0 dB crossing and the bucket takes the `*no paired
+    0 dB crossing*` layout. That layout used to exit before rendering the
+    gain-margin cell -- and it is the one bucket of the committed matrix
+    where the crossing mismatches are. The rows below are that bucket's:
+    its two mismatches, at 4.7 uF / 500 mOhm, and its infinite `binj`
+    margins that have no `device` mate.
+    """
+
+    ZERO_V = dict(phase="ramp", ssr_cmd="0", ssr_v=0.0, ceff_f=4.7e-6,
+                  esr_ohm=0.5, phase_at_f0_deg=None, f0_hz=None,
+                  dcgain_db=-150.0)
+
+    def pair_at(self, corner_id: str, device_gm: float,
+                binj_gm: float) -> tuple:
+        """The `device` row and the `binj` row of one pair at `corner_id`."""
+        return (gm_row(device_gm, variant="device", corner_id=corner_id,
+                       **self.ZERO_V),
+                gm_row(binj_gm, variant="binj", corner_id=corner_id,
+                       **self.ZERO_V))
+
+    def row_cells(self, *rows: "sweep.Row") -> list[str]:
+        lines, _ = sweep.record.ab_table(list(rows))
+        self.assertEqual(len(lines), 3, lines)
+        return cells(lines[2])
+
+    def test_the_gain_margin_stands_beside_the_absent_phase_margin(self):
+        c = self.row_cells(
+            *self.pair_at("fs_-40c_3.63v", 270.24, math.inf),
+            *self.pair_at("fs_27c_3.63v", 266.88, math.inf),
+            *self.pair_at("ff_27c_3.30v", 12.34, 15.66),
+        )
+        self.assertEqual(c[AB_N], "3")
+        self.assertEqual(c[AB_DPM], "*no paired 0 dB crossing*")
+        self.assertEqual(c[AB_AT], "-")
+        self.assertEqual(c[AB_DGM], "-3.32 (2 crossing mismatches)")
+
+    def test_a_lone_mixed_pair_without_phase_margin_is_still_identified(self):
+        c = self.row_cells(*self.pair_at("fs_-40c_3.63v", 270.24, math.inf))
+        self.assertEqual(c[AB_N], "1")
+        self.assertEqual(c[AB_DPM], "*no paired 0 dB crossing*")
+        self.assertEqual(c[AB_DGM], "*1 crossing mismatch*")
+
+    def test_an_unmatched_row_cannot_inflate_the_mismatch_count(self):
+        c = self.row_cells(
+            *self.pair_at("fs_-40c_3.63v", 270.24, math.inf),
+            gm_row(math.inf, variant="binj", corner_id="ff_-40c_3.63v",
+                   **{**self.ZERO_V, "ceff_f": 1e-6}),
+            gm_row(math.inf, variant="binj", corner_id="sf_-40c_3.63v",
+                   **self.ZERO_V),
+            gm_row(12.34, variant="device", corner_id="ff_27c_3.30v",
+                   **{**self.ZERO_V, "ceff_f": 1e-6}),
+        )
+        self.assertEqual(c[AB_N], "1")
+        self.assertEqual(c[AB_DPM], "*no paired 0 dB crossing*")
+        self.assertEqual(c[AB_DGM], "*1 crossing mismatch*")
+
+
+class TestCommittedZeroVoltRampBucket(unittest.TestCase):
+    """The A/B table of record `20260910-015601-2387ece`, replayed (#904).
+
+    That matrix has 440 matched device/binj pairs at `V(SSR) = 0` and no
+    paired 0 dB crossing among them, so the committed record prints a dash
+    in the gain-margin cell. Two of the pairs -- `binj` has no -180 deg
+    crossing in band where `device` has one, at `fs_-40c_3.63v` (270.24 dB)
+    and `fs_27c_3.63v` (266.88 dB), 4.7 uF / 500 mOhm -- are the crossing
+    mismatches, and the other 438 pairs have two finite margins. The matrix
+    CSV stores PM and GM to two decimals, so the replayed minimum is the
+    CSV's, not the sweep's unrounded one. `EXPECTED_DGM` is the gain-margin
+    cell of every bucket: the nine finite-only buckets print what they
+    printed before #904 and must keep printing it. No simulator runs;
+    nothing is written under `records/`.
+    """
+
+    RECORD = "20260910-015601-2387ece"
+    KEY_FIELDS = ("variant", "phase", "ssr_cmd", "corner_id", "ceff_uf",
+                  "esr_ohm")
+    EXPECTED_DGM = {
+        ("ramp", "0"): "-148.34 (2 crossing mismatches)",
+        ("ramp", "0.05"): "-4.08",
+        ("ramp", "0.15"): "-1.47",
+        ("ramp", "0.6"): "-0.22",
+        ("ramp", "1.15"): "+0.05",
+        ("ramp", "1.25"): "+0.00",
+        ("sink", "1.15"): "-0.30",
+        ("sink", "1.25"): "-0.30",
+        ("sink", "1.8"): "-0.16",
+        ("anchor", "free"): "-0.05",
+    }
+
+    @classmethod
+    def rows(cls) -> list:
+        """The committed matrix as `Row`s: `csv_row()` read back."""
+        out = []
+        matrix = record_compare.load(cls.RECORD, cls.KEY_FIELDS,
+                                     _TB.parent / "records")
+        for d in matrix.values():
+            num = record_compare.parse_num
+            pm, gm = num(d["phase_margin_deg"]), num(d["gain_margin_db"])
+            out.append(row(
+                corner_id=d["corner_id"], corner=d["process"],
+                temp_c=float(d["temp_c"]), vin_v=float(d["vin_v"]),
+                iload_a=float(d["iload_ma"]) * 1e-3,
+                ceff_f=float(d["ceff_uf"]) * 1e-6,
+                esr_ohm=float(d["esr_ohm"]),
+                vout_v=float(d["vout_v"]),
+                dcgain_db=float(d["dc_loop_gain_db"]),
+                f0_hz=num(d["f_crossover_hz"]),
+                phase_at_f0_deg=None if pm is None else pm - 180.0,
+                f180_hz=num(d["f_180_hz"]),
+                gain_at_f180_db=None if gm is None or math.isinf(gm) else -gm,
+                resurgence_db=num(d["resurgence_db"]),
+                variant=d["variant"], phase=d["phase"],
+                ssr_cmd=d["ssr_cmd"], ssr_v=float(d["ssr_v"]),
+                fb_v=float(d["fb_v"]), isup_a=float(d["isup_ma"]) * 1e-3,
+                load_model=d["load_model"],
+                rload_ohm=float(d["rload_ohm"])))
+        return out
+
+    def table(self) -> list[str]:
+        lines, _ = sweep.record.ab_table(self.rows())
+        return lines
+
+    def test_the_zero_volt_bucket_names_both_mismatches(self):
+        by_bucket = {tuple(cells(l)[:2]): cells(l) for l in self.table()[2:]}
+        zero_v = by_bucket[("`ramp`", "0")]
+        self.assertEqual(zero_v[AB_N], "440")
+        self.assertEqual(zero_v[AB_DPM], "*no paired 0 dB crossing*")
+        self.assertEqual(zero_v[AB_AT], "-")
+        self.assertEqual(zero_v[AB_DGM], "-148.34 (2 crossing mismatches)")
+
+    def test_the_whole_gain_margin_column_of_the_committed_matrix(self):
+        got = {(c[0].strip("`"), c[1]): c[AB_DGM]
+               for c in map(cells, self.table()[2:])}
+        self.assertEqual(got, self.EXPECTED_DGM)
+
+
 class TestRenderRecordSmoke(unittest.TestCase):
     """`render_record` renders a whole record from fabricated inputs (#658).
 
@@ -1416,6 +1660,12 @@ class TestRenderRecordSmoke(unittest.TestCase):
                 args=args, xcheck={"skipped": True}, attribution=[],
                 seeded=(), curves=curves, klt_info=klt_info)
 
+    @staticmethod
+    def ab_rows(md: str) -> list[list[str]]:
+        """The data rows of the record's A/B table (section 3), as cells."""
+        after = md.split("worst dPM (deg) | at |", 1)[1]
+        return [cells(l) for l in after.split("\n\n", 1)[0].splitlines()[2:]]
+
     def test_provenance_and_handover_describe_the_measured_variants(self):
         md = self._render(curves=[ideal_curve("device", gm=4e-6), ideal_curve()])
         provenance = md.split("**Netlist provenance**")[1].split("**Corner matrix run**")[0]
@@ -1444,8 +1694,18 @@ class TestRenderRecordSmoke(unittest.TestCase):
     def test_no_paired_crossing_has_no_phase_margin_comparison(self):
         md = self._render(device_phases=(None, None))
         self.assertIn("no phase-margin comparison", md)
-        self.assertIn("no A/B delta is computed", md)
+        self.assertIn("no phase-margin delta is computed", md)
+        self.assertNotIn("no A/B delta is computed", md)
         self.assertIn("no paired 0 dB crossing", md)
+
+    def test_no_paired_crossing_still_tabulates_the_gain_margin(self):
+        # Neither variant has a -180 deg crossing in band at either state,
+        # which the A/B counts as 0 dB apart over every pair (#904).
+        rows = self.ab_rows(self._render(device_phases=(None, None)))
+        self.assertEqual(len(rows), 2)
+        for c in rows:
+            self.assertEqual(c[AB_DPM], "*no paired 0 dB crossing*")
+            self.assertEqual(c[AB_DGM], "+0.00")
 
     def test_no_klt_renders_the_environment_block_in_order(self):
         md = self._render()

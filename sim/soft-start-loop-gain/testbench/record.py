@@ -19,7 +19,9 @@ tolerances come from ``model.py``, loaded by path under its unique name
 through the same ``sys.modules.get`` guard ``sweep.py`` uses (see that
 module's docstring for why the guard exists); the margin helpers and bars
 come from ``harness.loop_margin`` directly (issue #630), exactly as the
-driver imports them.
+driver imports them; and the A/B's gain-margin delta is
+``harness.record_compare.delta`` (issue #904), the one rule for what a
+delta between two gain margins means.
 """
 
 from __future__ import annotations
@@ -48,6 +50,7 @@ from harness.loop_margin import (  # noqa: E402
     worst_of,
     worst_resurgence_of,
 )
+from harness.record_compare import delta  # noqa: E402
 from harness.report import (  # noqa: E402
     environment as harness_environment,
     environment_lines,
@@ -125,7 +128,14 @@ def state_table(rows: list[Row]) -> list[str]:
 
 
 def ab_table(rows: list[Row]) -> tuple[list[str], list[tuple]]:
-    """device - binj, point for point, worst delta per (phase, ramp state)."""
+    """device - binj, point for point, worst delta per (phase, ramp state).
+
+    The phase-margin figures (``n``, ``worst dPM``, ``at``) are over the
+    pairs with a 0 dB crossing in both variants. The gain-margin figure is
+    over every pair of the bucket whatever the phase margins are, because a
+    -180 deg crossing that one variant has and the other lacks is not tied
+    to a 0 dB crossing; ``_ab_gm_cell`` renders it.
+    """
     by_key = {key_of(r): r for r in rows}
     pairs: list[tuple[Row, Row, float | None, float | None]] = []
     for r in rows:
@@ -137,8 +147,7 @@ def ab_table(rows: list[Row]) -> tuple[list[str], list[tuple]]:
             continue
         dpm = (None if r.pm_deg is None or mate.pm_deg is None
                else r.pm_deg - mate.pm_deg)
-        dgm = (None if math.isinf(r.gm_db) or math.isinf(mate.gm_db)
-               else r.gm_db - mate.gm_db)
+        dgm = delta(mate.gm_db, r.gm_db)
         pairs.append((r, mate, dpm, dgm))
 
     out = ["| phase | V(SSR) | n | worst dPM (deg) | at | worst dGM (dB) | dVOUT there (V) | dI_inj there (uA) |",
@@ -148,23 +157,46 @@ def ab_table(rows: list[Row]) -> tuple[list[str], list[tuple]]:
         buckets.setdefault((p[0].phase, p[0].ssr_cmd), []).append(p)
     for key in sorted(buckets, key=lambda k: _state_order(("", k[0], k[1]))):
         b = buckets[key]
+        gm_cell = _ab_gm_cell(b)
         measured = [p for p in b if p[2] is not None]
         if not measured:
             out.append(f"| `{key[0]}` | {key[1]} | {len(b)} | *no paired "
-                       f"0 dB crossing* | - | - | "
+                       f"0 dB crossing* | - | {gm_cell} | "
                        f"{b[0][0].vout_v - b[0][1].vout_v:+.4g} | "
                        f"{(b[0][0].iinj_a - b[0][1].iinj_a) * 1e6:+.3f} |")
             continue
         w = min(measured, key=lambda p: p[2])
-        wg = min((p for p in b if p[3] is not None), key=lambda p: p[3],
-                 default=None)
         out.append(
             f"| `{key[0]}` | {key[1]} | {len(measured)} | **{w[2]:+.2f}** | "
             f"`{w[0].corner_id}` / {w[0].cfg_id} | "
-            f"{'n/a' if wg is None else f'{wg[3]:+.2f}'} | "
+            f"{gm_cell} | "
             f"{w[0].vout_v - w[1].vout_v:+.4g} | "
             f"{(w[0].iinj_a - w[1].iinj_a) * 1e6:+.3f} |")
     return out, pairs
+
+
+def _ab_gm_cell(pairs: list[tuple]) -> str:
+    """The ``worst dGM`` cell of one A/B bucket (issue #904).
+
+    ``pairs`` are ``ab_table``'s ``(device, binj, dPM, dGM)`` tuples, whose
+    ``dGM`` is the shared ``record_compare.delta(binj.gm_db, device.gm_db)``:
+    two infinite gain margins are 0 dB apart, and a finite-against-infinite
+    pair -- one variant has a -180 deg crossing in band and the other does
+    not -- has no dB delta at all (``None``). The cell is the minimum signed
+    delta (``device`` minus ``binj``) over the comparable pairs, with the
+    count of crossing mismatches beside it whenever there are any; a pair
+    without a delta is counted, never dropped. When every pair is a
+    mismatch there is no number to print, and the cell says so rather than
+    showing a dash that reads as "not measured".
+    """
+    comparable = [p[3] for p in pairs if p[3] is not None]
+    n_mixed = len(pairs) - len(comparable)
+    mismatches = f"{n_mixed} crossing mismatch{'es' if n_mixed != 1 else ''}"
+    if not comparable:
+        return f"*{mismatches}*"
+    if n_mixed:
+        return f"{min(comparable):+.2f} ({mismatches})"
+    return f"{min(comparable):+.2f}"
 
 
 def handover_table(rows: list[Row], corner_id: str) -> list[str]:
@@ -747,7 +779,10 @@ def render_record(*, record_id, rows, grid, ceffs, esrs, pdk, prov, args,
         headline = ("No state measured here has a 0 dB crossing on both sides "
                     "of the A/B, so this record makes no phase-margin "
                     "comparison between `device` and `binj`.")
-        ab_reading = "No point has a 0 dB crossing on both sides, so no A/B delta is computed."
+        ab_reading = ("No point has a 0 dB crossing on both sides, so no "
+                      "phase-margin delta is computed. The gain-margin column "
+                      "below covers every matched pair, with or without a "
+                      "0 dB crossing.")
 
     # The DC hand-over reading, also computed.
     dc_lines = []
