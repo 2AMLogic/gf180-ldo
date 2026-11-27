@@ -8,6 +8,14 @@ Merged PRs and closed issues from the initial 30-day Guide review window.
 
 ### 2026-11-26
 
+- **Issue #905** (closed): soft-start loop-gain cross-check crashes on a grid that shares no point with its reference
+- **PR #906**: fix(sim): report an empty anchor cross-check join instead of crashing
+- **Issue #904** (closed): soft-start loop-gain A/B table silently skips device/binj pairs with a finite-vs-infinite gain margin
+- **PR #907**: fix(sim): report GM crossing mismatches in the loop-gain A/B table
+- **Issue #900** (closed): Reuse the shared gain-margin delta so the soft-start anchor flags a missing phase crossing
+- **PR #903**: fix(sim): flag a GM crossing mismatch in the loop-gain anchor cross-check
+- **Issue #886** (closed): sim/soft-start-loop-gain: the sink phase rationale in model.py still says both variants carry Binj_ss
+- **PR #894**: docs(sim): correct the sink phase rationale in the loop-gain model
 - **Issue #893** (closed): sim/soft-start-loop-gain: the 1.8 V point label in model.py still calls 1.8 V a margin past both variants' hand-over
 - **PR #895**: fix(sim): label the 1.8 V soft-start sample as an operating point
 - **Issue #896** (closed): layout: "stages 6..N" and "6 onwards. Negative controls" references still number the LVS controls from 6
