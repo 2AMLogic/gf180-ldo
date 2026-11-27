@@ -14,9 +14,7 @@ never grade as ``ACQUIRED``.
 from __future__ import annotations
 
 import contextlib
-import io
 import math
-import shutil
 import sys
 import tempfile
 import unittest
@@ -32,8 +30,6 @@ from harness.loader import load_script  # noqa: E402
 
 ba = load_script("ss_bias_acq", DRIVER)
 
-from harness import evidence_store as es  # noqa: E402
-from harness import tb_adapter as ta  # noqa: E402
 import driver_routing as drt  # noqa: E402
 
 CORE = (REPO / "design" / "netlist" / "ldo_core.spice").read_text()
@@ -220,7 +216,7 @@ class TestHarnessHelpers(unittest.TestCase):
             self.assertEqual(kb.klt_cmd(), ["uvx", "--from", "x @ y", "klt"])
 
 
-class Routing(unittest.TestCase):
+class Routing(drt.RoutingContract, unittest.TestCase):
     """DR-0044, issue #647: the driver's ``--dest`` default is the staging
     tree (an explicit ``--dest`` still wins), an unavailable store refuses
     before anything is written, a committed record id is never rewritten, and
@@ -228,12 +224,10 @@ class Routing(unittest.TestCase):
     ``klt-report.json`` envelopes. ``_stage_and_run`` and ``kb.collect`` are
     faked: no PDK, ngspice, klt or fleet."""
 
-    def setUp(self):
-        self.rid = "20261117-zz-bias-routing"
-        self.addCleanup(shutil.rmtree, ta.stage_corner_dir(REPO, "soft-start", self.rid),
-                        ignore_errors=True)
-        self.stdout = io.StringIO()
-        self.stderr = io.StringIO()
+    SLUG = "soft-start"
+    RID = "20261117-zz-bias-routing"
+    STAGE_EXTRA_ARGS = ("--scenario", "op,powerup")
+    ONLY_EXTRA_ARGS = ("--scenario", "op")
 
     def _stage_and_run(self, j, tmp, backend):
         wd = tmp / j.name
@@ -244,6 +238,7 @@ class Routing(unittest.TestCase):
         return req, {"corners": []}
 
     def _collect(self, report, j, dest, tag=""):
+        self.dests.append(Path(dest))
         dest.mkdir(parents=True, exist_ok=True)
         (dest / f"klt-report{tag}.json").write_text('{"corners": []}\n')
         (dest / "tt_27c_3.30v.log").write_text("* log\n")
@@ -255,12 +250,6 @@ class Routing(unittest.TestCase):
                 contextlib.redirect_stdout(self.stdout), \
                 contextlib.redirect_stderr(self.stderr):
             return ba.main(argv, preflight=preflight)
-
-    def _staged(self) -> Path:
-        return ta.stage_corner_dir(REPO, "soft-start", self.rid)
-
-    def _committed(self) -> Path:
-        return SIM_DIR / "soft-start" / "corners" / self.rid
 
     def test_the_dest_default_is_the_staging_tree(self):
         rc = self._main(["--record-id", self.rid, "--scenario", "op,powerup"],
@@ -297,32 +286,6 @@ class Routing(unittest.TestCase):
         self.assertIn("soft-start", msg)
         self.assertFalse(fresh.exists(), "the refusal must precede dest.mkdir")
         self.assertFalse(self._staged().exists())
-
-    def test_an_only_debug_point_needs_no_store(self):
-        def explode(repo):
-            raise AssertionError("--only must not probe the store")
-
-        rc = self._main(["--record-id", self.rid, "--scenario", "op",
-                         "--only", "tt,27,3.30"], explode)
-        self.assertEqual(rc, 0)
-        self.assertTrue((self._staged() / "op").is_dir())
-
-    def test_an_unstorable_run_exits_10_before_simulating(self):
-        def refuse(repo):
-            raise es.StoreError("no artifact broker configured ($KLT_ARTIFACT_BROKER is unset)")
-
-        rc = self._main(["--record-id", self.rid], refuse)
-        self.assertEqual(rc, ta.EXIT_NOT_STORED)
-        self.assertFalse(self._staged().exists())
-        self.assertFalse(self._committed().exists())
-        self.assertIn("EVIDENCE STORE UNAVAILABLE", self.stderr.getvalue())
-
-    def test_a_record_id_already_committed_is_refused(self):
-        existing = sorted(p for p in (SIM_DIR / "soft-start" / "corners").iterdir()
-                          if p.is_dir())[0].name
-        with self.assertRaises(SystemExit) as cm:
-            self._main(["--record-id", existing], lambda repo: None)
-        self.assertIn("append-only", str(cm.exception))
 
     def test_a_multi_scenario_run_mints_both_envelopes_and_stores_the_rest(self):
         rc = self._main(["--record-id", self.rid, "--scenario", "op,powerup"],

@@ -16,8 +16,6 @@ from __future__ import annotations
 import contextlib
 import csv
 import io
-import os
-import shutil
 import sys
 import tempfile
 import types
@@ -30,9 +28,7 @@ REPO = SIM_DIR.parent
 sys.path.insert(0, str(SIM_DIR))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from harness import evidence_store as es  # noqa: E402
 from harness import pdk as pdk_mod  # noqa: E402
-from harness import tb_adapter as ta  # noqa: E402
 from harness.loader import load_script  # noqa: E402
 from harness.klt_ab import write_summary_csv  # noqa: E402
 import driver_routing as drt  # noqa: E402
@@ -49,7 +45,7 @@ def _driver(slug: str):
     return _DRIVERS[slug]
 
 
-class _DriverCase:
+class _DriverCase(drt.RoutingContract):
     """One driver with ``run_ab`` faked: the fake writes each tag's envelope,
     one log and the frozen DUT into whatever ``dest`` the driver handed it.
 
@@ -57,19 +53,11 @@ class _DriverCase:
     the concrete classes below bind ``SLUG``."""
 
     SLUG = ""
+    RID = "20261116-zz-driver-test"
 
     def setUp(self):
         self.mod = _driver(self.SLUG)
-        self.rid = "20261116-zz-driver-test"
-        # The drivers resolve their repo from __file__, so a staged run lands
-        # in this repo's own git-ignored sim/.work/. Clear this record's
-        # stage afterwards so the tests leave no scratch behind, but nothing
-        # wider: a bench's other staged records (a soft-start shard parked
-        # mid-workflow, say) must survive the test run.
-        self.addCleanup(shutil.rmtree, self._staged(), ignore_errors=True)
-        self.dests: list[Path] = []
-        self.stdout = io.StringIO()
-        self.stderr = io.StringIO()
+        super().setUp()
 
     def _run_ab(self, job_factory, dut, baseline_ref, dest, repo, **kw):
         self.dests.append(Path(dest))
@@ -94,78 +82,11 @@ class _DriverCase:
         real = self.mod.run_ab
         self.mod.run_ab = self._run_ab
         self.addCleanup(lambda: setattr(self.mod, "run_ab", real))
-        # The staging drivers pin $PDK_ROOT before their first submit
-        # (issue #639), resolving the tree through find_pdk() -- a host
-        # dependency this file does not require, so stub the tree; the
-        # assigned variable is saved/restored so it never leaks into a
-        # later suite in the same process.
-        saved_root = os.environ.get("PDK_ROOT")
-
-        def _restore_root():
-            if saved_root is None:
-                os.environ.pop("PDK_ROOT", None)
-            else:
-                os.environ["PDK_ROOT"] = saved_root
-        self.addCleanup(_restore_root)
-        patcher = mock.patch.object(pdk_mod, "find_pdk", return_value=types.SimpleNamespace(
-            path=Path("/pinned/root/gf180mcuD")))
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        drt.stub_pinned_pdk(self, pdk_mod, "/pinned/root/gf180mcuD")
         with contextlib.redirect_stdout(self.stdout), \
                 contextlib.redirect_stderr(self.stderr), \
                 mock.patch("subprocess.run", side_effect=self._summarize):
             return self.mod.main(argv, preflight=preflight)
-
-    def _staged(self) -> Path:
-        return ta.stage_corner_dir(REPO, self.SLUG, self.rid)
-
-    def _committed(self) -> Path:
-        return SIM_DIR / self.SLUG / "corners" / self.rid
-
-    # -- the DR-0044 contract every driver shares ---------------------------
-
-    def test_a_run_stages_under_sim_work_not_into_corners(self):
-        seen = []
-        rc = self._main(["--record-id", self.rid], lambda repo: seen.append(repo))
-        self.assertEqual(rc, 0)
-        self.assertEqual(len(seen), 1, "the store is probed once, before any fleet time")
-        staged = self._staged()
-        self.assertTrue(staged.is_dir())
-        self.assertTrue(self.dests and all(d == staged or staged in d.parents for d in self.dests),
-                        self.dests)
-        self.assertFalse(self._committed().exists())
-        out = self.stdout.getvalue()
-        self.assertIn(f"staged  : {staged} (not evidence yet)", out)
-        self.assertIn("run_store_evidence.py", out)
-        self.assertIn("--kind corners", out)
-        self.assertIn(self.rid, out)
-
-    def test_an_unstorable_run_exits_10_before_simulating(self):
-        def refuse(repo):
-            raise es.StoreError("no artifact broker configured ($KLT_ARTIFACT_BROKER is unset)")
-
-        rc = self._main(["--record-id", self.rid], refuse)
-        self.assertEqual(rc, ta.EXIT_NOT_STORED)
-        self.assertEqual(self.dests, [], "the fleet was never asked to run anything")
-        self.assertFalse(self._staged().exists())
-        self.assertFalse(self._committed().exists())
-        self.assertIn("EVIDENCE STORE UNAVAILABLE", self.stderr.getvalue())
-
-    def test_an_only_debug_point_needs_no_store(self):
-        def explode(repo):
-            raise AssertionError("--only must not probe the store")
-
-        rc = self._main(["--record-id", self.rid, "--only", "tt,27,3.30"], explode)
-        self.assertEqual(rc, 0)
-        self.assertTrue(self._staged().is_dir())
-
-    def test_a_record_id_already_committed_is_refused(self):
-        existing = sorted(p for p in (SIM_DIR / self.SLUG / "corners").iterdir()
-                          if p.is_dir())[0].name
-        with self.assertRaises(SystemExit) as cm:
-            self._main(["--record-id", existing], lambda repo: None)
-        self.assertIn("append-only", str(cm.exception))
-        self.assertEqual(self.dests, [])
 
     def test_a_baseline_ab_run_stages_and_stores_both_tags(self):
         rc = self._main(["--record-id", self.rid, "--baseline-ref", "origin/main"],

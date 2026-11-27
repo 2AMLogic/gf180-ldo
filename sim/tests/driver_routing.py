@@ -19,8 +19,10 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
+import types
 from pathlib import Path
 from unittest import mock
 
@@ -28,6 +30,7 @@ SIM_DIR = Path(__file__).resolve().parents[1]
 REPO = SIM_DIR.parent
 
 from harness import evidence_store as es  # noqa: E402
+from harness import tb_adapter as ta  # noqa: E402
 from harness.loader import load_script  # noqa: E402
 
 # fake_klt is shared with the store's own tests rather than duplicated: both
@@ -143,3 +146,113 @@ def assert_corners_mint(case, bench: str, rid: str, staged: Path):
                      [f"sim/{bench}/corners/{rid}/{f}" for f in stored])
     case.assertEqual(check_manifests(root), 0)
     return committed, m
+
+
+def stub_pinned_pdk(case, pdk_module, path="/nonexistent-pdk"):
+    """Stub ``pdk_module.find_pdk`` and save/restore ``$PDK_ROOT`` for *case*.
+
+    The staging drivers pin ``$PDK_ROOT`` before their first submit
+    (issue #639), resolving the tree through ``find_pdk()`` -- a host
+    dependency the tests do not require, so the tree is stubbed; the assigned
+    variable is restored so it never leaks into a later suite in the same
+    process. Both undone through ``case.addCleanup``.
+    """
+    saved_root = os.environ.get("PDK_ROOT")
+
+    def restore_root():
+        if saved_root is None:
+            os.environ.pop("PDK_ROOT", None)
+        else:
+            os.environ["PDK_ROOT"] = saved_root
+    case.addCleanup(restore_root)
+    patcher = mock.patch.object(
+        pdk_module, "find_pdk",
+        new=lambda variant=None: types.SimpleNamespace(path=Path(path)))
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
+class RoutingContract:
+    """The four DR-0044 staging/refusal contract tests every driver shares.
+
+    A plain mixin (not a TestCase) so unittest discovery never collects the
+    abstract base; concrete suites list it before ``unittest.TestCase`` and
+    bind ``SLUG`` / ``RID``, provide ``_main(argv, preflight)`` and record
+    every directory the faked run was handed in ``self.dests``.
+
+    ``BASE_ARGS`` go on every invocation (a driver's mandatory flags);
+    ``STAGE_EXTRA_ARGS`` / ``ONLY_EXTRA_ARGS`` only on the staging and
+    ``--only`` runs.
+    """
+
+    SLUG = ""
+    RID = ""
+    BASE_ARGS: tuple = ()
+    STAGE_EXTRA_ARGS: tuple = ()
+    ONLY_EXTRA_ARGS: tuple = ()
+
+    def setUp(self):
+        self.rid = self.RID
+        # The drivers resolve their repo from __file__, so a staged run lands
+        # in this repo's own git-ignored sim/.work/. Clear this record's
+        # stage afterwards so the tests leave no scratch behind, but nothing
+        # wider: a bench's other staged records (a soft-start shard parked
+        # mid-workflow, say) must survive the test run.
+        self.addCleanup(shutil.rmtree, self._staged(), ignore_errors=True)
+        self.dests: list[Path] = []
+        self.stdout = io.StringIO()
+        self.stderr = io.StringIO()
+
+    def _staged(self) -> Path:
+        return ta.stage_corner_dir(REPO, self.SLUG, self.rid)
+
+    def _committed(self) -> Path:
+        return SIM_DIR / self.SLUG / "corners" / self.rid
+
+    def _argv(self, rid=None, *extra) -> list:
+        return ["--record-id", rid or self.rid, *self.BASE_ARGS, *extra]
+
+    def test_a_run_stages_under_sim_work_not_into_corners(self):
+        seen = []
+        rc = self._main(self._argv(None, *self.STAGE_EXTRA_ARGS),
+                        lambda repo: seen.append(repo))
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(seen), 1, "the store is probed once, before any fleet time")
+        staged = self._staged()
+        self.assertTrue(staged.is_dir())
+        self.assertTrue(self.dests and all(d == staged or staged in d.parents for d in self.dests),
+                        self.dests)
+        self.assertFalse(self._committed().exists())
+        out = self.stdout.getvalue()
+        self.assertIn(f"staged  : {staged} (not evidence yet)", out)
+        self.assertIn("run_store_evidence.py", out)
+        self.assertIn("--kind corners", out)
+        self.assertIn(self.rid, out)
+
+    def test_an_unstorable_run_exits_10_before_simulating(self):
+        def refuse(repo):
+            raise es.StoreError("no artifact broker configured ($KLT_ARTIFACT_BROKER is unset)")
+
+        rc = self._main(self._argv(), refuse)
+        self.assertEqual(rc, ta.EXIT_NOT_STORED)
+        self.assertEqual(self.dests, [], "the fleet was never asked to run anything")
+        self.assertFalse(self._staged().exists())
+        self.assertFalse(self._committed().exists())
+        self.assertIn("EVIDENCE STORE UNAVAILABLE", self.stderr.getvalue())
+
+    def test_an_only_debug_point_needs_no_store(self):
+        def explode(repo):
+            raise AssertionError("--only must not probe the store")
+
+        rc = self._main(self._argv(None, *self.ONLY_EXTRA_ARGS, "--only", "tt,27,3.30"),
+                        explode)
+        self.assertEqual(rc, 0)
+        self.assertTrue(self._staged().is_dir())
+
+    def test_a_record_id_already_committed_is_refused(self):
+        existing = sorted(p for p in (SIM_DIR / self.SLUG / "corners").iterdir()
+                          if p.is_dir())[0].name
+        with self.assertRaises(SystemExit) as cm:
+            self._main(self._argv(existing), lambda repo: None)
+        self.assertIn("append-only", str(cm.exception))
+        self.assertEqual(self.dests, [])

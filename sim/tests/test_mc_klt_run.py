@@ -122,7 +122,7 @@ class Grade(unittest.TestCase):
         self.assertFalse(ta.grade(mc.TB, {k: v for k, v in ok.items() if k != "sigma_mv"}))
 
 
-class McDriverRouting(unittest.TestCase):
+class McDriverRouting(drt.RoutingContract, unittest.TestCase):
     """DR-0044, issue #647: the mc driver stages, refuses and mints.
 
     ``run_ab`` is faked with a writer that emits one healthy Monte Carlo
@@ -130,13 +130,11 @@ class McDriverRouting(unittest.TestCase):
     the driver's factory builds), so the run completes and the expected-point
     check passes without any PDK, ngspice, klt or fleet."""
 
+    SLUG = "mc-output-accuracy"
+    RID = "20261117-zz-mc-driver-test"
+
     def setUp(self):
-        self.rid = "20261117-zz-mc-driver-test"
-        self.addCleanup(shutil.rmtree, ta.stage_corner_dir(REPO, "mc-output-accuracy", self.rid),
-                        ignore_errors=True)
-        self.dests: list[Path] = []
-        self.stdout = io.StringIO()
-        self.stderr = io.StringIO()
+        super().setUp()
         self.value = 0.1  # every measurement of every fake sample
 
     def _run_ab(self, job_factory, dut, baseline_ref, dest, repo, **kw):
@@ -162,61 +160,11 @@ class McDriverRouting(unittest.TestCase):
         return out
 
     def _main(self, argv, preflight):
-        real_run_ab, real_find = mc.run_ab, mc.pdk.find_pdk
+        self.addCleanup(setattr, mc, "run_ab", mc.run_ab)
         mc.run_ab = self._run_ab
-        mc.pdk.find_pdk = lambda variant=None: types.SimpleNamespace(path=Path("/nonexistent-pdk"))
-        saved_root = os.environ.get("PDK_ROOT")
-
-        def restore():
-            mc.run_ab, mc.pdk.find_pdk = real_run_ab, real_find
-            if saved_root is None:
-                os.environ.pop("PDK_ROOT", None)
-            else:
-                os.environ["PDK_ROOT"] = saved_root
-        self.addCleanup(restore)
+        drt.stub_pinned_pdk(self, mc.pdk)
         with contextlib.redirect_stdout(self.stdout), contextlib.redirect_stderr(self.stderr):
             return mc.main(argv, preflight=preflight)
-
-    def _staged(self) -> Path:
-        return ta.stage_corner_dir(REPO, "mc-output-accuracy", self.rid)
-
-    def _committed(self) -> Path:
-        return SIM_DIR / "mc-output-accuracy" / "corners" / self.rid
-
-    def test_a_run_stages_under_sim_work_not_into_corners(self):
-        seen = []
-        rc = self._main(["--record-id", self.rid], lambda repo: seen.append(repo))
-        self.assertEqual(rc, 0)
-        self.assertEqual(len(seen), 1, "the store is probed once, before any fleet time")
-        staged = self._staged()
-        self.assertTrue(staged.is_dir())
-        self.assertTrue(self.dests and all(staged == d or staged in d.parents for d in self.dests),
-                        self.dests)
-        self.assertFalse(self._committed().exists())
-        out = self.stdout.getvalue()
-        self.assertIn(f"staged  : {staged} (not evidence yet)", out)
-        self.assertIn("run_store_evidence.py", out)
-        self.assertIn("--kind corners", out)
-        self.assertIn(self.rid, out)
-
-    def test_an_unstorable_run_exits_10_before_simulating(self):
-        def refuse(repo):
-            raise es.StoreError("no artifact broker configured ($KLT_ARTIFACT_BROKER is unset)")
-
-        rc = self._main(["--record-id", self.rid], refuse)
-        self.assertEqual(rc, ta.EXIT_NOT_STORED)
-        self.assertEqual(self.dests, [], "the fleet was never asked to run anything")
-        self.assertFalse(self._staged().exists())
-        self.assertFalse(self._committed().exists())
-        self.assertIn("EVIDENCE STORE UNAVAILABLE", self.stderr.getvalue())
-
-    def test_an_only_debug_point_needs_no_store(self):
-        def explode(repo):
-            raise AssertionError("--only must not probe the store")
-
-        rc = self._main(["--record-id", self.rid, "--only", "tt,27,3.30"], explode)
-        self.assertEqual(rc, 0)
-        self.assertTrue(self._staged().is_dir())
 
     PASSING_STATS = {"n_samples": 1000, "n_bad_solves": 0, "sigma_mv": 0.05,
                      "sigma3_mv": 3.49, "vos_in_sigma3_mv": 2.33, "worst_abs_mv": 18.0,
@@ -248,14 +196,6 @@ class McDriverRouting(unittest.TestCase):
             with self.subTest(label):
                 shutil.rmtree(self._staged(), ignore_errors=True)
                 self.assertEqual({"False"}, set(self._staged_pass_column(stats)))
-
-    def test_a_record_id_already_committed_is_refused(self):
-        existing = sorted(p for p in (SIM_DIR / "mc-output-accuracy" / "corners").iterdir()
-                          if p.is_dir())[0].name
-        with self.assertRaises(SystemExit) as cm:
-            self._main(["--record-id", existing], lambda repo: None)
-        self.assertIn("append-only", str(cm.exception))
-        self.assertEqual(self.dests, [])
 
     def test_a_minted_run_commits_only_manifest_summary_and_envelopes(self):
         rc = self._main(["--record-id", self.rid], lambda repo: None)

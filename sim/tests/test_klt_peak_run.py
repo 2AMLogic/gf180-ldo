@@ -17,7 +17,6 @@ from __future__ import annotations
 import contextlib
 import csv
 import io
-import shutil
 import sys
 import unittest
 from pathlib import Path
@@ -38,19 +37,13 @@ from harness.loader import load_script  # noqa: E402
 kpr = load_script(
     "ss_klt_peak_run", SIM_DIR / "soft-start" / "testbench" / "klt_peak_run.py")
 
-from harness import evidence_store as es  # noqa: E402
-from harness import tb_adapter as ta  # noqa: E402
 import driver_routing as drt  # noqa: E402
 
 
-class PeakDriverRouting(unittest.TestCase):
-    def setUp(self):
-        self.rid = "20261117-zz-peak-driver-test"
-        self.addCleanup(shutil.rmtree, ta.stage_corner_dir(REPO, "soft-start", self.rid),
-                        ignore_errors=True)
-        self.dests: list[Path] = []
-        self.stdout = io.StringIO()
-        self.stderr = io.StringIO()
+class PeakDriverRouting(drt.RoutingContract, unittest.TestCase):
+    SLUG = "soft-start"
+    RID = "20261117-zz-peak-driver-test"
+    BASE_ARGS = ("--baseline-ref", "origin/main")
 
     def _run_ab(self, factory, dut, baseline_ref, dest, repo, **kw):
         self.dests.append(Path(dest))
@@ -73,58 +66,9 @@ class PeakDriverRouting(unittest.TestCase):
         with contextlib.redirect_stdout(self.stdout), contextlib.redirect_stderr(self.stderr):
             return kpr.main(argv, preflight=preflight)
 
-    def _staged(self) -> Path:
-        return ta.stage_corner_dir(REPO, "soft-start", self.rid)
-
-    def _committed(self) -> Path:
-        return SIM_DIR / "soft-start" / "corners" / self.rid
-
     def test_a_run_stages_under_sim_work_not_into_corners(self):
-        seen = []
-        rc = self._main(["--record-id", self.rid, "--baseline-ref", "origin/main"],
-                        lambda repo: seen.append(repo))
-        self.assertEqual(rc, 0)
-        self.assertEqual(len(seen), 1, "the store is probed once, before any fleet time")
-        staged = self._staged()
-        self.assertTrue(staged.is_dir())
-        self.assertTrue(self.dests and all(staged == d or staged in d.parents for d in self.dests),
-                        self.dests)
-        self.assertTrue((staged / "summary.csv").is_file())
-        self.assertFalse(self._committed().exists())
-        out = self.stdout.getvalue()
-        self.assertIn(f"staged  : {staged} (not evidence yet)", out)
-        self.assertIn("run_store_evidence.py", out)
-        self.assertIn("--kind corners", out)
-        self.assertIn(self.rid, out)
-
-    def test_an_unstorable_run_exits_10_before_simulating(self):
-        def refuse(repo):
-            raise es.StoreError("no artifact broker configured ($KLT_ARTIFACT_BROKER is unset)")
-
-        rc = self._main(["--record-id", self.rid, "--baseline-ref", "origin/main"], refuse)
-        self.assertEqual(rc, ta.EXIT_NOT_STORED)
-        self.assertEqual(self.dests, [], "the fleet was never asked to run anything")
-        self.assertFalse(self._staged().exists())
-        self.assertFalse(self._committed().exists())
-        self.assertIn("EVIDENCE STORE UNAVAILABLE", self.stderr.getvalue())
-
-    def test_an_only_debug_point_needs_no_store(self):
-        def explode(repo):
-            raise AssertionError("--only must not probe the store")
-
-        rc = self._main(["--record-id", self.rid, "--baseline-ref", "origin/main",
-                         "--only", "tt,27,3.30"], explode)
-        self.assertEqual(rc, 0)
-        self.assertTrue(self._staged().is_dir())
-
-    def test_a_record_id_already_committed_is_refused(self):
-        existing = sorted(p for p in (SIM_DIR / "soft-start" / "corners").iterdir()
-                          if p.is_dir())[0].name
-        with self.assertRaises(SystemExit) as cm:
-            self._main(["--record-id", existing, "--baseline-ref", "origin/main"],
-                       lambda repo: None)
-        self.assertIn("append-only", str(cm.exception))
-        self.assertEqual(self.dests, [])
+        super().test_a_run_stages_under_sim_work_not_into_corners()
+        self.assertTrue((self._staged() / "summary.csv").is_file())
 
     def test_one_part_names_the_other_and_mints_once_after_both(self):
         rc = self._main(["--record-id", self.rid, "--baseline-ref", "origin/main",
