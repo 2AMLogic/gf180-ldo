@@ -50,6 +50,20 @@ _RUN_POINT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _RUN_POINT_REPO_ROOT="$(cd "$_RUN_POINT_LIB_DIR/../../.." && pwd)"
 export _RUN_POINT_REPO_ROOT
 
+# Use the same base ID as the Python sweep and rollup, including in xargs workers.
+harness_format_corner_id() {
+  python3 - "$_RUN_POINT_REPO_ROOT" "$@" <<'PYEOF'
+import sys
+
+repo_root, corner, temp, vin = sys.argv[1:]
+sys.path.insert(0, repo_root + "/sim")
+from harness.corners import format_corner_id
+
+print(format_corner_id(corner, float(temp), float(vin)))
+PYEOF
+}
+export -f harness_format_corner_id
+
 # Fails <deck>/<log> against issue #310's DC-continuation-ladder-exhaustion
 # gate, exactly as sim/harness/runner.py's run_point()/run_ngspice_deck() do
 # for the harness-driven benches. Ngspice's last-resort rung -- the
@@ -153,7 +167,8 @@ harness_run_pvt_point() {
   local tmpl="$1" corner="$2" temp="$3" vin="$4"
   local sections; sections="$(corner_sections "$corner")"
   read -r s_mos s_res s_bjt s_dio s_mosc s_mimc <<<"$sections"
-  local corner_id; corner_id="$(printf '%s_%sc_%.2fv' "$corner" "$temp" "$vin")"
+  local corner_id
+  corner_id="$(harness_format_corner_id "$corner" "$temp" "$vin")" || return 1
   local deck="$WORKDIR/${corner_id}.spice"
   local log="$LOG_DIR/${corner_id}.log"
 
