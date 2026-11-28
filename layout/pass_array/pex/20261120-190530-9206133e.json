@@ -1,0 +1,2115 @@
+{
+  "schema_version": 2,
+  "status": "pass",
+  "layout": {
+    "path": "layout/.work/pex-786/pass_array.gds",
+    "scope": "repo"
+  },
+  "netlist": {
+    "path": "layout/.work/pex-786/pass_array.pex.spice",
+    "scope": "repo"
+  },
+  "reference_netlist": {
+    "path": "sim/pass-array-pex/testbench/pass_array_dut.spice",
+    "scope": "repo"
+  },
+  "reference_netlist_sha256": "sha256:e345dbd617cf4087d95c4492301badf29f23b7871887b49c9762703e27cc998b",
+  "extraction": {
+    "deck": "gf180mcu",
+    "netlist_adaptation": null,
+    "device_count": 41,
+    "net_count": 4,
+    "netlist_sha256": "683b4840a1bf5b4d7bdc18329fa9809a37b85a7db4a1cb4b192756d12fbe5060",
+    "model": {
+      "capacitance": "net-to-ground for every net's own (non-coupled) area/perimeter, plus net-to-net for the vertical-overlap coupling `coupling` describes below -- a coupled net pair gets a direct capacitor between their two hub nodes, not just capacitors to the deck's ground/substrate net",
+      "coupling": "vertical overlap (crossover) unconditionally -- where one net's conductor on an adjacent metal level sits directly over another *distinct* net's conductor, that overlap area is charged between the two nets instead of to ground (issue #760) -- plus lateral (same-layer, sidewall) coupling, but only for a net pair naming one of the caller's declared `--critical-net` nets (issue #976): facing-edge length within that layer's own minimum-spacing lookback is charged between the two nets, *additively* (not deducted from either net's substrate fringe term, unlike the vertical case -- a known simplification). Any same-layer pair with neither side named `--critical-net`, and fringe shielding in general, are still not modelled",
+      "resistance": "single lumped series resistance per net, distributed as a star across that net's device terminals (issue #592) -- not a per-segment, distributed RC ladder, *unless* `--distributed-rc` names this net via `--critical-net` (issue #977, Epic #709 Phase 2b): then the net's terminals are ordered along their approximate physical spread and its total R/C is broken into a chain of per-segment resistors (segment length proportional to inter-terminal distance) with a ground capacitor at each terminal node (proportional to its adjacent segment length/2), instead of one star hub -- still an approximation (terminal position is a device-placement proxy, not true per-segment routing geometry), but a strictly finer-grained one than the single-hub star",
+      "frequency": "quasi-static -- one frequency-independent R and C per net; no skin effect, no distributed transmission-line behavior"
+    },
+    "critical_nets": [],
+    "distributed_rc": false,
+    "mom_rlc_override": null,
+    "label_layers": null,
+    "device_models": null,
+    "device_classes": [
+      "nfet",
+      "pfet",
+      "bjt",
+      "cap_mim_2f0_m4m5_noshield",
+      "cap_nmos_03v3",
+      "cap_nmos_03v3_dn",
+      "cap_pmos_03v3",
+      "cap_pmos_03v3_dn",
+      "cap_nmos_06v0",
+      "cap_nmos_06v0_dn",
+      "cap_pmos_06v0",
+      "cap_pmos_06v0_dn",
+      "cap_nmos_03v3_b",
+      "cap_pmos_03v3_b",
+      "cap_nmos_06v0_b",
+      "cap_pmos_06v0_b",
+      "resistor",
+      "diode_nd2ps_06v0",
+      "diode_pd2nw_06v0"
+    ],
+    "unsupported_devices": [],
+    "rename_declared_pins": false,
+    "tie_declared_pins": false,
+    "pdk": {
+      "variant": "gf180mcuD",
+      "root": {
+        "path": null,
+        "scope": "external"
+      },
+      "version": "open_pdks f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7"
+    },
+    "parasitic_integrity": {
+      "short_threshold_ohm": 1.0,
+      "cap_tolerance": {
+        "absolute_ff": 1e-06,
+        "relative": 1e-09
+      },
+      "max_detail_items": 20,
+      "nets_checked": 4,
+      "nets_with_findings": 0,
+      "open_nets": 0,
+      "island_components": 0,
+      "orphan_nodes": 0,
+      "suspicious_resistors": 0,
+      "short_candidates": 0,
+      "capacitance_mismatches": 0,
+      "nets": [
+        {
+          "net": "ISNS",
+          "net_id": 4,
+          "rc_model": "lumped",
+          "integrity": {
+            "open": {
+              "status": "not_applicable",
+              "reason": "lumped model: terminal legs attach to the hub by construction; no distributed segments to check connectivity over",
+              "disconnected_count": 0,
+              "disconnected_terminals": [],
+              "details_truncated": false
+            },
+            "islands": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "orphan_nodes": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "suspicious_resistors": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "short_candidates": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "capacitance": {
+              "status": "pass",
+              "declared_ff": 42.440507,
+              "computed_ff": 42.440507,
+              "delta_ff": 0.0,
+              "reason": null,
+              "tolerance": {
+                "absolute_ff": 1e-06,
+                "relative": 1e-09
+              }
+            }
+          }
+        },
+        {
+          "net": "PASS_GATE",
+          "net_id": 2,
+          "rc_model": "lumped",
+          "integrity": {
+            "open": {
+              "status": "not_applicable",
+              "reason": "lumped model: terminal legs attach to the hub by construction; no distributed segments to check connectivity over",
+              "disconnected_count": 0,
+              "disconnected_terminals": [],
+              "details_truncated": false
+            },
+            "islands": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "orphan_nodes": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "suspicious_resistors": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "short_candidates": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "capacitance": {
+              "status": "pass",
+              "declared_ff": 12.066517,
+              "computed_ff": 12.066517,
+              "delta_ff": 0.0,
+              "reason": null,
+              "tolerance": {
+                "absolute_ff": 1e-06,
+                "relative": 1e-09
+              }
+            }
+          }
+        },
+        {
+          "net": "VIN",
+          "net_id": 1,
+          "rc_model": "lumped",
+          "integrity": {
+            "open": {
+              "status": "not_applicable",
+              "reason": "lumped model: terminal legs attach to the hub by construction; no distributed segments to check connectivity over",
+              "disconnected_count": 0,
+              "disconnected_terminals": [],
+              "details_truncated": false
+            },
+            "islands": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "orphan_nodes": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "suspicious_resistors": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "short_candidates": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "capacitance": {
+              "status": "pass",
+              "declared_ff": 381.202021,
+              "computed_ff": 381.202021,
+              "delta_ff": 0.0,
+              "reason": null,
+              "tolerance": {
+                "absolute_ff": 1e-06,
+                "relative": 1e-09
+              }
+            }
+          }
+        },
+        {
+          "net": "VOUT",
+          "net_id": 3,
+          "rc_model": "lumped",
+          "integrity": {
+            "open": {
+              "status": "not_applicable",
+              "reason": "lumped model: terminal legs attach to the hub by construction; no distributed segments to check connectivity over",
+              "disconnected_count": 0,
+              "disconnected_terminals": [],
+              "details_truncated": false
+            },
+            "islands": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "orphan_nodes": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "suspicious_resistors": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "short_candidates": {
+              "count": 0,
+              "details": [],
+              "details_truncated": false,
+              "reason": null
+            },
+            "capacitance": {
+              "status": "pass",
+              "declared_ff": 322.483669,
+              "computed_ff": 322.483669,
+              "delta_ff": 0.0,
+              "reason": null,
+              "tolerance": {
+                "absolute_ff": 1e-06,
+                "relative": 1e-09
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "body_bias": {
+    "status": "biased",
+    "unbiased_device_count": 0,
+    "unbiased_nets": [],
+    "unbiased_pmos_body_nets": []
+  },
+  "measurement": {
+    "mode": "testbench",
+    "command": null,
+    "timeout_s": null,
+    "sides": null
+  },
+  "testbenches": [
+    {
+      "request": {
+        "path": "sim/pass-array-pex/testbench/request.json",
+        "scope": "repo"
+      },
+      "request_sha256": "sha256:e183864c8feb2a0228249d0e4220d4076106ce01ff1ea14b42083a3aba442eae",
+      "netlist": {
+        "path": "sim/pass-array-pex/testbench/tb_pass_array.spice",
+        "scope": "repo"
+      },
+      "netlist_sha256": "sha256:ef6e8680b12b05bbabe29a540adc1cf73805de35df04025b7a2ac1cf6d7dc0c3",
+      "schematic_netlist": {
+        "path": "sim/pass-array-pex/testbench/pass_array_dut.spice",
+        "scope": "repo"
+      },
+      "schematic_netlist_sha256": "sha256:e345dbd617cf4087d95c4492301badf29f23b7871887b49c9762703e27cc998b",
+      "corner_count": 15,
+      "measurement_names": [
+        "vds_mv",
+        "r_on_mohm",
+        "replica_ratio",
+        "iload_ma",
+        "isns_ma"
+      ],
+      "sides": {
+        "schematic": {
+          "environment": {
+            "engine": "ngspice",
+            "engine_version": "47",
+            "ngspice_binary": "/usr/local/bin/ngspice",
+            "engine_host": "worker",
+            "client_ngspice_binary": "ngspice (client-resolved binary; host path elided in the committed copy)",
+            "remote": {
+              "provider": "aws-batch-fleet",
+              "job_id": "klt-sim-1dc4957e998b",
+              "region": "us-east-1",
+              "instance_id": "i-03cd529aeaea166a3",
+              "instance_type": "m7i.4xlarge",
+              "availability_zone": "us-east-1f",
+              "ami_id": "ami-09c14f55df4958cbd",
+              "lifecycle": "spot",
+              "spot": true,
+              "state": "done",
+              "exit_code": "0",
+              "concurrency": "1",
+              "physical_cores": "8",
+              "elapsed_seconds": 44,
+              "client_submitted_at": "2026-11-20T19:01:07.957592Z",
+              "client_launched_at": "2026-11-20T19:01:47.295892Z",
+              "client_status_terminal_at": "2026-11-20T19:02:51.922012Z",
+              "client_collected_at": "2026-11-20T19:02:53.339287Z",
+              "runner_klt_version": "0.9.0",
+              "client_klt_version": "0.9.3.dev2553+g7038d71d93ff",
+              "runner_compatibility": "match",
+              "runner_request_features": {
+                "required": [
+                  "measurements[].expr",
+                  "options.stage_model_inputs"
+                ],
+                "missing": [],
+                "status": "supported"
+              },
+              "worker_environment": {
+                "capture": "ok",
+                "simulator": {
+                  "requested_binary": "ngspice",
+                  "binary_source": "PATH",
+                  "selected_path": "/usr/local/bin/ngspice",
+                  "version_banner": "******\n** ngspice-47 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2026, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Fri Nov 13 23:19:32 UTC 2026\n******\n",
+                  "version_probe": "ok"
+                },
+                "pdk": {
+                  "variant": "gf180mcuD",
+                  "root": "/opt/pdk",
+                  "stamp_scheme": "sources-sha256",
+                  "stamp_sha256": "4ca10280ae9f293aa1ff69f0060a52e0026929111bda881503717469b429ce67",
+                  "stamp_text": "open_pdks f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7",
+                  "models_staged": true,
+                  "stamp_scope": "image"
+                },
+                "cpu_model": "Intel(R) Xeon(R) Platinum 8488C",
+                "omp_num_threads": null,
+                "image_manifest": null,
+                "model_inputs": [
+                  {
+                    "name": "sm141064.ngspice",
+                    "sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e"
+                  },
+                  {
+                    "name": "sm141064.spice",
+                    "sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e"
+                  },
+                  {
+                    "name": "sm141064_mim.spice",
+                    "sha256": "9b85cd009968d9aeb6b61046b24a63f39d6a463c4e4aee3949c8fd183c06666f"
+                  }
+                ],
+                "diagnostics": [],
+                "pdk_stamp_comparison": {
+                  "basis": "staged_model_inputs",
+                  "client_stamp": {
+                    "variant": "gf180mcuD",
+                    "stamp_scheme": "sources-sha256",
+                    "stamp_sha256": "4ca10280ae9f293aa1ff69f0060a52e0026929111bda881503717469b429ce67"
+                  },
+                  "status": "match"
+                },
+                "ngspice_init": null,
+                "threads_per_worker": 1,
+                "engine_build_comparison": {
+                  "status": "match"
+                }
+              },
+              "runner_model_inputs": [
+                {
+                  "name": "sm141064.ngspice",
+                  "sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e"
+                },
+                {
+                  "name": "sm141064.spice",
+                  "sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e"
+                },
+                {
+                  "name": "sm141064_mim.spice",
+                  "sha256": "9b85cd009968d9aeb6b61046b24a63f39d6a463c4e4aee3949c8fd183c06666f"
+                }
+              ],
+              "runner_models_lib_sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e",
+              "runner_osdi_preload": null,
+              "job_ceiling": {
+                "basis": "conservative_serial_bound",
+                "unit_count": 15,
+                "per_unit_timeout_s": 900,
+                "overhead_s": 120.0,
+                "job_bound_s": 13620.0,
+                "max_job_seconds": 3600.0,
+                "max_job_seconds_source": "fleet_config",
+                "exceeds_ceiling": true,
+                "check": "warn",
+                "max_units_per_job": 3,
+                "recommended_hosts": 5,
+                "warning": "batch job bound 13620s (options.timeout_s 900s x 15 units + 120s; a conservative fully-serial upper bound, not a runtime estimate) exceeds the fleet's whole-job ceiling of 3600s (max_job_seconds from fleet_config); a job still running at the ceiling is killed and every unit is reported batch_job_timeout. Set request.remote.hosts to at least 5 to run one job per shard of at most 3 units, each within the ceiling"
+              },
+              "models_lib_comparison": {
+                "status": "not_comparable",
+                "reason": "models_staged"
+              }
+            }
+          },
+          "corners": [
+            {
+              "corner_id": "tt/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "tt/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "tt/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ff/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ff/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ff/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ss/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ss/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ss/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "fs/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "fs/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "fs/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "sf/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "sf/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "sf/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            }
+          ]
+        },
+        "extracted": {
+          "environment": {
+            "engine": "ngspice",
+            "engine_version": "47",
+            "ngspice_binary": "/usr/local/bin/ngspice",
+            "engine_host": "worker",
+            "client_ngspice_binary": "ngspice (client-resolved binary; host path elided in the committed copy)",
+            "remote": {
+              "provider": "aws-batch-fleet",
+              "job_id": "klt-sim-61abb64f793e",
+              "region": "us-east-1",
+              "instance_id": "i-04e9d8858ffd54230",
+              "instance_type": "c7i.8xlarge",
+              "availability_zone": "us-east-1d",
+              "ami_id": "ami-09c14f55df4958cbd",
+              "lifecycle": "spot",
+              "spot": true,
+              "state": "done",
+              "exit_code": "0",
+              "concurrency": "2",
+              "physical_cores": "16",
+              "elapsed_seconds": 11,
+              "client_submitted_at": "2026-11-20T19:02:54.100530Z",
+              "client_launched_at": "2026-11-20T19:03:30.771178Z",
+              "client_status_terminal_at": "2026-11-20T19:04:04.161652Z",
+              "client_collected_at": "2026-11-20T19:04:06.935549Z",
+              "runner_klt_version": "0.9.0",
+              "client_klt_version": "0.9.3.dev2553+g7038d71d93ff",
+              "runner_compatibility": "match",
+              "runner_request_features": {
+                "required": [
+                  "measurements[].expr",
+                  "options.stage_model_inputs"
+                ],
+                "missing": [],
+                "status": "supported"
+              },
+              "worker_environment": {
+                "capture": "ok",
+                "simulator": {
+                  "requested_binary": "ngspice",
+                  "binary_source": "PATH",
+                  "selected_path": "/usr/local/bin/ngspice",
+                  "version_banner": "******\n** ngspice-47 : Circuit level simulation program\n** Compiled with KLU Direct Linear Solver\n** The U. C. Berkeley CAD Group\n** Copyright 1985-1994, Regents of the University of California.\n** Copyright 2001-2026, The ngspice team.\n** Please get your ngspice manual from https://ngspice.sourceforge.io/docs.html\n** Please file your bug-reports at http://ngspice.sourceforge.net/bugrep.html\n** Creation Date: Fri Nov 13 23:19:32 UTC 2026\n******\n",
+                  "version_probe": "ok"
+                },
+                "pdk": {
+                  "variant": "gf180mcuD",
+                  "root": "/opt/pdk",
+                  "stamp_scheme": "sources-sha256",
+                  "stamp_sha256": "4ca10280ae9f293aa1ff69f0060a52e0026929111bda881503717469b429ce67",
+                  "stamp_text": "open_pdks f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7",
+                  "models_staged": true,
+                  "stamp_scope": "image"
+                },
+                "cpu_model": "Intel(R) Xeon(R) Platinum 8488C",
+                "omp_num_threads": null,
+                "image_manifest": null,
+                "model_inputs": [
+                  {
+                    "name": "sm141064.ngspice",
+                    "sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e"
+                  },
+                  {
+                    "name": "sm141064.spice",
+                    "sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e"
+                  },
+                  {
+                    "name": "sm141064_mim.spice",
+                    "sha256": "9b85cd009968d9aeb6b61046b24a63f39d6a463c4e4aee3949c8fd183c06666f"
+                  }
+                ],
+                "diagnostics": [],
+                "pdk_stamp_comparison": {
+                  "basis": "staged_model_inputs",
+                  "client_stamp": {
+                    "variant": "gf180mcuD",
+                    "stamp_scheme": "sources-sha256",
+                    "stamp_sha256": "4ca10280ae9f293aa1ff69f0060a52e0026929111bda881503717469b429ce67"
+                  },
+                  "status": "match"
+                },
+                "ngspice_init": null,
+                "threads_per_worker": 1,
+                "engine_build_comparison": {
+                  "status": "match"
+                }
+              },
+              "runner_model_inputs": [
+                {
+                  "name": "sm141064.ngspice",
+                  "sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e"
+                },
+                {
+                  "name": "sm141064.spice",
+                  "sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e"
+                },
+                {
+                  "name": "sm141064_mim.spice",
+                  "sha256": "9b85cd009968d9aeb6b61046b24a63f39d6a463c4e4aee3949c8fd183c06666f"
+                }
+              ],
+              "runner_models_lib_sha256": "f905b0737ed31b4916359455becc3ba22c1c3228d9e1e83e265e9e32d0b9403e",
+              "runner_osdi_preload": null,
+              "job_ceiling": {
+                "basis": "conservative_serial_bound",
+                "unit_count": 15,
+                "per_unit_timeout_s": 900,
+                "overhead_s": 120.0,
+                "job_bound_s": 13620.0,
+                "max_job_seconds": 3600.0,
+                "max_job_seconds_source": "fleet_config",
+                "exceeds_ceiling": true,
+                "check": "warn",
+                "max_units_per_job": 3,
+                "recommended_hosts": 5,
+                "warning": "batch job bound 13620s (options.timeout_s 900s x 15 units + 120s; a conservative fully-serial upper bound, not a runtime estimate) exceeds the fleet's whole-job ceiling of 3600s (max_job_seconds from fleet_config); a job still running at the ceiling is killed and every unit is reported batch_job_timeout. Set request.remote.hosts to at least 5 to run one job per shard of at most 3 units, each within the ceiling"
+              },
+              "models_lib_comparison": {
+                "status": "not_comparable",
+                "reason": "models_staged"
+              }
+            }
+          },
+          "corners": [
+            {
+              "corner_id": "tt/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "tt/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "tt/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ff/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ff/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ff/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ss/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ss/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "ss/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "fs/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "fs/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "fs/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "sf/2.100V/-40C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "sf/2.100V/27C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            },
+            {
+              "corner_id": "sf/2.100V/125C",
+              "status": "pass",
+              "diagnostics": [],
+              "produced_value": true
+            }
+          ]
+        }
+      },
+      "nothing_simulated_corners": []
+    }
+  ],
+  "corner_count": 15,
+  "delta": [
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "tt/2.100V/-40C",
+      "schematic_value": 100.4245,
+      "extracted_value": 130.9393,
+      "delta_pct": 30.386,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 100.3797,
+      "representation_delta_pct": -0.045,
+      "parasitic_delta_pct": 30.444,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "tt/2.100V/-40C",
+      "schematic_value": 2008.49,
+      "extracted_value": 2618.786,
+      "delta_pct": 30.386,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2007.594,
+      "representation_delta_pct": -0.045,
+      "parasitic_delta_pct": 30.444,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "tt/2.100V/-40C",
+      "schematic_value": 40.0,
+      "extracted_value": 46.7218,
+      "delta_pct": 16.805,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 16.805,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "tt/2.100V/-40C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "tt/2.100V/-40C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.047739,
+      "delta_pct": -14.085,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -14.085,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "tt/2.100V/27C",
+      "schematic_value": 119.5009,
+      "extracted_value": 150.4157,
+      "delta_pct": 25.87,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 119.4548,
+      "representation_delta_pct": -0.039,
+      "parasitic_delta_pct": 25.919,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "tt/2.100V/27C",
+      "schematic_value": 2390.017,
+      "extracted_value": 3008.314,
+      "delta_pct": 25.87,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2389.096,
+      "representation_delta_pct": -0.039,
+      "parasitic_delta_pct": 25.919,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "tt/2.100V/27C",
+      "schematic_value": 40.0,
+      "extracted_value": 45.71271,
+      "delta_pct": 14.282,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 14.282,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "tt/2.100V/27C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "tt/2.100V/27C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.070372,
+      "delta_pct": -12.229,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -12.229,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "tt/2.100V/125C",
+      "schematic_value": 143.553,
+      "extracted_value": 174.8666,
+      "delta_pct": 21.813,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 143.5065,
+      "representation_delta_pct": -0.032,
+      "parasitic_delta_pct": 21.853,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "tt/2.100V/125C",
+      "schematic_value": 2871.061,
+      "extracted_value": 3497.332,
+      "delta_pct": 21.813,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2870.129,
+      "representation_delta_pct": -0.032,
+      "parasitic_delta_pct": 21.853,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "tt/2.100V/125C",
+      "schematic_value": 40.0,
+      "extracted_value": 44.79507,
+      "delta_pct": 11.988,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 11.988,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "tt/2.100V/125C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "tt/2.100V/125C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.091821,
+      "delta_pct": -10.471,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -10.471,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "ff/2.100V/-40C",
+      "schematic_value": 84.30254,
+      "extracted_value": 114.2308,
+      "delta_pct": 35.501,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 84.25813,
+      "representation_delta_pct": -0.053,
+      "parasitic_delta_pct": 35.572,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "ff/2.100V/-40C",
+      "schematic_value": 1686.051,
+      "extracted_value": 2284.615,
+      "delta_pct": 35.501,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1685.163,
+      "representation_delta_pct": -0.053,
+      "parasitic_delta_pct": 35.572,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "ff/2.100V/-40C",
+      "schematic_value": 40.0,
+      "extracted_value": 47.99101,
+      "delta_pct": 19.978,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 19.978,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "ff/2.100V/-40C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "ff/2.100V/-40C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.020595,
+      "delta_pct": -16.311,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -16.311,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "ff/2.100V/27C",
+      "schematic_value": 100.2843,
+      "extracted_value": 130.5952,
+      "delta_pct": 30.225,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 100.2388,
+      "representation_delta_pct": -0.045,
+      "parasitic_delta_pct": 30.284,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "ff/2.100V/27C",
+      "schematic_value": 2005.686,
+      "extracted_value": 2611.903,
+      "delta_pct": 30.225,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2004.775,
+      "representation_delta_pct": -0.045,
+      "parasitic_delta_pct": 30.284,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "ff/2.100V/27C",
+      "schematic_value": 40.0,
+      "extracted_value": 46.84188,
+      "delta_pct": 17.105,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 17.105,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "ff/2.100V/27C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "ff/2.100V/27C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.045109,
+      "delta_pct": -14.301,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -14.301,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "ff/2.100V/125C",
+      "schematic_value": 120.6229,
+      "extracted_value": 151.3204,
+      "delta_pct": 25.449,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 120.5778,
+      "representation_delta_pct": -0.037,
+      "parasitic_delta_pct": 25.496,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "ff/2.100V/125C",
+      "schematic_value": 2412.457,
+      "extracted_value": 3026.409,
+      "delta_pct": 25.449,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2411.555,
+      "representation_delta_pct": -0.037,
+      "parasitic_delta_pct": 25.496,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "ff/2.100V/125C",
+      "schematic_value": 40.0,
+      "extracted_value": 45.77531,
+      "delta_pct": 14.438,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 14.438,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "ff/2.100V/125C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "ff/2.100V/125C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.06894,
+      "delta_pct": -12.347,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -12.347,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "ss/2.100V/-40C",
+      "schematic_value": 121.3903,
+      "extracted_value": 152.6713,
+      "delta_pct": 25.769,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 121.3434,
+      "representation_delta_pct": -0.039,
+      "parasitic_delta_pct": 25.818,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "ss/2.100V/-40C",
+      "schematic_value": 2427.807,
+      "extracted_value": 3053.427,
+      "delta_pct": 25.769,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2426.868,
+      "representation_delta_pct": -0.039,
+      "parasitic_delta_pct": 25.818,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "ss/2.100V/-40C",
+      "schematic_value": 40.0,
+      "extracted_value": 45.46899,
+      "delta_pct": 13.672,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 13.672,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "ss/2.100V/-40C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "ss/2.100V/-40C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.075986,
+      "delta_pct": -11.769,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -11.769,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "ss/2.100V/27C",
+      "schematic_value": 144.3243,
+      "extracted_value": 176.0414,
+      "delta_pct": 21.976,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 144.2768,
+      "representation_delta_pct": -0.033,
+      "parasitic_delta_pct": 22.016,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "ss/2.100V/27C",
+      "schematic_value": 2886.486,
+      "extracted_value": 3520.828,
+      "delta_pct": 21.976,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2885.536,
+      "representation_delta_pct": -0.033,
+      "parasitic_delta_pct": 22.016,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "ss/2.100V/27C",
+      "schematic_value": 40.0,
+      "extracted_value": 44.61075,
+      "delta_pct": 11.527,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 11.527,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "ss/2.100V/27C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "ss/2.100V/27C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.096233,
+      "delta_pct": -10.109,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -10.109,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "ss/2.100V/125C",
+      "schematic_value": 172.8847,
+      "extracted_value": 205.0242,
+      "delta_pct": 18.59,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 172.8369,
+      "representation_delta_pct": -0.028,
+      "parasitic_delta_pct": 18.623,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "ss/2.100V/125C",
+      "schematic_value": 3457.694,
+      "extracted_value": 4100.483,
+      "delta_pct": 18.59,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 3456.739,
+      "representation_delta_pct": -0.028,
+      "parasitic_delta_pct": 18.623,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "ss/2.100V/125C",
+      "schematic_value": 40.0,
+      "extracted_value": 43.84951,
+      "delta_pct": 9.624,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 9.624,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "ss/2.100V/125C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "ss/2.100V/125C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.114839,
+      "delta_pct": -8.583,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -8.583,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "fs/2.100V/-40C",
+      "schematic_value": 114.477,
+      "extracted_value": 145.5004,
+      "delta_pct": 27.1,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 114.4305,
+      "representation_delta_pct": -0.041,
+      "parasitic_delta_pct": 27.152,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "fs/2.100V/-40C",
+      "schematic_value": 2289.54,
+      "extracted_value": 2910.008,
+      "delta_pct": 27.1,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2288.61,
+      "representation_delta_pct": -0.041,
+      "parasitic_delta_pct": 27.152,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "fs/2.100V/-40C",
+      "schematic_value": 40.0,
+      "extracted_value": 45.84592,
+      "delta_pct": 14.615,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 14.615,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "fs/2.100V/-40C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "fs/2.100V/-40C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.067329,
+      "delta_pct": -12.479,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -12.479,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "fs/2.100V/27C",
+      "schematic_value": 136.0483,
+      "extracted_value": 167.4904,
+      "delta_pct": 23.111,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 136.0007,
+      "representation_delta_pct": -0.035,
+      "parasitic_delta_pct": 23.154,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "fs/2.100V/27C",
+      "schematic_value": 2720.966,
+      "extracted_value": 3349.808,
+      "delta_pct": 23.111,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2720.015,
+      "representation_delta_pct": -0.035,
+      "parasitic_delta_pct": 23.154,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "fs/2.100V/27C",
+      "schematic_value": 40.0,
+      "extracted_value": 44.94528,
+      "delta_pct": 12.363,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 12.363,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "fs/2.100V/27C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "fs/2.100V/27C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.088251,
+      "delta_pct": -10.763,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -10.763,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "fs/2.100V/125C",
+      "schematic_value": 162.9562,
+      "extracted_value": 194.8098,
+      "delta_pct": 19.547,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 162.9087,
+      "representation_delta_pct": -0.029,
+      "parasitic_delta_pct": 19.582,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "fs/2.100V/125C",
+      "schematic_value": 3259.124,
+      "extracted_value": 3896.196,
+      "delta_pct": 19.547,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 3258.174,
+      "representation_delta_pct": -0.029,
+      "parasitic_delta_pct": 19.582,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "fs/2.100V/125C",
+      "schematic_value": 40.0,
+      "extracted_value": 44.14054,
+      "delta_pct": 10.351,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 10.351,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "fs/2.100V/125C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "fs/2.100V/125C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.107652,
+      "delta_pct": -9.173,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -9.173,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "sf/2.100V/-40C",
+      "schematic_value": 88.77277,
+      "extracted_value": 118.8652,
+      "delta_pct": 33.898,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 88.72732,
+      "representation_delta_pct": -0.051,
+      "parasitic_delta_pct": 33.967,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "sf/2.100V/-40C",
+      "schematic_value": 1775.455,
+      "extracted_value": 2377.305,
+      "delta_pct": 33.898,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1774.546,
+      "representation_delta_pct": -0.051,
+      "parasitic_delta_pct": 33.967,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "sf/2.100V/-40C",
+      "schematic_value": 40.0,
+      "extracted_value": 47.60315,
+      "delta_pct": 19.008,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 19.008,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "sf/2.100V/-40C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "sf/2.100V/-40C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.02874,
+      "delta_pct": -15.643,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -15.643,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "sf/2.100V/27C",
+      "schematic_value": 105.705,
+      "extracted_value": 136.187,
+      "delta_pct": 28.837,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 105.6593,
+      "representation_delta_pct": -0.043,
+      "parasitic_delta_pct": 28.893,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "sf/2.100V/27C",
+      "schematic_value": 2114.101,
+      "extracted_value": 2723.741,
+      "delta_pct": 28.837,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2113.185,
+      "representation_delta_pct": -0.043,
+      "parasitic_delta_pct": 28.893,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "sf/2.100V/27C",
+      "schematic_value": 40.0,
+      "extracted_value": 46.49062,
+      "delta_pct": 16.227,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 16.227,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "sf/2.100V/27C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "sf/2.100V/27C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.05284,
+      "delta_pct": -13.667,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -13.667,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "vds_mv",
+      "testbench": "request",
+      "measurement": "vds_mv",
+      "corner_id": "sf/2.100V/125C",
+      "schematic_value": 127.2469,
+      "extracted_value": 158.1206,
+      "delta_pct": 24.263,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 127.201,
+      "representation_delta_pct": -0.036,
+      "parasitic_delta_pct": 24.308,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "r_on_mohm",
+      "testbench": "request",
+      "measurement": "r_on_mohm",
+      "corner_id": "sf/2.100V/125C",
+      "schematic_value": 2544.939,
+      "extracted_value": 3162.412,
+      "delta_pct": 24.263,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 2544.019,
+      "representation_delta_pct": -0.036,
+      "parasitic_delta_pct": 24.308,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "replica_ratio",
+      "testbench": "request",
+      "measurement": "replica_ratio",
+      "corner_id": "sf/2.100V/125C",
+      "schematic_value": 40.0,
+      "extracted_value": 45.46341,
+      "delta_pct": 13.659,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 40.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 13.659,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "iload_ma",
+      "testbench": "request",
+      "measurement": "iload_ma",
+      "corner_id": "sf/2.100V/125C",
+      "schematic_value": 50.0,
+      "extracted_value": 50.0,
+      "delta_pct": 0.0,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 50.0,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": 0.0,
+      "device_only_status": "pass"
+    },
+    {
+      "spec_row": "isns_ma",
+      "testbench": "request",
+      "measurement": "isns_ma",
+      "corner_id": "sf/2.100V/125C",
+      "schematic_value": 1.219512,
+      "extracted_value": 1.076115,
+      "delta_pct": -11.759,
+      "status": "pass",
+      "schematic_status": "pass",
+      "extracted_status": "pass",
+      "device_only_value": 1.219512,
+      "representation_delta_pct": 0.0,
+      "parasitic_delta_pct": -11.759,
+      "device_only_status": "pass"
+    }
+  ],
+  "coverage": {
+    "testbenches": 1,
+    "delta_rows": 75,
+    "corners_compared": 15,
+    "schema_version": 1,
+    "known": true,
+    "checked": [
+      "comparison:[0,\"tt/2.100V/-40C\",\"vds_mv\"]",
+      "comparison:[1,\"tt/2.100V/-40C\",\"r_on_mohm\"]",
+      "comparison:[10,\"tt/2.100V/125C\",\"vds_mv\"]",
+      "comparison:[11,\"tt/2.100V/125C\",\"r_on_mohm\"]",
+      "comparison:[12,\"tt/2.100V/125C\",\"replica_ratio\"]",
+      "comparison:[13,\"tt/2.100V/125C\",\"iload_ma\"]",
+      "comparison:[14,\"tt/2.100V/125C\",\"isns_ma\"]",
+      "comparison:[15,\"ff/2.100V/-40C\",\"vds_mv\"]",
+      "comparison:[16,\"ff/2.100V/-40C\",\"r_on_mohm\"]",
+      "comparison:[17,\"ff/2.100V/-40C\",\"replica_ratio\"]",
+      "comparison:[18,\"ff/2.100V/-40C\",\"iload_ma\"]",
+      "comparison:[19,\"ff/2.100V/-40C\",\"isns_ma\"]",
+      "comparison:[2,\"tt/2.100V/-40C\",\"replica_ratio\"]",
+      "comparison:[20,\"ff/2.100V/27C\",\"vds_mv\"]",
+      "comparison:[21,\"ff/2.100V/27C\",\"r_on_mohm\"]",
+      "comparison:[22,\"ff/2.100V/27C\",\"replica_ratio\"]",
+      "comparison:[23,\"ff/2.100V/27C\",\"iload_ma\"]",
+      "comparison:[24,\"ff/2.100V/27C\",\"isns_ma\"]",
+      "comparison:[25,\"ff/2.100V/125C\",\"vds_mv\"]",
+      "comparison:[26,\"ff/2.100V/125C\",\"r_on_mohm\"]",
+      "comparison:[27,\"ff/2.100V/125C\",\"replica_ratio\"]",
+      "comparison:[28,\"ff/2.100V/125C\",\"iload_ma\"]",
+      "comparison:[29,\"ff/2.100V/125C\",\"isns_ma\"]",
+      "comparison:[3,\"tt/2.100V/-40C\",\"iload_ma\"]",
+      "comparison:[30,\"ss/2.100V/-40C\",\"vds_mv\"]",
+      "comparison:[31,\"ss/2.100V/-40C\",\"r_on_mohm\"]",
+      "comparison:[32,\"ss/2.100V/-40C\",\"replica_ratio\"]",
+      "comparison:[33,\"ss/2.100V/-40C\",\"iload_ma\"]",
+      "comparison:[34,\"ss/2.100V/-40C\",\"isns_ma\"]",
+      "comparison:[35,\"ss/2.100V/27C\",\"vds_mv\"]",
+      "comparison:[36,\"ss/2.100V/27C\",\"r_on_mohm\"]",
+      "comparison:[37,\"ss/2.100V/27C\",\"replica_ratio\"]",
+      "comparison:[38,\"ss/2.100V/27C\",\"iload_ma\"]",
+      "comparison:[39,\"ss/2.100V/27C\",\"isns_ma\"]",
+      "comparison:[4,\"tt/2.100V/-40C\",\"isns_ma\"]",
+      "comparison:[40,\"ss/2.100V/125C\",\"vds_mv\"]",
+      "comparison:[41,\"ss/2.100V/125C\",\"r_on_mohm\"]",
+      "comparison:[42,\"ss/2.100V/125C\",\"replica_ratio\"]",
+      "comparison:[43,\"ss/2.100V/125C\",\"iload_ma\"]",
+      "comparison:[44,\"ss/2.100V/125C\",\"isns_ma\"]",
+      "comparison:[45,\"fs/2.100V/-40C\",\"vds_mv\"]",
+      "comparison:[46,\"fs/2.100V/-40C\",\"r_on_mohm\"]",
+      "comparison:[47,\"fs/2.100V/-40C\",\"replica_ratio\"]",
+      "comparison:[48,\"fs/2.100V/-40C\",\"iload_ma\"]",
+      "comparison:[49,\"fs/2.100V/-40C\",\"isns_ma\"]",
+      "comparison:[5,\"tt/2.100V/27C\",\"vds_mv\"]",
+      "comparison:[50,\"fs/2.100V/27C\",\"vds_mv\"]",
+      "comparison:[51,\"fs/2.100V/27C\",\"r_on_mohm\"]",
+      "comparison:[52,\"fs/2.100V/27C\",\"replica_ratio\"]",
+      "comparison:[53,\"fs/2.100V/27C\",\"iload_ma\"]",
+      "comparison:[54,\"fs/2.100V/27C\",\"isns_ma\"]",
+      "comparison:[55,\"fs/2.100V/125C\",\"vds_mv\"]",
+      "comparison:[56,\"fs/2.100V/125C\",\"r_on_mohm\"]",
+      "comparison:[57,\"fs/2.100V/125C\",\"replica_ratio\"]",
+      "comparison:[58,\"fs/2.100V/125C\",\"iload_ma\"]",
+      "comparison:[59,\"fs/2.100V/125C\",\"isns_ma\"]",
+      "comparison:[6,\"tt/2.100V/27C\",\"r_on_mohm\"]",
+      "comparison:[60,\"sf/2.100V/-40C\",\"vds_mv\"]",
+      "comparison:[61,\"sf/2.100V/-40C\",\"r_on_mohm\"]",
+      "comparison:[62,\"sf/2.100V/-40C\",\"replica_ratio\"]",
+      "comparison:[63,\"sf/2.100V/-40C\",\"iload_ma\"]",
+      "comparison:[64,\"sf/2.100V/-40C\",\"isns_ma\"]",
+      "comparison:[65,\"sf/2.100V/27C\",\"vds_mv\"]",
+      "comparison:[66,\"sf/2.100V/27C\",\"r_on_mohm\"]",
+      "comparison:[67,\"sf/2.100V/27C\",\"replica_ratio\"]",
+      "comparison:[68,\"sf/2.100V/27C\",\"iload_ma\"]",
+      "comparison:[69,\"sf/2.100V/27C\",\"isns_ma\"]",
+      "comparison:[7,\"tt/2.100V/27C\",\"replica_ratio\"]",
+      "comparison:[70,\"sf/2.100V/125C\",\"vds_mv\"]",
+      "comparison:[71,\"sf/2.100V/125C\",\"r_on_mohm\"]",
+      "comparison:[72,\"sf/2.100V/125C\",\"replica_ratio\"]",
+      "comparison:[73,\"sf/2.100V/125C\",\"iload_ma\"]",
+      "comparison:[74,\"sf/2.100V/125C\",\"isns_ma\"]",
+      "comparison:[8,\"tt/2.100V/27C\",\"iload_ma\"]",
+      "comparison:[9,\"tt/2.100V/27C\",\"isns_ma\"]"
+    ],
+    "skipped": [],
+    "inapplicable": [],
+    "unknown": [],
+    "nothing_checked": false,
+    "nothing_checked_reasons": []
+  },
+  "passed": 75,
+  "failed": 0,
+  "errored": 0,
+  "schematic_failed": 0,
+  "pin_count_mismatch": null,
+  "backend_failure": null,
+  "unfinished": [],
+  "flat_dut_mismatch": null,
+  "pin_order_mismatch": null,
+  "model_mismatch": {
+    "kind": "count_only",
+    "reference_only": [],
+    "extracted_only": [],
+    "counts": {
+      "reference": {
+        "pfet_03v3": 2
+      },
+      "extracted": {
+        "pfet_03v3": 41
+      }
+    },
+    "detail": "the reference (schematic) and extracted netlists instantiate the same device models/`.subckt`s and differ only in how many instances of each they carry. The usual cause is finger/multiplier decomposition: the layout draws a device as several fingers while the schematic has one instance (with `nf`/`m`, or none), a difference `klt lvs` has already reconciled. It does not by itself make `delta[]` unrelated, but representation effects (fingering, AS/AD) are folded into `delta[]` alongside the parasitics. See docs/cli/pex.md's `model_mismatch` section"
+  },
+  "flatten_schematic": false,
+  "schematic_flatten": null,
+  "provenance": {
+    "klt_version": "0.9.3.dev2553+g7038d71d93ff",
+    "klt_git_commit": "7038d71d93ffe41e01475027e030a52973403340",
+    "klt_reinstall_spec": "klayout-tools @ git+https://github.com/2AMLogic/klayout-tools@7038d71d93ffe41e01475027e030a52973403340",
+    "klayout_version": "0.30.12",
+    "pdk": {
+      "name": "gf180mcuD",
+      "source": "search root: ~/.ciel",
+      "version": "open_pdks f6eeac7dad085ffcc829ccfd721f7b4ce39edcf7",
+      "ambiguous_sources": [
+        "search root: ~/.volare"
+      ]
+    },
+    "deck": {
+      "name": "gf180mcu",
+      "content_hash": "sha256:491eddc17dcbcfde58e862c8106389b31cc77690ccc9b7046a901cf0a96058e3",
+      "released": false,
+      "options": {
+        "metal_top": "9K",
+        "mim_cap": "cap_mim_2f0_m4m5_noshield",
+        "poly_res": "1k"
+      },
+      "options_explicit": {
+        "metal_top": false,
+        "mim_cap": false,
+        "poly_res": false
+      },
+      "options_hash": "sha256:6a7dc7660a470994263c5ca8ace6d8ac8c605d77e6876a9c5490949de6e7cb05"
+    },
+    "input": {
+      "content_hash": "sha256:19d5125a5f93c34b9cde531e4841985017539cd4bd1d6472376a1a002382d172",
+      "role": "layout"
+    }
+  },
+  "device_only_netlist": {
+    "path": "layout/.work/pex-786/pass_array.pex.device-only.spice",
+    "scope": "repo"
+  },
+  "device_only_netlist_sha256": "sha256:62e410c305435b765ef5157246d5ef74eaf9602eecb616015d1fca335be91f3c",
+  "device_card_count": 41,
+  "device_cards_match": true
+}

@@ -1,0 +1,483 @@
+* extracted by klt extract --deck gf180mcu
+* parasitic model (--parasitics):
+* - capacitance: net-to-ground for every net's own (non-coupled) area/perimeter, plus net-to-net for the vertical-overlap coupling `coupling` describes below -- a coupled net pair gets a direct capacitor between their two hub nodes, not just capacitors to the deck's ground/substrate net
+* - coupling: vertical overlap (crossover) unconditionally -- where one net's conductor on an adjacent metal level sits directly over another *distinct* net's conductor, that overlap area is charged between the two nets instead of to ground (issue #760) -- plus lateral (same-layer, sidewall) coupling, but only for a net pair naming one of the caller's declared `--critical-net` nets (issue #976): facing-edge length within that layer's own minimum-spacing lookback is charged between the two nets, *additively* (not deducted from either net's substrate fringe term, unlike the vertical case -- a known simplification). Any same-layer pair with neither side named `--critical-net`, and fringe shielding in general, are still not modelled
+* - resistance: single lumped series resistance per net, distributed as a star across that net's device terminals (issue #592) -- not a per-segment, distributed RC ladder, *unless* `--distributed-rc` names this net via `--critical-net` (issue #977, Epic #709 Phase 2b): then the net's terminals are ordered along their approximate physical spread and its total R/C is broken into a chain of per-segment resistors (segment length proportional to inter-terminal distance) with a ground capacitor at each terminal node (proportional to its adjacent segment length/2), instead of one star hub -- still an approximation (terminal position is a device-placement proxy, not true per-segment routing geometry), but a strictly finer-grained one than the single-hub star
+* - frequency: quasi-static -- one frequency-independent R and C per net; no skin effect, no distributed transmission-line behavior
+* - substrate tie: 1e+12 ohm to ground -- the substrate is capacitively floating in transient analysis (DC reference only); see --substrate-tie-ohms
+.GLOBAL vsubs
+
+* cell PASS_ARRAY
+* pin ISNS
+* pin PASS_GATE
+* pin VIN
+* pin VOUT
+.SUBCKT PASS_ARRAY ISNS PASS_GATE VIN VOUT
+* device instance $1 r0 *1 0.58,35 pfet
+X$1 VOUT__t20 PASS_GATE__t0 VIN__t0 VIN__t1 pfet_03v3 L=0.28U W=70U AS=30.8P
++ AD=18.2P PS=140.88U PD=70.52U
+* device instance $2 r0 *1 1.38,35 pfet
+X$2 VIN__t72 PASS_GATE__t1 VOUT__t21 VIN__t2 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $3 r0 *1 2.18,35 pfet
+X$3 VOUT__t10 PASS_GATE__t20 VIN__t71 VIN__t24 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $4 r0 *1 2.98,35 pfet
+X$4 VIN__t52 PASS_GATE__t19 VOUT__t28 VIN__t23 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $5 r0 *1 3.78,35 pfet
+X$5 VOUT__t9 PASS_GATE__t18 VIN__t70 VIN__t22 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $6 r0 *1 4.58,35 pfet
+X$6 VIN__t51 PASS_GATE__t17 VOUT__t27 VIN__t21 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $7 r0 *1 5.38,35 pfet
+X$7 VOUT__t8 PASS_GATE__t16 VIN__t69 VIN__t20 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $8 r0 *1 6.18,35 pfet
+X$8 VIN__t50 PASS_GATE__t15 VOUT__t26 VIN__t19 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $9 r0 *1 6.98,35 pfet
+X$9 VOUT__t7 PASS_GATE__t14 VIN__t68 VIN__t18 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $10 r0 *1 7.78,35 pfet
+X$10 VIN__t49 PASS_GATE__t13 VOUT__t25 VIN__t17 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $11 r0 *1 8.58,35 pfet
+X$11 VOUT__t6 PASS_GATE__t12 VIN__t67 VIN__t16 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $12 r0 *1 9.38,35 pfet
+X$12 VIN__t48 PASS_GATE__t11 VOUT__t24 VIN__t15 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $13 r0 *1 10.18,35 pfet
+X$13 VOUT__t5 PASS_GATE__t10 VIN__t66 VIN__t14 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $14 r0 *1 10.98,35 pfet
+X$14 VIN__t47 PASS_GATE__t9 VOUT__t23 VIN__t13 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $15 r0 *1 11.78,35 pfet
+X$15 VOUT__t4 PASS_GATE__t8 VIN__t65 VIN__t12 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $16 r0 *1 12.58,35 pfet
+X$16 VIN__t46 PASS_GATE__t7 VOUT__t22 VIN__t11 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $17 r0 *1 13.38,35 pfet
+X$17 VOUT__t3 PASS_GATE__t6 VIN__t64 VIN__t10 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $18 r0 *1 14.18,35 pfet
+X$18 VIN__t53 PASS_GATE__t21 VOUT__t29 VIN__t25 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $19 r0 *1 14.98,35 pfet
+X$19 VOUT__t1 PASS_GATE__t5 VIN__t63 VIN__t9 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=18.2P PS=70.52U PD=70.52U
+* device instance $20 r0 *1 15.78,35 pfet
+X$20 VIN__t3 PASS_GATE__t2 VOUT__t2 VIN__t4 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=30.8P PS=70.52U PD=140.88U
+* device instance $21 r0 *1 17.38,35 pfet
+X$21 ISNS__t0 PASS_GATE__t3 VIN__t5 VIN__t6 pfet_03v3 L=0.28U W=70U AS=30.8P
++ AD=30.8P PS=140.88U PD=140.88U
+* device instance $22 r0 *1 18.98,35 pfet
+X$22 VOUT__t39 PASS_GATE__t40 VIN__t45 VIN__t44 pfet_03v3 L=0.28U W=70U
++ AS=30.8P AD=18.2P PS=140.88U PD=70.52U
+* device instance $23 r0 *1 19.78,35 pfet
+X$23 VIN__t61 PASS_GATE__t37 VOUT__t37 VIN__t41 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $24 r0 *1 20.58,35 pfet
+X$24 VOUT__t18 PASS_GATE__t36 VIN__t80 VIN__t40 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $25 r0 *1 21.38,35 pfet
+X$25 VIN__t60 PASS_GATE__t35 VOUT__t36 VIN__t39 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $26 r0 *1 22.18,35 pfet
+X$26 VOUT__t17 PASS_GATE__t34 VIN__t79 VIN__t38 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $27 r0 *1 22.98,35 pfet
+X$27 VIN__t59 PASS_GATE__t33 VOUT__t35 VIN__t37 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $28 r0 *1 23.78,35 pfet
+X$28 VOUT__t16 PASS_GATE__t32 VIN__t78 VIN__t36 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $29 r0 *1 24.58,35 pfet
+X$29 VIN__t62 PASS_GATE__t39 VOUT__t38 VIN__t43 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $30 r0 *1 25.38,35 pfet
+X$30 VOUT__t15 PASS_GATE__t30 VIN__t77 VIN__t34 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $31 r0 *1 26.18,35 pfet
+X$31 VIN__t57 PASS_GATE__t29 VOUT__t33 VIN__t33 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $32 r0 *1 26.98,35 pfet
+X$32 VOUT__t14 PASS_GATE__t28 VIN__t76 VIN__t32 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $33 r0 *1 27.78,35 pfet
+X$33 VIN__t56 PASS_GATE__t27 VOUT__t32 VIN__t31 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $34 r0 *1 28.58,35 pfet
+X$34 VOUT__t13 PASS_GATE__t26 VIN__t75 VIN__t30 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $35 r0 *1 29.38,35 pfet
+X$35 VIN__t55 PASS_GATE__t25 VOUT__t31 VIN__t29 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $36 r0 *1 30.18,35 pfet
+X$36 VOUT__t12 PASS_GATE__t24 VIN__t74 VIN__t28 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $37 r0 *1 30.98,35 pfet
+X$37 VIN__t54 PASS_GATE__t23 VOUT__t30 VIN__t27 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $38 r0 *1 31.78,35 pfet
+X$38 VOUT__t11 PASS_GATE__t22 VIN__t73 VIN__t26 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $39 r0 *1 32.58,35 pfet
+X$39 VIN__t58 PASS_GATE__t31 VOUT__t34 VIN__t35 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $40 r0 *1 33.38,35 pfet
+X$40 VOUT__t19 PASS_GATE__t38 VIN__t81 VIN__t42 pfet_03v3 L=0.28U W=70U
++ AS=18.2P AD=18.2P PS=70.52U PD=70.52U
+* device instance $41 r0 *1 34.18,35 pfet
+X$41 VIN__t8 PASS_GATE__t4 VOUT__t0 VIN__t7 pfet_03v3 L=0.28U W=70U AS=18.2P
++ AD=30.8P PS=70.52U PD=140.88U
+* device instance ISNS_t0 r0 *1 0,0 
+RISNS_t0 ISNS__t0 ISNS 43.3441
+* device instance ISNS r0 *1 0,0 
+CISNS ISNS vsubs 4.2440507e-14
+* device instance PASS_GATE_t0 r0 *1 0,0 
+RPASS_GATE_t0 PASS_GATE__t0 PASS_GATE 64.7669628261
+* device instance PASS_GATE_t1 r0 *1 0,0 
+RPASS_GATE_t1 PASS_GATE__t1 PASS_GATE 61.6828217391
+* device instance PASS_GATE_t2 r0 *1 0,0 
+RPASS_GATE_t2 PASS_GATE__t2 PASS_GATE 6.16828217391
+* device instance PASS_GATE_t3 r0 *1 0,0 
+RPASS_GATE_t3 PASS_GATE__t3 PASS_GATE 0.001
+* device instance PASS_GATE_t4 r0 *1 0,0 
+RPASS_GATE_t4 PASS_GATE__t4 PASS_GATE 64.7669628261
+* device instance PASS_GATE_t5 r0 *1 0,0 
+RPASS_GATE_t5 PASS_GATE__t5 PASS_GATE 9.25242326087
+* device instance PASS_GATE_t6 r0 *1 0,0 
+RPASS_GATE_t6 PASS_GATE__t6 PASS_GATE 15.4207054348
+* device instance PASS_GATE_t7 r0 *1 0,0 
+RPASS_GATE_t7 PASS_GATE__t7 PASS_GATE 18.5048465217
+* device instance PASS_GATE_t8 r0 *1 0,0 
+RPASS_GATE_t8 PASS_GATE__t8 PASS_GATE 21.5889876087
+* device instance PASS_GATE_t9 r0 *1 0,0 
+RPASS_GATE_t9 PASS_GATE__t9 PASS_GATE 24.6731286957
+* device instance PASS_GATE_t10 r0 *1 0,0 
+RPASS_GATE_t10 PASS_GATE__t10 PASS_GATE 27.7572697826
+* device instance PASS_GATE_t11 r0 *1 0,0 
+RPASS_GATE_t11 PASS_GATE__t11 PASS_GATE 30.8414108696
+* device instance PASS_GATE_t12 r0 *1 0,0 
+RPASS_GATE_t12 PASS_GATE__t12 PASS_GATE 33.9255519565
+* device instance PASS_GATE_t13 r0 *1 0,0 
+RPASS_GATE_t13 PASS_GATE__t13 PASS_GATE 37.0096930435
+* device instance PASS_GATE_t14 r0 *1 0,0 
+RPASS_GATE_t14 PASS_GATE__t14 PASS_GATE 40.0938341304
+* device instance PASS_GATE_t15 r0 *1 0,0 
+RPASS_GATE_t15 PASS_GATE__t15 PASS_GATE 43.1779752174
+* device instance PASS_GATE_t16 r0 *1 0,0 
+RPASS_GATE_t16 PASS_GATE__t16 PASS_GATE 46.2621163043
+* device instance PASS_GATE_t17 r0 *1 0,0 
+RPASS_GATE_t17 PASS_GATE__t17 PASS_GATE 49.3462573913
+* device instance PASS_GATE_t18 r0 *1 0,0 
+RPASS_GATE_t18 PASS_GATE__t18 PASS_GATE 52.4303984783
+* device instance PASS_GATE_t19 r0 *1 0,0 
+RPASS_GATE_t19 PASS_GATE__t19 PASS_GATE 55.5145395652
+* device instance PASS_GATE_t20 r0 *1 0,0 
+RPASS_GATE_t20 PASS_GATE__t20 PASS_GATE 58.5986806522
+* device instance PASS_GATE_t21 r0 *1 0,0 
+RPASS_GATE_t21 PASS_GATE__t21 PASS_GATE 12.3365643478
+* device instance PASS_GATE_t22 r0 *1 0,0 
+RPASS_GATE_t22 PASS_GATE__t22 PASS_GATE 55.5145395652
+* device instance PASS_GATE_t23 r0 *1 0,0 
+RPASS_GATE_t23 PASS_GATE__t23 PASS_GATE 52.4303984783
+* device instance PASS_GATE_t24 r0 *1 0,0 
+RPASS_GATE_t24 PASS_GATE__t24 PASS_GATE 49.3462573913
+* device instance PASS_GATE_t25 r0 *1 0,0 
+RPASS_GATE_t25 PASS_GATE__t25 PASS_GATE 46.2621163043
+* device instance PASS_GATE_t26 r0 *1 0,0 
+RPASS_GATE_t26 PASS_GATE__t26 PASS_GATE 43.1779752174
+* device instance PASS_GATE_t27 r0 *1 0,0 
+RPASS_GATE_t27 PASS_GATE__t27 PASS_GATE 40.0938341304
+* device instance PASS_GATE_t28 r0 *1 0,0 
+RPASS_GATE_t28 PASS_GATE__t28 PASS_GATE 37.0096930435
+* device instance PASS_GATE_t29 r0 *1 0,0 
+RPASS_GATE_t29 PASS_GATE__t29 PASS_GATE 33.9255519565
+* device instance PASS_GATE_t30 r0 *1 0,0 
+RPASS_GATE_t30 PASS_GATE__t30 PASS_GATE 30.8414108696
+* device instance PASS_GATE_t31 r0 *1 0,0 
+RPASS_GATE_t31 PASS_GATE__t31 PASS_GATE 58.5986806522
+* device instance PASS_GATE_t32 r0 *1 0,0 
+RPASS_GATE_t32 PASS_GATE__t32 PASS_GATE 24.6731286957
+* device instance PASS_GATE_t33 r0 *1 0,0 
+RPASS_GATE_t33 PASS_GATE__t33 PASS_GATE 21.5889876087
+* device instance PASS_GATE_t34 r0 *1 0,0 
+RPASS_GATE_t34 PASS_GATE__t34 PASS_GATE 18.5048465217
+* device instance PASS_GATE_t35 r0 *1 0,0 
+RPASS_GATE_t35 PASS_GATE__t35 PASS_GATE 15.4207054348
+* device instance PASS_GATE_t36 r0 *1 0,0 
+RPASS_GATE_t36 PASS_GATE__t36 PASS_GATE 12.3365643478
+* device instance PASS_GATE_t37 r0 *1 0,0 
+RPASS_GATE_t37 PASS_GATE__t37 PASS_GATE 9.25242326087
+* device instance PASS_GATE_t38 r0 *1 0,0 
+RPASS_GATE_t38 PASS_GATE__t38 PASS_GATE 61.6828217391
+* device instance PASS_GATE_t39 r0 *1 0,0 
+RPASS_GATE_t39 PASS_GATE__t39 PASS_GATE 27.7572697826
+* device instance PASS_GATE_t40 r0 *1 0,0 
+RPASS_GATE_t40 PASS_GATE__t40 PASS_GATE 6.16828217391
+* device instance PASS_GATE r0 *1 0,0 
+CPASS_GATE PASS_GATE vsubs 1.2066517e-14
+* device instance VIN_t0 r0 *1 0,0 
+RVIN_t0 VIN__t0 VIN 17.5451051087
+* device instance VIN_t1 r0 *1 0,0 
+RVIN_t1 VIN__t1 VIN 17.5451051087
+* device instance VIN_t2 r0 *1 0,0 
+RVIN_t2 VIN__t2 VIN 16.709623913
+* device instance VIN_t3 r0 *1 0,0 
+RVIN_t3 VIN__t3 VIN 1.6709623913
+* device instance VIN_t4 r0 *1 0,0 
+RVIN_t4 VIN__t4 VIN 1.6709623913
+* device instance VIN_t5 r0 *1 0,0 
+RVIN_t5 VIN__t5 VIN 0.001
+* device instance VIN_t6 r0 *1 0,0 
+RVIN_t6 VIN__t6 VIN 0.001
+* device instance VIN_t7 r0 *1 0,0 
+RVIN_t7 VIN__t7 VIN 17.5451051087
+* device instance VIN_t8 r0 *1 0,0 
+RVIN_t8 VIN__t8 VIN 17.5451051087
+* device instance VIN_t9 r0 *1 0,0 
+RVIN_t9 VIN__t9 VIN 2.50644358696
+* device instance VIN_t10 r0 *1 0,0 
+RVIN_t10 VIN__t10 VIN 4.17740597826
+* device instance VIN_t11 r0 *1 0,0 
+RVIN_t11 VIN__t11 VIN 5.01288717391
+* device instance VIN_t12 r0 *1 0,0 
+RVIN_t12 VIN__t12 VIN 5.84836836957
+* device instance VIN_t13 r0 *1 0,0 
+RVIN_t13 VIN__t13 VIN 6.68384956522
+* device instance VIN_t14 r0 *1 0,0 
+RVIN_t14 VIN__t14 VIN 7.51933076087
+* device instance VIN_t15 r0 *1 0,0 
+RVIN_t15 VIN__t15 VIN 8.35481195652
+* device instance VIN_t16 r0 *1 0,0 
+RVIN_t16 VIN__t16 VIN 9.19029315217
+* device instance VIN_t17 r0 *1 0,0 
+RVIN_t17 VIN__t17 VIN 10.0257743478
+* device instance VIN_t18 r0 *1 0,0 
+RVIN_t18 VIN__t18 VIN 10.8612555435
+* device instance VIN_t19 r0 *1 0,0 
+RVIN_t19 VIN__t19 VIN 11.6967367391
+* device instance VIN_t20 r0 *1 0,0 
+RVIN_t20 VIN__t20 VIN 12.5322179348
+* device instance VIN_t21 r0 *1 0,0 
+RVIN_t21 VIN__t21 VIN 13.3676991304
+* device instance VIN_t22 r0 *1 0,0 
+RVIN_t22 VIN__t22 VIN 14.2031803261
+* device instance VIN_t23 r0 *1 0,0 
+RVIN_t23 VIN__t23 VIN 15.0386615217
+* device instance VIN_t24 r0 *1 0,0 
+RVIN_t24 VIN__t24 VIN 15.8741427174
+* device instance VIN_t25 r0 *1 0,0 
+RVIN_t25 VIN__t25 VIN 3.34192478261
+* device instance VIN_t26 r0 *1 0,0 
+RVIN_t26 VIN__t26 VIN 15.0386615217
+* device instance VIN_t27 r0 *1 0,0 
+RVIN_t27 VIN__t27 VIN 14.2031803261
+* device instance VIN_t28 r0 *1 0,0 
+RVIN_t28 VIN__t28 VIN 13.3676991304
+* device instance VIN_t29 r0 *1 0,0 
+RVIN_t29 VIN__t29 VIN 12.5322179348
+* device instance VIN_t30 r0 *1 0,0 
+RVIN_t30 VIN__t30 VIN 11.6967367391
+* device instance VIN_t31 r0 *1 0,0 
+RVIN_t31 VIN__t31 VIN 10.8612555435
+* device instance VIN_t32 r0 *1 0,0 
+RVIN_t32 VIN__t32 VIN 10.0257743478
+* device instance VIN_t33 r0 *1 0,0 
+RVIN_t33 VIN__t33 VIN 9.19029315217
+* device instance VIN_t34 r0 *1 0,0 
+RVIN_t34 VIN__t34 VIN 8.35481195652
+* device instance VIN_t35 r0 *1 0,0 
+RVIN_t35 VIN__t35 VIN 15.8741427174
+* device instance VIN_t36 r0 *1 0,0 
+RVIN_t36 VIN__t36 VIN 6.68384956522
+* device instance VIN_t37 r0 *1 0,0 
+RVIN_t37 VIN__t37 VIN 5.84836836957
+* device instance VIN_t38 r0 *1 0,0 
+RVIN_t38 VIN__t38 VIN 5.01288717391
+* device instance VIN_t39 r0 *1 0,0 
+RVIN_t39 VIN__t39 VIN 4.17740597826
+* device instance VIN_t40 r0 *1 0,0 
+RVIN_t40 VIN__t40 VIN 3.34192478261
+* device instance VIN_t41 r0 *1 0,0 
+RVIN_t41 VIN__t41 VIN 2.50644358696
+* device instance VIN_t42 r0 *1 0,0 
+RVIN_t42 VIN__t42 VIN 16.709623913
+* device instance VIN_t43 r0 *1 0,0 
+RVIN_t43 VIN__t43 VIN 7.51933076087
+* device instance VIN_t44 r0 *1 0,0 
+RVIN_t44 VIN__t44 VIN 1.6709623913
+* device instance VIN_t45 r0 *1 0,0 
+RVIN_t45 VIN__t45 VIN 1.6709623913
+* device instance VIN_t46 r0 *1 0,0 
+RVIN_t46 VIN__t46 VIN 5.01288717391
+* device instance VIN_t47 r0 *1 0,0 
+RVIN_t47 VIN__t47 VIN 6.68384956522
+* device instance VIN_t48 r0 *1 0,0 
+RVIN_t48 VIN__t48 VIN 8.35481195652
+* device instance VIN_t49 r0 *1 0,0 
+RVIN_t49 VIN__t49 VIN 10.0257743478
+* device instance VIN_t50 r0 *1 0,0 
+RVIN_t50 VIN__t50 VIN 11.6967367391
+* device instance VIN_t51 r0 *1 0,0 
+RVIN_t51 VIN__t51 VIN 13.3676991304
+* device instance VIN_t52 r0 *1 0,0 
+RVIN_t52 VIN__t52 VIN 15.0386615217
+* device instance VIN_t53 r0 *1 0,0 
+RVIN_t53 VIN__t53 VIN 3.34192478261
+* device instance VIN_t54 r0 *1 0,0 
+RVIN_t54 VIN__t54 VIN 14.2031803261
+* device instance VIN_t55 r0 *1 0,0 
+RVIN_t55 VIN__t55 VIN 12.5322179348
+* device instance VIN_t56 r0 *1 0,0 
+RVIN_t56 VIN__t56 VIN 10.8612555435
+* device instance VIN_t57 r0 *1 0,0 
+RVIN_t57 VIN__t57 VIN 9.19029315217
+* device instance VIN_t58 r0 *1 0,0 
+RVIN_t58 VIN__t58 VIN 15.8741427174
+* device instance VIN_t59 r0 *1 0,0 
+RVIN_t59 VIN__t59 VIN 5.84836836957
+* device instance VIN_t60 r0 *1 0,0 
+RVIN_t60 VIN__t60 VIN 4.17740597826
+* device instance VIN_t61 r0 *1 0,0 
+RVIN_t61 VIN__t61 VIN 2.50644358696
+* device instance VIN_t62 r0 *1 0,0 
+RVIN_t62 VIN__t62 VIN 7.51933076087
+* device instance VIN_t63 r0 *1 0,0 
+RVIN_t63 VIN__t63 VIN 2.50644358696
+* device instance VIN_t64 r0 *1 0,0 
+RVIN_t64 VIN__t64 VIN 4.17740597826
+* device instance VIN_t65 r0 *1 0,0 
+RVIN_t65 VIN__t65 VIN 5.84836836957
+* device instance VIN_t66 r0 *1 0,0 
+RVIN_t66 VIN__t66 VIN 7.51933076087
+* device instance VIN_t67 r0 *1 0,0 
+RVIN_t67 VIN__t67 VIN 9.19029315217
+* device instance VIN_t68 r0 *1 0,0 
+RVIN_t68 VIN__t68 VIN 10.8612555435
+* device instance VIN_t69 r0 *1 0,0 
+RVIN_t69 VIN__t69 VIN 12.5322179348
+* device instance VIN_t70 r0 *1 0,0 
+RVIN_t70 VIN__t70 VIN 14.2031803261
+* device instance VIN_t71 r0 *1 0,0 
+RVIN_t71 VIN__t71 VIN 15.8741427174
+* device instance VIN_t72 r0 *1 0,0 
+RVIN_t72 VIN__t72 VIN 16.709623913
+* device instance VIN_t73 r0 *1 0,0 
+RVIN_t73 VIN__t73 VIN 15.0386615217
+* device instance VIN_t74 r0 *1 0,0 
+RVIN_t74 VIN__t74 VIN 13.3676991304
+* device instance VIN_t75 r0 *1 0,0 
+RVIN_t75 VIN__t75 VIN 11.6967367391
+* device instance VIN_t76 r0 *1 0,0 
+RVIN_t76 VIN__t76 VIN 10.0257743478
+* device instance VIN_t77 r0 *1 0,0 
+RVIN_t77 VIN__t77 VIN 8.35481195652
+* device instance VIN_t78 r0 *1 0,0 
+RVIN_t78 VIN__t78 VIN 6.68384956522
+* device instance VIN_t79 r0 *1 0,0 
+RVIN_t79 VIN__t79 VIN 5.01288717391
+* device instance VIN_t80 r0 *1 0,0 
+RVIN_t80 VIN__t80 VIN 3.34192478261
+* device instance VIN_t81 r0 *1 0,0 
+RVIN_t81 VIN__t81 VIN 16.709623913
+* device instance VIN r0 *1 0,0 
+CVIN VIN vsubs 3.81202021e-13
+* device instance VOUT_t0 r0 *1 0,0 
+RVOUT_t0 VOUT__t0 VOUT 28.5881263043
+* device instance VOUT_t1 r0 *1 0,0 
+RVOUT_t1 VOUT__t1 VOUT 4.08401804348
+* device instance VOUT_t2 r0 *1 0,0 
+RVOUT_t2 VOUT__t2 VOUT 2.72267869565
+* device instance VOUT_t3 r0 *1 0,0 
+RVOUT_t3 VOUT__t3 VOUT 6.80669673913
+* device instance VOUT_t4 r0 *1 0,0 
+RVOUT_t4 VOUT__t4 VOUT 9.52937543478
+* device instance VOUT_t5 r0 *1 0,0 
+RVOUT_t5 VOUT__t5 VOUT 12.2520541304
+* device instance VOUT_t6 r0 *1 0,0 
+RVOUT_t6 VOUT__t6 VOUT 14.9747328261
+* device instance VOUT_t7 r0 *1 0,0 
+RVOUT_t7 VOUT__t7 VOUT 17.6974115217
+* device instance VOUT_t8 r0 *1 0,0 
+RVOUT_t8 VOUT__t8 VOUT 20.4200902174
+* device instance VOUT_t9 r0 *1 0,0 
+RVOUT_t9 VOUT__t9 VOUT 23.142768913
+* device instance VOUT_t10 r0 *1 0,0 
+RVOUT_t10 VOUT__t10 VOUT 25.8654476087
+* device instance VOUT_t11 r0 *1 0,0 
+RVOUT_t11 VOUT__t11 VOUT 24.5041082609
+* device instance VOUT_t12 r0 *1 0,0 
+RVOUT_t12 VOUT__t12 VOUT 21.7814295652
+* device instance VOUT_t13 r0 *1 0,0 
+RVOUT_t13 VOUT__t13 VOUT 19.0587508696
+* device instance VOUT_t14 r0 *1 0,0 
+RVOUT_t14 VOUT__t14 VOUT 16.3360721739
+* device instance VOUT_t15 r0 *1 0,0 
+RVOUT_t15 VOUT__t15 VOUT 13.6133934783
+* device instance VOUT_t16 r0 *1 0,0 
+RVOUT_t16 VOUT__t16 VOUT 10.8907147826
+* device instance VOUT_t17 r0 *1 0,0 
+RVOUT_t17 VOUT__t17 VOUT 8.16803608696
+* device instance VOUT_t18 r0 *1 0,0 
+RVOUT_t18 VOUT__t18 VOUT 5.4453573913
+* device instance VOUT_t19 r0 *1 0,0 
+RVOUT_t19 VOUT__t19 VOUT 27.2267869565
+* device instance VOUT_t20 r0 *1 0,0 
+RVOUT_t20 VOUT__t20 VOUT 28.5881263043
+* device instance VOUT_t21 r0 *1 0,0 
+RVOUT_t21 VOUT__t21 VOUT 27.2267869565
+* device instance VOUT_t22 r0 *1 0,0 
+RVOUT_t22 VOUT__t22 VOUT 8.16803608696
+* device instance VOUT_t23 r0 *1 0,0 
+RVOUT_t23 VOUT__t23 VOUT 10.8907147826
+* device instance VOUT_t24 r0 *1 0,0 
+RVOUT_t24 VOUT__t24 VOUT 13.6133934783
+* device instance VOUT_t25 r0 *1 0,0 
+RVOUT_t25 VOUT__t25 VOUT 16.3360721739
+* device instance VOUT_t26 r0 *1 0,0 
+RVOUT_t26 VOUT__t26 VOUT 19.0587508696
+* device instance VOUT_t27 r0 *1 0,0 
+RVOUT_t27 VOUT__t27 VOUT 21.7814295652
+* device instance VOUT_t28 r0 *1 0,0 
+RVOUT_t28 VOUT__t28 VOUT 24.5041082609
+* device instance VOUT_t29 r0 *1 0,0 
+RVOUT_t29 VOUT__t29 VOUT 5.4453573913
+* device instance VOUT_t30 r0 *1 0,0 
+RVOUT_t30 VOUT__t30 VOUT 23.142768913
+* device instance VOUT_t31 r0 *1 0,0 
+RVOUT_t31 VOUT__t31 VOUT 20.4200902174
+* device instance VOUT_t32 r0 *1 0,0 
+RVOUT_t32 VOUT__t32 VOUT 17.6974115217
+* device instance VOUT_t33 r0 *1 0,0 
+RVOUT_t33 VOUT__t33 VOUT 14.9747328261
+* device instance VOUT_t34 r0 *1 0,0 
+RVOUT_t34 VOUT__t34 VOUT 25.8654476087
+* device instance VOUT_t35 r0 *1 0,0 
+RVOUT_t35 VOUT__t35 VOUT 9.52937543478
+* device instance VOUT_t36 r0 *1 0,0 
+RVOUT_t36 VOUT__t36 VOUT 6.80669673913
+* device instance VOUT_t37 r0 *1 0,0 
+RVOUT_t37 VOUT__t37 VOUT 4.08401804348
+* device instance VOUT_t38 r0 *1 0,0 
+RVOUT_t38 VOUT__t38 VOUT 12.2520541304
+* device instance VOUT_t39 r0 *1 0,0 
+RVOUT_t39 VOUT__t39 VOUT 2.72267869565
+* device instance VOUT r0 *1 0,0 
+CVOUT VOUT vsubs 3.22483669e-13
+* device instance cc_ISNS_VIN r0 *1 0,0 
+Ccc_ISNS_VIN ISNS VIN 6.679968e-15
+* device instance cc_ISNS_VOUT r0 *1 0,0 
+Ccc_ISNS_VOUT ISNS VOUT 5.973532e-15
+* device instance cc_VIN_VOUT r0 *1 0,0 
+Ccc_VIN_VOUT VIN VOUT 3.3285561e-14
+* device instance vsubs_dctie r0 *1 0,0 
+Rvsubs_dctie vsubs 0 1e+12
+.ENDS PASS_ARRAY
